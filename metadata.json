@@ -1,0 +1,8 @@
+{
+  "name": "OmniMemory AI Chat",
+  "description": "Multi-endpoint AI chat featuring cross-session memory management, custom prompt templates, dynamic reasoning efforts, and streaming output via a Material UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
