@@ -46,6 +46,8 @@ fun McpConfigScreen(
     var editTarget by remember { mutableStateOf<McpServer?>(null) }
     var showToolsFor by remember { mutableStateOf<Long?>(null) }
     var showRuntimeInfo by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importResultMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -79,6 +81,19 @@ fun McpConfigScreen(
                 StatChip(label = "工具", value = "$toolCount", color = Color(0xFFFF9500))
 
                 Spacer(modifier = Modifier.weight(1f))
+
+                // 导入 JSON 按钮
+                FilledTonalButton(
+                    onClick = { showImportDialog = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("导入配置", fontSize = 13.sp)
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 // 添加按钮
                 FilledTonalButton(
@@ -180,6 +195,42 @@ fun McpConfigScreen(
             isPythonReady = mcpViewModel.isPythonRuntimeReady,
             pythonStatus = mcpViewModel.pythonRuntimeStatus,
             onDismiss = { showRuntimeInfo = false }
+        )
+    }
+
+    // ── 导入 JSON 配置弹窗 ────────────────────────────────────────────────
+    if (showImportDialog) {
+        McpJsonImportDialog(
+            onDismiss = { showImportDialog = false },
+            onImport = { jsonText ->
+                val count = mcpViewModel.importFromJson(jsonText)
+                importResultMessage = when {
+                    count < 0 -> "JSON 格式错误，请检查配置内容"
+                    count == 0 -> "未找到可导入的服务（mcpServers 为空）"
+                    else -> "成功导入 $count 个 MCP 服务"
+                }
+                showImportDialog = false
+            }
+        )
+    }
+
+    // ── 导入结果提示 ──────────────────────────────────────────────────────
+    importResultMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { importResultMessage = null },
+            icon = {
+                Icon(
+                    if (msg.startsWith("成功")) Icons.Default.Check else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (msg.startsWith("成功")) Color(0xFF34C759)
+                           else MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("导入结果") },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = { importResultMessage = null }) { Text("确定") }
+            }
         )
     }
 
@@ -1126,5 +1177,137 @@ private fun RuntimeInfoSection(
                 lineHeight = 16.sp
             )
         }
+    }
+}
+
+// ── JSON 配置导入弹窗 ─────────────────────────────────────────────────────
+
+@Composable
+private fun McpJsonImportDialog(
+    onDismiss: () -> Unit,
+    onImport: (String) -> Unit
+) {
+    var jsonText by remember {
+        mutableStateOf(
+            """{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/sdcard"
+      ]
+    }
+  }
+}"""
+        )
+    }
+    var isJsonError by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                // 标题行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Upload,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "导入 MCP JSON 配置",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 说明
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "粘贴标准 MCP JSON 配置（与 Claude Desktop 格式兼容）。\n" +
+                               "支持 npx / uvx / node / python 运行时，自动识别命令类型。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        lineHeight = 16.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // JSON 输入框
+                OutlinedTextField(
+                    value = jsonText,
+                    onValueChange = {
+                        jsonText = it
+                        isJsonError = !isValidImportJson(it)
+                    },
+                    label = { Text("JSON 配置") },
+                    isError = isJsonError,
+                    supportingText = if (isJsonError) {
+                        { Text("JSON 格式错误，请检查括号和引号是否匹配") }
+                    } else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 操作按钮
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("取消") }
+
+                    Button(
+                        onClick = { onImport(jsonText) },
+                        modifier = Modifier.weight(1f),
+                        enabled = jsonText.isNotBlank() && !isJsonError
+                    ) {
+                        Icon(Icons.Default.Upload, null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("导入")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun isValidImportJson(s: String): Boolean {
+    return try {
+        val obj = org.json.JSONObject(s.trim())
+        obj.has("mcpServers")
+    } catch (e: Exception) {
+        false
     }
 }
