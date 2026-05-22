@@ -37,6 +37,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestStoragePermissions()
+        // 在 Activity 创建时立即触发 MCP 运行时自动启动（已启用的 server 在数据库就绪后会被自动启动）。
+        // 这样不依赖任何 ViewModel 或 Composable 的初始化时机，确保 MCP 在应用启动后第一时间运行。
+        com.example.mcp.McpRuntimeManager.getInstance(applicationContext)
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             val uiSettings by settingsViewModel.uiSettings.collectAsState()

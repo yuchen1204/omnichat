@@ -54,6 +54,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val promptTemplates: StateFlow<List<PromptTemplate>> = repository.allTemplates
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // MCP server states — 用于 ChatView 显示 MCP 启动状态提示
+    val mcpServerStates = runtimeManager.serverStates
+
     // Real-time operations UI state
     var isStreaming by mutableStateOf(false)
         private set
@@ -210,6 +213,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val activeTemplate = repository.getActiveTemplate()
             val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
 
+            // 等待正在启动的 MCP 服务就绪，确保获取到正确的工具列表
+            runtimeManager.waitForStartingServersToFinish()
+
             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt)
 
             startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
@@ -273,6 +279,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val activeTemplate = repository.getActiveTemplate()
             val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+
+            // 等待正在启动的 MCP 服务就绪，确保获取到正确的工具列表
+            runtimeManager.waitForStartingServersToFinish()
+
             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt)
 
             // 3. Re-trigger assistant response

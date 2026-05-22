@@ -349,9 +349,13 @@ class McpRuntimeManager private constructor(private val context: Context) {
         private var INSTANCE: McpRuntimeManager? = null
 
         fun getInstance(context: Context): McpRuntimeManager {
-            return INSTANCE ?: synchronized(this) {
+            val instance = INSTANCE ?: synchronized(this) {
                 INSTANCE ?: McpRuntimeManager(context.applicationContext).also { INSTANCE = it }
             }
+            // 在 getInstance 调用后触发自动启动（幂等：autoStartTriggered 保证只执行一次）。
+            // 此时单例已完全构造完成，所有 private val 都已初始化，不会出现字段访问顺序问题。
+            instance.triggerAutoStart()
+            return instance
         }
     }
 
@@ -361,6 +365,41 @@ class McpRuntimeManager private constructor(private val context: Context) {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS) // SSE 需要长连接
         .build()
+
+    init {
+        Log.i(TAG, "McpRuntimeManager 单例创建")
+    }
+
+    /**
+     * 触发已启用 MCP server 的自动启动。幂等：多次调用只会启动一次。
+     * 由 [getInstance] 在单例创建后调用。
+     */
+    @Volatile
+    private var autoStartTriggered = false
+
+    /** autoStart 协程的 Job，供 [waitForAutoStartComplete] 等待 */
+    @Volatile
+    private var autoStartJob: kotlinx.coroutines.Job? = null
+
+    private fun triggerAutoStart() {
+        if (autoStartTriggered) return
+        autoStartTriggered = true
+        autoStartJob = scope.launch {
+            try {
+                Log.i(TAG, "[autoStart] 开始部署 MCP 脚本")
+                McpScriptManager.ensureScriptsDeployed(context)
+                val db = AppDatabase.getDatabase(context)
+                val enabled = db.mcpServerDao().getEnabledServers()
+                Log.i(TAG, "[autoStart] 数据库中已启用的 MCP server 数量: ${enabled.size}")
+                if (enabled.isNotEmpty()) {
+                    Log.i(TAG, "[autoStart] 即将启动: ${enabled.joinToString { "${it.name}(${it.runtime})" }}")
+                    startServers(enabled)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "[autoStart] 自动启动 MCP server 失败", e)
+            }
+        }
+    }
 
     // serverId -> 通信通道
     private val channels = ConcurrentHashMap<Long, McpChannel>()
@@ -557,7 +596,45 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     val allTools: StateFlow<List<McpTool>> = serverStates
         .map { states -> states.values.flatMap { it.tools } }
-        .stateIn(scope, SharingStarted.WhileSubscribed(), emptyList())
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * 等待 MCP server 就绪，分两阶段：
+     * 1. 等待 autoStart 协程完成（确保 startServers 已被调用，server 状态已变为 STARTING）
+     * 2. 等待所有 STARTING 状态的 server 完成启动（变为 RUNNING / ERROR / STOPPED）
+     *
+     * @param timeoutMillis 总最大等待时间（毫秒），默认 15 秒。
+     */
+    suspend fun waitForStartingServersToFinish(timeoutMillis: Long = 15_000L) {
+        val job = autoStartJob
+        val isJobActive = job?.isActive ?: false
+        val anyStarting = _serverStates.value.values.any { it.status == McpServerStatus.STARTING }
+        if (!isJobActive && !anyStarting) {
+            return
+        }
+
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        // 阶段 1：等待 autoStart 协程本身完成（startServers 被调用）
+        if (job != null && job.isActive) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining > 0) {
+                try {
+                    withTimeout(remaining) { job.join() }
+                } catch (_: Exception) { /* 超时或取消，继续 */ }
+            }
+        }
+        // 短暂让出，让 startServers 内部的 scope.launch 协程有机会运行并将状态改为 STARTING
+        if (_serverStates.value.values.any { it.status == McpServerStatus.STARTING }) {
+            kotlinx.coroutines.delay(300)
+        }
+        // 阶段 2：等待所有 STARTING 状态消失
+        while (System.currentTimeMillis() < deadline) {
+            val stillStarting = _serverStates.value.values.any { it.status == McpServerStatus.STARTING }
+            if (!stillStarting) return
+            kotlinx.coroutines.delay(200)
+        }
+        Log.w(TAG, "[waitForReady] 超时，部分 server 可能仍在启动中")
+    }
 
     /**
      * 将所有可用工具转换为文本描述，用于注入 System Prompt

@@ -620,6 +620,7 @@ fun ChatView(viewModel: ChatViewModel) {
     val streamingBody = viewModel.currentStreamingBody
     val isThinkingFinished = viewModel.isThinkingFinished
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
+    val mcpServerStates by viewModel.mcpServerStates.collectAsStateWithLifecycle()
 
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -694,6 +695,41 @@ fun ChatView(viewModel: ChatViewModel) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+
+        // --- MCP 启动状态提示条 ---
+        val startingServers = mcpServerStates.values.filter {
+            it.status == com.example.mcp.McpServerStatus.STARTING
+        }
+        if (startingServers.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .padding(horizontal = 16.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val infiniteTransition = rememberInfiniteTransition(label = "mcp_blink")
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f, targetValue = 1.0f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(700, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ), label = "mcp_alpha"
+                )
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(com.example.ui.theme.LocalCustomColors.current.warning.copy(alpha = alpha))
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "MCP 工具加载中：${startingServers.joinToString("、") { it.server.name }}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 

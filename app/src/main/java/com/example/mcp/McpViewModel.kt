@@ -48,15 +48,11 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
     val mcpWorkDir: String get() = McpScriptManager.getMcpDir(getApplication()).absolutePath
 
     init {
-        // 按照严格顺序初始化：部署脚本 -> 检查环境 -> 启动服务
+        // McpRuntimeManager 单例在创建时已自动启动所有已启用的 server（见 McpRuntimeManager.init）。
+        // 这里只需检测 Python 运行时状态，用于 UI 展示。
         viewModelScope.launch {
-            // 1. 部署内置 MCP 脚本到工作目录（IO 线程）
-            withContext(Dispatchers.IO) {
-                McpScriptManager.ensureScriptsDeployed(application)
-            }
-
-            // 2. 检测 Python 运行时
-            val ready = PythonRuntime.ensureReady(application)
+            // 检测 Python 运行时
+            val ready = withContext(Dispatchers.IO) { PythonRuntime.ensureReady(application) }
             if (ready) {
                 isPythonRuntimeReady = true
                 pythonRuntimeStatus = "就绪 (Python 3.14, PYTHONHOME=${PythonRuntime.getPythonHome(application)})"
@@ -67,11 +63,6 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
                 pythonRuntimeStatus = "未就绪 — 请下载 python-3.14.5-$abiName-linux-android.tar.gz\n" +
                     "并将 .so 放入 jniLibs/$abi/，stdlib.zip 放入 assets/python/"
             }
-
-            // 3. 应用启动时自动启动所有已启用的 server
-            val enabled = repository.getEnabledMcpServers()
-            // 使用批量启动，对 Node.js server 进行多路复用优化
-            runtimeManager.startServers(enabled)
         }
     }
 
