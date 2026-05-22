@@ -3,18 +3,8 @@
  * MCP Filesystem Server (stdio transport)
  *
  * 提供对指定根目录的文件系统访问能力。
- * 支持的工具：
- *   - list_directory   列出目录内容
- *   - read_file        读取文件内容
- *   - write_file       写入文件内容
- *   - create_directory 创建目录
- *   - delete_file      删除文件或目录
- *   - move_file        移动/重命名文件
- *   - get_file_info    获取文件元信息
- *   - search_files     在目录中搜索文件
  *
- * 用法：node mcp_filesystem.js [rootDir]
- *   rootDir 默认为 /sdcard
+ * 改进：在启动时捕获 process.stdout/stdin，确保在多路复用环境下的异步稳定性。
  */
 
 'use strict';
@@ -23,23 +13,27 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
+// 关键：捕获初始流，后续始终使用这两个局部变量
+const stdout = process.stdout;
+const stdin = process.stdin;
+
 const rootDir = process.argv[2] || '/sdcard';
 
 // ── JSON-RPC 工具函数 ─────────────────────────────────────────────────────
 
 function sendResponse(id, result) {
     const msg = JSON.stringify({ jsonrpc: '2.0', id, result });
-    process.stdout.write(msg + '\n');
+    stdout.write(msg + '\n');
 }
 
 function sendError(id, code, message) {
     const msg = JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } });
-    process.stdout.write(msg + '\n');
+    stdout.write(msg + '\n');
 }
 
 function sendNotification(method, params) {
     const msg = JSON.stringify({ jsonrpc: '2.0', method, params });
-    process.stdout.write(msg + '\n');
+    stdout.write(msg + '\n');
 }
 
 // ── 路径安全检查 ──────────────────────────────────────────────────────────
@@ -235,6 +229,12 @@ const tools = {
 function handleRequest(req) {
     const { id, method, params } = req;
 
+    if (method === 'exit') {
+        process.stderr.write(`[mcp_filesystem] 收到退出指令，正在关闭...\n`);
+        rl.close();
+        return;
+    }
+
     if (method === 'initialize') {
         sendResponse(id, {
             protocolVersion: '2024-11-05',
@@ -282,7 +282,8 @@ function handleRequest(req) {
 
 // ── 主循环 ────────────────────────────────────────────────────────────────
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+// 关键：使用捕获的 stdin
+const rl = readline.createInterface({ input: stdin, crlfDelay: Infinity });
 
 rl.on('line', (line) => {
     const trimmed = line.trim();
@@ -295,6 +296,8 @@ rl.on('line', (line) => {
     }
 });
 
-rl.on('close', () => process.exit(0));
+rl.on('close', () => {
+    process.stderr.write(`[mcp_filesystem] readline 接口已关闭\n`);
+});
 
 process.stderr.write(`[mcp_filesystem] 已启动，根目录: ${rootDir}\n`);

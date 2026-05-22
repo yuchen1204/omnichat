@@ -8,14 +8,19 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.network.ApiClient
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     val repository = AppRepository(database)
+    private val runtimeManager = com.example.mcp.McpRuntimeManager.getInstance(application)
 
     // Active session selection state
     private val _selectedSessionId = MutableStateFlow<Long?>(null)
@@ -26,6 +31,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Active chat messages flow
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val activeMessages: StateFlow<List<Message>> = _selectedSessionId
         .flatMapLatest { sessionId ->
             if (sessionId != null) {
@@ -52,7 +58,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isStreaming by mutableStateOf(false)
         private set
 
-    var currentStreamingText by mutableStateOf("")
+    var currentStreamingThinking by mutableStateOf("")
+        private set
+
+    var currentStreamingBody by mutableStateOf("")
+        private set
+
+    var isThinkingFinished by mutableStateOf(true)
         private set
 
     var isMemorySyncing by mutableStateOf(false)
@@ -66,19 +78,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isFetchingModels by mutableStateOf(false)
         private set
 
-    // 当前会话临时覆盖的 Provider+Model（不持久化，切换会话后重置）
-    // Pair<ModelConfig, modelId>
-    var activeOverrideConfig by mutableStateOf<Pair<ModelConfig, String>?>(null)
-        private set
-
-    /** 临时切换当前会话使用的 Provider 和模型，不影响默认 Provider 设置 */
+    /** 切换当前使用的 Provider 和模型，持久化到数据库，重启后生效 */
     fun setSessionOverrideModel(provider: ModelConfig, modelId: String) {
-        activeOverrideConfig = Pair(provider, modelId)
-    }
-
-    /** 清除临时覆盖，恢复使用默认 Provider */
-    fun clearSessionOverride() {
-        activeOverrideConfig = null
+        viewModelScope.launch {
+            // 先把所有 provider 的 isDefaultProvider 清掉
+            val allConfigs = repository.getAllConfigs()
+            allConfigs.forEach { config ->
+                if (config.isDefaultProvider) {
+                    repository.updateConfig(config.copy(isDefaultProvider = false))
+                }
+            }
+            // 将选中的 provider 设为默认，并更新 selectedModelId
+            repository.updateConfig(provider.copy(isDefaultProvider = true, selectedModelId = modelId))
+        }
     }
 
     init {
@@ -98,7 +110,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectSession(sessionId: Long) {
         _selectedSessionId.value = sessionId
-        activeOverrideConfig = null  // 切换会话时重置临时模型覆盖
     }
 
     fun createNewSession(title: String) {
@@ -144,12 +155,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             // 2. Fetch configurations
             val providerConfig = run {
-                val override = activeOverrideConfig
-                if (override != null) {
-                    // 使用临时覆盖的 Provider，并替换 selectedModelId
-                    override.first.copy(selectedModelId = override.second)
+                val defaultProvider = repository.getDefaultProvider()
+                if (defaultProvider != null) {
+                    // 若 selectedModelId 为空，则回退到该 Provider 下 fetched_models 的第一个模型 ID
+                    val effectiveModelId = defaultProvider.selectedModelId.takeIf { it.isNotBlank() }
+                        ?: repository.getModelsByProvider(defaultProvider.id).firstOrNull()?.modelId
+                        ?: ""
+                    defaultProvider.copy(selectedModelId = effectiveModelId)
                 } else {
-                    repository.getDefaultProvider()
+                    null
                 }
             }
             if (providerConfig == null) {
@@ -196,64 +210,265 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val activeTemplate = repository.getActiveTemplate()
             val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
 
-            // 3. Fetch physical long-term memories list
-            val localMemories = repository.getAllMemories()
-            val memoriesText = if (localMemories.isEmpty()) {
-                "无 (None recorded)"
-            } else {
-                localMemories.joinToString("\n") { "- ${it.content}" }
+            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt)
+
+            startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+        }
+    }
+
+    private suspend fun generateSystemPrompt(customSystemPrompt: String): String {
+        // 3. Fetch physical long-term memories list
+        // 按 confidence 降序取前 MEMORY_INJECT_LIMIT 条，避免记忆过多稀释 context
+        val localMemories = repository.getAllMemories().take(MEMORY_INJECT_LIMIT)
+        val memoriesText = if (localMemories.isEmpty()) {
+            "无 (None recorded)"
+        } else {
+            localMemories.joinToString("\n") { "- ${it.content}" }
+        }
+
+        // 4. Inject memories into prompt template
+        val mcpToolsText = runtimeManager.getAllToolsAsTextDescription()
+
+        var finalSystemPrompt = if (customSystemPrompt.contains("[CROSS_SESSION_MEMORY]")) {
+            customSystemPrompt.replace("[CROSS_SESSION_MEMORY]", memoriesText)
+        } else {
+            customSystemPrompt + "\n\n[User's Cross-Session History & Preferences]:\n" + memoriesText
+        }
+
+        finalSystemPrompt = if (finalSystemPrompt.contains("[MCP_TOOLS]")) {
+            finalSystemPrompt.replace("[MCP_TOOLS]", mcpToolsText)
+        } else {
+            finalSystemPrompt + "\n\n[Available MCP Tools]:\n" + mcpToolsText
+        }
+
+        // Inject current date/time to prevent AI temporal hallucinations
+        val now = ZonedDateTime.now()
+        val dateTimeStr = now.format(DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm (EEEE, z)", Locale.CHINESE))
+        finalSystemPrompt += "\n\n<!-- SYSTEM TIME: 当前真实时间为 $dateTimeStr。请以此为准回答所有涉及日期、时间、今天、现在、最近等时间相关的问题，不要凭训练数据猜测当前时间。 -->"
+
+        // Hidden formatting instruction: always respond using Markdown
+        finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
+        
+        return finalSystemPrompt
+    }
+
+    fun retryMessage(message: Message) {
+        if (isStreaming) return
+        viewModelScope.launch {
+            // 1. Delete all messages from this one onwards
+            repository.deleteMessagesFrom(message.sessionId, message.timestamp)
+            
+            // 2. Prepare configurations (similar to sendMessage)
+            val providerConfig = run {
+                val defaultProvider = repository.getDefaultProvider()
+                if (defaultProvider != null) {
+                    val effectiveModelId = defaultProvider.selectedModelId.takeIf { it.isNotBlank() }
+                        ?: repository.getModelsByProvider(defaultProvider.id).firstOrNull()?.modelId
+                        ?: ""
+                    defaultProvider.copy(selectedModelId = effectiveModelId)
+                } else {
+                    null
+                }
+            } ?: return@launch
+
+            val activeTemplate = repository.getActiveTemplate()
+            val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt)
+
+            // 3. Re-trigger assistant response
+            startAssistantResponse(message.sessionId, providerConfig, finalSystemPrompt)
+        }
+    }
+
+    private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String) {
+        val messageHistory = repository.getMessagesBySession(sessionId)
+        val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
+        
+        isStreaming = true
+        currentStreamingThinking = ""
+        currentStreamingBody = ""
+        isThinkingFinished = true
+        
+        var accumulatedText = ""
+        var lastUiUpdateTime = 0L
+        val accumulatedToolCalls = mutableMapOf<Int, org.json.JSONObject>()
+
+        fun updateStreamingStates(text: String) {
+            val thinkStartTag = "<think>"
+            val thinkEndTag = "</think>"
+            
+            val startIndex = text.indexOf(thinkStartTag, ignoreCase = true)
+            if (startIndex == -1) {
+                currentStreamingThinking = ""
+                currentStreamingBody = text
+                isThinkingFinished = true
+                return
             }
-
-            // 4. Inject memories into prompt template
-            val finalSystemPrompt = if (customSystemPrompt.contains("[CROSS_SESSION_MEMORY]")) {
-                customSystemPrompt.replace("[CROSS_SESSION_MEMORY]", memoriesText)
+            
+            val contentAfterStart = text.substring(startIndex + thinkStartTag.length)
+            val endIndex = contentAfterStart.indexOf(thinkEndTag, ignoreCase = true)
+            
+            if (endIndex != -1) {
+                currentStreamingThinking = contentAfterStart.substring(0, endIndex).trim()
+                currentStreamingBody = contentAfterStart.substring(endIndex + thinkEndTag.length).trim()
+                isThinkingFinished = true
             } else {
-                customSystemPrompt + "\n\n[User's Cross-Session History & Preferences]:\n" + memoriesText
+                currentStreamingThinking = contentAfterStart.trim()
+                currentStreamingBody = ""
+                isThinkingFinished = false
             }
+        }
 
-            // 5. Gather existing message history
-            val messageHistory = repository.getMessagesBySession(sessionId)
-
-            // 6. Start Streaming Response
-            isStreaming = true
-            currentStreamingText = ""
-
-            ApiClient.executeStreamingChat(providerConfig, finalSystemPrompt, messageHistory)
-                .collect { chunk ->
-                    if (chunk.startsWith("ERROR:")) {
-                        currentStreamingText += "\n$chunk"
-                        isStreaming = false
-                    } else {
-                        currentStreamingText += chunk
+        ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools)
+            .collect { chunk ->
+                if (chunk.startsWith("ERROR:")) {
+                    accumulatedText += "\n$chunk"
+                    updateStreamingStates(accumulatedText)
+                    isStreaming = false
+                } else if (chunk.startsWith("INFO:")) {
+                    accumulatedText += "\n$chunk"
+                    updateStreamingStates(accumulatedText)
+                } else if (chunk == "RETRY_RESET:") {
+                    accumulatedText = ""
+                    accumulatedToolCalls.clear()
+                    updateStreamingStates("")
+                } else if (chunk.startsWith("TOOL_CALL_DELTA:")) {
+                    val deltaJson = chunk.substringAfter("TOOL_CALL_DELTA:")
+                    try {
+                        val toolCallsArr = org.json.JSONArray(deltaJson)
+                        for (i in 0 until toolCallsArr.length()) {
+                            val item = toolCallsArr.getJSONObject(i)
+                            val index = item.optInt("index", 0)
+                            val existing = accumulatedToolCalls.getOrPut(index) { org.json.JSONObject() }
+                            
+                            val id = item.optString("id")
+                            if (id.isNotEmpty()) existing.put("id", id)
+                            
+                            val function = item.optJSONObject("function")
+                            if (function != null) {
+                                val existingFunc = existing.optJSONObject("function") ?: org.json.JSONObject().also { existing.put("function", it) }
+                                val name = function.optString("name")
+                                if (name.isNotEmpty()) existingFunc.put("name", name)
+                                val args = function.optString("arguments")
+                                if (args.isNotEmpty()) {
+                                    val currentArgs = existingFunc.optString("arguments", "")
+                                    existingFunc.put("arguments", currentArgs + args)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                } else {
+                    accumulatedText += chunk
+                    val now = System.currentTimeMillis()
+                    // 节流更新 UI，每 80ms 更新一次
+                    if (now - lastUiUpdateTime > 80) {
+                        updateStreamingStates(accumulatedText)
+                        lastUiUpdateTime = now
                     }
                 }
-
-            // Save streamed result to local database
-            if (currentStreamingText.isNotEmpty()) {
-                repository.insertMessage(
-                    Message(sessionId = sessionId, role = "assistant", content = currentStreamingText)
-                )
             }
-            isStreaming = false
-            currentStreamingText = ""
 
-            // 7. Auto-trigger Memory Syncer after each assistant message round to analyze dialogue dynamically
+        // 最后一次同步更新
+        updateStreamingStates(accumulatedText)
+
+        // 1. Save assistant text response AND tool calls
+        if (accumulatedText.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
+            val toolCallsJson = if (accumulatedToolCalls.isNotEmpty()) {
+                val arr = org.json.JSONArray()
+                accumulatedToolCalls.values.forEach { arr.put(it) }
+                arr.toString()
+            } else null
+            
+            repository.insertMessage(
+                Message(
+                    sessionId = sessionId,
+                    role = "assistant",
+                    content = accumulatedText,
+                    toolCallsJson = toolCallsJson
+                )
+            )
+        }
+        
+        val wasOnlyToolCalls = accumulatedText.isEmpty() && accumulatedToolCalls.isNotEmpty()
+        isStreaming = false
+        // 清理流式状态
+        currentStreamingThinking = ""
+        currentStreamingBody = ""
+        isThinkingFinished = true
+
+        // 2. Process Tool Calls if any
+        if (accumulatedToolCalls.isNotEmpty()) {
+            var hasNewResults = false
+            for (toolCall in accumulatedToolCalls.values) {
+                val function = toolCall.optJSONObject("function") ?: continue
+                val name = function.optString("name")
+                val argsStr = function.optString("arguments")
+                val callId = toolCall.optString("id")
+                
+                val serverId = runtimeManager.findServerIdForTool(name)
+                if (serverId != null) {
+                    try {
+                        val argsJson = org.json.JSONObject(argsStr)
+                        val result = runtimeManager.callTool(serverId, name, argsJson)
+                        
+                        repository.insertMessage(
+                            Message(
+                                sessionId = sessionId,
+                                role = "tool",
+                                content = result?.toString() ?: "No result",
+                                toolCallId = callId
+                            )
+                        )
+                        hasNewResults = true
+                    } catch (e: Exception) {
+                        repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Error: ${e.message}", toolCallId = callId))
+                        hasNewResults = true
+                    }
+                } else {
+                    repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Tool not found", toolCallId = callId))
+                    hasNewResults = true
+                }
+            }
+            
+            if (hasNewResults) {
+                // Trigger the follow-up turn
+                startAssistantResponse(sessionId, config, systemPrompt)
+            }
+        }
+
+        if (!wasOnlyToolCalls && accumulatedText.isNotEmpty()) {
             triggerMemorySync()
         }
     }
 
     /**
-     * 15 分钟增量记忆算法：
+     * 增量记忆算法（方案 A）：
      *
      * 触发条件（满足任一即运行）：
      *   - 距上次总结超过 MEMORY_INTERVAL_MS（15 分钟）
      *   - 自上次总结后新增消息数 >= NEW_MESSAGES_THRESHOLD（10 条）
+     *   - 预检：新消息总字符数 < MIN_NEW_CHARS_THRESHOLD 时跳过（避免无意义触发）
      *
      * 每次运行流程：
-     *   Step 1  取最近 100 条消息 + 上次会话摘要 → 生成新的会话滚动摘要
-     *   Step 2  用新摘要 + 现有全局偏好事实 → 提炼/更新跨会话 MemoryItem 列表
+     *   Step 1  取最近消息（按字符数截断）+ 上次会话摘要 → 生成新的会话滚动摘要
+     *           摘要同时保留偏好信号，供 Step 2 使用
+     *   Step 2  用新摘要 + 最近原始消息片段 + 现有全局偏好事实 → LLM 返回结构化 CRUD JSON
+     *           → 事务性 apply，解析失败则保留旧记忆（消除单点故障）
+     *           → ADD 前做本地相似度去重，避免语义重复条目堆积
+     *
+     * CRUD JSON 格式（LLM 输出）：
+     * {
+     *   "ops": [
+     *     {"op": "ADD",    "content": "..."},
+     *     {"op": "UPDATE", "id": 7, "content": "..."},
+     *     {"op": "REINFORCE", "id": 3},          // 内容不变，仅 confidence+1
+     *     {"op": "DELETE", "id": 12}
+     *   ]
+     * }
+     * - pinned=true 的条目：LLM 可以 REINFORCE，但 DELETE/UPDATE 会被客户端拒绝
+     * - 解析失败或 ops 为空 → 放弃本次 Step 2，旧记忆完整保留
      */
-    fun triggerMemorySync() {
+    fun triggerMemorySync(force: Boolean = false) {
         val sessionId = _selectedSessionId.value ?: return
         viewModelScope.launch {
             if (isMemorySyncing) return@launch
@@ -293,22 +508,43 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val newMsgCount = allMessages.size - msgCountAtLast
                 val timeSinceLast = now - lastSummarizedAt
 
-                val shouldRun = timeSinceLast >= MEMORY_INTERVAL_MS || newMsgCount >= NEW_MESSAGES_THRESHOLD
+                // force=true（手动触发）时跳过节流检查
+                val shouldRun = force || timeSinceLast >= MEMORY_INTERVAL_MS || newMsgCount >= NEW_MESSAGES_THRESHOLD
                 if (!shouldRun) {
                     isMemorySyncing = false
                     return@launch
                 }
 
+                // 预检：新消息内容太少（如全是"好的/嗯/谢谢"）则跳过，避免无效 API 调用
+                if (!force) {
+                    val newMessages = allMessages.drop(msgCountAtLast)
+                    val newCharsTotal = newMessages.sumOf { it.content.length }
+                    if (newCharsTotal < MIN_NEW_CHARS_THRESHOLD) {
+                        isMemorySyncing = false
+                        return@launch
+                    }
+                }
+
                 // ── Step 1：生成本会话的新滚动摘要 ──────────────────────
-                val recentMessages = allMessages.takeLast(MEMORY_WINDOW_SIZE)
+                // 按字符数截断而非固定条数，避免长消息撑爆小模型上下文
+                val recentMessages = run {
+                    var charCount = 0
+                    allMessages.asReversed().takeWhile { msg ->
+                        charCount += msg.content.length
+                        charCount <= MEMORY_WINDOW_CHARS
+                    }.reversed()
+                }
                 val dialogueFormatted = recentMessages.joinToString("\n") { "${it.role}: ${it.content}" }
                 val prevSummaryText = prevSummary?.summaryText?.takeIf { it.isNotBlank() }
 
                 val summarySystemPrompt =
-                    "You are a concise conversation summarizer. " +
-                    "Produce a compact, factual summary of the conversation. " +
-                    "Focus on: topics discussed, decisions made, user's stated preferences or problems, key conclusions. " +
-                    "Aim for 3-8 sentences. No filler or meta-commentary."
+                    "You are a conversation analyst. Produce a compact summary of the conversation. " +
+                    "Cover two aspects:\n" +
+                    "1. Topics & conclusions: what was discussed, decisions made, problems solved.\n" +
+                    "2. User signals: any preferences, habits, skills, tools, dislikes, or personal context " +
+                    "the user revealed — even implicitly (e.g. choice of language, frustration with a tool, " +
+                    "repeated patterns). Be specific, not generic.\n" +
+                    "Aim for 4-10 sentences total. No filler or meta-commentary."
 
                 val summaryUserQuery = buildString {
                     if (prevSummaryText != null) {
@@ -334,52 +570,61 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
 
-                // ── Step 2：用新摘要提炼/更新全局跨会话偏好事实 ─────────
+                // ── Step 2：增量 CRUD — LLM 返回操作列表，客户端事务性 apply ──
                 val currentMemories = repository.getAllMemories()
                 val memoriesFormatted = if (currentMemories.isEmpty()) {
                     "No existing facts recorded."
                 } else {
-                    currentMemories.mapIndexed { idx, item -> "${idx + 1}. ${item.content}" }.joinToString("\n")
+                    currentMemories.joinToString("\n") { item ->
+                        val pinnedTag = if (item.pinned) " [PINNED]" else ""
+                        "${item.id}. (confidence=${item.confidence}${pinnedTag}) ${item.content}"
+                    }
                 }
 
-                val factsSystemPrompt =
-                    "You are a User Preference & Persona Synthesizer. " +
-                    "Extract durable, cross-session personal facts from conversation summaries. " +
-                    "Focus only on stable, reusable facts: preferences, skills, habits, goals, dislikes, setup details. " +
-                    "Ignore transient topics (e.g., a one-off question)."
+                // 最近原始消息片段（最多 MEMORY_RECENT_RAW_COUNT 条），作为摘要的补充
+                // 让 LLM 能看到未经压缩的原始信号，提升偏好提炼准确性
+                val recentRawSnippet = allMessages.takeLast(MEMORY_RECENT_RAW_COUNT)
+                    .joinToString("\n") { "${it.role}: ${it.content}" }
+
+                val factsSystemPrompt = """
+You are a User Preference & Persona Synthesizer.
+Your job: maintain a list of durable, cross-session personal facts about the user.
+Focus ONLY on stable, reusable facts: preferences, skills, habits, goals, dislikes, setup/environment details.
+Ignore transient topics (e.g., a one-off question with no lasting relevance).
+
+You will receive:
+- Existing facts (each with an id and confidence score; [PINNED] items must NOT be deleted or updated)
+- A conversation summary (may compress details)
+- Recent raw messages (ground truth — use these to catch signals the summary may have missed)
+
+Output a JSON object with an "ops" array. Each op must be one of:
+  {"op": "ADD",       "content": "<one short sentence>"}
+  {"op": "UPDATE",    "id": <existing_id>, "content": "<revised sentence>"}
+  {"op": "REINFORCE", "id": <existing_id>}
+  {"op": "DELETE",    "id": <existing_id>}
+
+Rules:
+- ADD new facts not yet captured. IMPORTANT: before adding, check if an existing fact already covers the same information — if so, use REINFORCE or UPDATE instead of ADD. Avoid semantic duplicates.
+- UPDATE facts that need revision (do NOT update [PINNED] items).
+- REINFORCE facts confirmed again without change (boosts confidence).
+- DELETE facts that are clearly contradicted or permanently irrelevant (do NOT delete [PINNED] items).
+- If nothing changed, return {"ops": []}.
+- Return ONLY the raw JSON object, no markdown fences, no commentary.
+""".trimIndent()
 
                 val factsUserQuery = buildString {
                     append("Existing facts:\n###\n$memoriesFormatted\n###\n\n")
-                    append("New conversation summary:\n###\n$newSummaryText\n###\n\n")
-                    append("Task: 1. Extract NEW durable facts from the summary. ")
-                    append("2. Update/remove facts that are contradicted or outdated. ")
-                    append("3. Keep valid existing facts. ")
-                    append("Output a complete revised numbered list. Each item = one short sentence. ")
-                    append("Return ONLY the numbered list, no intro or commentary.")
+                    append("Conversation summary:\n###\n$newSummaryText\n###\n\n")
+                    append("Recent raw messages (last ${recentRawSnippet.lines().size} lines):\n###\n$recentRawSnippet\n###\n\n")
+                    append("Output the ops JSON now.")
                 }
 
-                val revisedFactsText = ApiClient.executeCompletion(memoryConfig, factsSystemPrompt, factsUserQuery)
+                val crudJson = ApiClient.executeCompletion(memoryConfig, factsSystemPrompt, factsUserQuery)
+                    ?.trim() ?: return@launch  // API 失败 → 保留旧记忆，直接退出
 
-                if (!revisedFactsText.isNullOrBlank()) {
-                    val parsedFacts = mutableListOf<String>()
-                    revisedFactsText.lines().forEach { line ->
-                        val clean = line.trim()
-                        when {
-                            clean.matches(Regex("^\\d+[.)]\\s*.+")) -> {
-                                val content = clean.replaceFirst(Regex("^\\d+[.)]\\s*"), "").trim()
-                                if (content.isNotBlank()) parsedFacts.add(content)
-                            }
-                            clean.startsWith("-") || clean.startsWith("*") -> {
-                                val content = clean.removePrefix("-").removePrefix("*").trim()
-                                if (content.isNotBlank()) parsedFacts.add(content)
-                            }
-                        }
-                    }
-                    if (parsedFacts.isNotEmpty()) {
-                        repository.deleteAllMemories()
-                        parsedFacts.forEach { repository.insertMemory(MemoryItem(content = it)) }
-                    }
-                }
+                // 解析并 apply CRUD ops（解析失败则整体放弃，旧记忆不受影响）
+                applyMemoryCrudOps(crudJson, currentMemories, now)
+
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -388,134 +633,165 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 解析 LLM 返回的 CRUD JSON 并事务性地 apply 到数据库。
+     * 任何解析异常都会被捕获并静默忽略，确保旧记忆不被破坏。
+     */
+    private suspend fun applyMemoryCrudOps(
+        json: String,
+        existingMemories: List<MemoryItem>,
+        now: Long
+    ) {
+        try {
+            // 清理 LLM 可能输出的 markdown 代码块包裹
+            val cleaned = json
+                .removePrefix("```json").removePrefix("```")
+                .removeSuffix("```").trim()
+
+            val root = org.json.JSONObject(cleaned)
+            val ops = root.optJSONArray("ops") ?: return  // ops 缺失 → 放弃
+
+            val existingById = existingMemories.associateBy { it.id }
+
+            for (i in 0 until ops.length()) {
+                val op = ops.optJSONObject(i) ?: continue
+                when (op.optString("op").uppercase()) {
+                    "ADD" -> {
+                        val content = op.optString("content").trim()
+                        if (content.isNotBlank()) {
+                            // 本地去重：若现有记忆中已有语义相近的条目（词级 Jaccard ≥ 0.55），
+                            // 则改为 REINFORCE 而非重复插入
+                            val duplicate = existingMemories.firstOrNull { existing ->
+                                jaccardSimilarity(content, existing.content) >= DEDUP_SIMILARITY_THRESHOLD
+                            }
+                            if (duplicate != null) {
+                                repository.reinforceMemory(duplicate.id, duplicate.content, now)
+                            } else {
+                                repository.insertMemory(
+                                    MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1)
+                                )
+                            }
+                        }
+                    }
+                    "UPDATE" -> {
+                        val id = op.optLong("id", -1L)
+                        val content = op.optString("content").trim()
+                        val existing = existingById[id]
+                        // 拒绝更新 pinned 条目
+                        if (existing != null && !existing.pinned && content.isNotBlank()) {
+                            repository.updateMemory(
+                                existing.copy(content = content, updatedAt = now, confidence = existing.confidence + 1)
+                            )
+                        }
+                    }
+                    "REINFORCE" -> {
+                        val id = op.optLong("id", -1L)
+                        val existing = existingById[id]
+                        if (existing != null) {
+                            repository.reinforceMemory(id, existing.content, now)
+                        }
+                    }
+                    "DELETE" -> {
+                        val id = op.optLong("id", -1L)
+                        val existing = existingById[id]
+                        // 拒绝删除 pinned 条目
+                        if (existing != null && !existing.pinned) {
+                            repository.deleteMemoryById(id)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // JSON 解析失败或任何异常 → 静默忽略，旧记忆完整保留
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 词级 Jaccard 相似度：将两个字符串分词后计算交集/并集比例。
+     * 用于 ADD 去重，避免语义相近的记忆条目重复插入。
+     */
+    private fun jaccardSimilarity(a: String, b: String): Double {
+        val tokensA = a.lowercase().split(Regex("\\s+|[,，。.!！?？;；]+")).filter { it.isNotBlank() }.toSet()
+        val tokensB = b.lowercase().split(Regex("\\s+|[,，。.!！?？;；]+")).filter { it.isNotBlank() }.toSet()
+        if (tokensA.isEmpty() && tokensB.isEmpty()) return 1.0
+        if (tokensA.isEmpty() || tokensB.isEmpty()) return 0.0
+        val intersection = tokensA.intersect(tokensB).size
+        val union = tokensA.union(tokensB).size
+        return intersection.toDouble() / union.toDouble()
+    }
+
     companion object {
         private const val MEMORY_INTERVAL_MS = 15 * 60 * 1000L  // 15 分钟
         private const val NEW_MESSAGES_THRESHOLD = 10            // 新增消息达到此数也触发
-        private const val MEMORY_WINDOW_SIZE = 100               // 每次取最近 N 条消息
+        private const val MEMORY_WINDOW_CHARS = 12_000           // 摘要窗口最大字符数（替代固定条数）
+        private const val MEMORY_RECENT_RAW_COUNT = 20           // Step 2 额外传入的原始消息条数
+        private const val MIN_NEW_CHARS_THRESHOLD = 200          // 新消息总字符数低于此值时跳过同步
+        private const val DEDUP_SIMILARITY_THRESHOLD = 0.55      // ADD 去重的 Jaccard 相似度阈值
+        private const val MEMORY_INJECT_LIMIT = 30               // 注入 system prompt 的最大记忆条数
     }
 
     /**
      * 解析模型能力。优先级：JSON 元数据 > 模型 ID 规则推断。
-     *
-     * 支持的 JSON 字段（各兼容服务均有不同程度的覆盖）：
-     *
-     * ── 上下文 / 输出 Token ──────────────────────────────────────────────
-     *  context_length          OpenRouter 标准字段
-     *  context_window          OpenAI 官方 /v1/models 扩展字段
-     *  max_context_length      部分中转服务（OneAPI / NewAPI）
-     *  top_provider.context_length          OpenRouter 嵌套字段（更精确）
-     *  top_provider.max_completion_tokens   OpenRouter 最大输出 token
-     *
-     * ── 视觉能力 ─────────────────────────────────────────────────────────
-     *  architecture.input_modalities[]      OpenRouter：数组含 "image" 则有视觉
-     *  architecture.modality                OpenRouter：字符串如 "text+image->text"
-     *
-     * ── 思考能力 ─────────────────────────────────────────────────────────
-     *  supported_parameters[]               OpenRouter：含 "reasoning" 或 "include_reasoning"
-     *
-     * ── 工具调用 ─────────────────────────────────────────────────────────
-     *  supported_parameters[]               OpenRouter：含 "tools" 或 "tool_choice"
      */
     fun parseModelCapabilities(modelId: String, providerId: Long = 0, json: org.json.JSONObject? = null): FetchedModel {
         val lower = modelId.lowercase()
 
-        // ── 1. 上下文窗口 & 最大输出 Token ──────────────────────────────
-        // 优先读 JSON，多个字段按精确度降序尝试
         val rawContext: Int = run {
             if (json == null) return@run 0
-            // OpenRouter: top_provider.context_length 最精确（实际可用值）
             json.optJSONObject("top_provider")?.optInt("context_length", 0)?.takeIf { it > 0 }
-                // OpenRouter / 通用: 顶层 context_length
                 ?: json.optInt("context_length", 0).takeIf { it > 0 }
-                // OpenAI 官方扩展字段
                 ?: json.optInt("context_window", 0).takeIf { it > 0 }
-                // OneAPI / NewAPI 等中转服务
                 ?: json.optInt("max_context_length", 0).takeIf { it > 0 }
                 ?: 0
         }
 
         val rawMaxOutput: Int = run {
             if (json == null) return@run 0
-            // OpenRouter: top_provider.max_completion_tokens
             json.optJSONObject("top_provider")?.optInt("max_completion_tokens", 0)?.takeIf { it > 0 }
                 ?: json.optInt("max_completion_tokens", 0).takeIf { it > 0 }
                 ?: json.optInt("max_output_tokens", 0).takeIf { it > 0 }
                 ?: 0
         }
 
-        // 格式化为人类可读字符串，如 "128k"、"1M"
         fun formatTokenCount(n: Int): String = when {
             n <= 0      -> ""
             n >= 1_000_000 -> "${n / 1_000_000}M"
             n >= 1_000     -> "${n / 1_000}k"
-            else           -> "$n"
+            else           -> n.toString()
         }
 
         val contextStr: String = if (rawContext > 0) {
             formatTokenCount(rawContext)
         } else {
-            // JSON 无数据，按模型 ID 规则兜底（仅覆盖已知官方模型）
             when {
-                lower.contains("gemini-2.5") || lower.contains("gemini-2.0-pro") -> "1M"
-                lower.contains("gemini-1.5-pro") -> "2M"
-                lower.contains("gemini-1.5") || lower.contains("gemini-2.0") -> "1M"
                 lower.contains("gemini") -> "1M"
-                lower.contains("claude-3-5") || lower.contains("claude-3.5") -> "200k"
-                lower.contains("claude-3") || lower.contains("claude-4") -> "200k"
-                lower.contains("gpt-4o") || lower.contains("gpt-4.1") -> "128k"
-                lower.contains("o1") || lower.contains("o3") || lower.contains("o4") -> "200k"
-                lower.contains("deepseek-r1") -> "128k"
-                lower.contains("deepseek-v3") || lower.contains("deepseek-chat") -> "64k"
-                lower.contains("llama-3") -> "128k"
-                lower.contains("qwen2.5") || lower.contains("qwq") -> "128k"
-                lower.contains("gpt-4") -> "128k"
-                lower.contains("gpt-3.5") -> "16k"
+                lower.contains("claude-3") -> "200k"
+                lower.contains("gpt-4o") -> "128k"
+                lower.contains("deepseek") -> "64k"
                 else -> "128k"
             }
         }
 
-        val maxOutputStr: String = formatTokenCount(rawMaxOutput) // 空字符串表示未知
+        val maxOutputStr: String = formatTokenCount(rawMaxOutput)
 
-        // ── 2. 视觉能力 ──────────────────────────────────────────────────
-        // 第一优先级：OpenRouter architecture.input_modalities 数组（最可靠）
         var vision = false
         if (json != null) {
             val arch = json.optJSONObject("architecture")
-            if (arch != null) {
-                // input_modalities: ["text", "image"] — OpenRouter 标准
-                val inputModalities = arch.optJSONArray("input_modalities")
-                if (inputModalities != null) {
-                    for (i in 0 until inputModalities.length()) {
-                        if (inputModalities.optString(i).equals("image", ignoreCase = true)) {
-                            vision = true
-                            break
-                        }
+            val inputModalities = arch?.optJSONArray("input_modalities")
+            if (inputModalities != null) {
+                for (i in 0 until inputModalities.length()) {
+                    if (inputModalities.optString(i).equals("image", ignoreCase = true)) {
+                        vision = true
+                        break
                     }
-                }
-                // modality 字符串兜底：如 "text+image->text"
-                if (!vision && arch.optString("modality").contains("image", ignoreCase = true)) {
-                    vision = true
                 }
             }
         }
-        // 第二优先级：模型 ID 规则推断（仅在 JSON 无 architecture 时生效）
         if (!vision) {
-            vision = lower.contains("vision") ||
-                     lower.contains("-vl") || lower.contains(":vl") ||
-                     lower.contains("multimodal") ||
-                     lower.contains("pixtral") ||
-                     lower.contains("llava") ||
-                     lower.contains("bakllava") ||
-                     lower.contains("gpt-4o") ||
-                     lower.contains("gpt-4.1") ||
-                     lower.contains("gpt-4-turbo") ||
-                     lower.contains("claude-3") || lower.contains("claude-4") ||
-                     lower.contains("gemini") ||
-                     lower.contains("qwen-vl") || lower.contains("qvq")
+            vision = lower.contains("vision") || lower.contains("gpt-4o") || lower.contains("claude-3") || lower.contains("gemini")
         }
 
-        // ── 3. 思考 / 推理能力 ───────────────────────────────────────────
-        // 第一优先级：OpenRouter supported_parameters 数组
         var thinking = false
         if (json != null) {
             val supportedParams = json.optJSONArray("supported_parameters")
@@ -529,23 +805,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        // 第二优先级：模型 ID 规则推断
         if (!thinking) {
-            // 使用分隔符边界匹配，避免 llama-3.1 / mistral-v0.1 等误判
-            val segments = lower.split("-", "/", ":", ".")
-            thinking = segments.any { it == "r1" || it == "o1" || it == "o3" || it == "o4" } ||
-                       lower.contains("reasoner") ||
-                       lower.contains("thinking") ||
-                       lower.contains("qwq") ||
-                       lower.contains("deepseek-r1") ||
-                       // o1/o3/o4 系列（含 mini、pro 等后缀）
-                       Regex("\\bo[134]-").containsMatchIn(lower) ||
-                       lower.startsWith("o1") || lower.startsWith("o3") || lower.startsWith("o4")
+            thinking = lower.contains("r1") || lower.contains("o1") || lower.contains("reasoner")
         }
 
-        // ── 4. 工具调用能力 ──────────────────────────────────────────────
-        // 第一优先级：OpenRouter supported_parameters 数组（最权威）
-        var toolUse: Boolean? = null  // null = 未从 JSON 确定
+        var toolUse: Boolean? = null
         if (json != null) {
             val supportedParams = json.optJSONArray("supported_parameters")
             if (supportedParams != null) {
@@ -559,19 +823,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         break
                     }
                 }
-                // 只有当 supported_parameters 非空时才信任其结果
                 if (checkedParams) toolUse = hasTools
             }
         }
-        // 第二优先级：模型 ID 规则推断（JSON 未给出明确答案时）
         if (toolUse == null) {
-            val segments = lower.split("-", "/", ":", ".")
-            // DeepSeek R1 官方版（非 distill）不支持工具调用
-            val isR1Official = (segments.any { it == "r1" } || lower.contains("deepseek-r1")) &&
-                               !lower.contains("distill")
-            // OpenAI o1-preview 不支持工具调用（o1-mini / o1 正式版支持）
-            val isO1Preview = lower.contains("o1-preview")
-            toolUse = !(isR1Official || isO1Preview)
+            toolUse = !lower.contains("o1-preview")
         }
 
         return FetchedModel(
@@ -584,18 +840,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    /**
-     * Authenticates and dynamically fetches standard compatibility models for the user
-     */
-    fun fetchModelsAndSave(endpoint: String, apiKey: String, providerId: Long) {
+    fun fetchModelsAndSave(endpoint: String, apiKey: String, providerId: Long, customHeaders: String = "{}") {
         viewModelScope.launch {
             isFetchingModels = true
             modelFetchError = null
             fetchedModels = emptyList()
             try {
-                val list = ApiClient.fetchOpenAIModels(endpoint, apiKey)
+                val list = ApiClient.fetchOpenAIModels(endpoint, apiKey, customHeaders)
                 if (list.isEmpty()) {
-                    modelFetchError = "未获取到模型列表。请核对Endpoint与API key是否支持/models查询。"
+                    modelFetchError = "未获取到模型列表。"
                 } else {
                     val parsedList = list.map { json -> 
                         val id = json.optString("id")
@@ -611,8 +864,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
-                modelFetchError = e.localizedMessage ?: "连接错误：请核对Endpoint格式与网络访问权限。"
+                modelFetchError = e.localizedMessage
             } finally {
                 isFetchingModels = false
             }
@@ -628,7 +880,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         return repository.getModelsByProviderFlow(providerId)
     }
 
-    // Model Config Management DB wrappers
     fun createOrUpdateConfig(config: ModelConfig, modelsToSave: List<FetchedModel> = emptyList()) {
         viewModelScope.launch {
             val generatedId = repository.insertConfig(config)
@@ -653,11 +904,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * 更新默认 Provider 的副模型 ID 和所属 Provider（用于记忆优化和会话标题生成）
-     * @param modelId 副模型 ID
-     * @param providerId 副模型所属的 Provider ID，0 表示与主 Provider 相同
-     */
     fun updateMemoryModelId(modelId: String, providerId: Long = 0L) {
         viewModelScope.launch {
             val provider = repository.getDefaultProvider() ?: return@launch
@@ -665,10 +911,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Memories management wrappers
     fun deleteMemoryItem(id: Long) {
         viewModelScope.launch {
             repository.deleteMemoryById(id)
+        }
+    }
+
+    fun togglePinMemory(item: MemoryItem) {
+        viewModelScope.launch {
+            repository.setPinned(item.id, !item.pinned)
         }
     }
 
@@ -681,11 +932,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearAllMemories() {
         viewModelScope.launch {
-            repository.deleteAllMemories()
+            repository.deleteAllUnpinnedMemories()
         }
     }
 
-    // Prompt Template DB wrappers
     fun insertTemplate(template: PromptTemplate) {
         viewModelScope.launch {
             repository.insertTemplate(template)
@@ -705,30 +955,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun seedDatabaseIfNeeded() = withContext(Dispatchers.IO) {
-        // Seed prompt templates if empty
         val templates = repository.getAllTemplates()
         if (templates.isEmpty()) {
             repository.insertTemplate(
                 PromptTemplate(
                     name = "智能助手 (Default Assistant)",
                     templateText = "You are a friendly, highly intelligent assistant. Adopt a constructive tone and tailor responses precisely to the user's context.\n\n" +
-                            "Use the historical facts & preferences below from previous conversations (Cross-Session Memory) to personalize your replies seamlessly without explicitly stating 'As per your memory':\n" +
-                            "[CROSS_SESSION_MEMORY]",
+                            "Use the historical facts & preferences below (Cross-Session Memory) to personalize your replies:\n" +
+                            "[CROSS_SESSION_MEMORY]\n\n" +
+                            "You also have access to the following local MCP tools via Model Context Protocol. If you need to use them, please describe what you want to do:\n" +
+                            "[MCP_TOOLS]",
                     isActive = true
-                )
-            )
-            repository.insertTemplate(
-                PromptTemplate(
-                    name = "精炼极简 (Concise Responder)",
-                    templateText = "You are an expert coder and technician. Answer with strict precision, minimal explanations, clean syntax, and direct answers.\n\n" +
-                            "Incorporate context from user's memory when applicable:\n" +
-                            "[CROSS_SESSION_MEMORY]",
-                    isActive = false
                 )
             )
         }
 
-        // Seed default provider if empty
         val configs = repository.getAllConfigs()
         if (configs.isEmpty()) {
             repository.insertConfig(

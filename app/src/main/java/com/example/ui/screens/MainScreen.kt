@@ -8,8 +8,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,7 +30,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +40,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -49,7 +55,7 @@ import com.example.mcp.McpViewModel
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MainScreen(
     viewModel: ChatViewModel,
@@ -67,6 +73,11 @@ fun MainScreen(
                 SessionSidebarPanel(
                     viewModel = viewModel,
                     onSessionSelected = {
+                        currentTab = "chat"
+                        scope.launch { drawerState.close() }
+                    },
+                    onSettingsClick = {
+                        currentTab = "settings"
                         scope.launch { drawerState.close() }
                     }
                 )
@@ -75,6 +86,7 @@ fun MainScreen(
         modifier = modifier
     ) {
         Scaffold(
+            contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
                 MainTopAppBar(
                     currentTab = currentTab,
@@ -83,24 +95,17 @@ fun MainScreen(
                         scope.launch { drawerState.open() }
                     }
                 )
-            },
-            bottomBar = {
-                AppleTabBar(
-                    currentTab = currentTab,
-                    onTabSelected = { currentTab = it }
-                )
             }
         ) { paddingValues ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .consumeWindowInsets(paddingValues)
             ) {
                 when (currentTab) {
                     "chat" -> ChatView(viewModel)
-                    "models" -> ModelsConfigView(viewModel)
-                    "memory" -> MemoryAndPromptView(viewModel)
-                    "mcp" -> McpConfigScreen(mcpViewModel = mcpViewModel)
+                    "settings" -> SettingsView(viewModel, mcpViewModel)
                 }
             }
         }
@@ -108,82 +113,45 @@ fun MainScreen(
 }
 
 @Composable
-fun AppleTabBar(
-    currentTab: String,
-    onTabSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
+fun SettingsView(
+    viewModel: ChatViewModel,
+    mcpViewModel: McpViewModel
 ) {
-    val isDark = isSystemInDarkTheme()
-    val barColor = if (isDark) Color(0xFF1C1C1E) else Color.White
-    val inactiveColor = Color(0xFF8E8E93)
-    val activeColor = MaterialTheme.colorScheme.primary
+    var selectedSubTab by remember { mutableStateOf(0) }
+    val tabs = listOf("模型配置", "MCP工具", "长效记忆")
 
-    Surface(
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-        tonalElevation = 8.dp,
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("bottom_nav_bar")
-    ) {
-        Column {
-            // Elegant top hairline separator instead of thick border
-            HorizontalDivider(
-                color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
-                thickness = 0.5.dp
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .height(58.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val tabs = listOf(
-                    Triple("chat", "会话中心", Icons.Default.Menu),
-                    Triple("models", "模型配置", Icons.Default.Build),
-                    Triple("mcp", "MCP工具", Icons.Default.AccountBox),
-                    Triple("memory", "长效记忆", Icons.Default.Settings)
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = selectedSubTab,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+            divider = {
+                HorizontalDivider(
+                    color = if (isSystemInDarkTheme()) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+                    thickness = 0.5.dp
                 )
-
-                tabs.forEach { (tabId, label, icon) ->
-                    val isSelected = currentTab == tabId
-                    val tint = if (isSelected) activeColor else inactiveColor
-                    val scale by animateFloatAsState(if (isSelected) 1.05f else 1.0f, label = "tabScale")
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable(
-                                onClick = { onTabSelected(tabId) },
-                                indication = null,
-                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                            )
-                            .padding(vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .graphicsLayer(scaleX = scale, scaleY = scale)
-                                .padding(bottom = 2.dp)
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = label,
-                                tint = tint,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+            }
+        ) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = selectedSubTab == index,
+                    onClick = { selectedSubTab = index },
+                    text = {
                         Text(
-                            text = label,
-                            color = tint,
-                            fontSize = 10.5.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            letterSpacing = (-0.2).sp
+                            text = title,
+                            fontSize = 14.sp,
+                            fontWeight = if (selectedSubTab == index) FontWeight.Bold else FontWeight.Normal
                         )
                     }
-                }
+                )
+            }
+        }
+        
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedSubTab) {
+                0 -> ModelsConfigView(viewModel)
+                1 -> McpConfigScreen(mcpViewModel = mcpViewModel)
+                2 -> MemoryAndPromptView(viewModel)
             }
         }
     }
@@ -193,10 +161,12 @@ fun AppleTabBar(
 @Composable
 fun SessionSidebarPanel(
     viewModel: ChatViewModel,
-    onSessionSelected: () -> Unit
+    onSessionSelected: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
+    val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -346,9 +316,77 @@ fun SessionSidebarPanel(
                 }
             }
         }
-    }
 
-    // ── 删除确认对话框 ────────────────────────────────────────────────
+        // ── 设置按钮与状态 ────────────────────────────────────────────
+        val isDark = isSystemInDarkTheme()
+        val defaultProvider = modelConfigs.find { it.isDefaultProvider }
+        val activeProviderName = defaultProvider?.name ?: "未设置"
+        val activeModelId = defaultProvider?.selectedModelId ?: "未设置"
+
+        HorizontalDivider(
+            color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+            thickness = 0.5.dp,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (defaultProvider != null) Color(0xFF34C759) else MaterialTheme.colorScheme.error)
+            )
+            Spacer(modifier = Modifier.width(7.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = activeProviderName,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) Color(0xFFAAAAAA) else Color(0xFF555555),
+                    maxLines = 1
+                )
+                Text(
+                    text = activeModelId,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 设置按钮
+        Surface(
+            onClick = onSettingsClick,
+            shape = RoundedCornerShape(8.dp),
+            color = Color.Transparent,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "设置",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
     deleteTargetSession?.let { session ->
         AlertDialog(
             onDismissRequest = { deleteTargetSession = null },
@@ -441,9 +479,7 @@ fun MainTopAppBar(
 
     val titleText = when (currentTab) {
         "chat" -> activeSession?.title ?: "会话"
-        "models" -> "提供商与模型配置"
-        "memory" -> "长效记忆库"
-        "mcp" -> "MCP 服务配置"
+        "settings" -> "设置"
         else -> "AI"
     }
 
@@ -470,14 +506,12 @@ fun MainTopAppBar(
                 }
             },
             navigationIcon = {
-                if (currentTab == "chat") {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "打开对话列表",
-                            tint = Color(0xFF007AFF) // Sleek iOS indicator blue
-                        )
-                    }
+                IconButton(onClick = onOpenDrawer) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "打开菜单",
+                        tint = Color(0xFF007AFF) // Sleek iOS indicator blue
+                    )
                 }
             },
             actions = {
@@ -510,7 +544,7 @@ fun MainTopAppBar(
                         )
                     }
                 } else if (currentTab == "chat" && defaultProvider?.memoryModelId?.isNotBlank() == true) {
-                    IconButton(onClick = { viewModel.triggerMemorySync() }) {
+                    IconButton(onClick = { viewModel.triggerMemorySync(force = true) }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "同步记忆",
@@ -531,12 +565,15 @@ fun MainTopAppBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatView(viewModel: ChatViewModel) {
     val messages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val isStreaming = viewModel.isStreaming
-    val streamingText = viewModel.currentStreamingText
+    val streamingThinking = viewModel.currentStreamingThinking
+    val streamingBody = viewModel.currentStreamingBody
+    val isThinkingFinished = viewModel.isThinkingFinished
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
 
     var textInput by remember { mutableStateOf("") }
@@ -549,19 +586,26 @@ fun ChatView(viewModel: ChatViewModel) {
     var showModelPicker by remember { mutableStateOf(false) }
 
     // Keep scrolled to bottom whenever message sizes change or streaming occurs
-    LaunchedEffect(messages.size, streamingText) {
-        if (messages.isNotEmpty() || streamingText.isNotEmpty()) {
-            listState.animateScrollToItem(
-                index = messages.size + (if (isStreaming && streamingText.isNotEmpty()) 1 else 0)
-            )
+    LaunchedEffect(messages.size, streamingBody, streamingThinking) {
+        // 在 reverseLayout 模式下，索引 0 就是底部。
+        // 为了优化体验：只有当用户已经在底部（firstVisibleItemIndex == 0）时，才在流式输出期间跟随滚动。
+        // 如果用户正在向上翻阅历史消息，不应强行拉回底部。
+        val isAtBottom = listState.firstVisibleItemIndex == 0
+        
+        if (isStreaming) {
+            if (isAtBottom) {
+                listState.scrollToItem(0)
+            }
+        } else if (messages.isNotEmpty()) {
+            // 非流式状态下（如刚发送或刚切回会话），通常期望看到最新消息
+            listState.animateScrollToItem(0)
         }
     }
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
-    val overrideConfig = viewModel.activeOverrideConfig
     // 当前实际使用的 Provider 和模型
-    val activeProviderName = overrideConfig?.first?.name ?: defaultProvider?.name ?: "未设置"
-    val activeModelId = overrideConfig?.second ?: defaultProvider?.selectedModelId ?: ""
+    val activeProviderName = defaultProvider?.name ?: "未设置"
+    val activeModelId = defaultProvider?.selectedModelId ?: ""
 
     Column(
         modifier = Modifier
@@ -608,34 +652,73 @@ fun ChatView(viewModel: ChatViewModel) {
             }
         }
 
+        // --- 聚合 Tool 消息展示逻辑并反转以适应 reverseLayout ---
+        val processedMessages = remember(messages) {
+            val list = mutableListOf<Any>()
+            var currentToolGroup = mutableListOf<com.example.data.Message>()
+            
+            messages.forEach { msg ->
+                if (msg.role == "tool") {
+                    currentToolGroup.add(msg)
+                } else {
+                    if (currentToolGroup.isNotEmpty()) {
+                        list.add(currentToolGroup.toList())
+                        currentToolGroup.clear()
+                    }
+                    list.add(msg)
+                }
+            }
+            if (currentToolGroup.isNotEmpty()) {
+                list.add(currentToolGroup.toList())
+            }
+            list.reversed()
+        }
+
         // Messages Box
         LazyColumn(
             state = listState,
+            reverseLayout = true,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            if (messages.isEmpty() && !isStreaming) {
-                item {
-                    EmptyChatGreeting(defaultProvider, memories)
+            // Streaming assistant response (在 reverseLayout 中 index 0 位于最底部)
+            if (isStreaming) {
+                item(key = "streaming_bubble") {
+                    StreamingBubble(
+                        thinkingText = streamingThinking,
+                        bodyText = streamingBody,
+                        isThinkingFinished = isThinkingFinished
+                    )
                 }
             }
 
-            items(messages) { message ->
-                BubbleMessage(message = message)
+            items(processedMessages, key = { 
+                when(it) {
+                    is com.example.data.Message -> it.id
+                    is List<*> -> "group_${(it.firstOrNull() as? com.example.data.Message)?.id}"
+                    else -> it.hashCode()
+                }
+            }) { item ->
+                when (item) {
+                    is com.example.data.Message -> BubbleMessage(
+                        message = item,
+                        onRetry = { viewModel.retryMessage(it) }
+                    )
+                    is List<*> -> {
+                        // 渲染工具调用聚合条
+                        @Suppress("UNCHECKED_CAST")
+                        ToolGroupIndicator(messages = item as List<com.example.data.Message>)
+                    }
+                }
             }
 
-            // Streaming assistant response
-            if (isStreaming) {
+            if (messages.isEmpty() && !isStreaming) {
                 item {
-                    if (streamingText.isNotEmpty()) {
-                        StreamingBubble(text = streamingText)
-                    } else {
-                        StreamingBubble(text = "思考中.....")
-                    }
+                    EmptyChatGreeting(defaultProvider, memories)
                 }
             }
         }
@@ -678,29 +761,16 @@ fun ChatView(viewModel: ChatViewModel) {
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(
-                                        if (overrideConfig != null) Color(0xFFFF9500) else Color(0xFF34C759)
-                                    )
+                                    .background(Color(0xFF34C759))
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (overrideConfig != null)
-                                    "临时模型: $activeModelId  ·  ${activeProviderName}"
-                                else
-                                    "当前模型: $activeModelId  ·  ${activeProviderName}",
+                                text = "当前模型: $activeModelId  ·  ${activeProviderName}",
                                 fontSize = 11.sp,
                                 color = if (isDark) Color(0xFFAAAAAA) else Color(0xFF666666),
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1
                             )
-                            if (overrideConfig != null) {
-                                TextButton(
-                                    onClick = { viewModel.clearSessionOverride() },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text("恢复默认", fontSize = 10.sp, color = Color(0xFFFF3B30))
-                                }
-                            }
                         }
 
                         HorizontalDivider(
@@ -721,13 +791,10 @@ fun ChatView(viewModel: ChatViewModel) {
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(
                                     0.5.dp,
-                                    if (overrideConfig != null) Color(0xFFFF9500)
-                                    else if (isDark) Color(0xFF3A3A3C) else Color(0xFFD1D1D6)
+                                    if (isDark) Color(0xFF3A3A3C) else Color(0xFFD1D1D6)
                                 ),
                                 colors = CardDefaults.outlinedCardColors(
-                                    containerColor = if (overrideConfig != null)
-                                        Color(0xFFFF9500).copy(alpha = 0.08f)
-                                    else Color.Transparent
+                                    containerColor = Color.Transparent
                                 )
                             ) {
                                 Row(
@@ -737,8 +804,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     Icon(
                                         imageVector = Icons.Default.Build,
                                         contentDescription = null,
-                                        tint = if (overrideConfig != null) Color(0xFFFF9500)
-                                               else MaterialTheme.colorScheme.primary,
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -746,8 +812,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                         text = "切换模型",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium,
-                                        color = if (overrideConfig != null) Color(0xFFFF9500)
-                                                else MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -847,7 +912,7 @@ fun ChatView(viewModel: ChatViewModel) {
         ProviderModelPicker(
             allConfigs = modelConfigs,
             allModelsFlow = { viewModel.getModelsByProviderFlow(it) },
-            currentProviderId = overrideConfig?.first?.id ?: defaultProvider?.id ?: 0L,
+            currentProviderId = defaultProvider?.id ?: 0L,
             currentModelId = activeModelId,
             onConfirm = { provider, modelId ->
                 viewModel.setSessionOverrideModel(provider, modelId)
@@ -1058,8 +1123,92 @@ fun ThinkingProcessPanel(
 }
 
 @Composable
-fun BubbleMessage(message: com.example.data.Message) {
+fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
+    val isDark = isSystemInDarkTheme()
+    
+    // 聚合逻辑：显示 "Tool use [name] x [count]"
+    val totalCount = messages.size
+    val label = if (totalCount > 1) "Tools used x$totalCount" else "Tool used"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        var showDetails by remember { mutableStateOf(false) }
+        
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(
+                onClick = { showDetails = !showDetails },
+                color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(0.5.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFE5E5EA))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Build,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = label,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (showDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+            
+            AnimatedVisibility(visible = showDetails) {
+                Column(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .widthIn(max = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    messages.forEach { msg ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "Result: ${msg.content.take(100)}${if(msg.content.length > 100) "..." else ""}",
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(8.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BubbleMessage(
+    message: com.example.data.Message,
+    onRetry: (com.example.data.Message) -> Unit = {}
+) {
     val isUser = message.role == "user"
+    var showMenu by remember { mutableStateOf(false) }
+    var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
+    val density = LocalDensity.current
 
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primary
@@ -1092,7 +1241,16 @@ fun BubbleMessage(message: com.example.data.Message) {
                         bottomEnd = 4.dp
                     ),
                     tonalElevation = 1.dp,
-                    modifier = Modifier.widthIn(max = 290.dp)
+                    modifier = Modifier
+                        .widthIn(max = 290.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = { offset ->
+                                    pressOffset = DpOffset(offset.x.toDp(), offset.y.toDp())
+                                    showMenu = true
+                                }
+                            )
+                        }
                 ) {
                     Text(
                         text = message.content,
@@ -1124,13 +1282,26 @@ fun BubbleMessage(message: com.example.data.Message) {
                                 bottomEnd = 20.dp
                             ),
                             tonalElevation = 1.dp,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onLongPress = { offset ->
+                                            pressOffset = DpOffset(offset.x.toDp(), offset.y.toDp())
+                                            showMenu = true
+                                        }
+                                    )
+                                }
                         ) {
-                            Text(
-                                text = parsed.mainBody,
-                                color = textColor,
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp,
+                            dev.jeziellago.compose.markdowntext.MarkdownText(
+                                markdown = parsed.mainBody,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    color = textColor,
+                                    fontSize = 15.sp,
+                                    lineHeight = 22.sp
+                                ),
+                                syntaxHighlightColor = textColor.copy(alpha = 0.12f),
+                                syntaxHighlightTextColor = textColor,
                                 modifier = Modifier.padding(14.dp, 10.dp)
                             )
                         }
@@ -1138,14 +1309,43 @@ fun BubbleMessage(message: com.example.data.Message) {
                 }
             }
         }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+            offset = pressOffset
+        ) {
+            if (!isUser) {
+                DropdownMenuItem(
+                    text = { Text("重试") },
+                    onClick = {
+                        showMenu = false
+                        onRetry(message)
+                    },
+                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("复制内容") },
+                onClick = {
+                    showMenu = false
+                    // TODO: Implement copy to clipboard if needed
+                },
+                leadingIcon = { Icon(Icons.Default.Send, contentDescription = null) }
+            )
+        }
     }
 }
 
 @Composable
-fun StreamingBubble(text: String) {
+fun StreamingBubble(
+    thinkingText: String,
+    bodyText: String,
+    isThinkingFinished: Boolean
+) {
     val bubbleColor = MaterialTheme.colorScheme.surfaceVariant
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val isThinkingFallback = text == "思考中....."
+    val isThinkingFallback = thinkingText.isEmpty() && bodyText.isEmpty() && !isThinkingFinished
 
     Box(
         modifier = Modifier
@@ -1160,19 +1360,32 @@ fun StreamingBubble(text: String) {
                     isThinkingFinished = false
                 )
             } else {
-                val parsed = parseMessageContent(text)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (parsed.thinking != null) {
+                    if (thinkingText.isNotEmpty()) {
                         ThinkingProcessPanel(
-                            thinkingText = parsed.thinking,
-                            isThinkingFinished = parsed.isThinkingFinished
+                            thinkingText = thinkingText,
+                            isThinkingFinished = isThinkingFinished
                         )
                     }
-                    if (parsed.mainBody.isNotEmpty() || !parsed.isThinkingFinished) {
-                        val displayText = parsed.mainBody.ifEmpty { 
-                            if (!parsed.isThinkingFinished) "" else "正在构思答复内容..." 
+                    if (bodyText.isNotEmpty() || !isThinkingFinished) {
+                        val displayText = bodyText.ifEmpty { 
+                            if (!isThinkingFinished) "" else "正在构思答复内容..." 
                         }
                         if (displayText.isNotEmpty()) {
+                            // 检测文本中是否含有 Markdown 表格。
+                            // 即使有了 reverseLayout 和节流，Markdown 表格在流式输出（尤其是逐行出现时）
+                            // 依然会导致 View 频繁重绘和高度大幅跳变，产生“抽搐”感。
+                            // 我们在输出过程中如果检测到表格，暂时回退到纯文本 Text 渲染以保证极度流畅，
+                            // 输出完成后 BubbleMessage 会自动切换回完整的 MarkdownText 渲染。
+                            val isTableMidway = remember(displayText) {
+                                val lines = displayText.lines()
+                                // 检查是否有任何一行看起来像表格行（包含多个 | ）
+                                lines.any { line -> 
+                                    val count = line.count { it == '|' }
+                                    count >= 2
+                                }
+                            }
+
                             Surface(
                                 color = bubbleColor,
                                 shape = RoundedCornerShape(
@@ -1185,13 +1398,27 @@ fun StreamingBubble(text: String) {
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(14.dp, 10.dp)) {
-                                    Text(
-                                        text = displayText,
-                                        color = textColor,
-                                        fontSize = 15.sp,
-                                        lineHeight = 22.sp,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
+                                    if (isTableMidway) {
+                                        Text(
+                                            text = displayText,
+                                            color = textColor,
+                                            fontSize = 15.sp,
+                                            lineHeight = 22.sp,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                    } else {
+                                        dev.jeziellago.compose.markdowntext.MarkdownText(
+                                            markdown = displayText,
+                                            style = androidx.compose.ui.text.TextStyle(
+                                                color = textColor,
+                                                fontSize = 15.sp,
+                                                lineHeight = 22.sp
+                                            ),
+                                            syntaxHighlightColor = textColor.copy(alpha = 0.12f),
+                                            syntaxHighlightTextColor = textColor,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                    }
                                     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
                                     val pulseAlpha by infiniteTransition.animateFloat(
                                         initialValue = 0.2f,
@@ -1424,6 +1651,28 @@ fun ModelConfigCard(
                 )
             }
 
+            // Custom headers count display
+            val headerCount = try {
+                val obj = org.json.JSONObject(config.customHeaders)
+                obj.length()
+            } catch (e: Exception) { 0 }
+            if (headerCount > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row {
+                    Text(
+                        text = "自定义请求头: ",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "$headerCount 个",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
             HorizontalDivider(color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA), thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(12.dp))
@@ -1531,6 +1780,18 @@ fun ModelConfigDialog(
 
     var isApiKeyVisible by remember { mutableStateOf(false) }
 
+    // Custom headers: list of (key, value) pairs for editing
+    var headerPairs by remember {
+        mutableStateOf<List<Pair<String, String>>>(
+            try {
+                val json = org.json.JSONObject(config?.customHeaders ?: "{}")
+                json.keys().asSequence().map { k: String -> k to json.optString(k) }.toList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+        )
+    }
+
     val fetchedModels = viewModel.fetchedModels
     val isFetching = viewModel.isFetchingModels
     val fetchError = viewModel.modelFetchError
@@ -1630,7 +1891,97 @@ fun ModelConfigDialog(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+                // Custom Headers Section
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "自定义请求头 (Custom Headers):",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    TextButton(
+                        onClick = { headerPairs = headerPairs + ("" to "") },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("添加", fontSize = 12.sp)
+                    }
+                }
 
+                if (headerPairs.isEmpty()) {
+                    Text(
+                        text = "暂无自定义请求头",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        headerPairs.forEachIndexed { index, pair ->
+                            val hKey = pair.first
+                            val hVal = pair.second
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = hKey,
+                                    onValueChange = { newKey ->
+                                        val updated = headerPairs.toMutableList()
+                                        updated[index] = newKey to hVal
+                                        headerPairs = updated
+                                    },
+                                    label = { Text("Header 名", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                )
+                                OutlinedTextField(
+                                    value = hVal,
+                                    onValueChange = { newVal ->
+                                        val updated = headerPairs.toMutableList()
+                                        updated[index] = hKey to newVal
+                                        headerPairs = updated
+                                    },
+                                    label = { Text("值", fontSize = 10.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        val updated = headerPairs.toMutableList()
+                                        updated.removeAt(index)
+                                        headerPairs = updated
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                 // Auto-fetching section
                 Text(
@@ -1642,7 +1993,12 @@ fun ModelConfigDialog(
                 )
                 
                 Button(
-                    onClick = { viewModel.fetchModelsAndSave(endpoint, apiKey, config?.id ?: 0L) },
+                    onClick = {
+                        val headersJson = org.json.JSONObject().apply {
+                            headerPairs.filter { it.first.isNotBlank() }.forEach { put(it.first, it.second) }
+                        }.toString()
+                        viewModel.fetchModelsAndSave(endpoint, apiKey, config?.id ?: 0L, headersJson)
+                    },
                     enabled = !isFetching && endpoint.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1813,6 +2169,9 @@ fun ModelConfigDialog(
                         onClick = {
                             if (name.isBlank()) name = "custom-provider"
                             if (selectedModelId.isBlank()) selectedModelId = "gpt-4o"
+                            val headersJson = org.json.JSONObject().apply {
+                                headerPairs.filter { it.first.isNotBlank() }.forEach { put(it.first, it.second) }
+                            }.toString()
                             onSave(
                                 ModelConfig(
                                     id = config?.id ?: 0,
@@ -1823,7 +2182,8 @@ fun ModelConfigDialog(
                                     memoryModelId = selectedModelId,
                                     isDefaultProvider = config?.isDefaultProvider ?: false,
                                     enableThinking = false,
-                                    thinkingEffort = "medium"
+                                    thinkingEffort = "medium",
+                                    customHeaders = headersJson
                                 ),
                                 dialogModels
                             )

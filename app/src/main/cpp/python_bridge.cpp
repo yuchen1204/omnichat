@@ -22,6 +22,12 @@ typedef int  (*PyRun_SimpleString_t)(const char*);
 typedef int  (*Py_IsInitialized_t)();
 typedef void (*PySys_SetArgvEx_t)(int, wchar_t**, int);
 
+// GIL 管理相关
+typedef enum { PyGILState_LOCKED, PyGILState_UNLOCKED } PyGILState_STATE;
+typedef PyGILState_STATE (*PyGILState_Ensure_t)();
+typedef void (*PyGILState_Release_t)(PyGILState_STATE);
+typedef void* (*PyEval_SaveThread_t)();
+
 static void* libpython_handle = nullptr;
 static Py_Initialize_t      fn_Py_Initialize      = nullptr;
 static Py_InitializeEx_t    fn_Py_InitializeEx    = nullptr;
@@ -31,6 +37,10 @@ static Py_IsInitialized_t   fn_Py_IsInitialized   = nullptr;
 static Py_SetPythonHome_t   fn_Py_SetPythonHome   = nullptr;
 static Py_SetPath_t         fn_Py_SetPath         = nullptr;
 static PySys_SetArgvEx_t    fn_PySys_SetArgvEx    = nullptr;
+
+static PyGILState_Ensure_t  fn_PyGILState_Ensure  = nullptr;
+static PyGILState_Release_t fn_PyGILState_Release = nullptr;
+static PyEval_SaveThread_t  fn_PyEval_SaveThread  = nullptr;
 
 static bool python_initialized = false;
 
@@ -80,17 +90,15 @@ Java_com_example_mcp_PythonBridge_nativeLoadLibpython(
 
     for (const char* dep : dependencies) {
         std::string depPath = libDir + dep;
-        // 使用 RTLD_LOCAL 避免符号污染全局空间，防止干扰其他 native 库（如 libnode 或系统库）
-        void* depHandle = dlopen(depPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+        // 恢复为 RTLD_GLOBAL，因为 Python 扩展通常需要全局符号
+        void* depHandle = dlopen(depPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
         if (depHandle) {
             LOGI("预加载依赖库成功: %s", depPath.c_str());
         }
     }
 
     LOGI("加载 libpython: %s", path);
-    // 同样使用 RTLD_LOCAL。如果后续加载 Python 扩展失败，再考虑 RTLD_GLOBAL，
-    // 但那时需要极其小心符号冲突。
-    libpython_handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    libpython_handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     env->ReleaseStringUTFChars(libPath, path);
 
     if (libpython_handle == nullptr) {
@@ -107,6 +115,10 @@ Java_com_example_mcp_PythonBridge_nativeLoadLibpython(
     fn_Py_SetPythonHome   = (Py_SetPythonHome_t)   dlsym(libpython_handle, "Py_SetPythonHome");
     fn_Py_SetPath         = (Py_SetPath_t)         dlsym(libpython_handle, "Py_SetPath");
     fn_PySys_SetArgvEx    = (PySys_SetArgvEx_t)    dlsym(libpython_handle, "PySys_SetArgvEx");
+
+    fn_PyGILState_Ensure  = (PyGILState_Ensure_t)  dlsym(libpython_handle, "PyGILState_Ensure");
+    fn_PyGILState_Release = (PyGILState_Release_t) dlsym(libpython_handle, "PyGILState_Release");
+    fn_PyEval_SaveThread  = (PyEval_SaveThread_t)  dlsym(libpython_handle, "PyEval_SaveThread");
 
     if (!fn_Py_Initialize || !fn_PyRun_SimpleString) {
         LOGE("无法解析 Python 函数符号");
@@ -169,6 +181,12 @@ Java_com_example_mcp_PythonBridge_nativeInitializePython(
     }
     python_initialized = true;
 
+    // 初始化完成后，立即释放 GIL，以便其他线程（如 MCP 工作线程）可以获取它
+    if (fn_PyEval_SaveThread) {
+        fn_PyEval_SaveThread();
+        LOGI("Python 初始化完成，已释放 GIL");
+    }
+
     free(home);
     LOGI("Python 解释器初始化完成");
     return JNI_TRUE;
@@ -191,10 +209,22 @@ Java_com_example_mcp_PythonBridge_nativeRunPythonString(
         return -1;
     }
 
+    // 确保当前线程持有 GIL
+    PyGILState_STATE gstate;
+    bool has_gil_api = (fn_PyGILState_Ensure && fn_PyGILState_Release);
+    if (has_gil_api) {
+        gstate = fn_PyGILState_Ensure();
+    }
+
     const char* ccode = env->GetStringUTFChars(code, nullptr);
     LOGI("执行 Python 代码 (前50字符): %.50s", ccode);
     int result = fn_PyRun_SimpleString(ccode);
     env->ReleaseStringUTFChars(code, ccode);
+
+    if (has_gil_api) {
+        fn_PyGILState_Release(gstate);
+    }
+
     return (jint) result;
 }
 

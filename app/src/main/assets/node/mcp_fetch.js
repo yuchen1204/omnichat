@@ -3,8 +3,8 @@
  * MCP Fetch Server (stdio transport)
  *
  * 提供 HTTP/HTTPS 请求能力，让 AI 可以访问网络资源。
- * 支持的工具：
- *   - fetch   发起 HTTP 请求并返回响应内容
+ *
+ * 改进：在启动时捕获 process.stdout/stdin，确保在多路复用环境下的异步稳定性。
  */
 
 'use strict';
@@ -14,14 +14,18 @@ const http = require('http');
 const readline = require('readline');
 const { URL } = require('url');
 
+// 关键：捕获初始流
+const stdout = process.stdout;
+const stdin = process.stdin;
+
 // ── JSON-RPC 工具函数 ─────────────────────────────────────────────────────
 
 function sendResponse(id, result) {
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n');
+    stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n');
 }
 
 function sendError(id, code, message) {
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n');
+    stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n');
 }
 
 // ── HTTP 请求实现 ─────────────────────────────────────────────────────────
@@ -108,6 +112,12 @@ const tools = {
 async function handleRequest(req) {
     const { id, method, params } = req;
 
+    if (method === 'exit') {
+        process.stderr.write(`[mcp_fetch] 收到退出指令，正在关闭...\n`);
+        rl.close();
+        return;
+    }
+
     if (method === 'initialize') {
         sendResponse(id, {
             protocolVersion: '2024-11-05',
@@ -155,7 +165,7 @@ async function handleRequest(req) {
 
 // ── 主循环 ────────────────────────────────────────────────────────────────
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const rl = readline.createInterface({ input: stdin, crlfDelay: Infinity });
 
 rl.on('line', (line) => {
     const trimmed = line.trim();
@@ -170,6 +180,8 @@ rl.on('line', (line) => {
     }
 });
 
-rl.on('close', () => process.exit(0));
+rl.on('close', () => {
+    process.stderr.write(`[mcp_fetch] readline 接口已关闭\n`);
+});
 
 process.stderr.write('[mcp_fetch] 已启动\n');

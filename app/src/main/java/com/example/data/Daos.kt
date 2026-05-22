@@ -66,23 +66,45 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: Message): Long
 
+    @Query("DELETE FROM messages WHERE sessionId = :sessionId AND timestamp >= :timestamp")
+    suspend fun deleteMessagesFrom(sessionId: Long, timestamp: Long)
+
     @Query("DELETE FROM messages WHERE sessionId = :sessionId")
     suspend fun deleteMessagesBySession(sessionId: Long)
 }
 
 @Dao
 interface MemoryItemDao {
-    @Query("SELECT * FROM memory_items ORDER BY createdAt DESC")
+    // 按置信度降序、再按更新时间降序排列，让最稳定的事实排在前面
+    @Query("SELECT * FROM memory_items ORDER BY pinned DESC, confidence DESC, updatedAt DESC")
     fun getAllMemoriesFlow(): Flow<List<MemoryItem>>
 
-    @Query("SELECT * FROM memory_items ORDER BY createdAt DESC")
+    @Query("SELECT * FROM memory_items ORDER BY pinned DESC, confidence DESC, updatedAt DESC")
     suspend fun getAllMemories(): List<MemoryItem>
+
+    @Query("SELECT * FROM memory_items WHERE id = :id LIMIT 1")
+    suspend fun getMemoryById(id: Long): MemoryItem?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMemory(memory: MemoryItem): Long
 
-    @Query("DELETE FROM memory_items WHERE id = :id")
+    @Update
+    suspend fun updateMemory(memory: MemoryItem)
+
+    /** 强化一条记忆：confidence+1，更新 updatedAt，内容可选更新 */
+    @Query("UPDATE memory_items SET confidence = confidence + 1, updatedAt = :now, content = :content WHERE id = :id")
+    suspend fun reinforceMemory(id: Long, content: String, now: Long)
+
+    /** 切换 pinned 状态 */
+    @Query("UPDATE memory_items SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: Long, pinned: Boolean)
+
+    @Query("DELETE FROM memory_items WHERE id = :id AND pinned = 0")
     suspend fun deleteMemoryById(id: Long)
+
+    /** 仅删除未被 pin 的条目 */
+    @Query("DELETE FROM memory_items WHERE pinned = 0")
+    suspend fun deleteAllUnpinnedMemories()
 
     @Query("DELETE FROM memory_items")
     suspend fun deleteAllMemories()

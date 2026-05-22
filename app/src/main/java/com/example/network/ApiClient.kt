@@ -26,6 +26,32 @@ object ApiClient {
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
 
     /**
+     * Parses a JSON object string into a map of header name → value.
+     * Returns an empty map on blank input or parse errors.
+     */
+    private fun parseCustomHeaders(headersJson: String): Map<String, String> {
+        if (headersJson.isBlank() || headersJson.trim() == "{}") return emptyMap()
+        return try {
+            val obj = JSONObject(headersJson)
+            val map = mutableMapOf<String, String>()
+            obj.keys().forEach { key -> map[key] = obj.optString(key) }
+            map
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    /**
+     * Applies custom headers from a ModelConfig to a Request.Builder.
+     */
+    private fun Request.Builder.applyCustomHeaders(config: ModelConfig): Request.Builder {
+        parseCustomHeaders(config.customHeaders).forEach { (name, value) ->
+            addHeader(name, value)
+        }
+        return this
+    }
+
+    /**
      * Helper to check if a response body is actually HTML (common error with wrong endpoints)
      */
     private fun checkHtmlResponse(body: String) {
@@ -40,7 +66,7 @@ object ApiClient {
     /**
      * Gets available model IDs from standard OpenAI compatibility GET /v1/models endpoint.
      */
-    suspend fun fetchOpenAIModels(endpoint: String, apiKey: String): List<JSONObject> = withContext(Dispatchers.IO) {
+    suspend fun fetchOpenAIModels(endpoint: String, apiKey: String, customHeaders: String = "{}"): List<JSONObject> = withContext(Dispatchers.IO) {
         var sanitizedUrl = endpoint.trim().removeSuffix("/")
         
         // 纠错：处理常见的 Endpoint 错误
@@ -59,6 +85,11 @@ object ApiClient {
         
         if (apiKey.isNotBlank()) {
             requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+        }
+
+        // 注入自定义请求头
+        parseCustomHeaders(customHeaders).forEach { (name, value) ->
+            requestBuilder.addHeader(name, value)
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
@@ -98,7 +129,8 @@ object ApiClient {
     suspend fun executeCompletion(
         config: ModelConfig,
         systemPrompt: String,
-        userPrompt: String
+        userPrompt: String,
+        tools: JSONArray? = null
     ): String? = withContext(Dispatchers.IO) {
         val endpoint = config.endpoint.trim().removeSuffix("/")
         val apiKey = config.apiKey.trim()
@@ -129,6 +161,10 @@ object ApiClient {
                 })
             }
 
+            if (tools != null && tools.length() > 0) {
+                put("tools", tools)
+            }
+
             val messagesArray = JSONArray().apply {
                 if (systemPrompt.isNotBlank()) {
                     put(JSONObject().apply {
@@ -152,6 +188,7 @@ object ApiClient {
         if (apiKey.isNotBlank()) {
             requestBuilder.addHeader("Authorization", "Bearer $apiKey")
         }
+        requestBuilder.applyCustomHeaders(config)
 
         try {
             client.newCall(requestBuilder.build()).execute().use { response ->
@@ -184,7 +221,8 @@ object ApiClient {
     fun executeStreamingChat(
         config: ModelConfig,
         systemPrompt: String,
-        history: List<com.example.data.Message>
+        history: List<com.example.data.Message>,
+        tools: JSONArray? = null
     ): Flow<String> = flow {
         val endpoint = config.endpoint.trim().removeSuffix("/")
         val apiKey = config.apiKey.trim()
@@ -216,6 +254,10 @@ object ApiClient {
                 })
             }
 
+            if (tools != null && tools.length() > 0) {
+                put("tools", tools)
+            }
+
             val messagesArray = JSONArray()
             if (systemPrompt.isNotBlank()) {
                 messagesArray.put(JSONObject().apply {
@@ -227,6 +269,12 @@ object ApiClient {
                 messagesArray.put(JSONObject().apply {
                     put("role", msg.role)
                     put("content", msg.content)
+                    if (msg.toolCallId != null) {
+                        put("tool_call_id", msg.toolCallId)
+                    }
+                    if (msg.toolCallsJson != null) {
+                        put("tool_calls", JSONArray(msg.toolCallsJson))
+                    }
                 })
             }
             put("messages", messagesArray)
@@ -240,50 +288,77 @@ object ApiClient {
         if (apiKey.isNotBlank()) {
             requestBuilder.addHeader("Authorization", "Bearer $apiKey")
         }
+        requestBuilder.applyCustomHeaders(config)
 
-        try {
-            val response = client.newCall(requestBuilder.build()).execute()
-            if (!response.isSuccessful) {
-                val errorMsg = response.body?.string() ?: "Unknown API response"
-                emit("ERROR: HTTP error code ${response.code} Details: $errorMsg")
-                response.close()
-                return@flow
-            }
+        var retryCount = 0
+        val maxRetries = 3
+        var success = false
 
-            val source = response.body?.source() ?: return@flow
-            val reader = BufferedReader(source.inputStream().reader())
+        while (retryCount <= maxRetries && !success) {
+            try {
+                if (retryCount > 0) {
+                    emit("INFO: 正在尝试第 $retryCount 次重连...")
+                    kotlinx.coroutines.delay(2000) // 等待 2 秒后重试
+                    emit("RETRY_RESET:") // 通知 UI 重置当前累积状态
+                }
 
-            var line: String?
+                val response = client.newCall(requestBuilder.build()).execute()
+                if (!response.isSuccessful) {
+                    val errorMsg = response.body?.string() ?: "Unknown API response"
+                    emit("ERROR: HTTP error code ${response.code} Details: $errorMsg")
+                    response.close()
+                    return@flow
+                }
 
-            while (reader.readLine().also { line = it } != null) {
-                val currentLine = line?.trim() ?: continue
-                if (currentLine.isEmpty()) continue
+                val source = response.body?.source() ?: return@flow
+                val reader = BufferedReader(source.inputStream().reader())
 
-                if (currentLine.startsWith("data:")) {
-                    val dataContent = currentLine.substringAfter("data:").trim()
-                    if (dataContent == "[DONE]") {
-                        break
-                    }
-                    try {
-                        val dataJson = JSONObject(dataContent)
-                        val choices = dataJson.optJSONArray("choices")
-                        if (choices != null && choices.length() > 0) {
-                            val delta = choices.optJSONObject(0)?.optJSONObject("delta")
-                            val content = delta?.optString("content")
-                            if (!content.isNullOrEmpty()) {
-                                emit(content)
-                            }
+                var line: String?
+                success = true // 成功建立连接并获取到流
+
+                while (reader.readLine().also { line = it } != null) {
+                    val currentLine = line?.trim() ?: continue
+                    if (currentLine.isEmpty()) continue
+
+                    if (currentLine.startsWith("data:")) {
+                        val dataContent = currentLine.substringAfter("data:").trim()
+                        if (dataContent == "[DONE]") {
+                            break
                         }
-                    } catch (e: Exception) {
-                        // Handle line fragmentation
+                        try {
+                            val dataJson = JSONObject(dataContent)
+                            val choices = dataJson.optJSONArray("choices")
+                            if (choices != null && choices.length() > 0) {
+                                val delta = choices.optJSONObject(0)?.optJSONObject("delta")
+                                
+                                // 1. Handle content
+                                val content = delta?.optString("content")
+                                if (!content.isNullOrEmpty()) {
+                                    emit(content)
+                                }
+                                
+                                // 2. Handle tool_calls
+                                val toolCalls = delta?.optJSONArray("tool_calls")
+                                if (toolCalls != null && toolCalls.length() > 0) {
+                                    // We prefix tool calls with a special marker for the ViewModel to catch
+                                    emit("TOOL_CALL_DELTA:${toolCalls.toString()}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Handle line fragmentation
+                        }
                     }
                 }
+                response.close()
+            } catch (e: IOException) {
+                retryCount++
+                if (retryCount > maxRetries) {
+                    emit("ERROR: API stream read connection error - ${e.localizedMessage}")
+                }
+            } catch (e: Exception) {
+                emit("ERROR: Streaming failure - ${e.localizedMessage}")
+                break
             }
-            response.close()
-        } catch (e: IOException) {
-            emit("ERROR: API stream read connection error - ${e.localizedMessage}")
-        } catch (e: Exception) {
-            emit("ERROR: Streaming failure - ${e.localizedMessage}")
         }
     }.flowOn(Dispatchers.IO)
 }

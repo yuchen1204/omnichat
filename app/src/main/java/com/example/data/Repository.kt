@@ -36,13 +36,19 @@ class AppRepository(private val db: AppDatabase) {
     fun getMessagesBySessionFlow(sessionId: Long): Flow<List<Message>> = messageDao.getMessagesBySessionFlow(sessionId)
     suspend fun getMessagesBySession(sessionId: Long): List<Message> = messageDao.getMessagesBySession(sessionId)
     suspend fun insertMessage(message: Message): Long = messageDao.insertMessage(message)
+    suspend fun deleteMessagesFrom(sessionId: Long, timestamp: Long) = messageDao.deleteMessagesFrom(sessionId, timestamp)
     suspend fun deleteMessagesBySession(sessionId: Long) = messageDao.deleteMessagesBySession(sessionId)
 
     // Memories
     val allMemories: Flow<List<MemoryItem>> = memoryItemDao.getAllMemoriesFlow()
     suspend fun getAllMemories(): List<MemoryItem> = memoryItemDao.getAllMemories()
+    suspend fun getMemoryById(id: Long): MemoryItem? = memoryItemDao.getMemoryById(id)
     suspend fun insertMemory(memory: MemoryItem): Long = memoryItemDao.insertMemory(memory)
+    suspend fun updateMemory(memory: MemoryItem) = memoryItemDao.updateMemory(memory)
+    suspend fun reinforceMemory(id: Long, content: String, now: Long) = memoryItemDao.reinforceMemory(id, content, now)
+    suspend fun setPinned(id: Long, pinned: Boolean) = memoryItemDao.setPinned(id, pinned)
     suspend fun deleteMemoryById(id: Long) = memoryItemDao.deleteMemoryById(id)
+    suspend fun deleteAllUnpinnedMemories() = memoryItemDao.deleteAllUnpinnedMemories()
     suspend fun deleteAllMemories() = memoryItemDao.deleteAllMemories()
 
     // Prompt Templates

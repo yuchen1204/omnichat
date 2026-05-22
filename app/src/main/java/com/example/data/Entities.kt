@@ -1,6 +1,7 @@
 package com.example.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "model_configs")
@@ -14,7 +15,9 @@ data class ModelConfig(
     val memoryProviderId: Long = 0L, // 0 = 与主 Provider 相同
     val isDefaultProvider: Boolean = false,
     val enableThinking: Boolean = true,
-    val thinkingEffort: String = "medium"
+    val thinkingEffort: String = "medium",
+    /** 自定义 HTTP 请求头，JSON 对象字符串，例如 '{"X-Custom-Header": "value"}' */
+    val customHeaders: String = "{}"
 )
 
 @Entity(tableName = "sessions")
@@ -24,20 +27,37 @@ data class Session(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "messages")
+@Entity(
+    tableName = "messages",
+    indices = [Index(value = ["sessionId"])]
+)
 data class Message(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sessionId: Long,
-    val role: String, // "user", "assistant"
+    val role: String, // "user", "assistant", "tool"
     val content: String,
+    val toolCallId: String? = null,
+    val toolCallsJson: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "memory_items")
+@Entity(
+    tableName = "memory_items",
+    indices = [
+        Index(value = ["confidence"]),
+        Index(value = ["updatedAt"])
+    ]
+)
 data class MemoryItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val content: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** 置信度：每次被 LLM 确认/强化时 +1，初始为 1。越高越稳定。 */
+    val confidence: Int = 1,
+    /** 最近一次被更新（新增或强化）的时间戳 */
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** 用户手动锁定：pinned=true 时 LLM 不可删除或覆盖此条目 */
+    val pinned: Boolean = false
 )
 
 @Entity(tableName = "prompt_templates")
@@ -76,11 +96,10 @@ data class FetchedModel(
  *
  * runtime 字段：
  *   "node"   — 通过内嵌 Node.js 运行 JS/TS MCP server
- *   "python" — 通过内嵌 Python (uv) 运行 Python MCP server
- *   "npx"    — 通过系统 npx 命令运行（需要设备已安装 Node.js，通常用于调试）
- *   "uvx"    — 通过 uvx 命令运行 Python 包（需要设备已安装 uv）
+ *   "python" — 通过内嵌 Python 运行 Python MCP server
+ *   "remote_http" — 通过 HTTP/HTTPS 连接远程 MCP server
  *
- * command  — 可执行文件路径或包名，例如 "@modelcontextprotocol/server-filesystem"
+ * command  — 入口脚本路径、包名 或 远程 URL
  * args     — JSON 数组字符串，例如 '["--root", "/sdcard"]'
  * env      — JSON 对象字符串，例如 '{"API_KEY": "xxx"}'
  */
@@ -88,8 +107,8 @@ data class FetchedModel(
 data class McpServer(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val runtime: String = "node",   // "node" | "python" | "npx" | "uvx"
-    val command: String,            // 入口脚本路径 或 npm 包名
+    val runtime: String = "node",   // "node" | "python" | "remote_http"
+    val command: String,            // 入口脚本路径 或 npm 包名 或 URL
     val args: String = "[]",        // JSON 数组字符串
     val env: String = "{}",         // JSON 对象字符串
     val isEnabled: Boolean = true,

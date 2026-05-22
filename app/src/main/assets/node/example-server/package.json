@@ -1,0 +1,9 @@
+{
+  "name": "example-mcp-server",
+  "version": "1.0.0",
+  "description": "示例 MCP server，展示如何使用外部依赖",
+  "main": "index.js",
+  "dependencies": {
+    "lodash": "^4.17.21"
+  }
+}

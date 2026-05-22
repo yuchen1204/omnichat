@@ -18,7 +18,7 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = AppRepository(database)
 
-    val runtimeManager = McpRuntimeManager(application)
+    val runtimeManager = McpRuntimeManager.getInstance(application)
 
     // 所有已配置的 MCP server（来自数据库）
     val mcpServers: StateFlow<List<McpServer>> = repository.allMcpServers
@@ -70,9 +70,8 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
         // 应用启动时自动启动所有已启用的 server
         viewModelScope.launch {
             val enabled = repository.getEnabledMcpServers()
-            enabled.forEach { server ->
-                runtimeManager.startServer(server)
-            }
+            // 使用批量启动，对 Node.js server 进行多路复用优化
+            runtimeManager.startServers(enabled)
         }
     }
 
@@ -131,130 +130,50 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ── JSON 配置导入 ─────────────────────────────────────────────────────
-
     /**
-     * 从标准 MCP JSON 配置字符串批量导入服务器。
-     * 支持格式：
-     * {
-     *   "mcpServers": {
-     *     "serverName": {
-     *       "command": "npx",
-     *       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"],
-     *       "env": { "KEY": "value" }
-     *     }
-     *   }
-     * }
-     *
-     * 运行时自动推断规则：
-     *   command == "npx" 或 args 中含 "npx"  → runtime = "npx"，command = 第一个非 flag 的包名
-     *   command == "uvx"                      → runtime = "uvx"，command = args[0]
-     *   command == "node"                     → runtime = "node"，command = args[0]
-     *   command == "python" / "python3"       → runtime = "python"，command = args[0]
-     *   其他                                  → runtime = "npx"，command = command（原样保留）
-     *
-     * @return 成功导入的数量，或 -1 表示 JSON 解析失败
+     * 批量导入 MCP 服务配置（JSON 格式）
+     * 支持的格式：{"mcpServers": {"name": {"command": "...", "args": [...], "env": {...}}, ...}}
      */
-    fun importFromJson(jsonString: String): Int {
-        return try {
-            val root = org.json.JSONObject(jsonString.trim())
-            val servers = root.optJSONObject("mcpServers") ?: return -1
+    fun importConfigJson(jsonContent: String) {
+        viewModelScope.launch {
+            try {
+                val root = org.json.JSONObject(jsonContent)
+                val serversObj = root.optJSONObject("mcpServers") ?: return@launch
+                
+                val keys = serversObj.keys()
+                while (keys.hasNext()) {
+                    val name = keys.next()
+                    val config = serversObj.getJSONObject(name)
+                    
+                    val command = config.getString("command")
+                    val argsArr = config.optJSONArray("args")
+                    val envObj = config.optJSONObject("env")
+                    
+                    val argsJson = argsArr?.toString() ?: "[]"
+                    val envJson = envObj?.toString() ?: "{}"
+                    
+                    // 默认使用 node 运行时（如果是路径）或 python
+                    val runtime = when {
+                        command.startsWith("http") -> "remote_http"
+                        command.startsWith("/") || command.endsWith(".js") -> "node"
+                        command.endsWith(".py") -> "python"
+                        else -> "node"
+                    }
 
-            var count = 0
-            servers.keys().forEach { serverName ->
-                val cfg = servers.optJSONObject(serverName) ?: return@forEach
-                val rawCommand = cfg.optString("command", "").trim()
-                val argsArray = cfg.optJSONArray("args") ?: org.json.JSONArray()
-                val envObj = cfg.optJSONObject("env") ?: org.json.JSONObject()
-
-                val argsList = (0 until argsArray.length()).map { argsArray.optString(it) }
-
-                // 推断运行时和实际命令
-                val (runtime, command, remainingArgs) = inferRuntime(rawCommand, argsList)
-
-                val server = McpServer(
-                    name = serverName,
-                    runtime = runtime,
-                    command = command,
-                    args = org.json.JSONArray(remainingArgs).toString(),
-                    env = envObj.toString(),
-                    isEnabled = true
-                )
-                addServer(server)
-                count++
-            }
-            count
-        } catch (e: Exception) {
-            android.util.Log.e("McpViewModel", "导入 JSON 配置失败", e)
-            -1
-        }
-    }
-
-    /**
-     * 根据 command + args 推断运行时类型，返回 Triple(runtime, command, remainingArgs)。
-     *
-     * 处理以下常见模式：
-     *   "npx" ["-y"/"--yes", "@scope/pkg", ...args]  → npx, @scope/pkg, [...args]
-     *   "cmd" ["/c", "npx", "-y", "@scope/pkg", ...] → npx, @scope/pkg, [...args]
-     *   "uvx" ["pkg", ...args]                        → uvx, pkg, [...args]
-     *   "node" ["script.js", ...args]                 → node, script.js, [...args]
-     *   "python"/"python3" ["script.py", ...args]     → python, script.py, [...args]
-     *   其他                                           → npx, command, args（原样）
-     */
-    private fun inferRuntime(rawCommand: String, args: List<String>): Triple<String, String, List<String>> {
-        val cmd = rawCommand.lowercase()
-
-        // cmd /c npx ... 或 cmd.exe /c npx ...
-        if (cmd == "cmd" || cmd == "cmd.exe") {
-            val rest = args.dropWhile { it.startsWith("/") || it.startsWith("-") }
-            if (rest.isNotEmpty()) {
-                val innerCmd = rest[0].lowercase()
-                val innerArgs = rest.drop(1)
-                if (innerCmd == "npx") {
-                    return extractNpxPackage(innerArgs)
+                    val server = McpServer(
+                        name = name,
+                        runtime = runtime,
+                        command = command,
+                        args = argsJson,
+                        env = envJson,
+                        isEnabled = true
+                    )
+                    addServer(server)
                 }
-                if (innerCmd == "uvx") {
-                    val pkg = innerArgs.firstOrNull() ?: ""
-                    return Triple("uvx", pkg, innerArgs.drop(1))
-                }
+            } catch (e: Exception) {
+                android.util.Log.e("McpViewModel", "导入 JSON 配置失败", e)
             }
-            // 无法识别，原样保留（用 npx 运行时）
-            return Triple("npx", rawCommand, args)
         }
-
-        return when (cmd) {
-            "npx" -> extractNpxPackage(args)
-            "uvx" -> {
-                val pkg = args.firstOrNull() ?: ""
-                Triple("uvx", pkg, args.drop(1))
-            }
-            "node", "node.exe" -> {
-                val script = args.firstOrNull() ?: ""
-                Triple("node", script, args.drop(1))
-            }
-            "python", "python3", "python.exe", "python3.exe" -> {
-                val script = args.firstOrNull() ?: ""
-                Triple("python", script, args.drop(1))
-            }
-            else -> Triple("npx", rawCommand, args)
-        }
-    }
-
-    /** 从 npx 参数列表中提取包名和剩余参数，跳过 -y/--yes 等 flag */
-    private fun extractNpxPackage(args: List<String>): Triple<String, String, List<String>> {
-        val npxFlags = setOf("-y", "--yes", "--no", "-p", "--package", "--prefer-offline",
-                             "--prefer-online", "--ignore-existing", "-q", "--quiet")
-        var i = 0
-        while (i < args.size) {
-            val a = args[i]
-            if (a in npxFlags) { i++; continue }
-            if (a.startsWith("--") && !a.startsWith("@")) { i++; continue }
-            // 找到包名
-            val pkg = a
-            val remaining = args.drop(i + 1)
-            return Triple("npx", pkg, remaining)
-        }
-        return Triple("npx", args.firstOrNull() ?: "", emptyList())
     }
 
     override fun onCleared() {

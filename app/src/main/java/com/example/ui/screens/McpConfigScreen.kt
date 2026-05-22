@@ -47,7 +47,6 @@ fun McpConfigScreen(
     var showToolsFor by remember { mutableStateOf<Long?>(null) }
     var showRuntimeInfo by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
-    var importResultMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -70,7 +69,7 @@ fun McpConfigScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val runningCount = serverStates.values.count { it.status == McpServerStatus.RUNNING }
@@ -82,18 +81,18 @@ fun McpConfigScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // 导入 JSON 按钮
-                FilledTonalButton(
+                // 导入按钮
+                IconButton(
                     onClick = { showImportDialog = true },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(34.dp)
+                    modifier = Modifier.size(34.dp)
                 ) {
-                    Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("导入配置", fontSize = 13.sp)
+                    Icon(
+                        Icons.Default.Share,
+                        contentDescription = "导入 JSON",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
-
-                Spacer(modifier = Modifier.width(6.dp))
 
                 // 添加按钮
                 FilledTonalButton(
@@ -110,12 +109,22 @@ fun McpConfigScreen(
 
         if (servers.isEmpty()) {
             // 空状态
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // 内置工具卡片始终显示
+                val builtinTools = allTools.filter { it.serverId == -1L }
+                BuiltinToolsCard(
+                    tools = builtinTools,
+                    onShowTools = { showToolsFor = -1L },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = Icons.Default.Build,
@@ -150,13 +159,23 @@ fun McpConfigScreen(
                         mcpViewModel.addServer(example)
                     }
                 }
-            }
+                } // end Box
+            } // end Column (empty state)
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // ── 内置工具卡片（始终显示在顶部）────────────────────────
+                item {
+                    val builtinTools = allTools.filter { it.serverId == -1L }
+                    BuiltinToolsCard(
+                        tools = builtinTools,
+                        onShowTools = { showToolsFor = -1L }
+                    )
+                }
+
                 items(servers, key = { it.id }) { server ->
                     val state = serverStates[server.id]
                     McpServerCard(
@@ -198,38 +217,13 @@ fun McpConfigScreen(
         )
     }
 
-    // ── 导入 JSON 配置弹窗 ────────────────────────────────────────────────
+    // ── 导入 JSON 对话框 ────────────────────────────────────────────────
     if (showImportDialog) {
-        McpJsonImportDialog(
+        McpImportDialog(
             onDismiss = { showImportDialog = false },
-            onImport = { jsonText ->
-                val count = mcpViewModel.importFromJson(jsonText)
-                importResultMessage = when {
-                    count < 0 -> "JSON 格式错误，请检查配置内容"
-                    count == 0 -> "未找到可导入的服务（mcpServers 为空）"
-                    else -> "成功导入 $count 个 MCP 服务"
-                }
+            onImport = { json ->
+                mcpViewModel.importConfigJson(json)
                 showImportDialog = false
-            }
-        )
-    }
-
-    // ── 导入结果提示 ──────────────────────────────────────────────────────
-    importResultMessage?.let { msg ->
-        AlertDialog(
-            onDismissRequest = { importResultMessage = null },
-            icon = {
-                Icon(
-                    if (msg.startsWith("成功")) Icons.Default.Check else Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = if (msg.startsWith("成功")) Color(0xFF34C759)
-                           else MaterialTheme.colorScheme.error
-                )
-            },
-            title = { Text("导入结果") },
-            text = { Text(msg) },
-            confirmButton = {
-                TextButton(onClick = { importResultMessage = null }) { Text("确定") }
             }
         )
     }
@@ -239,6 +233,7 @@ fun McpConfigScreen(
         McpServerEditDialog(
             server = null,
             mcpWorkDir = mcpViewModel.mcpWorkDir,
+            mcpViewModel = mcpViewModel,
             onDismiss = { showAddDialog = false },
             onSave = { server ->
                 mcpViewModel.addServer(server)
@@ -251,6 +246,7 @@ fun McpConfigScreen(
         McpServerEditDialog(
             server = server,
             mcpWorkDir = mcpViewModel.mcpWorkDir,
+            mcpViewModel = mcpViewModel,
             onDismiss = { editTarget = null },
             onSave = { updated ->
                 mcpViewModel.updateServer(updated)
@@ -262,7 +258,8 @@ fun McpConfigScreen(
     // ── 工具列表弹窗 ──────────────────────────────────────────────────────
     showToolsFor?.let { serverId ->
         val tools = allTools.filter { it.serverId == serverId }
-        val serverName = servers.find { it.id == serverId }?.name ?: "未知"
+        val serverName = if (serverId == -1L) "内置工具"
+                         else servers.find { it.id == serverId }?.name ?: "未知"
         McpToolsDialog(
             serverName = serverName,
             tools = tools,
@@ -488,9 +485,8 @@ private fun RuntimeBadge(runtime: String) {
     val (label, color) = when (runtime) {
         "node" -> "Node" to Color(0xFF68A063)
         "python" -> "Py" to Color(0xFF3572A5)
-        "npx" -> "npx" to Color(0xFFCB3837)
-        "uvx" -> "uvx" to Color(0xFF2B5B84)
-        else -> runtime.take(3) to Color(0xFF8E8E93)
+        "remote_http" -> "HTTP" to Color(0xFF007AFF)
+        else -> runtime.take(4).uppercase() to Color(0xFF8E8E93)
     }
     Box(
         modifier = Modifier
@@ -613,12 +609,106 @@ private fun McpToolItem(tool: McpTool) {
     }
 }
 
+@Composable
+private fun McpImportDialog(
+    onDismiss: () -> Unit,
+    onImport: (String) -> Unit
+) {
+    var jsonText by remember { mutableStateOf("") }
+    var isError by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .fillMaxSize()
+            ) {
+                Text(
+                    text = "导入 MCP 配置 (JSON)",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = "粘贴标准的 mcpServers JSON 配置。导入后将自动添加并尝试启动服务。",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                OutlinedTextField(
+                    value = jsonText,
+                    onValueChange = { 
+                        jsonText = it
+                        isError = false
+                    },
+                    placeholder = { 
+                        Text(
+                            "{\n  \"mcpServers\": {\n    \"example\": {\n      \"command\": \"https://example.com/mcp/sse\",\n      \"args\": []\n    }\n  }\n}",
+                            fontSize = 11.sp
+                        ) 
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp
+                    ),
+                    isError = isError,
+                    supportingText = if (isError) {
+                        { Text("无效的 JSON 格式或缺少 mcpServers 字段") }
+                    } else null
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("取消") }
+                    
+                    Button(
+                        onClick = {
+                            try {
+                                val obj = org.json.JSONObject(jsonText)
+                                if (obj.has("mcpServers")) {
+                                    onImport(jsonText)
+                                } else {
+                                    isError = true
+                                }
+                            } catch (e: Exception) {
+                                isError = true
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = jsonText.isNotBlank()
+                    ) { Text("确认导入") }
+                }
+            }
+        }
+    }
+}
+
 // ── 添加/编辑对话框 ───────────────────────────────────────────────────────
 
 @Composable
 private fun McpServerEditDialog(
     server: McpServer?,
     mcpWorkDir: String = "",
+    mcpViewModel: McpViewModel = viewModel(),
     onDismiss: () -> Unit,
     onSave: (McpServer) -> Unit
 ) {
@@ -677,7 +767,10 @@ private fun McpServerEditDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // 运行时说明
-                RuntimeHint(runtime = runtime, mcpWorkDir = mcpWorkDir)
+                RuntimeHint(
+                    runtime = runtime,
+                    mcpWorkDir = mcpWorkDir
+                )
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // 命令/入口
@@ -711,15 +804,24 @@ private fun McpServerEditDialog(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 环境变量（JSON 对象）
+                // 环境变量（JSON 对象）/ 远程 HTTP 请求头
                 OutlinedTextField(
                     value = env,
                     onValueChange = {
                         env = it
                         envError = !isValidJsonObject(it)
                     },
-                    label = { Text("环境变量 (JSON 对象)") },
-                    placeholder = { Text("{\"API_KEY\": \"your-key\"}") },
+                    label = {
+                        Text(if (runtime == "remote_http") "自定义请求头 (JSON 对象)" else "环境变量 (JSON 对象)")
+                    },
+                    placeholder = {
+                        Text(
+                            if (runtime == "remote_http")
+                                "{\"Authorization\": \"Bearer token\", \"X-Api-Key\": \"xxx\"}"
+                            else
+                                "{\"API_KEY\": \"your-key\"}"
+                        )
+                    },
                     isError = envError,
                     supportingText = if (envError) {
                         { Text("请输入合法的 JSON 对象，例如 {\"KEY\": \"value\"}") }
@@ -783,10 +885,9 @@ private fun McpServerEditDialog(
 @Composable
 private fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
     val options = listOf(
-        Triple("node", "Node.js", "内嵌 Node.js 运行时"),
-        Triple("python", "Python", "内嵌 Python 运行时"),
-        Triple("npx", "npx", "系统 npx 命令"),
-        Triple("uvx", "uvx", "系统 uvx 命令")
+        Triple("node", "Node.js", "内嵌 Node.js"),
+        Triple("python", "Python", "内嵌 Python"),
+        Triple("remote_http", "远程 HTTP", "远程 MCP 服务")
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -797,7 +898,7 @@ private fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
             FilterChip(
                 selected = isSelected,
                 onClick = { onSelect(value) },
-                label = { Text(label, fontSize = 12.sp) },
+                label = { Text(label, fontSize = 11.sp) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -805,20 +906,30 @@ private fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
 }
 
 @Composable
-private fun RuntimeHint(runtime: String, mcpWorkDir: String = "") {
-    val (icon, text) = when (runtime) {
-        "node" -> Icons.Default.Info to
+private fun RuntimeHint(
+    runtime: String,
+    mcpWorkDir: String = ""
+) {
+    val (icon, text, isError) = when (runtime) {
+        "node" -> Triple(Icons.Default.Info,
             "使用 app 内嵌的 Node.js 运行时执行 JS MCP server，无需设备安装 Node.js。\n" +
             "内置脚本已自动部署到：\n$mcpWorkDir\n" +
-            "command 填文件名（如 mcp_filesystem.js）或绝对路径均可。"
-        "python" -> Icons.Default.Info to "使用 app 内嵌的 Python 运行时（Chaquopy）执行 Python MCP server，无需设备安装 Python"
-        "npx" -> Icons.Default.Warning to "需要设备已安装 Node.js 并可通过 PATH 访问 npx 命令。普通 Android 设备通常不具备此环境，建议在 Termux 或 root 环境下使用，或改用内嵌 Node.js 运行时。"
-        "uvx" -> Icons.Default.Warning to "需要设备已安装 uv 工具链并可通过 PATH 访问 uvx 命令。普通 Android 设备通常不具备此环境，建议在 Termux 或 root 环境下使用，或改用内嵌 Python 运行时。"
-        else -> Icons.Default.Info to ""
+            "command 填文件名（如 mcp_filesystem.js）或绝对路径均可。", false)
+        "python" -> Triple(Icons.Default.Info, "使用 app 内嵌的 Python 运行时执行 Python MCP server，无需设备安装 Python", false)
+        "remote_http" -> Triple(Icons.Default.Info, "连接到远程 MCP server。本应用遵循 MCP HTTP 传输标准（SSE + POST）。\n" +
+            "command 请填写 SSE 端点 URL。\n" +
+            "自定义请求头字段可填写需要附加的 HTTP 请求头，例如认证 Token。", false)
+        else -> Triple(Icons.Default.Info, "", false)
     }
     if (text.isNotBlank()) {
+        val colorScheme = MaterialTheme.colorScheme
+        val containerColor = if (isError) colorScheme.errorContainer.copy(alpha = 0.4f)
+                            else colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        val contentColor = if (isError) colorScheme.onErrorContainer
+                          else colorScheme.onSurfaceVariant
+
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            color = containerColor,
             shape = RoundedCornerShape(8.dp)
         ) {
             Row(
@@ -828,13 +939,13 @@ private fun RuntimeHint(runtime: String, mcpWorkDir: String = "") {
                 Icon(
                     icon, null,
                     modifier = Modifier.size(14.dp).padding(top = 1.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = contentColor
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = text,
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = contentColor,
                     lineHeight = 16.sp
                 )
             }
@@ -862,9 +973,9 @@ private fun McpExampleChips(onAdd: (McpServer) -> Unit) {
             env = "{}"
         ),
         McpServer(
-            name = "Python 脚本",
-            runtime = "python",
-            command = "/sdcard/OmniChat/mcp/my_server.py",
+            name = "远程示例",
+            runtime = "remote_http",
+            command = "https://mcp-server-example.vercel.app/sse",
             args = "[]",
             env = "{}"
         )
@@ -901,16 +1012,14 @@ private fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 private fun commandLabel(runtime: String) = when (runtime) {
     "node" -> "JS 入口文件路径"
     "python" -> "Python 脚本路径"
-    "npx" -> "npm 包名"
-    "uvx" -> "Python 包名"
+    "remote_http" -> "SSE 端点 URL"
     else -> "命令"
 }
 
 private fun commandPlaceholder(runtime: String) = when (runtime) {
     "node" -> "mcp_filesystem.js  （或绝对路径）"
     "python" -> "/sdcard/OmniChat/mcp/my_server.py"
-    "npx" -> "@modelcontextprotocol/server-filesystem"
-    "uvx" -> "mcp-server-fetch"
+    "remote_http" -> "https://example.com/mcp/sse"
     else -> "命令或路径"
 }
 
@@ -941,10 +1050,10 @@ private fun RuntimeStatusBar(
     onInfoClick: () -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
-    val allReady = isNodeAvailable && isPythonReady
+    val anyReady = isNodeAvailable || isPythonReady
     val barColor = when {
-        allReady -> Color(0xFF34C759).copy(alpha = 0.12f)
-        !isNodeAvailable && !isPythonReady -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+        allRuntimesReady(isNodeAvailable, isPythonReady) -> Color(0xFF34C759).copy(alpha = 0.12f)
+        !anyReady -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
         else -> Color(0xFFFF9500).copy(alpha = 0.12f)
     }
 
@@ -959,28 +1068,20 @@ private fun RuntimeStatusBar(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Node.js 状态
-            RuntimeChip(
-                label = "Node.js",
-                isReady = isNodeAvailable,
-                readyText = "已就绪",
-                notReadyText = "未加载"
-            )
-            // Python 状态
-            RuntimeChip(
-                label = "Python",
-                isReady = isPythonReady,
-                readyText = "已就绪",
-                notReadyText = "未就绪"
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            // 内嵌运行时
+            RuntimeChip(label = "Node", isReady = isNodeAvailable)
+            RuntimeChip(label = "Python", isReady = isPythonReady)
+            
             Text(
-                text = "点击查看详情",
+                text = "支持远程 HTTP MCP",
                 fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                fontWeight = FontWeight.Medium
             )
+
+            Spacer(modifier = Modifier.weight(1f))
             Icon(
                 Icons.Default.Info,
                 contentDescription = null,
@@ -991,27 +1092,29 @@ private fun RuntimeStatusBar(
     }
 }
 
+private fun allRuntimesReady(node: Boolean, py: Boolean): Boolean {
+    return node && py
+}
+
 @Composable
 private fun RuntimeChip(
     label: String,
-    isReady: Boolean,
-    readyText: String,
-    notReadyText: String
+    isReady: Boolean
 ) {
-    val color = if (isReady) Color(0xFF34C759) else Color(0xFFFF3B30)
+    val color = if (isReady) Color(0xFF34C759) else Color(0xFFFF3B30).copy(alpha = 0.7f)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(6.dp)
+                .size(5.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .background(color)
         )
         Text(
-            text = "$label: ${if (isReady) readyText else notReadyText}",
-            fontSize = 11.sp,
+            text = label,
+            fontSize = 10.sp,
             color = color,
             fontWeight = FontWeight.Medium
         )
@@ -1042,7 +1145,7 @@ private fun RuntimeInfoDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "内嵌运行时状态",
+                        "运行时状态详情",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
@@ -1055,56 +1158,31 @@ private fun RuntimeInfoDialog(
 
                 // Node.js 状态
                 RuntimeInfoSection(
-                    title = "Node.js 运行时",
+                    title = "内嵌 Node.js",
                     isReady = isNodeAvailable,
                     statusText = if (isNodeAvailable) "libnode.so 已加载，Node.js 可用"
                                  else "libnode.so 未找到",
-                    instructions = if (!isNodeAvailable) """
-1. 前往 https://github.com/nodejs-mobile/nodejs-mobile/releases
-2. 下载最新的 nodejs-mobile-v*.zip
-3. 解压，将各 ABI 的 libnode.so 放入：
-   app/src/main/jniLibs/arm64-v8a/libnode.so
-   app/src/main/jniLibs/x86_64/libnode.so
-4. 将 include/ 目录复制到：
-   app/src/main/cpp/node_include/
-5. 重新编译 App
-                    """.trimIndent() else null
+                    instructions = if (!isNodeAvailable) "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。" else null
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Python 状态
                 RuntimeInfoSection(
-                    title = "Python 运行时",
+                    title = "内嵌 Python",
                     isReady = isPythonReady,
                     statusText = pythonStatus,
-                    instructions = if (!isPythonReady) """
-官方 Android 包下载地址（python.org）：
-https://www.python.org/downloads/android/
+                    instructions = if (!isPythonReady) "请准备 stdlib.zip 和 .so 文件并重新编译。" else null
+                )
 
-arm64 设备下载：
-python-3.14.5-aarch64-linux-android.tar.gz
+                Spacer(modifier = Modifier.height(8.dp))
 
-x86_64 设备下载：
-python-3.14.5-x86_64-linux-android.tar.gz
-
-解压后操作：
-1. 将 prefix/lib/*.so 放入：
-   app/src/main/jniLibs/<ABI>/
-   (libpython3.14.so, libssl_python.so, libcrypto_python.so)
-
-2. 打包标准库（在 prefix/lib/ 目录执行）：
-   zip -r stdlib.zip python3.14/
-
-3. 预装 mcp 包（可选）：
-   pip install --target=python3.14/site-packages mcp httpx anyio
-   zip -r stdlib.zip python3.14/
-
-4. 将 stdlib.zip 放入：
-   app/src/main/assets/python/stdlib.zip
-
-5. 重新编译 App（首次运行自动解压，约需 5-10 秒）
-                    """.trimIndent() else null
+                // 远程 HTTP 状态
+                RuntimeInfoSection(
+                    title = "远程 HTTP MCP",
+                    isReady = true,
+                    statusText = "支持通过 HTTP/HTTPS 连接远程 MCP 服务。",
+                    instructions = "远程服务需要遵循 MCP HTTP 传输标准，支持 SSE 端点和 JSON-RPC POST 请求。"
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1180,134 +1258,86 @@ private fun RuntimeInfoSection(
     }
 }
 
-// ── JSON 配置导入弹窗 ─────────────────────────────────────────────────────
+// ── 内置工具卡片 ──────────────────────────────────────────────────────────
 
 @Composable
-private fun McpJsonImportDialog(
-    onDismiss: () -> Unit,
-    onImport: (String) -> Unit
+private fun BuiltinToolsCard(
+    tools: List<McpTool>,
+    onShowTools: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var jsonText by remember {
-        mutableStateOf(
-            """{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/sdcard"
-      ]
-    }
-  }
-}"""
-        )
-    }
-    var isJsonError by remember { mutableStateOf(false) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
+    val isDark = isSystemInDarkTheme()
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.85f)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                // 标题行
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Upload,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "导入 MCP JSON 配置",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 说明
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = "粘贴标准 MCP JSON 配置（与 Claude Desktop 格式兼容）。\n" +
-                               "支持 npx / uvx / node / python 运行时，自动识别命令类型。",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        lineHeight = 16.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // JSON 输入框
-                OutlinedTextField(
-                    value = jsonText,
-                    onValueChange = {
-                        jsonText = it
-                        isJsonError = !isValidImportJson(it)
-                    },
-                    label = { Text("JSON 配置") },
-                    isError = isJsonError,
-                    supportingText = if (isJsonError) {
-                        { Text("JSON 格式错误，请检查括号和引号是否匹配") }
-                    } else null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp
-                    )
+            // 图标
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 操作按钮
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("取消") }
-
-                    Button(
-                        onClick = { onImport(jsonText) },
-                        modifier = Modifier.weight(1f),
-                        enabled = jsonText.isNotBlank() && !isJsonError
-                    ) {
-                        Icon(Icons.Default.Upload, null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("导入")
-                    }
-                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "内置工具",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "${tools.size} 个工具 · 始终可用",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            // 状态点
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF34C759))
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "运行中",
+                    fontSize = 11.sp,
+                    color = Color(0xFF34C759),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            // 查看工具按钮
+            TextButton(
+                onClick = onShowTools,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "查看工具",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
-    }
-}
-
-private fun isValidImportJson(s: String): Boolean {
-    return try {
-        val obj = org.json.JSONObject(s.trim())
-        obj.has("mcpServers")
-    } catch (e: Exception) {
-        false
     }
 }
