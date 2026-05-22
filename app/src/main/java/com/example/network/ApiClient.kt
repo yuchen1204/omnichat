@@ -333,7 +333,7 @@ object ApiClient {
                                 
                                 // 1. Handle content
                                 val content = delta?.optString("content")
-                                if (!content.isNullOrEmpty()) {
+                                if (!content.isNullOrEmpty() && content != "null") {
                                     emit(content)
                                 }
                                 

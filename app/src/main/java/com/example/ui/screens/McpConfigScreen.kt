@@ -4,7 +4,6 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,7 +39,6 @@ fun McpConfigScreen(
     val servers by mcpViewModel.mcpServers.collectAsStateWithLifecycle()
     val serverStates by mcpViewModel.serverStates.collectAsStateWithLifecycle()
     val allTools by mcpViewModel.allTools.collectAsStateWithLifecycle()
-    val isDark = isSystemInDarkTheme()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<McpServer?>(null) }
@@ -76,8 +74,8 @@ fun McpConfigScreen(
                 val toolCount = allTools.size
 
                 StatChip(label = "服务", value = "${servers.size}", color = MaterialTheme.colorScheme.primary)
-                StatChip(label = "运行中", value = "$runningCount", color = Color(0xFF34C759))
-                StatChip(label = "工具", value = "$toolCount", color = Color(0xFFFF9500))
+                StatChip(label = "运行中", value = "$runningCount", color = com.example.ui.theme.LocalCustomColors.current.success)
+                StatChip(label = "工具", value = "$toolCount", color = com.example.ui.theme.LocalCustomColors.current.warning)
 
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -280,15 +278,16 @@ private fun McpServerCard(
     onRestart: () -> Unit,
     onShowTools: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
     val status = state?.status ?: McpServerStatus.STOPPED
     val toolCount = state?.tools?.size ?: 0
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val surface = MaterialTheme.colorScheme.surface
 
     val statusColor = when (status) {
-        McpServerStatus.RUNNING -> Color(0xFF34C759)
-        McpServerStatus.STARTING -> Color(0xFFFF9500)
-        McpServerStatus.ERROR -> Color(0xFFFF3B30)
-        McpServerStatus.STOPPED -> Color(0xFF8E8E93)
+        McpServerStatus.RUNNING -> com.example.ui.theme.LocalCustomColors.current.success
+        McpServerStatus.STARTING -> com.example.ui.theme.LocalCustomColors.current.warning
+        McpServerStatus.ERROR -> MaterialTheme.colorScheme.error
+        McpServerStatus.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     }
     val statusLabel = when (status) {
         McpServerStatus.RUNNING -> "运行中"
@@ -304,7 +303,7 @@ private fun McpServerCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
+            containerColor = surface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -323,7 +322,7 @@ private fun McpServerCard(
                         text = server.name,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -412,7 +411,7 @@ private fun McpServerCard(
 
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(
-                color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 thickness = 0.5.dp
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -482,12 +481,18 @@ private fun McpServerCard(
 
 @Composable
 private fun RuntimeBadge(runtime: String) {
+    val successColor = com.example.ui.theme.LocalCustomColors.current.success
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val warningColor = com.example.ui.theme.LocalCustomColors.current.warning
+    
     val (label, color) = when (runtime) {
-        "node" -> "Node" to Color(0xFF68A063)
-        "python" -> "Py" to Color(0xFF3572A5)
-        "remote_http" -> "HTTP" to Color(0xFF007AFF)
-        else -> runtime.take(4).uppercase() to Color(0xFF8E8E93)
+        "node" -> "Node" to successColor
+        "python" -> "Py" to primaryColor
+        "remote_http" -> "HTTP" to MaterialTheme.colorScheme.secondary
+        else -> runtime.take(4).uppercase() to MaterialTheme.colorScheme.onSurfaceVariant
     }
+    
+    val finalColor = if (runtime == "remote_http") MaterialTheme.colorScheme.secondary else color
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
@@ -581,12 +586,11 @@ private fun McpToolsDialog(
 
 @Composable
 private fun McpToolItem(tool: McpTool) {
-    val isDark = isSystemInDarkTheme()
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .padding(10.dp)
     ) {
         Text(
@@ -1049,12 +1053,14 @@ private fun RuntimeStatusBar(
     isPythonReady: Boolean,
     onInfoClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val successColor = com.example.ui.theme.LocalCustomColors.current.success
+    val warningColor = com.example.ui.theme.LocalCustomColors.current.warning
+    
     val anyReady = isNodeAvailable || isPythonReady
     val barColor = when {
-        allRuntimesReady(isNodeAvailable, isPythonReady) -> Color(0xFF34C759).copy(alpha = 0.12f)
+        allRuntimesReady(isNodeAvailable, isPythonReady) -> successColor.copy(alpha = 0.12f)
         !anyReady -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-        else -> Color(0xFFFF9500).copy(alpha = 0.12f)
+        else -> warningColor.copy(alpha = 0.12f)
     }
 
     Surface(
@@ -1101,7 +1107,8 @@ private fun RuntimeChip(
     label: String,
     isReady: Boolean
 ) {
-    val color = if (isReady) Color(0xFF34C759) else Color(0xFFFF3B30).copy(alpha = 0.7f)
+    val successColor = com.example.ui.theme.LocalCustomColors.current.success
+    val color = if (isReady) successColor else MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -1202,8 +1209,8 @@ private fun RuntimeInfoSection(
     statusText: String,
     instructions: String?
 ) {
-    val isDark = isSystemInDarkTheme()
-    val color = if (isReady) Color(0xFF34C759) else Color(0xFFFF3B30)
+    val successColor = com.example.ui.theme.LocalCustomColors.current.success
+    val color = if (isReady) successColor else MaterialTheme.colorScheme.error
     val bgColor = if (isReady) color.copy(alpha = 0.08f)
                   else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
 
@@ -1266,12 +1273,14 @@ private fun BuiltinToolsCard(
     onShowTools: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val surface = MaterialTheme.colorScheme.surface
+    
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
+            containerColor = surface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -1302,7 +1311,7 @@ private fun BuiltinToolsCard(
                     text = "内置工具",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = onSurface
                 )
                 Text(
                     text = "${tools.size} 个工具 · 始终可用",
@@ -1316,13 +1325,13 @@ private fun BuiltinToolsCard(
                     modifier = Modifier
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF34C759))
+                        .background(com.example.ui.theme.LocalCustomColors.current.success)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "运行中",
                     fontSize = 11.sp,
-                    color = Color(0xFF34C759),
+                    color = com.example.ui.theme.LocalCustomColors.current.success,
                     fontWeight = FontWeight.Medium
                 )
             }

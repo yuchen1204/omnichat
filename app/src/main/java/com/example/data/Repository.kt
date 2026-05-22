@@ -11,6 +11,7 @@ class AppRepository(private val db: AppDatabase) {
     private val fetchedModelDao = db.fetchedModelDao()
     private val sessionSummaryDao = db.sessionSummaryDao()
     private val mcpServerDao = db.mcpServerDao()
+    private val uiSettingsDao = db.uiSettingsDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -76,4 +77,9 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun insertMcpServer(server: McpServer): Long = mcpServerDao.insertServer(server)
     suspend fun updateMcpServer(server: McpServer) = mcpServerDao.updateServer(server)
     suspend fun deleteMcpServer(server: McpServer) = mcpServerDao.deleteServer(server)
+
+    // UI Settings
+    val uiSettings: Flow<UISettings?> = uiSettingsDao.getSettingsFlow()
+    suspend fun getUISettings(): UISettings? = uiSettingsDao.getSettings()
+    suspend fun upsertUISettings(settings: UISettings) = uiSettingsDao.upsertSettings(settings)
 }

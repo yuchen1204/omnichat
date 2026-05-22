@@ -358,12 +358,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     } catch (e: Exception) { e.printStackTrace() }
                 } else {
-                    accumulatedText += chunk
-                    val now = System.currentTimeMillis()
-                    // 节流更新 UI，每 80ms 更新一次
-                    if (now - lastUiUpdateTime > 80) {
-                        updateStreamingStates(accumulatedText)
-                        lastUiUpdateTime = now
+                    if (chunk != "null") {
+                        accumulatedText += chunk
+                        val now = System.currentTimeMillis()
+                        // 节流更新 UI，每 50ms 更新一次
+                        if (now - lastUiUpdateTime > 50) {
+                            updateStreamingStates(accumulatedText)
+                            lastUiUpdateTime = now
+                        }
                     }
                 }
             }
@@ -371,8 +373,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // 最后一次同步更新
         updateStreamingStates(accumulatedText)
 
+        val finalContent = if (accumulatedText.trim() == "null") "" else accumulatedText
+
         // 1. Save assistant text response AND tool calls
-        if (accumulatedText.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
+        if (finalContent.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
             val toolCallsJson = if (accumulatedToolCalls.isNotEmpty()) {
                 val arr = org.json.JSONArray()
                 accumulatedToolCalls.values.forEach { arr.put(it) }
@@ -383,13 +387,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 Message(
                     sessionId = sessionId,
                     role = "assistant",
-                    content = accumulatedText,
+                    content = finalContent,
                     toolCallsJson = toolCallsJson
                 )
             )
         }
         
-        val wasOnlyToolCalls = accumulatedText.isEmpty() && accumulatedToolCalls.isNotEmpty()
+        val wasOnlyToolCalls = finalContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
         isStreaming = false
         // 清理流式状态
         currentStreamingThinking = ""
@@ -436,7 +440,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        if (!wasOnlyToolCalls && accumulatedText.isNotEmpty()) {
+        if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {
             triggerMemorySync()
         }
     }

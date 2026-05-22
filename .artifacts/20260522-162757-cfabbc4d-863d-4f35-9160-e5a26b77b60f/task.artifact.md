@@ -1,0 +1,13 @@
+- [x] 研究现有 Markdown 渲染实现
+- [x] 实现 `MarkdownChunkParser.kt`
+- [x] 实现 `ChunkedStreamingText.kt`
+- [/] 集成并优化 `MainScreen.kt`
+    - [x] 在 `StreamingBubble` 中接入分块渲染
+    - [x] 实现消息复制功能
+    - [x] 优化 `ThinkingProcessPanel` 的 Markdown 渲染
+    - [ ] 优化代码块视觉样式 (syntaxHighlightColor)
+- [x] 调整 `ChatViewModel.kt` 的节流参数
+- [ ] 验证优化效果
+    - [ ] 验证流式输出流畅度
+    - [ ] 验证复制功能
+    - [ ] 验证深浅色模式样式

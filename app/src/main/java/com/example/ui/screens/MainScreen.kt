@@ -9,7 +9,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -48,10 +47,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.MemoryItem
 import com.example.data.ModelConfig
+import com.example.ui.components.ChunkedStreamingText
 import com.example.data.PromptTemplate
 import com.example.data.Session
 import com.example.data.FetchedModel
 import com.example.mcp.McpViewModel
+import com.example.ui.theme.LocalUISettings
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -65,6 +66,9 @@ fun MainScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val mcpViewModel: McpViewModel = viewModel()
+    
+    val uiSettings = LocalUISettings.current
+    val spacingMultiplier = uiSettings.spacingMultiplier
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -101,6 +105,7 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .padding(16.dp * (spacingMultiplier - 1f)) // 应用 AI 间距调整
                     .consumeWindowInsets(paddingValues)
             ) {
                 when (currentTab) {
@@ -127,7 +132,7 @@ fun SettingsView(
             contentColor = MaterialTheme.colorScheme.primary,
             divider = {
                 HorizontalDivider(
-                    color = if (isSystemInDarkTheme()) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                     thickness = 0.5.dp
                 )
             }
@@ -167,6 +172,13 @@ fun SessionSidebarPanel(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
+    
+    val uiSettings = LocalUISettings.current
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
+    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -193,7 +205,7 @@ fun SessionSidebarPanel(
                 text = "对话列表",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = primaryColor
             )
             IconButton(
                 onClick = {
@@ -202,13 +214,13 @@ fun SessionSidebarPanel(
                 },
                 modifier = Modifier
                     .size(36.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
+                    .background(primaryContainer, RoundedCornerShape(8.dp * uiSettings.spacingMultiplier))
                     .testTag("add_session_btn")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "新建会话",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = onPrimaryContainer,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -318,13 +330,12 @@ fun SessionSidebarPanel(
         }
 
         // ── 设置按钮与状态 ────────────────────────────────────────────
-        val isDark = isSystemInDarkTheme()
         val defaultProvider = modelConfigs.find { it.isDefaultProvider }
         val activeProviderName = defaultProvider?.name ?: "未设置"
         val activeModelId = defaultProvider?.selectedModelId ?: "未设置"
 
         HorizontalDivider(
-            color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             thickness = 0.5.dp,
             modifier = Modifier.padding(top = 8.dp)
         )
@@ -339,21 +350,20 @@ fun SessionSidebarPanel(
                 modifier = Modifier
                     .size(6.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(if (defaultProvider != null) Color(0xFF34C759) else MaterialTheme.colorScheme.error)
+                    .background(if (defaultProvider != null) com.example.ui.theme.LocalCustomColors.current.success else MaterialTheme.colorScheme.error)
             )
             Spacer(modifier = Modifier.width(7.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = activeProviderName,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isDark) Color(0xFFAAAAAA) else Color(0xFF555555),
+                    color = onSurfaceColor.copy(alpha = 0.6f),
                     maxLines = 1
                 )
                 Text(
                     text = activeModelId,
                     fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = primaryColor,
                     maxLines = 1
                 )
             }
@@ -362,27 +372,53 @@ fun SessionSidebarPanel(
         Spacer(modifier = Modifier.height(4.dp))
 
         // 设置按钮
-        Surface(
-            onClick = onSettingsClick,
-            shape = RoundedCornerShape(8.dp),
-            color = Color.Transparent,
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                onClick = onSettingsClick,
+                shape = RoundedCornerShape(8.dp),
+                color = Color.Transparent,
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "设置",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "设置",
+                        fontSize = 14.sp,
+                        color = onSurfaceColor
+                    )
+                }
+            }
+            
+            // 恢复默认 UI 按钮
+            val settingsViewModel: com.example.ui.viewmodel.SettingsViewModel = viewModel()
+            val coroutineScope = rememberCoroutineScope()
+            val currentContext = LocalContext.current
+            IconButton(
+                onClick = { 
+                    coroutineScope.launch {
+                        val db = com.example.data.AppDatabase.getDatabase(currentContext.applicationContext)
+                        com.example.data.AppRepository(db).upsertUISettings(com.example.data.UISettings())
+                    }
+                },
+                modifier = Modifier.size(40.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "设置",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "设置",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "恢复默认配色",
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -469,7 +505,6 @@ fun MainTopAppBar(
 ) {
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     val isSyncing = viewModel.isMemorySyncing
-    val isDark = isSystemInDarkTheme()
     
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -492,14 +527,14 @@ fun MainTopAppBar(
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = (-0.4).sp,
-                        color = if (isDark) Color.White else Color.Black,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                     if (currentTab == "chat" && defaultProvider != null) {
                         Text(
                             text = "提供商: ${defaultProvider.name}",
                             fontSize = 11.sp,
-                            color = if (isDark) Color(0xFFAAAAAA) else Color(0xFF666666),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1
                         )
                     }
@@ -510,7 +545,7 @@ fun MainTopAppBar(
                     Icon(
                         imageVector = Icons.Default.Menu,
                         contentDescription = "打开菜单",
-                        tint = Color(0xFF007AFF) // Sleek iOS indicator blue
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             },
@@ -534,13 +569,13 @@ fun MainTopAppBar(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
-                                .background(Color(0xFF34C759).copy(alpha = alpha)) // Apple green
+                                .background(com.example.ui.theme.LocalCustomColors.current.success.copy(alpha = alpha)) // Apple green
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "记忆同步中",
                             fontSize = 11.sp,
-                            color = Color(0xFF34C759)
+                            color = com.example.ui.theme.LocalCustomColors.current.success
                         )
                     }
                 } else if (currentTab == "chat" && defaultProvider?.memoryModelId?.isNotBlank() == true) {
@@ -559,7 +594,7 @@ fun MainTopAppBar(
             )
         )
         HorizontalDivider(
-            color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             thickness = 0.5.dp
         )
     }
@@ -741,13 +776,10 @@ fun ChatView(viewModel: ChatViewModel) {
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
-                    val isDark = isSystemInDarkTheme()
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                if (isDark) Color(0xFF1C1C1E) else Color(0xFFF2F2F7)
-                            )
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         // 当前模型状态行
@@ -761,20 +793,20 @@ fun ChatView(viewModel: ChatViewModel) {
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(Color(0xFF34C759))
+                                    .background(com.example.ui.theme.LocalCustomColors.current.success)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "当前模型: $activeModelId  ·  ${activeProviderName}",
                                 fontSize = 11.sp,
-                                color = if (isDark) Color(0xFFAAAAAA) else Color(0xFF666666),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1
                             )
                         }
 
                         HorizontalDivider(
-                            color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                             thickness = 0.5.dp,
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
@@ -791,7 +823,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(
                                     0.5.dp,
-                                    if (isDark) Color(0xFF3A3A3C) else Color(0xFFD1D1D6)
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 ),
                                 colors = CardDefaults.outlinedCardColors(
                                     containerColor = Color.Transparent
@@ -1024,11 +1056,12 @@ fun ThinkingProcessPanel(
     isThinkingFinished: Boolean
 ) {
     var isExpanded by remember { mutableStateOf(!isThinkingFinished) }
-    val isDark = isSystemInDarkTheme()
-    
-    val containerBg = if (isDark) Color(0xFF252528) else Color(0xFFF3F3F5)
-    val textBg = if (isDark) Color(0xFF1D1D20) else Color(0xFFFFFFFF)
-    val borderCol = if (isDark) Color(0xFF333336) else Color(0xFFE5E5EA)
+
+    val containerBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val textBg = MaterialTheme.colorScheme.surface
+    val borderCol = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    val accentColor = com.example.ui.theme.LocalCustomColors.current.accent
+    val successColor = com.example.ui.theme.LocalCustomColors.current.success
 
     Column(
         modifier = Modifier
@@ -1061,7 +1094,7 @@ fun ThinkingProcessPanel(
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = "Thinking",
-                        tint = Color(0xFFFF9500),
+                        tint = accentColor,
                         modifier = Modifier
                             .size(16.dp)
                             .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
@@ -1070,7 +1103,7 @@ fun ThinkingProcessPanel(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Done",
-                        tint = Color(0xFF34C759),
+                        tint = successColor,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1079,13 +1112,13 @@ fun ThinkingProcessPanel(
                     text = if (!isThinkingFinished) "AI 正在深度思考中（实时吐流）..." else "深度思考过程 (已折叠，点击展开)",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isDark) Color(0xFFCCCCCC) else Color(0xFF555555)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Icon(
                 imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = if (isExpanded) "折叠" else "展开",
-                tint = Color(0xFF8E8E93),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -1108,14 +1141,26 @@ fun ThinkingProcessPanel(
                         .background(textBg)
                         .padding(10.dp)
                 ) {
-                    Text(
-                        text = thinkingText,
-                        color = if (isDark) Color(0xFFAAAAAA) else Color(0xFF666666),
-                        fontSize = 12.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 18.sp,
-                        fontWeight = FontWeight.Normal
-                    )
+                    if (!isThinkingFinished) {
+                        ChunkedStreamingText(
+                            text = thinkingText,
+                            textColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp
+                        )
+                    } else {
+                        dev.jeziellago.compose.markdowntext.MarkdownText(
+                            markdown = thinkingText,
+                            style = androidx.compose.ui.text.TextStyle(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                fontSize = 12.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 18.sp
+                            ),
+                            syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
+                            syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -1124,8 +1169,6 @@ fun ThinkingProcessPanel(
 
 @Composable
 fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
-    val isDark = isSystemInDarkTheme()
-    
     // 聚合逻辑：显示 "Tool use [name] x [count]"
     val totalCount = messages.size
     val label = if (totalCount > 1) "Tools used x$totalCount" else "Tool used"
@@ -1141,9 +1184,9 @@ fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
                 onClick = { showDetails = !showDetails },
-                color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(0.5.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFE5E5EA))
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1209,6 +1252,7 @@ fun BubbleMessage(
     var showMenu by remember { mutableStateOf(false) }
     var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
     val density = LocalDensity.current
+    val context = LocalContext.current
 
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primary
@@ -1300,8 +1344,8 @@ fun BubbleMessage(
                                     fontSize = 15.sp,
                                     lineHeight = 22.sp
                                 ),
-                                syntaxHighlightColor = textColor.copy(alpha = 0.12f),
-                                syntaxHighlightTextColor = textColor,
+                                syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
+                                syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(14.dp, 10.dp)
                             )
                         }
@@ -1329,9 +1373,11 @@ fun BubbleMessage(
                 text = { Text("复制内容") },
                 onClick = {
                     showMenu = false
-                    // TODO: Implement copy to clipboard if needed
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("OmniChat", message.content)
+                    clipboard.setPrimaryClip(clip)
                 },
-                leadingIcon = { Icon(Icons.Default.Send, contentDescription = null) }
+                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
             )
         }
     }
@@ -1372,20 +1418,6 @@ fun StreamingBubble(
                             if (!isThinkingFinished) "" else "正在构思答复内容..." 
                         }
                         if (displayText.isNotEmpty()) {
-                            // 检测文本中是否含有 Markdown 表格。
-                            // 即使有了 reverseLayout 和节流，Markdown 表格在流式输出（尤其是逐行出现时）
-                            // 依然会导致 View 频繁重绘和高度大幅跳变，产生“抽搐”感。
-                            // 我们在输出过程中如果检测到表格，暂时回退到纯文本 Text 渲染以保证极度流畅，
-                            // 输出完成后 BubbleMessage 会自动切换回完整的 MarkdownText 渲染。
-                            val isTableMidway = remember(displayText) {
-                                val lines = displayText.lines()
-                                // 检查是否有任何一行看起来像表格行（包含多个 | ）
-                                lines.any { line -> 
-                                    val count = line.count { it == '|' }
-                                    count >= 2
-                                }
-                            }
-
                             Surface(
                                 color = bubbleColor,
                                 shape = RoundedCornerShape(
@@ -1398,27 +1430,14 @@ fun StreamingBubble(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(14.dp, 10.dp)) {
-                                    if (isTableMidway) {
-                                        Text(
-                                            text = displayText,
-                                            color = textColor,
-                                            fontSize = 15.sp,
-                                            lineHeight = 22.sp,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                    } else {
-                                        dev.jeziellago.compose.markdowntext.MarkdownText(
-                                            markdown = displayText,
-                                            style = androidx.compose.ui.text.TextStyle(
-                                                color = textColor,
-                                                fontSize = 15.sp,
-                                                lineHeight = 22.sp
-                                            ),
-                                            syntaxHighlightColor = textColor.copy(alpha = 0.12f),
-                                            syntaxHighlightTextColor = textColor,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                    }
+                                    ChunkedStreamingText(
+                                        text = displayText,
+                                        textColor = textColor,
+                                        fontSize = 15.sp,
+                                        lineHeight = 22.sp,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+
                                     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
                                     val pulseAlpha by infiniteTransition.animateFloat(
                                         initialValue = 0.2f,
@@ -1561,17 +1580,16 @@ fun ModelConfigCard(
     onCheckPrimary: () -> Unit,
     onCheckMemory: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    val cardBackground = if (isDark) Color(0xFF1C1C1E) else Color.White
-    val borderStrokeColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA)
+    val cardBackground = MaterialTheme.colorScheme.surface
+    val borderStrokeColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("model_card_${config.id}"),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBackground),
-        border = BorderStroke(1.dp, borderStrokeColor)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Header Row
@@ -1585,7 +1603,7 @@ fun ModelConfigCard(
                         text = config.name,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (isDark) Color.White else Color.Black,
+                        color = MaterialTheme.colorScheme.onSurface,
                         letterSpacing = (-0.3).sp
                     )
                 }
@@ -1674,7 +1692,7 @@ fun ModelConfigCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA), thickness = 0.5.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(12.dp))
 
             // iOS-Style Toggles (Grouped Settings Rows)
@@ -1703,65 +1721,65 @@ fun ModelConfigCard(
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(
-                                text = "设为默认配置",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (isDark) Color.White else Color.Black
-                            )
-                            Text(
-                                text = "将此 API 提供商作为全局使用",
-                                fontSize = 11.sp,
-                                color = Color(0xFF8E8E93)
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = config.isDefaultProvider,
-                        onCheckedChange = { onCheckPrimary() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = Color(0xFF34C759),
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE9E9EB),
-                            uncheckedBorderColor = Color.Transparent,
-                            checkedBorderColor = Color.Transparent
-                        ),
-                        modifier = Modifier.scale(0.82f)
-                    )
-                }
+                Text(
+                    text = "设为默认配置",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "将此 API 提供商作为全局使用",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
+        }
+        Switch(
+            checked = config.isDefaultProvider,
+            onCheckedChange = { onCheckPrimary() },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = com.example.ui.theme.LocalCustomColors.current.success,
+                uncheckedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                uncheckedBorderColor = Color.Transparent,
+                checkedBorderColor = Color.Transparent
+            ),
+            modifier = Modifier.scale(0.82f)
+        )
+    }
+}
 
-            Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA), thickness = 0.5.dp)
-            Spacer(modifier = Modifier.height(8.dp))
+Spacer(modifier = Modifier.height(10.dp))
+HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+Spacer(modifier = Modifier.height(8.dp))
 
-            // Edit / Delete Actions row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = onEdit,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF007AFF))
-                ) {
-                    Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("编辑", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
+// Edit / Delete Actions row
+Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.End,
+    verticalAlignment = Alignment.CenterVertically
+) {
+    TextButton(
+        onClick = onEdit,
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+    ) {
+        Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text("编辑", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
 
-                Spacer(modifier = Modifier.width(16.dp))
+    Spacer(modifier = Modifier.width(16.dp))
 
-                TextButton(
-                    onClick = onDelete,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF3B30))
-                ) {
-                    Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("删除", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
-            }
+    TextButton(
+        onClick = onDelete,
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+    ) {
+        Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text("删除", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
+}
         }
     }
 }
@@ -2035,7 +2053,7 @@ fun ModelConfigDialog(
                         text = "可用模型列表 (点击模型名选择；点击下方标签可**手动修正** 思考/视觉/工具 调用能力):",
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF34C759),
+                        color = com.example.ui.theme.LocalCustomColors.current.success,
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
                     
@@ -2111,7 +2129,7 @@ fun ModelConfigDialog(
                                         InteractiveCapabilityBadge(
                                             text = "💭 思考/推理",
                                             enabled = m.hasThinking,
-                                            color = Color(0xFF34C759),
+                                            color = com.example.ui.theme.LocalCustomColors.current.success,
                                             onClick = {
                                                 val index = dialogModels.indexOf(m)
                                                 if (index != -1) {
@@ -2124,7 +2142,7 @@ fun ModelConfigDialog(
                                         InteractiveCapabilityBadge(
                                             text = "👁️ 视觉",
                                             enabled = m.hasVision,
-                                            color = Color(0xFF007AFF),
+                                            color = MaterialTheme.colorScheme.primary,
                                             onClick = {
                                                 val index = dialogModels.indexOf(m)
                                                 if (index != -1) {
@@ -2137,7 +2155,7 @@ fun ModelConfigDialog(
                                         InteractiveCapabilityBadge(
                                             text = "🛠️ 工具调用",
                                             enabled = m.hasToolUse,
-                                            color = Color(0xFFFF9500),
+                                            color = com.example.ui.theme.LocalCustomColors.current.warning,
                                             onClick = {
                                                 val index = dialogModels.indexOf(m)
                                                 if (index != -1) {
@@ -2271,7 +2289,12 @@ fun ProviderModelPicker(
     onConfirm: (provider: ModelConfig, modelId: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val mutedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val successColor = com.example.ui.theme.LocalCustomColors.current.success
+    val infoColor = com.example.ui.theme.LocalCustomColors.current.info
+    val accentColor = com.example.ui.theme.LocalCustomColors.current.accent
 
     // 步骤：0 = 选 Provider，1 = 选模型
     var step by remember { mutableStateOf(0) }
@@ -2328,7 +2351,7 @@ fun ProviderModelPicker(
                             Text(
                                 text = pickedProvider!!.name,
                                 fontSize = 11.sp,
-                                color = Color(0xFF8E8E93)
+                                color = mutedTextColor
                             )
                         }
                     }
@@ -2336,14 +2359,14 @@ fun ProviderModelPicker(
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            tint = Color(0xFF8E8E93),
+                            tint = mutedTextColor,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
                 HorizontalDivider(
-                    color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+                    color = dividerColor,
                     thickness = 0.5.dp
                 )
 
@@ -2370,7 +2393,7 @@ fun ProviderModelPicker(
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isSelected)
                                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                    else if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+                                    else cardBg
                                 ),
                                 border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
                             ) {
@@ -2387,16 +2410,16 @@ fun ProviderModelPicker(
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary
-                                                        else if (isDark) Color.White else Color.Black
+                                                        else MaterialTheme.colorScheme.onSurface
                                             )
                                             if (config.isDefaultProvider) {
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
                                                     text = "默认",
                                                     fontSize = 9.sp,
-                                                    color = Color(0xFF34C759),
+                                                    color = successColor,
                                                     modifier = Modifier
-                                                        .background(Color(0xFF34C759).copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                                                        .background(successColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
                                                         .padding(horizontal = 5.dp, vertical = 1.dp)
                                                 )
                                             }
@@ -2404,14 +2427,14 @@ fun ProviderModelPicker(
                                         Text(
                                             text = config.endpoint,
                                             fontSize = 10.sp,
-                                            color = Color(0xFF8E8E93),
+                                            color = mutedTextColor,
                                             maxLines = 1
                                         )
                                     }
                                     Icon(
                                         imageVector = Icons.Default.KeyboardArrowRight,
                                         contentDescription = null,
-                                        tint = Color(0xFF8E8E93),
+                                        tint = mutedTextColor,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -2431,20 +2454,20 @@ fun ProviderModelPicker(
                                 Icon(
                                     imageVector = Icons.Default.Info,
                                     contentDescription = null,
-                                    tint = Color(0xFF8E8E93),
+                                    tint = mutedTextColor,
                                     modifier = Modifier.size(32.dp)
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "该 Provider 暂无已保存的模型列表",
                                     fontSize = 13.sp,
-                                    color = Color(0xFF8E8E93),
+                                    color = mutedTextColor,
                                     textAlign = TextAlign.Center
                                 )
                                 Text(
                                     text = "请先在「模型配置」中拉取模型",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF8E8E93),
+                                    color = mutedTextColor,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -2467,7 +2490,7 @@ fun ProviderModelPicker(
                                     colors = CardDefaults.cardColors(
                                         containerColor = if (isSelected)
                                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                        else if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+                                        else cardBg
                                     ),
                                     border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
                                 ) {
@@ -2483,7 +2506,7 @@ fun ProviderModelPicker(
                                                 fontSize = 13.sp,
                                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary
-                                                        else if (isDark) Color.White else Color.Black,
+                                                        else MaterialTheme.colorScheme.onSurface,
                                                 maxLines = 1
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
@@ -2498,16 +2521,16 @@ fun ProviderModelPicker(
                                                         .padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasThinking) Text(
-                                                    "💭 思考", fontSize = 9.sp, color = Color(0xFF34C759),
-                                                    modifier = Modifier.background(Color(0xFF34C759).copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    "💭 思考", fontSize = 9.sp, color = successColor,
+                                                    modifier = Modifier.background(successColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasVision) Text(
-                                                    "👁️ 视觉", fontSize = 9.sp, color = Color(0xFF007AFF),
-                                                    modifier = Modifier.background(Color(0xFF007AFF).copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    "👁️ 视觉", fontSize = 9.sp, color = infoColor,
+                                                    modifier = Modifier.background(infoColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasToolUse) Text(
-                                                    "🛠️ 工具", fontSize = 9.sp, color = Color(0xFFFF9500),
-                                                    modifier = Modifier.background(Color(0xFFFF9500).copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    "🛠️ 工具", fontSize = 9.sp, color = accentColor,
+                                                    modifier = Modifier.background(accentColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                             }
                                         }
@@ -2527,7 +2550,7 @@ fun ProviderModelPicker(
 
                     // 确认按钮
                     HorizontalDivider(
-                        color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA),
+                        color = dividerColor,
                         thickness = 0.5.dp
                     )
                     Row(
@@ -2562,7 +2585,11 @@ fun MemoryModelSelectorCard(
     allModelsFlow: (Long) -> kotlinx.coroutines.flow.Flow<List<FetchedModel>>,
     onModelSelected: (provider: ModelConfig, modelId: String) -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val surface = MaterialTheme.colorScheme.surface
+    val borderCol = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    
     val currentMemoryModelId = defaultProvider?.memoryModelId ?: ""
     val currentMemoryProviderId = defaultProvider?.memoryProviderId ?: 0L
 
@@ -2586,9 +2613,9 @@ fun MemoryModelSelectorCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White
+            containerColor = surface
         ),
-        border = BorderStroke(0.5.dp, if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA))
+        border = BorderStroke(0.5.dp, borderCol)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             // 标题行
@@ -2599,19 +2626,19 @@ fun MemoryModelSelectorCard(
                 Box(
                     modifier = Modifier
                         .size(28.dp)
-                        .background(Color(0xFF5856D6), RoundedCornerShape(7.dp))
+                        .background(primaryColor, RoundedCornerShape(7.dp))
                         .padding(5.dp)
                 ) {
-                    Icon(Icons.Default.Build, contentDescription = null, tint = Color.White, modifier = Modifier.fillMaxSize())
+                    Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.fillMaxSize())
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
-                    Text("副模型配置", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isDark) Color.White else Color.Black)
-                    Text("用于记忆优化分析 & 会话标题生成", fontSize = 11.sp, color = Color(0xFF8E8E93))
+                    Text("副模型配置", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
+                    Text("用于记忆优化分析 & 会话标题生成", fontSize = 11.sp, color = onSurface.copy(alpha = 0.6f))
                 }
             }
 
-            HorizontalDivider(color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA), thickness = 0.5.dp, modifier = Modifier.padding(bottom = 10.dp))
+            HorizontalDivider(color = borderCol, thickness = 0.5.dp, modifier = Modifier.padding(bottom = 10.dp))
 
             if (defaultProvider == null) {
                 Row(
@@ -2623,14 +2650,14 @@ fun MemoryModelSelectorCard(
                     Text("请先在「模型配置」页设置默认提供商", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                 }
             } else {
-                Text("当前副模型", fontSize = 11.sp, color = Color(0xFF8E8E93), modifier = Modifier.padding(bottom = 4.dp))
+                Text("当前副模型", fontSize = 11.sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
 
                 // 当前选择展示 + 点击打开选择器
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth().clickable { showPicker = true },
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3C) else Color(0xFFD1D1D6)),
-                    colors = CardDefaults.outlinedCardColors(containerColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7))
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -2639,13 +2666,13 @@ fun MemoryModelSelectorCard(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             if (currentMemoryModelId.isBlank()) {
-                                Text("未选择（将使用主模型）", fontSize = 13.sp, color = Color(0xFF8E8E93))
+                                Text("未选择（将使用主模型）", fontSize = 13.sp, color = onSurface.copy(alpha = 0.5f))
                             } else {
                                 Text(
                                     text = currentMemoryModelId,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = if (isDark) Color.White else Color.Black,
+                                    color = onSurface,
                                     maxLines = 1
                                 )
                                 Spacer(modifier = Modifier.height(3.dp))
@@ -2654,15 +2681,15 @@ fun MemoryModelSelectorCard(
                                     Text(
                                         text = memoryProviderName,
                                         fontSize = 9.sp,
-                                        color = Color(0xFF5856D6),
-                                        modifier = Modifier.background(Color(0xFF5856D6).copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                                        color = primaryColor,
+                                        modifier = Modifier.background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                     )
                                     if (currentModelInfo != null) {
                                         Text(
                                             text = currentModelInfo.contextSize,
                                             fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                         )
                                         if (currentModelInfo.hasThinking) Text("💭", fontSize = 9.sp)
                                         if (currentModelInfo.hasVision) Text("👁️", fontSize = 9.sp)
@@ -2671,7 +2698,7 @@ fun MemoryModelSelectorCard(
                                 }
                             }
                         }
-                        Icon(Icons.Default.Edit, contentDescription = "选择", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Edit, contentDescription = "选择", tint = primaryColor, modifier = Modifier.size(16.dp))
                     }
                 }
 
@@ -2679,7 +2706,7 @@ fun MemoryModelSelectorCard(
                 Text(
                     text = "副模型在每次对话后台运行，负责提炼记忆条目并生成会话标题。可选择任意 Provider 的模型，建议用速度快、成本低的小模型。",
                     fontSize = 11.sp,
-                    color = Color(0xFF8E8E93),
+                    color = onSurface.copy(alpha = 0.6f),
                     lineHeight = 15.sp
                 )
             }

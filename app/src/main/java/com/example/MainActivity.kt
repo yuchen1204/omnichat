@@ -12,11 +12,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.screens.MainScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.ChatViewModel
+import com.example.ui.viewmodel.SettingsViewModel
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,7 +38,10 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         requestStoragePermissions()
         setContent {
-            MyApplicationTheme {
+            val settingsViewModel: SettingsViewModel = viewModel()
+            val uiSettings by settingsViewModel.uiSettings.collectAsState()
+            
+            MyApplicationTheme(uiSettings = uiSettings) {
                 val viewModel: ChatViewModel = viewModel()
                 MainScreen(viewModel = viewModel)
             }

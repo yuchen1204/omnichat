@@ -193,3 +193,36 @@ interface McpServerDao {
     @Query("SELECT * FROM mcp_servers WHERE isEnabled = 1 ORDER BY createdAt ASC")
     suspend fun getEnabledServers(): List<McpServer>
 }
+
+@Dao
+interface UISettingsDao {
+    @Query("SELECT * FROM ui_settings WHERE id = 1 LIMIT 1")
+    fun getSettingsFlow(): Flow<UISettings?>
+
+    @Query("SELECT * FROM ui_settings WHERE id = 1 LIMIT 1")
+    suspend fun getSettings(): UISettings?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSettings(settings: UISettings)
+}
+
+@Dao
+interface ColorSchemePresetDao {
+    @Query("SELECT * FROM color_scheme_presets ORDER BY createdAt ASC")
+    fun getAllPresetsFlow(): Flow<List<ColorSchemePreset>>
+
+    @Query("SELECT * FROM color_scheme_presets ORDER BY createdAt ASC")
+    suspend fun getAllPresets(): List<ColorSchemePreset>
+
+    @Query("SELECT COUNT(*) FROM color_scheme_presets")
+    suspend fun getCount(): Int
+
+    @Query("SELECT * FROM color_scheme_presets WHERE schemeId = :schemeId LIMIT 1")
+    suspend fun getPresetById(schemeId: String): ColorSchemePreset?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPreset(preset: ColorSchemePreset)
+
+    @Query("DELETE FROM color_scheme_presets WHERE schemeId = :schemeId")
+    suspend fun deletePresetById(schemeId: String)
+}

@@ -17,8 +17,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FetchedModel::class,
         SessionSummary::class,
         McpServer::class,
+        UISettings::class,
     ],
-    version = 12,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fetchedModelDao(): FetchedModelDao
     abstract fun sessionSummaryDao(): SessionSummaryDao
     abstract fun mcpServerDao(): McpServerDao
+    abstract fun uiSettingsDao(): UISettingsDao
 
     companion object {
         @Volatile
@@ -164,6 +166,75 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v12→v13：新增 ui_settings 表 */
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ui_settings (
+                        id INTEGER PRIMARY KEY NOT NULL,
+                        primaryColor TEXT NOT NULL,
+                        onPrimaryColor TEXT NOT NULL,
+                        secondaryColor TEXT NOT NULL,
+                        backgroundColor TEXT NOT NULL,
+                        surfaceColor TEXT NOT NULL,
+                        cornerRadiusDp INTEGER NOT NULL,
+                        spacingMultiplier REAL NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                // 插入默认行
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO ui_settings 
+                    (id, primaryColor, onPrimaryColor, secondaryColor, backgroundColor, surfaceColor, cornerRadiusDp, spacingMultiplier, updatedAt)
+                    VALUES (1, '#6750A4', '#FFFFFF', '#625B71', '#FFFBFE', '#FFFBFE', 12, 1.0, 0)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /** v13→v14：ui_settings 增加 error/success/warning 颜色 */
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN errorColor TEXT NOT NULL DEFAULT '#B00020'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN successColor TEXT NOT NULL DEFAULT '#4CAF50'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN warningColor TEXT NOT NULL DEFAULT '#FF9800'")
+            }
+        }
+
+        /** v14→v15：扩展 ui_settings，覆盖完整 Material 3 调色板 + 状态色，让 AI 可以调整全部配色 */
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 主色容器
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN primaryContainerColor TEXT NOT NULL DEFAULT '#EADDFF'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onPrimaryContainerColor TEXT NOT NULL DEFAULT '#21005D'")
+                // 次色 + 容器
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onSecondaryColor TEXT NOT NULL DEFAULT '#FFFFFF'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN secondaryContainerColor TEXT NOT NULL DEFAULT '#E8DEF8'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onSecondaryContainerColor TEXT NOT NULL DEFAULT '#1D192B'")
+                // 第三色
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN tertiaryColor TEXT NOT NULL DEFAULT '#7D5260'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onTertiaryColor TEXT NOT NULL DEFAULT '#FFFFFF'")
+                // 表面 / 文字
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onBackgroundColor TEXT NOT NULL DEFAULT '#1C1B1F'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onSurfaceColor TEXT NOT NULL DEFAULT '#1C1B1F'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN surfaceVariantColor TEXT NOT NULL DEFAULT '#E7E0EC'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onSurfaceVariantColor TEXT NOT NULL DEFAULT '#49454F'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN outlineColor TEXT NOT NULL DEFAULT '#79747E'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN outlineVariantColor TEXT NOT NULL DEFAULT '#CAC4D0'")
+                // 错误容器
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onErrorColor TEXT NOT NULL DEFAULT '#FFFFFF'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN errorContainerColor TEXT NOT NULL DEFAULT '#F9DEDC'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN onErrorContainerColor TEXT NOT NULL DEFAULT '#410E0B'")
+                // 信息 / 强调
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN infoColor TEXT NOT NULL DEFAULT '#007AFF'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN accentColor TEXT NOT NULL DEFAULT '#FF9500'")
+                // success 默认值更新为 iOS 风格的绿色（从 #4CAF50 -> #34C759 的迁移仅更新默认值，不强制覆盖已有数据）
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -182,7 +253,10 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
-                        MIGRATION_11_12
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
                     )
                     // 兜底：如果遇到无法处理的跨版本跳跃（如从未知旧版本升级），
                     // 才执行破坏性迁移。正常升级路径不会触发这个。

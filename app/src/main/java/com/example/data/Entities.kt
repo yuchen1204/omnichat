@@ -114,3 +114,177 @@ data class McpServer(
     val isEnabled: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+/**
+ * 配色方案预设快照。
+ *
+ * 每次 AI 调用 save_color_scheme 时，将当前 [UISettings] 的全部颜色 + 布局参数
+ * 序列化为一行记录。最多保存 [MAX_PRESETS] 条，超出时拒绝保存并提示 AI 先删除旧方案。
+ *
+ * [schemeId] 使用 UUID 字符串，保证跨设备唯一，便于未来同步。
+ */
+@Entity(tableName = "color_scheme_presets")
+data class ColorSchemePreset(
+    @PrimaryKey val schemeId: String,          // UUID 字符串
+    val name: String,                          // 方案名称，由 AI 提供
+    val description: String,                   // 方案概述，由 AI 提供
+    val createdAt: Long = System.currentTimeMillis(),
+
+    // ── 颜色快照（与 UISettings 字段一一对应） ──────────────────
+    val primaryColor: String,
+    val onPrimaryColor: String,
+    val primaryContainerColor: String,
+    val onPrimaryContainerColor: String,
+    val secondaryColor: String,
+    val onSecondaryColor: String,
+    val secondaryContainerColor: String,
+    val onSecondaryContainerColor: String,
+    val tertiaryColor: String,
+    val onTertiaryColor: String,
+    val backgroundColor: String,
+    val onBackgroundColor: String,
+    val surfaceColor: String,
+    val onSurfaceColor: String,
+    val surfaceVariantColor: String,
+    val onSurfaceVariantColor: String,
+    val outlineColor: String,
+    val outlineVariantColor: String,
+    val errorColor: String,
+    val onErrorColor: String,
+    val errorContainerColor: String,
+    val onErrorContainerColor: String,
+    val successColor: String,
+    val warningColor: String,
+    val infoColor: String,
+    val accentColor: String,
+    val cornerRadiusDp: Int,
+    val spacingMultiplier: Float
+) {
+    companion object {
+        const val MAX_PRESETS = 5
+
+        /** 从当前 UISettings 快照出一个 Preset（schemeId/name/description 由调用方填入） */
+        fun fromUISettings(
+            schemeId: String,
+            name: String,
+            description: String,
+            s: UISettings
+        ) = ColorSchemePreset(
+            schemeId = schemeId,
+            name = name,
+            description = description,
+            primaryColor = s.primaryColor,
+            onPrimaryColor = s.onPrimaryColor,
+            primaryContainerColor = s.primaryContainerColor,
+            onPrimaryContainerColor = s.onPrimaryContainerColor,
+            secondaryColor = s.secondaryColor,
+            onSecondaryColor = s.onSecondaryColor,
+            secondaryContainerColor = s.secondaryContainerColor,
+            onSecondaryContainerColor = s.onSecondaryContainerColor,
+            tertiaryColor = s.tertiaryColor,
+            onTertiaryColor = s.onTertiaryColor,
+            backgroundColor = s.backgroundColor,
+            onBackgroundColor = s.onBackgroundColor,
+            surfaceColor = s.surfaceColor,
+            onSurfaceColor = s.onSurfaceColor,
+            surfaceVariantColor = s.surfaceVariantColor,
+            onSurfaceVariantColor = s.onSurfaceVariantColor,
+            outlineColor = s.outlineColor,
+            outlineVariantColor = s.outlineVariantColor,
+            errorColor = s.errorColor,
+            onErrorColor = s.onErrorColor,
+            errorContainerColor = s.errorContainerColor,
+            onErrorContainerColor = s.onErrorContainerColor,
+            successColor = s.successColor,
+            warningColor = s.warningColor,
+            infoColor = s.infoColor,
+            accentColor = s.accentColor,
+            cornerRadiusDp = s.cornerRadiusDp,
+            spacingMultiplier = s.spacingMultiplier
+        )
+
+        /** 将 Preset 还原为 UISettings（保留 id=1 和 updatedAt=now） */
+        fun ColorSchemePreset.toUISettings() = UISettings(
+            primaryColor = primaryColor,
+            onPrimaryColor = onPrimaryColor,
+            primaryContainerColor = primaryContainerColor,
+            onPrimaryContainerColor = onPrimaryContainerColor,
+            secondaryColor = secondaryColor,
+            onSecondaryColor = onSecondaryColor,
+            secondaryContainerColor = secondaryContainerColor,
+            onSecondaryContainerColor = onSecondaryContainerColor,
+            tertiaryColor = tertiaryColor,
+            onTertiaryColor = onTertiaryColor,
+            backgroundColor = backgroundColor,
+            onBackgroundColor = onBackgroundColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            surfaceVariantColor = surfaceVariantColor,
+            onSurfaceVariantColor = onSurfaceVariantColor,
+            outlineColor = outlineColor,
+            outlineVariantColor = outlineVariantColor,
+            errorColor = errorColor,
+            onErrorColor = onErrorColor,
+            errorContainerColor = errorContainerColor,
+            onErrorContainerColor = onErrorContainerColor,
+            successColor = successColor,
+            warningColor = warningColor,
+            infoColor = infoColor,
+            accentColor = accentColor,
+            cornerRadiusDp = cornerRadiusDp,
+            spacingMultiplier = spacingMultiplier,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+}
+
+/**
+ * 界面显示设置，允许 AI 调整配色和基础布局。
+ * id 永远为 1 (单行存储)。
+ *
+ * 当 [updatedAt] > 0 时表示用户/AI 已自定义，主题层会用这些值构建 lightColorScheme，
+ * 完整覆盖整个应用的配色（包含浅色/深色模式）。所有颜色字段均为 #RRGGBB 或 #RRGGBBAA 格式。
+ */
+@Entity(tableName = "ui_settings")
+data class UISettings(
+    @PrimaryKey val id: Long = 1L,
+
+    // ── 主调色板（Material 3 主色） ──────────────────────────────
+    val primaryColor: String = "#6750A4",
+    val onPrimaryColor: String = "#FFFFFF",
+    val primaryContainerColor: String = "#EADDFF",
+    val onPrimaryContainerColor: String = "#21005D",
+
+    val secondaryColor: String = "#625B71",
+    val onSecondaryColor: String = "#FFFFFF",
+    val secondaryContainerColor: String = "#E8DEF8",
+    val onSecondaryContainerColor: String = "#1D192B",
+
+    val tertiaryColor: String = "#7D5260",
+    val onTertiaryColor: String = "#FFFFFF",
+
+    // ── 表面与文字 ─────────────────────────────────────────────
+    val backgroundColor: String = "#FFFBFE",
+    val onBackgroundColor: String = "#1C1B1F",
+    val surfaceColor: String = "#FFFBFE",
+    val onSurfaceColor: String = "#1C1B1F",
+    val surfaceVariantColor: String = "#E7E0EC",
+    val onSurfaceVariantColor: String = "#49454F",
+    val outlineColor: String = "#79747E",
+    val outlineVariantColor: String = "#CAC4D0",
+
+    // ── 状态色（错误 / 成功 / 警告 / 信息 / 强调） ──────────────
+    val errorColor: String = "#B00020",
+    val onErrorColor: String = "#FFFFFF",
+    val errorContainerColor: String = "#F9DEDC",
+    val onErrorContainerColor: String = "#410E0B",
+    val successColor: String = "#34C759",
+    val warningColor: String = "#FF9800",
+    val infoColor: String = "#007AFF",
+    val accentColor: String = "#FF9500",
+
+    // ── 布局约束 ──────────────────────────────────────────────
+    val cornerRadiusDp: Int = 12,        // 圆角大小 (0-32)
+    val spacingMultiplier: Float = 1.0f, // 间距倍数 (0.5-2.0)
+    val updatedAt: Long = System.currentTimeMillis()
+)
