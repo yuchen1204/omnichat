@@ -2845,6 +2845,8 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
     var activeSubTab by remember { mutableStateOf("memory") }
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
+    val uiSettings = LocalUISettings.current
+    val spacingMultiplier = uiSettings.spacingMultiplier
 
     Column(
         modifier = Modifier
@@ -2865,96 +2867,135 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
         }
 
         if (activeSubTab == "memory") {
-            // ── 副模型配置卡片 ──────────────────────────────────────────
-            MemoryModelSelectorCard(
-                defaultProvider = defaultProvider,
-                allConfigs = modelConfigs,
-                allModelsFlow = { viewModel.getModelsByProviderFlow(it) },
-                onModelSelected = { provider, modelId ->
-                    viewModel.updateMemoryModelId(modelId, provider.id)
-                }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Memories section
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp * spacingMultiplier)
             ) {
-                OutlinedTextField(
-                    value = manualMemoryText,
-                    onValueChange = { manualMemoryText = it },
-                    placeholder = { Text("手动给AI灌输永久首选项偏好...", fontSize = 13.sp) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        if (manualMemoryText.isNotBlank()) {
-                            viewModel.insertManualMemory(manualMemoryText.trim())
-                            manualMemoryText = ""
+                // 1. 副模型配置卡片
+                item {
+                    MemoryModelSelectorCard(
+                        defaultProvider = defaultProvider,
+                        allConfigs = modelConfigs,
+                        allModelsFlow = { viewModel.getModelsByProviderFlow(it) },
+                        onModelSelected = { provider, modelId ->
+                            viewModel.updateMemoryModelId(modelId, provider.id)
                         }
-                    },
-                    modifier = Modifier.height(52.dp)
-                ) {
-                    Text("新增")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "AI在后台持续自我反省得出的记忆条目:",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (memories.isNotEmpty()) {
-                    TextButton(
-                        onClick = { viewModel.clearAllMemories() },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("清空全部记忆", fontSize = 12.sp)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (memories.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "暂长效记忆库空。你可以通过在对话中提到 preference，或者使用副角色模型在每次聊天完后台自动反省保存！",
-                        textAlign = TextAlign.Center,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+
+                // 2. 手动新增偏好/记忆卡片
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp * spacingMultiplier),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "手动录入长效记忆 / 用户首选项偏好",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp * spacingMultiplier))
+                            OutlinedTextField(
+                                value = manualMemoryText,
+                                onValueChange = { manualMemoryText = it },
+                                placeholder = { Text("例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼...", fontSize = 12.sp) },
+                                minLines = 2,
+                                maxLines = 4,
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp * spacingMultiplier))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (manualMemoryText.isNotBlank()) {
+                                            viewModel.insertManualMemory(manualMemoryText.trim())
+                                            manualMemoryText = ""
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp * spacingMultiplier)
+                                ) {
+                                    Text("添加偏好", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. 列表标题和清空按钮
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "AI 自我反省提炼的长效记忆 (${memories.size}):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (memories.isNotEmpty()) {
+                            TextButton(
+                                onClick = { viewModel.clearAllMemories() },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("清空全部", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                // 4. 记忆列表项
+                if (memories.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp * spacingMultiplier),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)),
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！",
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
                     items(memories) { memory ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("memory_item_${memory.id}"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(10.dp * spacingMultiplier)
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
