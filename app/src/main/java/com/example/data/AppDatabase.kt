@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UISettings::class,
         ColorSchemePreset::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -281,6 +281,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v16→v17：ui_settings 和 color_scheme_presets 增加 sidebarBackgroundColor / sidebarOnBackgroundColor / sidebarActiveColor / sidebarOnActiveColor */
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN sidebarBackgroundColor TEXT NOT NULL DEFAULT '#FFFBFE'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN sidebarOnBackgroundColor TEXT NOT NULL DEFAULT '#1C1B1F'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN sidebarActiveColor TEXT NOT NULL DEFAULT '#EADDFF'")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN sidebarOnActiveColor TEXT NOT NULL DEFAULT '#21005D'")
+                
+                db.execSQL("ALTER TABLE color_scheme_presets ADD COLUMN sidebarBackgroundColor TEXT NOT NULL DEFAULT '#FFFBFE'")
+                db.execSQL("ALTER TABLE color_scheme_presets ADD COLUMN sidebarOnBackgroundColor TEXT NOT NULL DEFAULT '#1C1B1F'")
+                db.execSQL("ALTER TABLE color_scheme_presets ADD COLUMN sidebarActiveColor TEXT NOT NULL DEFAULT '#EADDFF'")
+                db.execSQL("ALTER TABLE color_scheme_presets ADD COLUMN sidebarOnActiveColor TEXT NOT NULL DEFAULT '#21005D'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -303,7 +318,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_12_13,
                         MIGRATION_13_14,
                         MIGRATION_14_15,
-                        MIGRATION_15_16
+                        MIGRATION_15_16,
+                        MIGRATION_16_17
                     )
                     // 兜底：如果遇到无法处理的跨版本跳跃（如从未知旧版本升级），
                     // 才执行破坏性迁移。正常升级路径不会触发这个。

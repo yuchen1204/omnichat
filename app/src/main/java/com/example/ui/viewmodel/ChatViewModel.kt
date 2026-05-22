@@ -920,8 +920,15 @@ Rules:
 
     fun updateMemoryModelId(modelId: String, providerId: Long = 0L) {
         viewModelScope.launch {
-            val provider = repository.getDefaultProvider() ?: return@launch
-            repository.updateConfig(provider.copy(memoryModelId = modelId, memoryProviderId = providerId))
+            val provider = repository.getDefaultProvider()
+            if (provider != null) {
+                repository.updateConfig(provider.copy(memoryModelId = modelId, memoryProviderId = providerId))
+            } else {
+                val allConfigs = repository.getAllConfigs()
+                allConfigs.forEach { config ->
+                    repository.updateConfig(config.copy(memoryModelId = modelId, memoryProviderId = providerId))
+                }
+            }
         }
     }
 

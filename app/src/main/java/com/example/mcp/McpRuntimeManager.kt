@@ -478,7 +478,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
                     put("warningColor", colorProp("警告色（启动中、橙色提示），#FF9800 是默认"))
                     put("infoColor", colorProp("信息色（视觉/蓝色徽章），#007AFF 是默认"))
                     put("accentColor", colorProp("强调色（思考过程的星标、橙色点缀），#FF9500 是默认"))
-                    // —— 布局 ——
+                    // —— 侧边栏专属颜色 ——
+                    put("sidebarBackgroundColor", colorProp("侧边栏背景色，例如 #FFFBFE"))
+                    put("sidebarOnBackgroundColor", colorProp("侧边栏文字与辅助图标颜色，例如 #1C1B1F"))
+                    put("sidebarActiveColor", colorProp("侧边栏激活项背景色，例如 #EADDFF"))
+                    put("sidebarOnActiveColor", colorProp("侧边栏激活项文字与图标颜色，例如 #21005D"))
+                    // —— 布局 ──
                     put("cornerRadiusDp", JSONObject().apply {
                         put("type", "integer")
                         put("description", "全局圆角大小（dp），范围 0-32。影响卡片、按钮等的圆角")
@@ -924,6 +929,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
                     warningColor = hex("warningColor", current.warningColor),
                     infoColor = hex("infoColor", current.infoColor),
                     accentColor = hex("accentColor", current.accentColor),
+                    sidebarBackgroundColor = hex("sidebarBackgroundColor", current.sidebarBackgroundColor),
+                    sidebarOnBackgroundColor = hex("sidebarOnBackgroundColor", current.sidebarOnBackgroundColor),
+                    sidebarActiveColor = hex("sidebarActiveColor", current.sidebarActiveColor),
+                    sidebarOnActiveColor = hex("sidebarOnActiveColor", current.sidebarOnActiveColor),
                     cornerRadiusDp = cornerRadius,
                     spacingMultiplier = spacing,
                     updatedAt = System.currentTimeMillis()
@@ -959,6 +968,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 if (next.warningColor != current.warningColor) changed += "warningColor"
                 if (next.infoColor != current.infoColor) changed += "infoColor"
                 if (next.accentColor != current.accentColor) changed += "accentColor"
+                if (next.sidebarBackgroundColor != current.sidebarBackgroundColor) changed += "sidebarBackgroundColor"
+                if (next.sidebarOnBackgroundColor != current.sidebarOnBackgroundColor) changed += "sidebarOnBackgroundColor"
+                if (next.sidebarActiveColor != current.sidebarActiveColor) changed += "sidebarActiveColor"
+                if (next.sidebarOnActiveColor != current.sidebarOnActiveColor) changed += "sidebarOnActiveColor"
                 if (next.cornerRadiusDp != current.cornerRadiusDp) changed += "cornerRadiusDp"
                 if (next.spacingMultiplier != current.spacingMultiplier) changed += "spacingMultiplier"
 
@@ -1192,6 +1205,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             Field("warningColor", current.warningColor, "警告色（启动中状态、警告提示）", "HEX #RRGGBB(AA)"),
             Field("infoColor", current.infoColor, "信息色（视觉能力徽章等蓝色点缀）", "HEX #RRGGBB(AA)"),
             Field("accentColor", current.accentColor, "强调色（思考过程中的星标等橙色点缀）", "HEX #RRGGBB(AA)"),
+            Field("sidebarBackgroundColor", current.sidebarBackgroundColor, "侧边栏背景色", "HEX #RRGGBB(AA)"),
+            Field("sidebarOnBackgroundColor", current.sidebarOnBackgroundColor, "侧边栏文字与辅助图标颜色", "HEX #RRGGBB(AA)"),
+            Field("sidebarActiveColor", current.sidebarActiveColor, "侧边栏激活项背景色", "HEX #RRGGBB(AA)"),
+            Field("sidebarOnActiveColor", current.sidebarOnActiveColor, "侧边栏激活项文字与图标颜色", "HEX #RRGGBB(AA)"),
         )
 
         val layoutFields = listOf(

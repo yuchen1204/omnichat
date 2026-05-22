@@ -38,6 +38,25 @@ val LocalCustomColors = staticCompositionLocalOf {
     )
 }
 
+/**
+ * 侧边栏专属色板。AI 可以通过修改 sidebarBackgroundColor 等字段来自定义侧边栏外观。
+ */
+data class SidebarColors(
+    val background: Color,
+    val onBackground: Color,
+    val activeBackground: Color,
+    val onActiveBackground: Color
+)
+
+val LocalSidebarColors = staticCompositionLocalOf {
+    SidebarColors(
+        background = Color(0xFFFFFBFE),
+        onBackground = Color(0xFF1C1B1F),
+        activeBackground = Color(0xFFEADDFF),
+        onActiveBackground = Color(0xFF21005D)
+    )
+}
+
 private val DarkColorScheme =
   darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
 
@@ -127,9 +146,17 @@ fun MyApplicationTheme(
     accent = settings.accentColor.parseOr(Color(0xFFFF9500)),
   )
 
+  val sidebarColors = SidebarColors(
+    background = settings.sidebarBackgroundColor.parseOr(Color(0xFFFFFBFE)),
+    onBackground = settings.sidebarOnBackgroundColor.parseOr(Color(0xFF1C1B1F)),
+    activeBackground = settings.sidebarActiveColor.parseOr(Color(0xFFEADDFF)),
+    onActiveBackground = settings.sidebarOnActiveColor.parseOr(Color(0xFF21005D))
+  )
+
   CompositionLocalProvider(
     LocalUISettings provides settings,
-    LocalCustomColors provides customColors
+    LocalCustomColors provides customColors,
+    LocalSidebarColors provides sidebarColors
   ) {
     MaterialTheme(
       colorScheme = colorScheme,

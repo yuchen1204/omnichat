@@ -53,6 +53,7 @@ import com.example.data.Session
 import com.example.data.FetchedModel
 import com.example.mcp.McpViewModel
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.LocalSidebarColors
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -181,11 +182,7 @@ fun SessionSidebarPanel(
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     
     val uiSettings = LocalUISettings.current
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
-    val onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
-    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
+    val sidebarColors = LocalSidebarColors.current
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -197,7 +194,7 @@ fun SessionSidebarPanel(
         modifier = Modifier
             .fillMaxHeight()
             .width(280.dp)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(sidebarColors.background)
             .padding(16.dp)
     ) {
         // 标题 + 新建按钮
@@ -212,7 +209,7 @@ fun SessionSidebarPanel(
                 text = "对话列表",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = primaryColor
+                color = sidebarColors.onBackground
             )
             IconButton(
                 onClick = {
@@ -221,13 +218,13 @@ fun SessionSidebarPanel(
                 },
                 modifier = Modifier
                     .size(36.dp)
-                    .background(primaryContainer, RoundedCornerShape(8.dp * uiSettings.spacingMultiplier))
+                    .background(sidebarColors.activeBackground, RoundedCornerShape(8.dp * uiSettings.spacingMultiplier))
                     .testTag("add_session_btn")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "新建会话",
-                    tint = onPrimaryContainer,
+                    tint = sidebarColors.onActiveBackground,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -248,7 +245,7 @@ fun SessionSidebarPanel(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                if (isActive) MaterialTheme.colorScheme.primaryContainer
+                                if (isActive) sidebarColors.activeBackground
                                 else Color.Transparent
                             )
                             .combinedClickable(
@@ -265,8 +262,8 @@ fun SessionSidebarPanel(
                         Icon(
                             imageVector = Icons.Default.List,
                             contentDescription = "对话",
-                            tint = if (isActive) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isActive) sidebarColors.onActiveBackground
+                                   else sidebarColors.onBackground.copy(alpha = 0.6f),
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -274,8 +271,8 @@ fun SessionSidebarPanel(
                             text = session.title,
                             fontSize = 14.sp,
                             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurface,
+                            color = if (isActive) sidebarColors.onActiveBackground
+                                    else sidebarColors.onBackground,
                             modifier = Modifier.weight(1f),
                             maxLines = 1
                         )
@@ -287,8 +284,8 @@ fun SessionSidebarPanel(
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "更多操作",
-                                tint = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.6f)
+                                       else sidebarColors.onBackground.copy(alpha = 0.5f),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -343,7 +340,7 @@ fun SessionSidebarPanel(
         val activeModelId = defaultProvider?.selectedModelId ?: "未设置"
 
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            color = sidebarColors.onBackground.copy(alpha = 0.15f),
             thickness = 0.5.dp,
             modifier = Modifier.padding(top = 8.dp)
         )
@@ -365,13 +362,13 @@ fun SessionSidebarPanel(
                 Text(
                     text = activeProviderName,
                     fontSize = 11.sp,
-                    color = onSurfaceColor.copy(alpha = 0.6f),
+                    color = sidebarColors.onBackground.copy(alpha = 0.6f),
                     maxLines = 1
                 )
                 Text(
                     text = activeModelId,
                     fontSize = 10.sp,
-                    color = primaryColor,
+                    color = sidebarColors.onBackground.copy(alpha = 0.8f),
                     maxLines = 1
                 )
             }
@@ -397,14 +394,14 @@ fun SessionSidebarPanel(
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "设置",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = sidebarColors.onBackground.copy(alpha = 0.8f),
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "设置",
                         fontSize = 14.sp,
-                        color = onSurfaceColor
+                        color = sidebarColors.onBackground
                     )
                 }
             }
@@ -425,7 +422,7 @@ fun SessionSidebarPanel(
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "恢复默认配色",
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                    tint = sidebarColors.onBackground.copy(alpha = 0.7f),
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -1629,6 +1626,7 @@ fun ModelConfigCard(
 ) {
     val cardBackground = MaterialTheme.colorScheme.surface
     val borderStrokeColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    var isExpanded by remember(config.isDefaultProvider) { mutableStateOf(config.isDefaultProvider) }
 
     Card(
         modifier = Modifier
@@ -1641,7 +1639,10 @@ fun ModelConfigCard(
         Column(modifier = Modifier.padding(16.dp)) {
             // Header Row
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1655,178 +1656,197 @@ fun ModelConfigCard(
                     )
                 }
 
-                // Default status indicator
-                if (config.isDefaultProvider) {
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(10.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Default status indicator
+                    if (config.isDefaultProvider) {
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "默认提供商",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
+                        }
+                    }
+
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "收起" else "展开",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Endpoint display
+                    Row {
                         Text(
-                            text = "默认提供商",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            text = "Endpoint: ",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Text(
+                            text = config.endpoint,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Masked API Key display
+                    Row {
+                        Text(
+                            text = "API Key: ",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        val maskedKey = if (config.apiKey.length > 8) {
+                            config.apiKey.take(4) + "••••••••" + config.apiKey.takeLast(4)
+                        } else {
+                            "••••••••"
+                        }
+                        Text(
+                            text = maskedKey,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    // Custom headers count display
+                    val headerCount = try {
+                        val obj = org.json.JSONObject(config.customHeaders)
+                        obj.length()
+                    } catch (e: Exception) { 0 }
+                    if (headerCount > 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row {
+                            Text(
+                                text = "自定义请求头: ",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "$headerCount 个",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // iOS-Style Toggles (Grouped Settings Rows)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onCheckPrimary() }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(7.dp))
+                                        .padding(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "设为默认配置",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "将此 API 提供商作为全局使用",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = config.isDefaultProvider,
+                                onCheckedChange = { onCheckPrimary() },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                    checkedTrackColor = com.example.ui.theme.LocalCustomColors.current.success,
+                                    uncheckedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    uncheckedBorderColor = Color.Transparent,
+                                    checkedBorderColor = Color.Transparent
+                                ),
+                                modifier = Modifier.scale(0.82f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Edit / Delete Actions row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = onEdit,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("编辑", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        TextButton(
+                            onClick = onDelete,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("删除", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Endpoint display
-            Row {
-                Text(
-                    text = "Endpoint: ",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = config.endpoint,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            // Masked API Key display
-            Row {
-                Text(
-                    text = "API Key: ",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val maskedKey = if (config.apiKey.length > 8) {
-                    config.apiKey.take(4) + "••••••••" + config.apiKey.takeLast(4)
-                } else {
-                    "••••••••"
-                }
-                Text(
-                    text = maskedKey,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            // Custom headers count display
-            val headerCount = try {
-                val obj = org.json.JSONObject(config.customHeaders)
-                obj.length()
-            } catch (e: Exception) { 0 }
-            if (headerCount > 0) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row {
-                    Text(
-                        text = "自定义请求头: ",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "$headerCount 个",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // iOS-Style Toggles (Grouped Settings Rows)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onCheckPrimary() }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(7.dp))
-                                .padding(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                Text(
-                    text = "设为默认配置",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "将此 API 提供商作为全局使用",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
-        }
-        Switch(
-            checked = config.isDefaultProvider,
-            onCheckedChange = { onCheckPrimary() },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = com.example.ui.theme.LocalCustomColors.current.success,
-                uncheckedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                uncheckedBorderColor = Color.Transparent,
-                checkedBorderColor = Color.Transparent
-            ),
-            modifier = Modifier.scale(0.82f)
-        )
-    }
-}
-
-Spacer(modifier = Modifier.height(10.dp))
-HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
-Spacer(modifier = Modifier.height(8.dp))
-
-// Edit / Delete Actions row
-Row(
-    modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.End,
-    verticalAlignment = Alignment.CenterVertically
-) {
-    TextButton(
-        onClick = onEdit,
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-    ) {
-        Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-        Spacer(modifier = Modifier.width(4.dp))
-        Text("编辑", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-    }
-
-    Spacer(modifier = Modifier.width(16.dp))
-
-    TextButton(
-        onClick = onDelete,
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-    ) {
-        Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
-        Spacer(modifier = Modifier.width(4.dp))
-        Text("删除", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-    }
-}
         }
     }
 }
@@ -2245,10 +2265,11 @@ fun ModelConfigDialog(
                                     endpoint = endpoint,
                                     apiKey = apiKey,
                                     selectedModelId = selectedModelId,
-                                    memoryModelId = selectedModelId,
+                                    memoryModelId = config?.memoryModelId ?: selectedModelId,
+                                    memoryProviderId = config?.memoryProviderId ?: 0L,
                                     isDefaultProvider = config?.isDefaultProvider ?: false,
-                                    enableThinking = false,
-                                    thinkingEffort = "medium",
+                                    enableThinking = config?.enableThinking ?: false,
+                                    thinkingEffort = config?.thinkingEffort ?: "medium",
                                     customHeaders = headersJson
                                 ),
                                 dialogModels
@@ -2639,21 +2660,30 @@ fun MemoryModelSelectorCard(
     val surface = MaterialTheme.colorScheme.surface
     val borderCol = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     
-    val currentMemoryModelId = defaultProvider?.memoryModelId ?: ""
-    val currentMemoryProviderId = defaultProvider?.memoryProviderId ?: 0L
+    val currentMemoryModelId = defaultProvider?.memoryModelId 
+        ?: allConfigs.firstOrNull { it.memoryModelId.isNotBlank() }?.memoryModelId 
+        ?: ""
+    val currentMemoryProviderId = defaultProvider?.memoryProviderId 
+        ?: allConfigs.firstOrNull { it.memoryModelId.isNotBlank() }?.memoryProviderId 
+        ?: 0L
 
     var showPicker by remember { mutableStateOf(false) }
+    var isExpanded by remember { mutableStateOf(false) }
 
     // 找到副模型所属的 Provider 名称
     val memoryProviderName = if (currentMemoryProviderId > 0L) {
         allConfigs.find { it.id == currentMemoryProviderId }?.name ?: "未知 Provider"
     } else {
-        defaultProvider?.name ?: ""
+        defaultProvider?.name ?: allConfigs.firstOrNull()?.name ?: ""
     }
 
     // 找到副模型的能力信息（从对应 Provider 的模型列表里查）
-    val memoryProviderModels = remember(currentMemoryProviderId, defaultProvider?.id) {
-        val id = if (currentMemoryProviderId > 0L) currentMemoryProviderId else (defaultProvider?.id ?: 0L)
+    val memoryProviderModels = remember(currentMemoryProviderId, defaultProvider?.id, allConfigs.size) {
+        val id = if (currentMemoryProviderId > 0L) {
+            currentMemoryProviderId
+        } else {
+            defaultProvider?.id ?: allConfigs.firstOrNull()?.id ?: 0L
+        }
         if (id > 0L) allModelsFlow(id) else kotlinx.coroutines.flow.flowOf(emptyList())
     }.collectAsState(initial = emptyList())
     val currentModelInfo = memoryProviderModels.value.find { it.modelId == currentMemoryModelId }
@@ -2670,7 +2700,10 @@ fun MemoryModelSelectorCard(
             // 标题行
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 10.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(vertical = 4.dp)
             ) {
                 Box(
                     modifier = Modifier
@@ -2681,83 +2714,108 @@ fun MemoryModelSelectorCard(
                     Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.fillMaxSize())
                 }
                 Spacer(modifier = Modifier.width(10.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text("副模型配置", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
                     Text("用于记忆优化分析 & 会话标题生成", fontSize = 11.sp, color = onSurface.copy(alpha = 0.6f))
                 }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "收起" else "展开",
+                    tint = onSurface.copy(alpha = 0.6f)
+                )
             }
 
-            HorizontalDivider(color = borderCol, thickness = 0.5.dp, modifier = Modifier.padding(bottom = 10.dp))
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = borderCol, thickness = 0.5.dp, modifier = Modifier.padding(bottom = 10.dp))
 
-            if (defaultProvider == null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f), RoundedCornerShape(8.dp)).padding(10.dp)
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("请先在「模型配置」页设置默认提供商", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                }
-            } else {
-                Text("当前副模型", fontSize = 11.sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
+                    if (allConfigs.isEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("请先添加提供商", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        Text("当前副模型", fontSize = 11.sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
 
-                // 当前选择展示 + 点击打开选择器
-                OutlinedCard(
-                    modifier = Modifier.fillMaxWidth().clickable { showPicker = true },
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            if (currentMemoryModelId.isBlank()) {
-                                Text("未选择（将使用主模型）", fontSize = 13.sp, color = onSurface.copy(alpha = 0.5f))
-                            } else {
-                                Text(
-                                    text = currentMemoryModelId,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = onSurface,
-                                    maxLines = 1
-                                )
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    // Provider 来源标签
-                                    Text(
-                                        text = memoryProviderName,
-                                        fontSize = 9.sp,
-                                        color = primaryColor,
-                                        modifier = Modifier.background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                    if (currentModelInfo != null) {
+                        // 当前选择展示 + 点击打开选择器
+                        OutlinedCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showPicker = true },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    if (currentMemoryModelId.isBlank()) {
+                                        Text("未选择（将使用主模型）", fontSize = 13.sp, color = onSurface.copy(alpha = 0.5f))
+                                    } else {
                                         Text(
-                                            text = currentModelInfo.contextSize,
-                                            fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.secondary,
-                                            modifier = Modifier.background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                                            text = currentMemoryModelId,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurface,
+                                            maxLines = 1
                                         )
-                                        if (currentModelInfo.hasThinking) Text("💭", fontSize = 9.sp)
-                                        if (currentModelInfo.hasVision) Text("👁️", fontSize = 9.sp)
-                                        if (currentModelInfo.hasToolUse) Text("🛠️", fontSize = 9.sp)
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            // Provider 来源标签
+                                            Text(
+                                                text = memoryProviderName,
+                                                fontSize = 9.sp,
+                                                color = primaryColor,
+                                                modifier = Modifier
+                                                    .background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                            if (currentModelInfo != null) {
+                                                Text(
+                                                    text = currentModelInfo.contextSize,
+                                                    fontSize = 9.sp,
+                                                    color = MaterialTheme.colorScheme.secondary,
+                                                    modifier = Modifier
+                                                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                                if (currentModelInfo.hasThinking) Text("💭", fontSize = 9.sp)
+                                                if (currentModelInfo.hasVision) Text("👁️", fontSize = 9.sp)
+                                                if (currentModelInfo.hasToolUse) Text("🛠️", fontSize = 9.sp)
+                                            }
+                                        }
                                     }
                                 }
+                                Icon(Icons.Default.Edit, contentDescription = "选择", tint = primaryColor, modifier = Modifier.size(16.dp))
                             }
                         }
-                        Icon(Icons.Default.Edit, contentDescription = "选择", tint = primaryColor, modifier = Modifier.size(16.dp))
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "副模型在每次对话后台运行，负责提炼记忆条目并生成会话标题。可选择任意 Provider 的模型，建议用速度快、成本低的小模型。",
+                            fontSize = 11.sp,
+                            color = onSurface.copy(alpha = 0.6f),
+                            lineHeight = 15.sp
+                        )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "副模型在每次对话后台运行，负责提炼记忆条目并生成会话标题。可选择任意 Provider 的模型，建议用速度快、成本低的小模型。",
-                    fontSize = 11.sp,
-                    color = onSurface.copy(alpha = 0.6f),
-                    lineHeight = 15.sp
-                )
             }
         }
     }
@@ -2766,7 +2824,7 @@ fun MemoryModelSelectorCard(
         ProviderModelPicker(
             allConfigs = allConfigs,
             allModelsFlow = allModelsFlow,
-            currentProviderId = currentMemoryProviderId.takeIf { it > 0L } ?: (defaultProvider?.id ?: 0L),
+            currentProviderId = currentMemoryProviderId.takeIf { it > 0L } ?: (defaultProvider?.id ?: allConfigs.firstOrNull()?.id ?: 0L),
             currentModelId = currentMemoryModelId,
             onConfirm = { provider, modelId ->
                 onModelSelected(provider, modelId)

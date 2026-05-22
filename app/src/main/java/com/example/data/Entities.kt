@@ -157,6 +157,10 @@ data class ColorSchemePreset(
     val warningColor: String,
     val infoColor: String,
     val accentColor: String,
+    val sidebarBackgroundColor: String,
+    val sidebarOnBackgroundColor: String,
+    val sidebarActiveColor: String,
+    val sidebarOnActiveColor: String,
     val cornerRadiusDp: Int,
     val spacingMultiplier: Float
 ) {
@@ -199,6 +203,10 @@ data class ColorSchemePreset(
             warningColor = s.warningColor,
             infoColor = s.infoColor,
             accentColor = s.accentColor,
+            sidebarBackgroundColor = s.sidebarBackgroundColor,
+            sidebarOnBackgroundColor = s.sidebarOnBackgroundColor,
+            sidebarActiveColor = s.sidebarActiveColor,
+            sidebarOnActiveColor = s.sidebarOnActiveColor,
             cornerRadiusDp = s.cornerRadiusDp,
             spacingMultiplier = s.spacingMultiplier
         )
@@ -231,6 +239,10 @@ data class ColorSchemePreset(
             warningColor = warningColor,
             infoColor = infoColor,
             accentColor = accentColor,
+            sidebarBackgroundColor = sidebarBackgroundColor,
+            sidebarOnBackgroundColor = sidebarOnBackgroundColor,
+            sidebarActiveColor = sidebarActiveColor,
+            sidebarOnActiveColor = sidebarOnActiveColor,
             cornerRadiusDp = cornerRadiusDp,
             spacingMultiplier = spacingMultiplier,
             updatedAt = System.currentTimeMillis()
@@ -282,6 +294,10 @@ data class UISettings(
     val warningColor: String = "#FF9800",
     val infoColor: String = "#007AFF",
     val accentColor: String = "#FF9500",
+    val sidebarBackgroundColor: String = "#FFFBFE",
+    val sidebarOnBackgroundColor: String = "#1C1B1F",
+    val sidebarActiveColor: String = "#EADDFF",
+    val sidebarOnActiveColor: String = "#21005D",
 
     // ── 布局约束 ──────────────────────────────────────────────
     val cornerRadiusDp: Int = 12,        // 圆角大小 (0-32)
