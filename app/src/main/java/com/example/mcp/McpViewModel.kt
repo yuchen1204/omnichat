@@ -12,6 +12,7 @@ import com.example.data.McpServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class McpViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -47,13 +48,14 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
     val mcpWorkDir: String get() = McpScriptManager.getMcpDir(getApplication()).absolutePath
 
     init {
-        // 部署内置 MCP 脚本到工作目录
-        viewModelScope.launch(Dispatchers.IO) {
-            McpScriptManager.ensureScriptsDeployed(application)
-        }
-
-        // 检测 Python 运行时
+        // 按照严格顺序初始化：部署脚本 -> 检查环境 -> 启动服务
         viewModelScope.launch {
+            // 1. 部署内置 MCP 脚本到工作目录（IO 线程）
+            withContext(Dispatchers.IO) {
+                McpScriptManager.ensureScriptsDeployed(application)
+            }
+
+            // 2. 检测 Python 运行时
             val ready = PythonRuntime.ensureReady(application)
             if (ready) {
                 isPythonRuntimeReady = true
@@ -65,10 +67,8 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
                 pythonRuntimeStatus = "未就绪 — 请下载 python-3.14.5-$abiName-linux-android.tar.gz\n" +
                     "并将 .so 放入 jniLibs/$abi/，stdlib.zip 放入 assets/python/"
             }
-        }
 
-        // 应用启动时自动启动所有已启用的 server
-        viewModelScope.launch {
+            // 3. 应用启动时自动启动所有已启用的 server
             val enabled = repository.getEnabledMcpServers()
             // 使用批量启动，对 Node.js server 进行多路复用优化
             runtimeManager.startServers(enabled)

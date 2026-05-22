@@ -66,6 +66,11 @@ fun MainScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val mcpViewModel: McpViewModel = viewModel()
+
+    // 强制触发 McpViewModel 初始化，确保 MCP 服务随应用启动自动运行
+    LaunchedEffect(Unit) {
+        val _unused = mcpViewModel.runtimeManager
+    }
     
     val uiSettings = LocalUISettings.current
     val spacingMultiplier = uiSettings.spacingMultiplier
@@ -73,7 +78,9 @@ fun MainScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+            ) {
                 SessionSidebarPanel(
                     viewModel = viewModel,
                     onSessionSelected = {
@@ -290,7 +297,8 @@ fun SessionSidebarPanel(
                     // 长按 / 点击 ⋮ 弹出的操作菜单
                     DropdownMenu(
                         expanded = showItemMenu,
-                        onDismissRequest = { showItemMenu = false }
+                        onDismissRequest = { showItemMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surface,
                     ) {
                         DropdownMenuItem(
                             text = {
@@ -426,6 +434,7 @@ fun SessionSidebarPanel(
     deleteTargetSession?.let { session ->
         AlertDialog(
             onDismissRequest = { deleteTargetSession = null },
+            containerColor = MaterialTheme.colorScheme.surface,
             icon = {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -466,6 +475,7 @@ fun SessionSidebarPanel(
     renameTargetSession?.let { session ->
         AlertDialog(
             onDismissRequest = { renameTargetSession = null },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("重命名会话") },
             text = {
                 OutlinedTextField(
@@ -1357,7 +1367,8 @@ fun BubbleMessage(
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
-            offset = pressOffset
+            offset = pressOffset,
+            containerColor = MaterialTheme.colorScheme.surface,
         ) {
             if (!isUser) {
                 DropdownMenuItem(
@@ -1845,7 +1856,8 @@ fun ModelConfigDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            tonalElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 16.dp)
@@ -2313,7 +2325,8 @@ fun ProviderModelPicker(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            tonalElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f)
