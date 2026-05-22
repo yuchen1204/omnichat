@@ -51,8 +51,8 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (8 entit
 | `com.example` | Entry point (`MainActivity.kt`) |
 | `com.example.data` | Room entities, DAOs, database, repository |
 | `com.example.network` | OpenAI-compatible API client with SSE streaming |
-| `com.example.mcp` | MCP runtime: `McpRuntimeManager`, `NodeJsBridge`, `PythonBridge` |
-| `com.example.ui.screens` | Compose screens (chat, models, MCP, memory) |
+| `com.example.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `NodeJsBridge`, `PythonBridge` |
+| `com.example.ui.screens` | Compose screens and dialogs (`MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`) |
 | `com.example.ui.viewmodel` | `ChatViewModel` |
 | `com.example.ui.theme` | Material 3 theming with dynamic color |
 
@@ -92,4 +92,7 @@ Room database `ai_chat_memory_db` (version 7) with 8 entities: `ModelConfig`, `S
 - **Add a new Room entity**: Define in `Entities.kt`, add DAO in `Daos.kt`, update `AppDatabase` with new version + migration, expose in `AppRepository`
 - **Add a new screen/tab**: Add composable in `ui/screens/`, wire into `MainScreen.kt` tab state
 - **Add MCP server support**: Add runtime config in `McpRuntimeManager`, bridge class following `NodeJsBridge`/`PythonBridge` patterns
+- **Add or modify built-in MCP tools (e.g. UI customization, color scheme presets, time tools)**: Add the tool schema in `McpRuntimeManager.kt` (`builtinTools`), and implement the tool logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`).
+- **Modify MCP config/management UI**: Edit `McpConfigScreen.kt` for the main list, and `McpDialogs.kt` for dialogs and overlays (edit/import servers, tool lists, runtime info).
+- **Modify Main screens**: Edit `MainScreen.kt` for main Scaffold/topbar. Edit `ChatScreen.kt`, `SessionSidebarPanel.kt`, `ModelsConfigScreen.kt`, or `MemoryAndPromptScreen.kt` for respective tabs/sidebars.
 - **Modify API client**: Edit `ApiClient.kt` — it handles SSE streaming, model discovery, and thinking config
