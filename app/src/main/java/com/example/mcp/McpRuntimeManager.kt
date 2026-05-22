@@ -464,6 +464,71 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 put("type", "object")
                 put("properties", JSONObject())
             }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "save_color_scheme",
+            description = "将当前应用配色方案保存为一个命名预设，方便日后一键恢复。最多可保存 ${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案；超出时会返回错误，需先调用 delete_color_scheme 删除旧方案。保存成功后返回新方案的唯一 schemeId。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("name", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "方案名称，简短易记，例如「深海蓝」「极简白」。不超过 30 个字符。")
+                    })
+                    put("description", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "方案概述，描述配色风格或适用场景，例如「以深蓝为主色的沉浸式夜间主题」。不超过 100 个字符。")
+                    })
+                })
+                put("required", JSONArray().apply {
+                    put("name")
+                    put("description")
+                })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "list_color_schemes",
+            description = "列出所有已保存的配色方案预设，返回每个方案的 schemeId、名称、概述、保存时间，以及主色/背景色预览。在应用或删除方案前请先调用此工具获取 schemeId。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "apply_color_scheme",
+            description = "将指定 schemeId 的已保存配色方案应用为当前主题，立即生效。调用前请先用 list_color_schemes 获取可用的 schemeId。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("schemeId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "要应用的方案 ID（由 save_color_scheme 返回或 list_color_schemes 列出）")
+                    })
+                })
+                put("required", JSONArray().apply { put("schemeId") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "delete_color_scheme",
+            description = "删除指定 schemeId 的已保存配色方案预设。当已保存 ${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案需要腾出空间时使用。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("schemeId", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "要删除的方案 ID（由 list_color_schemes 列出）")
+                    })
+                })
+                put("required", JSONArray().apply { put("schemeId") })
+            }
         )
     )
 
@@ -852,6 +917,150 @@ class McpRuntimeManager private constructor(private val context: Context) {
                         put(JSONObject().apply {
                             put("type", "text")
                             put("text", result.trim())
+                        })
+                    })
+                }
+            }
+            "save_color_scheme" -> {
+                val name = arguments.optString("name").trim()
+                val desc = arguments.optString("description").trim()
+                if (name.isBlank()) {
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply { put("type", "text"); put("text", "保存失败：name 不能为空。") })
+                        })
+                        put("isError", true)
+                    }
+                }
+                val db = AppDatabase.getDatabase(context)
+                val repository = com.example.data.AppRepository(db)
+                val count = repository.getColorSchemePresetCount()
+                if (count >= com.example.data.ColorSchemePreset.MAX_PRESETS) {
+                    val existing = repository.getAllColorSchemePresets()
+                    val list = existing.joinToString("\n") { "• [${it.schemeId}] ${it.name}" }
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("type", "text")
+                                put("text", "保存失败：已达到最多 ${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案的上限。\n\n当前已保存的方案：\n$list\n\n请先调用 delete_color_scheme 删除一个不需要的方案，再重试。")
+                            })
+                        })
+                        put("isError", true)
+                    }
+                }
+                val current = repository.getUISettings() ?: com.example.data.UISettings()
+                val schemeId = java.util.UUID.randomUUID().toString()
+                val preset = com.example.data.ColorSchemePreset.fromUISettings(
+                    schemeId = schemeId,
+                    name = name.take(30),
+                    description = desc.take(100),
+                    s = current
+                )
+                repository.insertColorSchemePreset(preset)
+                JSONObject().apply {
+                    put("content", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", "配色方案「${preset.name}」已保存。\nschemeId: $schemeId\n当前已保存 ${count + 1}/${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案。")
+                        })
+                    })
+                }
+            }
+            "list_color_schemes" -> {
+                val db = AppDatabase.getDatabase(context)
+                val repository = com.example.data.AppRepository(db)
+                val presets = repository.getAllColorSchemePresets()
+                if (presets.isEmpty()) {
+                    JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("type", "text")
+                                put("text", "当前没有已保存的配色方案。可以先用 adjust_ui 调整配色，再调用 save_color_scheme 保存。")
+                            })
+                        })
+                    }
+                } else {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINESE)
+                    val text = buildString {
+                        appendLine("已保存的配色方案（${presets.size}/${com.example.data.ColorSchemePreset.MAX_PRESETS}）：")
+                        appendLine()
+                        presets.forEachIndexed { i, p ->
+                            appendLine("${i + 1}. 「${p.name}」")
+                            appendLine("   schemeId:    ${p.schemeId}")
+                            appendLine("   概述:        ${p.description}")
+                            appendLine("   保存时间:    ${sdf.format(java.util.Date(p.createdAt))}")
+                            appendLine("   主色:        ${p.primaryColor}  背景色: ${p.backgroundColor}")
+                            appendLine("   成功色:      ${p.successColor}  圆角: ${p.cornerRadiusDp}dp  间距: ${p.spacingMultiplier}x")
+                        }
+                    }
+                    JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply { put("type", "text"); put("text", text.trimEnd()) })
+                        })
+                    }
+                }
+            }
+            "apply_color_scheme" -> {
+                val schemeId = arguments.optString("schemeId").trim()
+                if (schemeId.isBlank()) {
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply { put("type", "text"); put("text", "应用失败：schemeId 不能为空。请先调用 list_color_schemes 获取可用的 schemeId。") })
+                        })
+                        put("isError", true)
+                    }
+                }
+                val db = AppDatabase.getDatabase(context)
+                val repository = com.example.data.AppRepository(db)
+                val preset = repository.getColorSchemePresetById(schemeId)
+                if (preset == null) {
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply { put("type", "text"); put("text", "应用失败：找不到 schemeId=$schemeId 的方案。请调用 list_color_schemes 确认可用的 schemeId。") })
+                        })
+                        put("isError", true)
+                    }
+                }
+                with(com.example.data.ColorSchemePreset.Companion) {
+                    repository.upsertUISettings(preset.toUISettings())
+                }
+                JSONObject().apply {
+                    put("content", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", "配色方案「${preset.name}」已应用，界面立即生效。\n概述：${preset.description}")
+                        })
+                    })
+                }
+            }
+            "delete_color_scheme" -> {
+                val schemeId = arguments.optString("schemeId").trim()
+                if (schemeId.isBlank()) {
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply { put("type", "text"); put("text", "删除失败：schemeId 不能为空。") })
+                        })
+                        put("isError", true)
+                    }
+                }
+                val db = AppDatabase.getDatabase(context)
+                val repository = com.example.data.AppRepository(db)
+                val preset = repository.getColorSchemePresetById(schemeId)
+                if (preset == null) {
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply { put("type", "text"); put("text", "删除失败：找不到 schemeId=$schemeId 的方案。") })
+                        })
+                        put("isError", true)
+                    }
+                }
+                repository.deleteColorSchemePreset(schemeId)
+                val remaining = repository.getColorSchemePresetCount()
+                JSONObject().apply {
+                    put("content", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", "配色方案「${preset.name}」已删除。当前剩余 $remaining/${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案。")
                         })
                     })
                 }

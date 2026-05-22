@@ -12,6 +12,7 @@ class AppRepository(private val db: AppDatabase) {
     private val sessionSummaryDao = db.sessionSummaryDao()
     private val mcpServerDao = db.mcpServerDao()
     private val uiSettingsDao = db.uiSettingsDao()
+    private val colorSchemePresetDao = db.colorSchemePresetDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -82,4 +83,12 @@ class AppRepository(private val db: AppDatabase) {
     val uiSettings: Flow<UISettings?> = uiSettingsDao.getSettingsFlow()
     suspend fun getUISettings(): UISettings? = uiSettingsDao.getSettings()
     suspend fun upsertUISettings(settings: UISettings) = uiSettingsDao.upsertSettings(settings)
+
+    // Color Scheme Presets
+    val allColorSchemePresets: Flow<List<ColorSchemePreset>> = colorSchemePresetDao.getAllPresetsFlow()
+    suspend fun getAllColorSchemePresets(): List<ColorSchemePreset> = colorSchemePresetDao.getAllPresets()
+    suspend fun getColorSchemePresetCount(): Int = colorSchemePresetDao.getCount()
+    suspend fun getColorSchemePresetById(schemeId: String): ColorSchemePreset? = colorSchemePresetDao.getPresetById(schemeId)
+    suspend fun insertColorSchemePreset(preset: ColorSchemePreset) = colorSchemePresetDao.insertPreset(preset)
+    suspend fun deleteColorSchemePreset(schemeId: String) = colorSchemePresetDao.deletePresetById(schemeId)
 }

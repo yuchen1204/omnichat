@@ -18,8 +18,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SessionSummary::class,
         McpServer::class,
         UISettings::class,
+        ColorSchemePreset::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionSummaryDao(): SessionSummaryDao
     abstract fun mcpServerDao(): McpServerDao
     abstract fun uiSettingsDao(): UISettingsDao
+    abstract fun colorSchemePresetDao(): ColorSchemePresetDao
 
     companion object {
         @Volatile
@@ -235,6 +237,50 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v15→v16：新增 color_scheme_presets 表（配色方案预设，最多 5 条） */
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS color_scheme_presets (
+                        schemeId TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        primaryColor TEXT NOT NULL,
+                        onPrimaryColor TEXT NOT NULL,
+                        primaryContainerColor TEXT NOT NULL,
+                        onPrimaryContainerColor TEXT NOT NULL,
+                        secondaryColor TEXT NOT NULL,
+                        onSecondaryColor TEXT NOT NULL,
+                        secondaryContainerColor TEXT NOT NULL,
+                        onSecondaryContainerColor TEXT NOT NULL,
+                        tertiaryColor TEXT NOT NULL,
+                        onTertiaryColor TEXT NOT NULL,
+                        backgroundColor TEXT NOT NULL,
+                        onBackgroundColor TEXT NOT NULL,
+                        surfaceColor TEXT NOT NULL,
+                        onSurfaceColor TEXT NOT NULL,
+                        surfaceVariantColor TEXT NOT NULL,
+                        onSurfaceVariantColor TEXT NOT NULL,
+                        outlineColor TEXT NOT NULL,
+                        outlineVariantColor TEXT NOT NULL,
+                        errorColor TEXT NOT NULL,
+                        onErrorColor TEXT NOT NULL,
+                        errorContainerColor TEXT NOT NULL,
+                        onErrorContainerColor TEXT NOT NULL,
+                        successColor TEXT NOT NULL,
+                        warningColor TEXT NOT NULL,
+                        infoColor TEXT NOT NULL,
+                        accentColor TEXT NOT NULL,
+                        cornerRadiusDp INTEGER NOT NULL,
+                        spacingMultiplier REAL NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -256,7 +302,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
-                        MIGRATION_14_15
+                        MIGRATION_14_15,
+                        MIGRATION_15_16
                     )
                     // 兜底：如果遇到无法处理的跨版本跳跃（如从未知旧版本升级），
                     // 才执行破坏性迁移。正常升级路径不会触发这个。
