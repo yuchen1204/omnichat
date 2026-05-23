@@ -116,6 +116,7 @@ Room database `ai_chat_memory_db` (version 18) with 10 entities. See `app/src/ma
 - **Add a new screen/tab**: Add composable in `ui/screens/`, wire into `MainScreen.kt` — either as a top-level view or a sub-tab inside `SettingsView`
 - **Add MCP server support**: Add runtime config in `McpRuntimeManager`, bridge class following `NodeJsBridge`/`PythonBridge` patterns
 - **Add or modify built-in MCP tools (e.g. UI customization, color scheme presets, time tools)**: Add the tool schema in `McpRuntimeManager.kt` (`builtinTools`), and implement the tool logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`)
+- **Add or modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson` methods, add the tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, then use `LocalUiStrings.current` in Compose screens
 - **Modify MCP config/management UI**: Edit `McpConfigScreen.kt` for the main list, and `McpDialogs.kt` for dialogs and overlays (edit/import servers, tool lists, runtime info)
 - **Modify Main screens**: Edit `MainScreen.kt` for main Scaffold/topbar/drawer. Edit `ChatScreen.kt`, `SessionSidebarPanel.kt`, `ModelsConfigScreen.kt`, or `MemoryAndPromptScreen.kt` for respective views/sidebars
 - **Modify API client**: Edit `ApiClient.kt` — it handles SSE streaming, model discovery, thinking config, and custom headers

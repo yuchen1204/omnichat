@@ -151,6 +151,7 @@ fun ModelConfigCard(
     val cardBackground = MaterialTheme.colorScheme.surface
     val borderStrokeColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     var isExpanded by remember(config.isDefaultProvider) { mutableStateOf(config.isDefaultProvider) }
+    val strings = LocalUiStrings.current
 
     Card(
         modifier = Modifier
@@ -195,7 +196,7 @@ fun ModelConfigCard(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "默认提供商",
+                                text = strings.models_default_badge,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -311,13 +312,13 @@ fun ModelConfigCard(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "设为默认配置",
+                                        text = strings.models_set_default,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "将此 API 提供商作为全局使用",
+                                        text = strings.models_set_default_desc,
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )

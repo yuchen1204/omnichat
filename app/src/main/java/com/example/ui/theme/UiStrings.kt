@@ -46,7 +46,7 @@ data class UiStrings(
     val chat_tool_calling: String = "调用工具",
 
     // ── 模型配置页 ───────────────────────────────────────────────
-    val models_empty_hint: String = "当前未配置任何 API 提供商。\n点击右上角"新增提供商"开始添加！",
+    val models_empty_hint: String = "当前未配置任何 API 提供商。\n点击右上角\u201c新增提供商\u201d开始添加\uff01",
     val models_default_badge: String = "默认提供商",
     val models_set_default: String = "设为默认配置",
     val models_set_default_desc: String = "将此 API 提供商作为全局使用",
