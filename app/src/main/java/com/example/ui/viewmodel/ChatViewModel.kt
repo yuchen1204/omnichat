@@ -254,7 +254,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Hidden formatting instruction: always respond using Markdown
         finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
-        
+
+        // Hidden memory search instruction
+        val totalMemoryCount = repository.getAllMemories().size
+        if (totalMemoryCount > MEMORY_INJECT_LIMIT) {
+            finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top $MEMORY_INJECT_LIMIT entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
+        }
+
         return finalSystemPrompt
     }
 

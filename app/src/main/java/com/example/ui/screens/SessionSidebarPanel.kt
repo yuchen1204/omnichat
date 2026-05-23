@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.Session
 import com.example.ui.theme.LocalSidebarColors
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.LocalUiStrings
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -41,6 +43,7 @@ fun SessionSidebarPanel(
     
     val uiSettings = LocalUISettings.current
     val sidebarColors = LocalSidebarColors.current
+    val strings = LocalUiStrings.current
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -64,7 +67,7 @@ fun SessionSidebarPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "对话列表",
+                text = strings.sidebar_title,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = sidebarColors.onBackground
@@ -134,59 +137,62 @@ fun SessionSidebarPanel(
                             modifier = Modifier.weight(1f),
                             maxLines = 1
                         )
-                        // 更多操作按钮（始终显示）
-                        IconButton(
-                            onClick = { showItemMenu = true },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "更多操作",
-                                tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.6f)
-                                       else sidebarColors.onBackground.copy(alpha = 0.5f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+                        // 更多操作按钮（始终显示），菜单锚定在此按钮上
+                        Box {
+                            IconButton(
+                                onClick = { showItemMenu = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "更多操作",
+                                    tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.6f)
+                                           else sidebarColors.onBackground.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
 
-                    // 长按 / 点击 ⋮ 弹出的操作菜单
-                    DropdownMenu(
-                        expanded = showItemMenu,
-                        onDismissRequest = { showItemMenu = false },
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Edit, contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.onSurface)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("重命名", fontSize = 14.sp)
-                                }
-                            },
-                            onClick = {
-                                renameTargetSession = session
-                                renameText = session.title
-                                showItemMenu = false
+                            // 长按 / 点击 ⋮ 弹出的操作菜单，锚定在 ⋮ 按钮右下角
+                            DropdownMenu(
+                                expanded = showItemMenu,
+                                onDismissRequest = { showItemMenu = false },
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                offset = DpOffset(x = (-100).dp, y = 0.dp),
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Edit, contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onSurface)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text("重命名", fontSize = 14.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        renameTargetSession = session
+                                        renameText = session.title
+                                        showItemMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Delete, contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.error)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text("删除", fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.error)
+                                        }
+                                    },
+                                    onClick = {
+                                        deleteTargetSession = session
+                                        showItemMenu = false
+                                    }
+                                )
                             }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Delete, contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.error)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("删除", fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.error)
-                                }
-                            },
-                            onClick = {
-                                deleteTargetSession = session
-                                showItemMenu = false
-                            }
-                        )
+                        }
                     }
                 }
             }
@@ -251,13 +257,13 @@ fun SessionSidebarPanel(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
-                        contentDescription = "设置",
+                        contentDescription = strings.sidebar_settings,
                         tint = sidebarColors.onBackground.copy(alpha = 0.8f),
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "设置",
+                        text = strings.sidebar_settings,
                         fontSize = 14.sp,
                         color = sidebarColors.onBackground
                     )
@@ -300,7 +306,7 @@ fun SessionSidebarPanel(
             title = { Text("删除会话") },
             text = {
                 Text(
-                    text = "确定要删除「${session.title}」吗？\n该会话的所有消息记录将被永久清除，无法恢复。",
+                    text = strings.sidebar_delete_confirm.format(session.title),
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )
@@ -315,12 +321,12 @@ fun SessionSidebarPanel(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("删除")
+                    Text(strings.action_delete)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTargetSession = null }) {
-                    Text("取消")
+                    Text(strings.action_cancel)
                 }
             }
         )

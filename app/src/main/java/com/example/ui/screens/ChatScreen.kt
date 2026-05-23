@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.MemoryItem
 import com.example.data.ModelConfig
 import com.example.ui.components.ChunkedStreamingText
+import com.example.ui.theme.LocalUiStrings
 import com.example.ui.viewmodel.ChatViewModel
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -80,6 +81,7 @@ fun ChatView(viewModel: ChatViewModel) {
     // 当前实际使用的 Provider 和模型
     val activeProviderName = defaultProvider?.name ?: "未设置"
     val activeModelId = defaultProvider?.selectedModelId ?: ""
+    val strings = LocalUiStrings.current
 
     Column(
         modifier = Modifier
@@ -104,7 +106,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "需设置全局自动提供商才能正常会话！",
+                        text = strings.chat_no_provider_warning,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
@@ -118,7 +120,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "已动态融合共 ${memories.size} 条长效学习偏好记忆",
+                        text = strings.chat_memory_injected.format(memories.size),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -271,7 +273,7 @@ fun ChatView(viewModel: ChatViewModel) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "当前模型: $activeModelId  ·  ${activeProviderName}",
+                                text = strings.chat_current_model.format(activeModelId, activeProviderName),
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
@@ -360,7 +362,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     OutlinedTextField(
                         value = textInput,
                         onValueChange = { textInput = it },
-                        placeholder = { Text("输入消息...", fontSize = 15.sp) },
+                        placeholder = { Text(strings.chat_input_hint, fontSize = 15.sp) },
                         maxLines = 4,
                         textStyle = LocalTextStyle.current.copy(
                             fontSize = 15.sp,
@@ -402,7 +404,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
-                            contentDescription = "发送",
+                            contentDescription = strings.chat_send,
                             tint = if (textInput.isNotBlank() && !isStreaming) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)

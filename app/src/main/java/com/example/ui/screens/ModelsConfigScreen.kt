@@ -1,4 +1,4 @@
-package com.example.ui.screens
+﻿package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -34,6 +34,7 @@ import com.example.data.ModelConfig
 import com.example.data.FetchedModel
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.LocalUiStrings
 import com.example.ui.viewmodel.ChatViewModel
 
 @Composable
@@ -41,6 +42,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
     val configs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     var isAddingNew by remember { mutableStateOf(false) }
     var configToEdit by remember { mutableStateOf<ModelConfig?>(null) }
+    val strings = LocalUiStrings.current
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -65,9 +67,9 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                     onClick = { isAddingNew = true },
                     modifier = Modifier.testTag("add_config_btn")
                 ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "新增提供商")
+                    Icon(imageVector = Icons.Default.Add, contentDescription = strings.models_add_provider)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("新增提供商", fontSize = 13.sp)
+                    Text(strings.models_add_provider, fontSize = 13.sp)
                 }
             }
 
@@ -79,7 +81,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "当前未配置任何 API 提供商。\n点击右上角“新增提供商”开始添加！",
+                        text = strings.models_empty_hint,
                         textAlign = TextAlign.Center,
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

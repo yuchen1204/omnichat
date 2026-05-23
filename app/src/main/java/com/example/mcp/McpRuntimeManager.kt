@@ -561,6 +561,26 @@ class McpRuntimeManager private constructor(private val context: Context) {
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
+            name = "search_memory",
+            description = "在长效记忆库中搜索与关键词相关的记忆条目。当你需要回忆用户的某个具体偏好、习惯或历史信息，但当前上下文中没有相关内容时，请调用此工具。系统会自动注入置信度最高的前 30 条记忆，其余记忆需通过此工具主动检索。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("query", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "搜索关键词，支持多个词（空格分隔），例如「编程语言 Kotlin」或「饮食偏好」。搜索会对记忆内容做模糊匹配。")
+                    })
+                    put("limit", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "最多返回的结果数量，默认 10，最大 50。")
+                    })
+                })
+                put("required", JSONArray().apply { put("query") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
             name = "delete_color_scheme",
             description = "删除指定 schemeId 的已保存配色方案预设。当已保存 ${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案需要腾出空间时使用。",
             inputSchema = JSONObject().apply {
@@ -573,6 +593,142 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 })
                 put("required", JSONArray().apply { put("schemeId") })
             }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "adjust_font",
+            description = "调整应用的字体设置，包括全局字体大小缩放、聊天气泡字体大小缩放和字体族。设置后立即全局生效，无需重启。\n\n**可调字段：**\n• fontSizeScale — 全局 UI 字体大小缩放（0.75–1.5，默认 1.0）\n• chatFontSizeScale — 聊天气泡正文字体大小缩放（0.75–1.5，默认 1.0）\n• fontFamily — 字体族（\"default\" / \"serif\" / \"monospace\" / \"cursive\"）\n\n未提供的字段保持当前值不变（增量更新）。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("fontSizeScale", JSONObject().apply {
+                        put("type", "number")
+                        put("description", "全局 UI 字体大小缩放比例，范围 0.75–1.5。1.0 为默认（100%），1.2 放大 20%，0.9 缩小 10%。影响标题、按钮、标签等所有 UI 文字。")
+                    })
+                    put("chatFontSizeScale", JSONObject().apply {
+                        put("type", "number")
+                        put("description", "聊天气泡正文字体大小缩放比例，范围 0.75–1.5。独立于全局缩放，可单独调大聊天内容字号而不影响其他 UI。")
+                    })
+                    put("fontFamily", JSONObject().apply {
+                        put("type", "string")
+                        put("enum", JSONArray().apply {
+                            put("default")
+                            put("serif")
+                            put("monospace")
+                            put("cursive")
+                        })
+                        put("description", "字体族。\"default\"=系统默认（Roboto），\"serif\"=衬线字体（Noto Serif），\"monospace\"=等宽字体（Noto Sans Mono），\"cursive\"=手写风格字体。")
+                    })
+                })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "reset_font_to_default",
+            description = "将应用的所有字体设置（字体大小缩放、聊天字体缩放、字体族）恢复为默认值。当用户要求恢复默认字体或你调乱了字体时，请调用此工具。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "get_ui_strings",
+            description = "查询当前应用所有 UI 文字标签的当前值与默认值。**在调用 adjust_ui_strings 之前请先调用此工具**，了解所有可修改的字段名、当前生效值和默认中文值。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "adjust_ui_strings",
+            description = "修改应用的 UI 文字标签（按钮文字、标题、提示语等）。调用后立即全局生效，无需重启。\n\n**重要**：调用前请先用 get_ui_strings 查看所有可修改字段的当前值。只需传入想修改的字段，未传字段保持当前值不变（增量更新）。\n\n含 %s / %d 的字段为格式化字符串，请保留占位符。\n\n传 resetToDefault=true 可一键恢复全部默认中文。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("resetToDefault", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "传 true 立刻重置全部文字标签为默认中文（其他字段被忽略）")
+                    })
+                    // 顶部导航栏
+                    put("topbar_title_chat", strProp("聊天页顶部标题，默认「会话」"))
+                    put("topbar_title_settings", strProp("设置页顶部标题，默认「设置」"))
+                    put("topbar_provider_prefix", strProp("顶部栏提供商名称前缀，默认「提供商: 」"))
+                    put("topbar_memory_syncing", strProp("记忆同步中状态文字，默认「记忆同步中」"))
+                    // 导航
+                    put("nav_chat", strProp("底部/侧边导航聊天项文字，默认「会话」"))
+                    put("nav_settings", strProp("底部/侧边导航设置项文字，默认「设置」"))
+                    // 设置子 Tab
+                    put("settings_tab_models", strProp("设置页第一个子 Tab 标签，默认「模型配置」"))
+                    put("settings_tab_mcp", strProp("设置页第二个子 Tab 标签，默认「MCP工具」"))
+                    put("settings_tab_memory", strProp("设置页第三个子 Tab 标签，默认「长效记忆」"))
+                    // 侧边栏
+                    put("sidebar_title", strProp("侧边栏顶部标题，默认「对话列表」"))
+                    put("sidebar_settings", strProp("侧边栏底部设置按钮文字，默认「设置」"))
+                    put("sidebar_delete_confirm", strProp("删除会话确认对话框文字，含 %s 占位符（会话标题），默认「确定要删除「%s」吗？...」"))
+                    // 聊天界面
+                    put("chat_no_provider_warning", strProp("未配置提供商时的警告文字"))
+                    put("chat_memory_injected", strProp("记忆注入提示，含 %d 占位符（记忆条数），默认「已动态融合共 %d 条长效学习偏好记忆」"))
+                    put("chat_current_model", strProp("当前模型信息，含两个 %s 占位符（模型ID、提供商名），默认「当前模型: %s  ·  %s」"))
+                    put("chat_input_hint", strProp("聊天输入框占位提示，默认「输入消息…」"))
+                    put("chat_send", strProp("发送按钮文字，默认「发送」"))
+                    put("chat_stop", strProp("停止生成按钮文字，默认「停止」"))
+                    put("chat_new_session", strProp("新建会话按钮文字，默认「新建会话」"))
+                    put("chat_thinking", strProp("AI 思考中状态文字，默认「思考中」"))
+                    put("chat_tool_calling", strProp("调用工具状态文字，默认「调用工具」"))
+                    // 模型配置页
+                    put("models_empty_hint", strProp("无提供商时的提示文字"))
+                    put("models_default_badge", strProp("默认提供商徽章文字，默认「默认提供商」"))
+                    put("models_set_default", strProp("设为默认配置菜单项，默认「设为默认配置」"))
+                    put("models_set_default_desc", strProp("设为默认配置描述，默认「将此 API 提供商作为全局使用」"))
+                    put("models_custom_headers", strProp("自定义请求头标签，默认「自定义请求头: 」"))
+                    put("models_no_headers", strProp("无自定义请求头提示，默认「暂无自定义请求头」"))
+                    put("models_add_provider", strProp("新增提供商按钮文字，默认「新增提供商」"))
+                    put("models_fetch_models", strProp("拉取模型区域标题，默认「自动拉取并解析可用模型:」"))
+                    put("models_fetch_error_prefix", strProp("拉取错误前缀，默认「拉取错误: 」"))
+                    put("models_no_saved_models", strProp("无已保存模型提示，默认「该 Provider 暂无已保存的模型列表」"))
+                    put("models_fetch_first", strProp("引导先拉取模型的提示，默认「请先在「模型配置」中拉取模型」"))
+                    // MCP 配置页
+                    put("mcp_empty_hint", strProp("无 MCP 服务时的标题，默认「暂无 MCP 服务」"))
+                    put("mcp_empty_desc", strProp("无 MCP 服务时的描述"))
+                    put("mcp_examples_title", strProp("常用示例区域标题，默认「常用示例」"))
+                    put("mcp_builtin_title", strProp("内置工具卡片标题，默认「内置工具」"))
+                    put("mcp_builtin_status", strProp("内置工具运行状态文字，默认「运行中」"))
+                    put("mcp_view_tools", strProp("查看工具按钮文字，默认「查看工具」"))
+                    put("mcp_remote_http_support", strProp("远程 HTTP 支持标签，默认「支持远程 HTTP MCP」"))
+                    put("mcp_import_title", strProp("导入配置对话框标题，默认「导入 MCP 配置 (JSON)」"))
+                    put("mcp_import_desc", strProp("导入配置对话框描述"))
+                    put("mcp_runtime_label", strProp("运行时选择标签，默认「运行时」"))
+                    put("mcp_auto_start", strProp("自动启动开关文字，默认「启动时自动运行」"))
+                    // 长效记忆页
+                    put("memory_manual_input", strProp("手动录入记忆区域标题"))
+                    put("memory_empty_hint", strProp("无记忆时的提示文字"))
+                    // 通用操作
+                    put("action_confirm", strProp("确认按钮，默认「确定」"))
+                    put("action_cancel", strProp("取消按钮，默认「取消」"))
+                    put("action_delete", strProp("删除按钮，默认「删除」"))
+                    put("action_edit", strProp("编辑按钮，默认「编辑」"))
+                    put("action_save", strProp("保存按钮，默认「保存」"))
+                    put("action_add", strProp("添加按钮，默认「添加」"))
+                    put("action_close", strProp("关闭按钮，默认「关闭」"))
+                    put("action_reset", strProp("重置按钮，默认「重置」"))
+                })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "reset_ui_strings",
+            description = "将应用所有 UI 文字标签恢复为默认中文。当用户要求恢复默认文字或你改乱了标签时，请调用此工具。",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
         )
     )
 
@@ -581,6 +737,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
         put("type", "string")
         put("pattern", "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$")
         put("description", "$desc。格式 #RRGGBB 或 #RRGGBBAA")
+    }
+
+    /** 内部小工具：构造一个字符串 schema 节点 */
+    private fun strProp(desc: String): JSONObject = JSONObject().apply {
+        put("type", "string")
+        put("description", desc)
     }
 
     private val _serverStates = MutableStateFlow<Map<Long, McpServerState>>(

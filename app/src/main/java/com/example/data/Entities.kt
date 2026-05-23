@@ -302,5 +302,35 @@ data class UISettings(
     // ── 布局约束 ──────────────────────────────────────────────
     val cornerRadiusDp: Int = 12,        // 圆角大小 (0-32)
     val spacingMultiplier: Float = 1.0f, // 间距倍数 (0.5-2.0)
-    val updatedAt: Long = System.currentTimeMillis()
+
+    // ── 字体设置 ──────────────────────────────────────────────
+    /**
+     * 全局字体大小缩放比例，影响 UI 标签、按钮、标题等非聊天文字。
+     * 范围 0.75–1.5，默认 1.0（即 100%）。
+     */
+    val fontSizeScale: Float = 1.0f,
+    /**
+     * 聊天气泡内正文字体大小缩放比例，独立于全局缩放，方便单独调大聊天字号。
+     * 范围 0.75–1.5，默认 1.0。
+     */
+    val chatFontSizeScale: Float = 1.0f,
+    /**
+     * 字体族标识符。支持以下值：
+     *   "default"   — 系统默认字体（Roboto / 设备字体）
+     *   "serif"     — 衬线字体（Noto Serif）
+     *   "monospace" — 等宽字体（Noto Sans Mono）
+     *   "cursive"   — 手写风格字体（Dancing Script）
+     * 不支持的值会回退到 "default"。
+     */
+    val fontFamily: String = "default",
+
+    val updatedAt: Long = System.currentTimeMillis(),
+
+    /**
+     * AI 可调整的 UI 文字标签，JSON 对象字符串。
+     * 空字符串或 "{}" 表示使用默认中文标签。
+     * 格式示例：`{"topbar_title_chat":"Chat","nav_settings":"Settings"}`
+     * 完整字段列表见 [com.example.ui.theme.UiStrings]。
+     */
+    val uiStrings: String = "{}"
 )

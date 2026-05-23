@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.PromptTemplate
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.LocalUiStrings
 import com.example.ui.viewmodel.ChatViewModel
 
 @Composable
@@ -36,6 +37,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
     val uiSettings = LocalUISettings.current
     val spacingMultiplier = uiSettings.spacingMultiplier
+    val strings = LocalUiStrings.current
 
     Column(
         modifier = Modifier
@@ -82,7 +84,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Text(
-                                text = "手动录入长效记忆 / 用户首选项偏好",
+                                text = strings.memory_manual_input,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
@@ -164,7 +166,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！",
+                                    text = strings.memory_empty_hint,
                                     textAlign = TextAlign.Center,
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),

@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UISettings::class,
         ColorSchemePreset::class,
     ],
-    version = 17,
+    version = 19,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -296,6 +296,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v17→v18：ui_settings 增加字体设置字段 */
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN fontSizeScale REAL NOT NULL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN chatFontSizeScale REAL NOT NULL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN fontFamily TEXT NOT NULL DEFAULT 'default'")
+            }
+        }
+
+        /** v18→v19：ui_settings 增加 uiStrings 字段（AI 可调整的 UI 文字标签，JSON 字符串） */
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN uiStrings TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -319,7 +335,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_13_14,
                         MIGRATION_14_15,
                         MIGRATION_15_16,
-                        MIGRATION_16_17
+                        MIGRATION_16_17,
+                        MIGRATION_17_18,
+                        MIGRATION_18_19
                     )
                     // 兜底：如果遇到无法处理的跨版本跳跃（如从未知旧版本升级），
                     // 才执行破坏性迁移。正常升级路径不会触发这个。

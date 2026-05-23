@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mcp.McpViewModel
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.LocalUiStrings
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -96,7 +97,8 @@ fun SettingsView(
     mcpViewModel: McpViewModel
 ) {
     var selectedSubTab by remember { mutableStateOf(0) }
-    val tabs = listOf("模型配置", "MCP工具", "长效记忆")
+    val strings = LocalUiStrings.current
+    val tabs = listOf(strings.settings_tab_models, strings.settings_tab_mcp, strings.settings_tab_memory)
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(
@@ -144,6 +146,7 @@ fun MainTopAppBar(
 ) {
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     val isSyncing = viewModel.isMemorySyncing
+    val strings = LocalUiStrings.current
     
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -152,8 +155,8 @@ fun MainTopAppBar(
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
 
     val titleText = when (currentTab) {
-        "chat" -> activeSession?.title ?: "会话"
-        "settings" -> "设置"
+        "chat" -> activeSession?.title ?: strings.topbar_title_chat
+        "settings" -> strings.topbar_title_settings
         else -> "AI"
     }
 
@@ -171,7 +174,7 @@ fun MainTopAppBar(
                     )
                     if (currentTab == "chat" && defaultProvider != null) {
                         Text(
-                            text = "提供商: ${defaultProvider.name}",
+                            text = "${strings.topbar_provider_prefix}${defaultProvider.name}",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1
@@ -183,7 +186,7 @@ fun MainTopAppBar(
                 IconButton(onClick = onOpenDrawer) {
                     Icon(
                         imageVector = Icons.Default.Menu,
-                        contentDescription = "打开菜单",
+                        contentDescription = strings.topbar_menu_open,
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -212,7 +215,7 @@ fun MainTopAppBar(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "记忆同步中",
+                            text = strings.topbar_memory_syncing,
                             fontSize = 11.sp,
                             color = com.example.ui.theme.LocalCustomColors.current.success
                         )
@@ -221,7 +224,7 @@ fun MainTopAppBar(
                     IconButton(onClick = { viewModel.triggerMemorySync(force = true) }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "同步记忆",
+                            contentDescription = strings.topbar_sync_memory,
                             tint = MaterialTheme.colorScheme.primary // Material style
                         )
                     }

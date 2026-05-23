@@ -32,6 +32,7 @@ import com.example.data.McpServer
 import com.example.mcp.McpServerStatus
 import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
+import com.example.ui.theme.LocalUiStrings
 
 @Composable
 fun McpConfigScreen(
@@ -46,6 +47,7 @@ fun McpConfigScreen(
     var showToolsFor by remember { mutableStateOf<Long?>(null) }
     var showRuntimeInfo by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
+    val strings = LocalUiStrings.current
 
     Column(
         modifier = Modifier
@@ -133,14 +135,14 @@ fun McpConfigScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "暂无 MCP 服务",
+                        text = strings.mcp_empty_hint,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "点击右上角「添加服务」配置 Node.js 或 Python MCP server",
+                        text = strings.mcp_empty_desc,
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -148,7 +150,7 @@ fun McpConfigScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     // 快速添加示例
                     Text(
-                        text = "常用示例",
+                        text = strings.mcp_examples_title,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
@@ -634,6 +636,7 @@ private fun BuiltinToolsCard(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val surface = MaterialTheme.colorScheme.surface
+    val strings = LocalUiStrings.current
     
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -667,7 +670,7 @@ private fun BuiltinToolsCard(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "内置工具",
+                    text = strings.mcp_builtin_title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = onSurface
@@ -688,7 +691,7 @@ private fun BuiltinToolsCard(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "运行中",
+                    text = strings.mcp_builtin_status,
                     fontSize = 11.sp,
                     color = com.example.ui.theme.LocalCustomColors.current.success,
                     fontWeight = FontWeight.Medium
@@ -701,7 +704,7 @@ private fun BuiltinToolsCard(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "查看工具",
+                    text = strings.mcp_view_tools,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary
                 )

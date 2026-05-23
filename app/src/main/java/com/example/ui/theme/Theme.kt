@@ -5,6 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -14,8 +15,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.UISettings
+import com.example.ui.theme.UiStrings
 
 val LocalUISettings = staticCompositionLocalOf { UISettings() }
 
@@ -57,6 +63,12 @@ val LocalSidebarColors = staticCompositionLocalOf {
     )
 }
 
+/**
+ * 聊天气泡字体缩放比例，独立于全局 fontSizeScale，供聊天内容单独调整。
+ * 通过 CompositionLocal 传递，ChatScreen 中直接读取使用。
+ */
+val LocalChatFontScale = staticCompositionLocalOf { 1.0f }
+
 private val DarkColorScheme =
   darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
 
@@ -81,6 +93,42 @@ fun String.toComposeColor(): Color {
 private fun String.parseOr(fallback: Color): Color {
   val parsed = this.toComposeColor()
   return if (parsed != Color.Unspecified) parsed else fallback
+}
+
+/**
+ * 将 fontFamily 字符串标识符解析为 Compose [FontFamily]。
+ * 不支持的值回退到 [FontFamily.Default]。
+ */
+fun resolveFontFamily(identifier: String): FontFamily = when (identifier.lowercase().trim()) {
+    "serif"     -> FontFamily.Serif
+    "monospace" -> FontFamily.Monospace
+    "cursive"   -> FontFamily.Cursive
+    else        -> FontFamily.Default  // "default" 及其他未知值
+}
+
+/**
+ * 根据 [fontFamily] 和 [scale] 构建完整的 Material 3 [Typography]。
+ * 仅缩放字号（fontSize / lineHeight），不改变字重和字距。
+ */
+fun buildTypography(fontFamily: FontFamily, scale: Float): Typography {
+    val s = scale.coerceIn(0.75f, 1.5f)
+    return Typography(
+        displayLarge   = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (57 * s).sp, lineHeight = (64 * s).sp, letterSpacing = (-0.25).sp),
+        displayMedium  = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (45 * s).sp, lineHeight = (52 * s).sp, letterSpacing = 0.sp),
+        displaySmall   = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (36 * s).sp, lineHeight = (44 * s).sp, letterSpacing = 0.sp),
+        headlineLarge  = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (32 * s).sp, lineHeight = (40 * s).sp, letterSpacing = 0.sp),
+        headlineMedium = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (28 * s).sp, lineHeight = (36 * s).sp, letterSpacing = 0.sp),
+        headlineSmall  = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (24 * s).sp, lineHeight = (32 * s).sp, letterSpacing = 0.sp),
+        titleLarge     = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (22 * s).sp, lineHeight = (28 * s).sp, letterSpacing = 0.sp),
+        titleMedium    = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Medium,   fontSize = (16 * s).sp, lineHeight = (24 * s).sp, letterSpacing = 0.15.sp),
+        titleSmall     = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Medium,   fontSize = (14 * s).sp, lineHeight = (20 * s).sp, letterSpacing = 0.1.sp),
+        bodyLarge      = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (16 * s).sp, lineHeight = (24 * s).sp, letterSpacing = 0.5.sp),
+        bodyMedium     = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (14 * s).sp, lineHeight = (20 * s).sp, letterSpacing = 0.25.sp),
+        bodySmall      = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Normal,   fontSize = (12 * s).sp, lineHeight = (16 * s).sp, letterSpacing = 0.4.sp),
+        labelLarge     = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Medium,   fontSize = (14 * s).sp, lineHeight = (20 * s).sp, letterSpacing = 0.1.sp),
+        labelMedium    = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Medium,   fontSize = (12 * s).sp, lineHeight = (16 * s).sp, letterSpacing = 0.5.sp),
+        labelSmall     = TextStyle(fontFamily = fontFamily, fontWeight = FontWeight.Medium,   fontSize = (11 * s).sp, lineHeight = (16 * s).sp, letterSpacing = 0.5.sp),
+    )
 }
 
 @Composable
@@ -153,14 +201,20 @@ fun MyApplicationTheme(
     onActiveBackground = settings.sidebarOnActiveColor.parseOr(Color(0xFF21005D))
   )
 
+  // 字体：解析字体族 + 构建带缩放的 Typography
+  val resolvedFontFamily = resolveFontFamily(settings.fontFamily)
+  val typography = buildTypography(resolvedFontFamily, settings.fontSizeScale)
+
   CompositionLocalProvider(
     LocalUISettings provides settings,
     LocalCustomColors provides customColors,
-    LocalSidebarColors provides sidebarColors
+    LocalSidebarColors provides sidebarColors,
+    LocalChatFontScale provides settings.chatFontSizeScale.coerceIn(0.75f, 1.5f),
+    LocalUiStrings provides UiStrings.fromJson(settings.uiStrings)
   ) {
     MaterialTheme(
       colorScheme = colorScheme,
-      typography = Typography,
+      typography = typography,
       shapes = shapes,
       content = content
     )
