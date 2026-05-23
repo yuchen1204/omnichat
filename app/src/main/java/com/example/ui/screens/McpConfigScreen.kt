@@ -330,14 +330,14 @@ private fun McpServerCard(
                         fontSize = (15 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
                         color = onSurface,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = server.command,
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         fontFamily = FontFamily.Monospace
                     )
@@ -410,7 +410,7 @@ private fun McpServerCard(
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        maxLines = 2,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

@@ -287,7 +287,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
-                                maxLines = 1
+                                maxLines = 2
                             )
                         }
 
@@ -559,6 +559,7 @@ fun ThinkingProcessPanel(
 
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     Column(
         modifier = Modifier
@@ -643,7 +644,8 @@ fun ThinkingProcessPanel(
                             text = thinkingText,
                             textColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                             fontSize = (12.5f * fs).sp,
-                            lineHeight = (18 * fs).sp
+                            lineHeight = (18 * fs).sp,
+                            fontFamily = resolvedFontFamily
                         )
                     } else {
                         dev.jeziellago.compose.markdowntext.MarkdownText(
@@ -948,6 +950,7 @@ fun StreamingBubble(
                                         textColor = textColor,
                                         fontSize = (15 * chatFs).sp,
                                         lineHeight = (22 * chatFs).sp,
+                                        fontFamily = resolvedFontFamily,
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
 

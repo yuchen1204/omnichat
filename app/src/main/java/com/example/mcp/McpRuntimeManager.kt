@@ -419,13 +419,13 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "get_current_time",
-            description = "获取当前的真实日期和时间（含时区）。当需要知道今天是几号、现在几点、当前星期几，或进行任何与当前时间相关的推理时，请调用此工具。",
+            description = "Get the current real date and time (including timezone). Call this tool whenever you need to know today's date, the current time, the day of the week, or perform any reasoning that depends on the current time.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("timezone", JSONObject().apply {
                         put("type", "string")
-                        put("description", "可选。IANA 时区名称，例如 Asia/Shanghai、America/New_York。留空则使用设备本地时区。")
+                        put("description", "Optional. IANA timezone name, e.g. Asia/Shanghai or America/New_York. Leave empty to use the device's local timezone.")
                     })
                 })
                 put("required", JSONArray())
@@ -435,7 +435,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "get_ui_capabilities",
-            description = "查询当前应用 UI 主题配置的能力清单与当前值。**在调用 adjust_ui 之前请先调用此工具**，了解所有可调整的字段、各字段的语义、约束和当前生效值。返回内容包含：颜色字段列表（主调色板/状态色/扩展色）、布局参数（圆角/间距）、有效值约束（HEX 范围）、以及推荐的色彩组合建议。",
+            description = "Query the capability manifest and current values of the app's UI theme configuration. **Call this tool before calling adjust_ui** to learn all adjustable fields, their semantics, constraints, and current effective values. The response includes: color field list (primary palette / status colors / extended colors), layout parameters (corner radius / spacing), valid value constraints (HEX range), and recommended color combination suggestions.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
@@ -445,56 +445,56 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "adjust_ui",
-            description = "调整应用的整套配色和布局。覆盖完整的 Material 3 调色板（主色/次色/第三色 + 各自的容器与文字色）、表面与轮廓、错误/成功/警告/信息/强调色，以及圆角和间距倍数。\n\n**重要**：调用前请先用 get_ui_capabilities 查看所有可调整字段的当前值与约束。所有颜色必须是 #RRGGBB 或 #RRGGBBAA 格式。未提供的字段会保持当前值不变（增量更新）。设置后整个 App 立即生效，无需重启。",
+            description = "Adjust the app's complete color scheme and layout. Covers the full Material 3 color palette (primary / secondary / tertiary + their container and on-colors), surface and outline colors, error / success / warning / info / accent colors, as well as corner radius and spacing multiplier.\n\n**Important**: Call get_ui_capabilities first to see the current values and constraints for all adjustable fields. All colors must be in #RRGGBB or #RRGGBBAA format. Fields not provided will retain their current values (incremental update). Changes take effect immediately across the entire app without a restart.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
-                    // —— 主调色板 ——
-                    put("primaryColor", colorProp("主色调（按钮/选中/品牌色），例如 #6750A4"))
-                    put("onPrimaryColor", colorProp("主色上的文字与图标颜色（与 primaryColor 形成高对比度），例如 #FFFFFF"))
-                    put("primaryContainerColor", colorProp("主色容器（如默认提供商徽章背景），主色的浅色变体"))
-                    put("onPrimaryContainerColor", colorProp("主色容器上的文字颜色，与 primaryContainerColor 高对比"))
-                    put("secondaryColor", colorProp("次要色调"))
-                    put("onSecondaryColor", colorProp("次色上的文字颜色"))
-                    put("secondaryContainerColor", colorProp("次色容器背景"))
-                    put("onSecondaryContainerColor", colorProp("次色容器上的文字颜色"))
-                    put("tertiaryColor", colorProp("第三色（强调点缀），常用于特殊徽章"))
-                    put("onTertiaryColor", colorProp("第三色上的文字颜色"))
-                    // —— 表面与文字 ——
-                    put("backgroundColor", colorProp("整页背景色"))
-                    put("onBackgroundColor", colorProp("背景上正文文字色"))
-                    put("surfaceColor", colorProp("卡片/对话框/输入框等表面颜色"))
-                    put("onSurfaceColor", colorProp("表面上的主要文字颜色（如标题）"))
-                    put("surfaceVariantColor", colorProp("次级表面（聚合工具消息、思考面板背景）"))
-                    put("onSurfaceVariantColor", colorProp("次级表面上的辅助文字色"))
-                    put("outlineColor", colorProp("分隔线 / 边框主色"))
-                    put("outlineVariantColor", colorProp("更浅的分隔线 / 边框色"))
-                    // —— 状态色 ——
-                    put("errorColor", colorProp("错误状态色（删除按钮、错误提示）"))
-                    put("onErrorColor", colorProp("错误色上的文字色"))
-                    put("errorContainerColor", colorProp("错误容器背景（错误提示气泡）"))
-                    put("onErrorContainerColor", colorProp("错误容器内的文字色"))
-                    put("successColor", colorProp("成功色（运行中状态、绿色徽章），iOS 风格 #34C759 是默认"))
-                    put("warningColor", colorProp("警告色（启动中、橙色提示），#FF9800 是默认"))
-                    put("infoColor", colorProp("信息色（视觉/蓝色徽章），#007AFF 是默认"))
-                    put("accentColor", colorProp("强调色（思考过程的星标、橙色点缀），#FF9500 是默认"))
-                    // —— 侧边栏专属颜色 ——
-                    put("sidebarBackgroundColor", colorProp("侧边栏背景色，例如 #FFFBFE"))
-                    put("sidebarOnBackgroundColor", colorProp("侧边栏文字与辅助图标颜色，例如 #1C1B1F"))
-                    put("sidebarActiveColor", colorProp("侧边栏激活项背景色，例如 #EADDFF"))
-                    put("sidebarOnActiveColor", colorProp("侧边栏激活项文字与图标颜色，例如 #21005D"))
-                    // —— 布局 ──
+                    // —— Primary palette ——
+                    put("primaryColor", colorProp("Primary color (buttons / selected / brand color), e.g. #6750A4"))
+                    put("onPrimaryColor", colorProp("Text and icon color on primary (high contrast against primaryColor), e.g. #FFFFFF"))
+                    put("primaryContainerColor", colorProp("Primary container (e.g. default provider badge background), a lighter variant of the primary color"))
+                    put("onPrimaryContainerColor", colorProp("Text color on primary container, high contrast against primaryContainerColor"))
+                    put("secondaryColor", colorProp("Secondary color"))
+                    put("onSecondaryColor", colorProp("Text color on secondary"))
+                    put("secondaryContainerColor", colorProp("Secondary container background"))
+                    put("onSecondaryContainerColor", colorProp("Text color on secondary container"))
+                    put("tertiaryColor", colorProp("Tertiary color (accent highlight), often used for special badges"))
+                    put("onTertiaryColor", colorProp("Text color on tertiary"))
+                    // —— Surface & text ——
+                    put("backgroundColor", colorProp("Full-page background color"))
+                    put("onBackgroundColor", colorProp("Body text color on background"))
+                    put("surfaceColor", colorProp("Surface color for cards / dialogs / input fields"))
+                    put("onSurfaceColor", colorProp("Primary text color on surface (e.g. headings)"))
+                    put("surfaceVariantColor", colorProp("Secondary surface (aggregated tool messages, thinking panel background)"))
+                    put("onSurfaceVariantColor", colorProp("Secondary text color on surface variant"))
+                    put("outlineColor", colorProp("Primary divider / border color"))
+                    put("outlineVariantColor", colorProp("Lighter divider / border color"))
+                    // —— Status colors ——
+                    put("errorColor", colorProp("Error state color (delete buttons, error messages)"))
+                    put("onErrorColor", colorProp("Text color on error"))
+                    put("errorContainerColor", colorProp("Error container background (error message bubbles)"))
+                    put("onErrorContainerColor", colorProp("Text color inside error container"))
+                    put("successColor", colorProp("Success color (running status, green badges); iOS-style #34C759 is the default"))
+                    put("warningColor", colorProp("Warning color (starting up, orange hints); #FF9800 is the default"))
+                    put("infoColor", colorProp("Info color (visual / blue badges); #007AFF is the default"))
+                    put("accentColor", colorProp("Accent color (thinking-process star, orange highlight); #FF9500 is the default"))
+                    // —— Sidebar-specific colors ——
+                    put("sidebarBackgroundColor", colorProp("Sidebar background color, e.g. #FFFBFE"))
+                    put("sidebarOnBackgroundColor", colorProp("Sidebar text and secondary icon color, e.g. #1C1B1F"))
+                    put("sidebarActiveColor", colorProp("Sidebar active item background color, e.g. #EADDFF"))
+                    put("sidebarOnActiveColor", colorProp("Sidebar active item text and icon color, e.g. #21005D"))
+                    // —— Layout ——
                     put("cornerRadiusDp", JSONObject().apply {
                         put("type", "integer")
-                        put("description", "全局圆角大小（dp），范围 0-32。影响卡片、按钮等的圆角")
+                        put("description", "Global corner radius in dp, range 0–32. Affects cards, buttons, and other rounded elements.")
                     })
                     put("spacingMultiplier", JSONObject().apply {
                         put("type", "number")
-                        put("description", "全局间距倍数，范围 0.5-2.0。1.0 为默认，>1 更宽松，<1 更紧凑")
+                        put("description", "Global spacing multiplier, range 0.5–2.0. 1.0 is the default; >1 is more spacious, <1 is more compact.")
                     })
                     put("resetToDefault", JSONObject().apply {
                         put("type", "boolean")
-                        put("description", "传 true 立刻重置全部 UI 为默认（其他字段被忽略）")
+                        put("description", "Pass true to immediately reset all UI to defaults (other fields are ignored).")
                     })
                 })
             }
@@ -503,7 +503,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "reset_ui_to_default",
-            description = "将应用的配色、布局、圆角等所有 UI 设置恢复为系统默认状态。当用户要求重置界面、恢复原样或你弄乱了配色时，请调用此工具。",
+            description = "Reset all UI settings — colors, layout, corner radius, etc. — to their system defaults. Call this tool when the user asks to reset the interface, restore the original look, or when you have made a mess of the color scheme.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
@@ -513,17 +513,17 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "save_color_scheme",
-            description = "将当前应用配色方案保存为一个命名预设，方便日后一键恢复。最多可保存 ${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案；超出时会返回错误，需先调用 delete_color_scheme 删除旧方案。保存成功后返回新方案的唯一 schemeId。",
+            description = "Save the current app color scheme as a named preset for easy restoration later. Up to ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets can be saved; if the limit is reached an error is returned — call delete_color_scheme to free up a slot first. Returns the unique schemeId of the newly saved preset.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("name", JSONObject().apply {
                         put("type", "string")
-                        put("description", "方案名称，简短易记，例如「深海蓝」「极简白」。不超过 30 个字符。")
+                        put("description", "Preset name — short and memorable, e.g. \"Deep Ocean Blue\" or \"Minimal White\". Max 30 characters.")
                     })
                     put("description", JSONObject().apply {
                         put("type", "string")
-                        put("description", "方案概述，描述配色风格或适用场景，例如「以深蓝为主色的沉浸式夜间主题」。不超过 100 个字符。")
+                        put("description", "Preset summary describing the color style or use case, e.g. \"An immersive dark night theme with deep blue as the primary color\". Max 100 characters.")
                     })
                 })
                 put("required", JSONArray().apply {
@@ -536,7 +536,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "list_color_schemes",
-            description = "列出所有已保存的配色方案预设，返回每个方案的 schemeId、名称、概述、保存时间，以及主色/背景色预览。在应用或删除方案前请先调用此工具获取 schemeId。",
+            description = "List all saved color scheme presets, returning each preset's schemeId, name, description, save time, and a preview of the primary and background colors. Call this tool before applying or deleting a preset to obtain the schemeId.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
@@ -546,13 +546,13 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "apply_color_scheme",
-            description = "将指定 schemeId 的已保存配色方案应用为当前主题，立即生效。调用前请先用 list_color_schemes 获取可用的 schemeId。",
+            description = "Apply a saved color scheme preset by its schemeId as the current theme, taking effect immediately. Call list_color_schemes first to obtain the available schemeIds.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("schemeId", JSONObject().apply {
                         put("type", "string")
-                        put("description", "要应用的方案 ID（由 save_color_scheme 返回或 list_color_schemes 列出）")
+                        put("description", "The ID of the preset to apply (returned by save_color_scheme or listed by list_color_schemes).")
                     })
                 })
                 put("required", JSONArray().apply { put("schemeId") })
@@ -562,17 +562,17 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "search_memory",
-            description = "在长效记忆库中搜索与关键词相关的记忆条目。当你需要回忆用户的某个具体偏好、习惯或历史信息，但当前上下文中没有相关内容时，请调用此工具。系统会自动注入置信度最高的前 30 条记忆，其余记忆需通过此工具主动检索。",
+            description = "Search the long-term memory store for entries related to a keyword. Call this tool when you need to recall a specific user preference, habit, or historical detail that is not present in the current context. The system automatically injects the top 30 highest-confidence memories; all other memories must be retrieved proactively via this tool.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("query", JSONObject().apply {
                         put("type", "string")
-                        put("description", "搜索关键词，支持多个词（空格分隔），例如「编程语言 Kotlin」或「饮食偏好」。搜索会对记忆内容做模糊匹配。")
+                        put("description", "Search keywords; multiple words are supported (space-separated), e.g. \"programming language Kotlin\" or \"dietary preference\". The search performs fuzzy matching against memory content.")
                     })
                     put("limit", JSONObject().apply {
                         put("type", "integer")
-                        put("description", "最多返回的结果数量，默认 10，最大 50。")
+                        put("description", "Maximum number of results to return. Default 10, max 50.")
                     })
                 })
                 put("required", JSONArray().apply { put("query") })
@@ -582,13 +582,13 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "delete_color_scheme",
-            description = "删除指定 schemeId 的已保存配色方案预设。当已保存 ${com.example.data.ColorSchemePreset.MAX_PRESETS} 个方案需要腾出空间时使用。",
+            description = "Delete a saved color scheme preset by its schemeId. Use this when ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets are already saved and you need to free up a slot.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("schemeId", JSONObject().apply {
                         put("type", "string")
-                        put("description", "要删除的方案 ID（由 list_color_schemes 列出）")
+                        put("description", "The ID of the preset to delete (listed by list_color_schemes).")
                     })
                 })
                 put("required", JSONArray().apply { put("schemeId") })
@@ -598,17 +598,17 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "adjust_font",
-            description = "调整应用的字体设置，包括全局字体大小缩放、聊天气泡字体大小缩放和字体族。设置后立即全局生效，无需重启。\n\n**可调字段：**\n• fontSizeScale — 全局 UI 字体大小缩放（0.75–1.5，默认 1.0）\n• chatFontSizeScale — 聊天气泡正文字体大小缩放（0.75–1.5，默认 1.0）\n• fontFamily — 字体族（\"default\" / \"serif\" / \"monospace\" / \"cursive\"）\n\n未提供的字段保持当前值不变（增量更新）。",
+            description = "Adjust the app's font settings, including global font size scale, chat bubble font size scale, and font family. Changes take effect globally and immediately without a restart.\n\n**Adjustable fields:**\n• fontSizeScale — Global UI font size scale (0.75–1.5, default 1.0)\n• chatFontSizeScale — Chat bubble body font size scale (0.75–1.5, default 1.0)\n• fontFamily — Font family (\"default\" / \"serif\" / \"monospace\" / \"cursive\")\n\nFields not provided retain their current values (incremental update).",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("fontSizeScale", JSONObject().apply {
                         put("type", "number")
-                        put("description", "全局 UI 字体大小缩放比例，范围 0.75–1.5。1.0 为默认（100%），1.2 放大 20%，0.9 缩小 10%。影响标题、按钮、标签等所有 UI 文字。")
+                        put("description", "Global UI font size scale, range 0.75–1.5. 1.0 is the default (100%); 1.2 enlarges by 20%, 0.9 reduces by 10%. Affects all UI text including headings, buttons, and labels.")
                     })
                     put("chatFontSizeScale", JSONObject().apply {
                         put("type", "number")
-                        put("description", "聊天气泡正文字体大小缩放比例，范围 0.75–1.5。独立于全局缩放，可单独调大聊天内容字号而不影响其他 UI。")
+                        put("description", "Chat bubble body font size scale, range 0.75–1.5. Independent of the global scale — you can increase chat content font size without affecting other UI elements.")
                     })
                     put("fontFamily", JSONObject().apply {
                         put("type", "string")
@@ -618,7 +618,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
                             put("monospace")
                             put("cursive")
                         })
-                        put("description", "字体族。\"default\"=系统默认（Roboto），\"serif\"=衬线字体（Noto Serif），\"monospace\"=等宽字体（Noto Sans Mono），\"cursive\"=手写风格字体。")
+                        put("description", "Font family. \"default\" = system default (Roboto), \"serif\" = serif font (Noto Serif), \"monospace\" = monospace font (Noto Sans Mono), \"cursive\" = handwriting-style font.")
                     })
                 })
             }
@@ -627,7 +627,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "reset_font_to_default",
-            description = "将应用的所有字体设置（字体大小缩放、聊天字体缩放、字体族）恢复为默认值。当用户要求恢复默认字体或你调乱了字体时，请调用此工具。",
+            description = "Reset all font settings (font size scale, chat font scale, and font family) to their default values. Call this tool when the user asks to restore the default font or when you have made a mess of the font configuration.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
@@ -637,51 +637,56 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "list_ui_texts",
-            description = "查看当前已被 AI 自定义覆盖的 UI 文字（key → value 列表）。返回所有 override 条目。\n\n应用的所有 UI 文字都通过 `uiText(key, default)` 调用注册，AI 看到的中文界面就是 default 值。要修改某段文字时，告诉用户你看到了哪段中文，**询问用户希望改成什么**，然后基于上下文为它生成一个稳定的 key（推荐 `命名空间.具体含义` 形式，例如 `topbar.title.chat`、`action.confirm`、`chat.input.hint`），最后调用 set_ui_texts 写入。",
+            description = "View all adjustable UI text strings in the app along with their default Chinese values and current override values. An optional `query` parameter (e.g. \"mcp\" or \"session\") can be provided to fuzzy-filter results by key or default value.\n\n## Line break tip\n\nYou can use `\\n` in `set_ui_texts` values to insert line breaks. For longer translated strings (e.g. French, German), insert `\\n` at semantic break points to enable automatic wrapping and prevent text from being clipped.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
-                put("properties", JSONObject())
+                put("properties", JSONObject().apply {
+                    put("query", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional. Fuzzy-filter by key name or default Chinese text. If not provided, all UI text entries are listed.")
+                    })
+                })
             }
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "set_ui_texts",
-            description = "覆盖任意 UI 文字标签（按钮、标题、提示语、占位符等）。立即全局生效，无需重启。\n\n## 工作原理\n\n应用中每个 UI 文字都通过 `uiText(key, default)` 调用注册。每个 key 对应代码里的一段 default 中文。AI 通过本工具为某个 key 写入新文本，所有引用此 key 的位置都会立刻显示新文本。未被覆盖的 key 自动回退到 default。\n\n## 用法\n\n• `updates`：要设置或更新的 key→value 字典。例如 `{\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}`。\n• `delete`：要删除覆盖（恢复成默认中文）的 key 列表。例如 `[\"action.confirm\"]`。\n• `resetAll`：传 true 一键删除所有覆盖，恢复全部默认中文。\n\n## key 命名建议（不强制）\n\ntopbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*\n\n## 重要\n\nkey 必须与代码中调用 uiText 时使用的 key 完全一致才会生效。先调用 list_ui_texts 看现有覆盖；如果用户指出某段文字想改但没有现成 key，请询问用户该文字大致出现在哪个区域（顶部栏 / 侧边栏 / 聊天 / 设置 / 对话框 等），结合代码注释里的命名约定生成 key。常用示例 key：`topbar.title.chat`（顶部栏会话标题）、`topbar.title.settings`（顶部栏设置标题）、`topbar.menu.open`（菜单按钮 contentDescription）、`topbar.memory.syncing`（记忆同步中状态）、`topbar.provider.prefix`（顶部「提供商: 」前缀）、`sidebar.title`（侧边栏对话列表标题）、`sidebar.settings`（侧边栏设置按钮）、`sidebar.session.add`（侧边栏新建会话按钮）、`tab.settings.models` / `tab.settings.mcp` / `tab.settings.memory`、`chat.input.hint`、`chat.send.contentDescription`、`chat.no_provider.warning`、`chat.memory.injected`（含 %d）、`chat.current.model`（含两个 %s）、`models.empty.hint`、`models.default.badge`、`models.add.provider`、`models.set.default.title` / `models.set.default.desc`、`memory.manual.input.title`、`memory.empty.hint`、`mcp.empty.title` / `mcp.empty.desc`、`mcp.examples.title`、`mcp.builtin.title` / `mcp.builtin.status` / `mcp.view.tools`、`dialog.delete.session.title` / `dialog.delete.session.body`（含 %s）、`action.confirm` / `action.cancel` / `action.delete` / `action.save` / `action.edit` / `action.add` / `action.close` / `action.reset`。\n\n## 占位符\n\n部分文字含格式化占位符：`%s` 是字符串、`%d` 是数字。改写时**必须保留相同数量和顺序的占位符**，否则会运行时崩溃。`list_ui_texts` 返回的注释会标明占位符。",
+            description = "Override any UI text labels (buttons, headings, hints, placeholders, etc.). Changes take effect globally and immediately without a restart.\n\n## How it works\n\nEvery UI string in the app is registered via a `uiText(key, default)` call. Each key maps to a default Chinese string in the code. When the AI writes a new value for a key using this tool, every location that references that key immediately displays the new text. Keys without an override automatically fall back to their default.\n\n## Usage\n\n• `updates`: A key→value dictionary of strings to set or update. E.g. `{\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}`.\n• `delete`: A list of keys whose overrides should be removed (reverting to the default Chinese). E.g. `[\"action.confirm\"]`.\n• `resetAll`: Pass true to remove all overrides at once and restore all default Chinese strings.\n\n## Key naming conventions (not enforced)\n\ntopbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*\n\n## Line break support\n\nUse `\\n` in values to insert line breaks. For languages where translations are significantly longer (e.g. French, German), insert `\\n` at appropriate semantic break points to enable automatic wrapping and prevent text from being clipped. Example: `\"tab.settings.memory\": \"Mémoire\\nlongue\"`. The app handles multi-line text display automatically.\n\n## Important\n\nThe key must exactly match the key used in the `uiText()` call in the code for the override to take effect. Call `list_ui_texts` first to see existing overrides. If the user wants to change a string but no existing key is found, ask which area of the UI it appears in (top bar / sidebar / chat / settings / dialog, etc.) and derive the key from the naming conventions above. Common example keys: `topbar.title.chat`, `topbar.title.settings`, `topbar.menu.open`, `topbar.memory.syncing`, `topbar.provider.prefix`, `sidebar.title`, `sidebar.settings`, `sidebar.session.add`, `tab.settings.models` / `tab.settings.mcp` / `tab.settings.memory`, `chat.input.hint`, `chat.send.contentDescription`, `chat.no_provider.warning`, `chat.memory.injected` (contains %d), `chat.current.model` (contains two %s), `models.empty.hint`, `models.default.badge`, `models.add.provider`, `models.set.default.title` / `models.set.default.desc`, `memory.manual.input.title`, `memory.empty.hint`, `mcp.empty.title` / `mcp.empty.desc`, `mcp.examples.title`, `mcp.builtin.title` / `mcp.builtin.status` / `mcp.view.tools`, `dialog.delete.session.title` / `dialog.delete.session.body` (contains %s), `action.confirm` / `action.cancel` / `action.delete` / `action.save` / `action.edit` / `action.add` / `action.close` / `action.reset`.\n\n## Placeholders\n\nSome strings contain format placeholders: `%s` for strings, `%d` for numbers. When rewriting these strings you **must preserve the same number and order of placeholders**, otherwise a runtime crash will occur. The comments returned by `list_ui_texts` indicate which placeholders are present.",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
                     put("updates", JSONObject().apply {
                         put("type", "object")
-                        put("description", "要设置/更新的 UI 文字 key → value 字典。key 是代码里 uiText() 调用的 key 名，value 是要显示的新文本。")
+                        put("description", "A key→value dictionary of UI text strings to set or update. The key is the name used in the uiText() call in the code; the value is the new text to display.")
                         put("additionalProperties", JSONObject().apply {
                             put("type", "string")
                         })
                     })
                     put("delete", JSONObject().apply {
                         put("type", "array")
-                        put("description", "要删除覆盖（恢复成默认中文）的 key 列表。")
+                        put("description", "A list of keys whose overrides should be removed (reverting to the default Chinese).")
                         put("items", JSONObject().apply {
                             put("type", "string")
                         })
                     })
                     put("resetAll", JSONObject().apply {
                         put("type", "boolean")
-                        put("description", "传 true 一键删除所有覆盖，恢复全部默认中文（其他字段被忽略）。")
+                        put("description", "Pass true to remove all overrides at once and restore all default Chinese strings (other fields are ignored).")
                     })
                 })
             }
         )
     )
 
-    /** 内部小工具：构造一个 HEX 颜色 schema 节点 */
+    /** Internal helper: build a HEX color schema node */
     private fun colorProp(desc: String): JSONObject = JSONObject().apply {
         put("type", "string")
         put("pattern", "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$")
-        put("description", "$desc。格式 #RRGGBB 或 #RRGGBBAA")
+        put("description", "$desc. Format: #RRGGBB or #RRGGBBAA")
     }
 
-    /** 内部小工具：构造一个字符串 schema 节点 */
+    /** Internal helper: build a string schema node */
     private fun strProp(desc: String): JSONObject = JSONObject().apply {
         put("type", "string")
         put("description", desc)

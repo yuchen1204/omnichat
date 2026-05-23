@@ -538,25 +538,73 @@ object BuiltinToolHandler {
                 val repository = AppRepository(db)
                 val current = repository.getUISettings() ?: UISettings()
                 val strings = UiStrings.fromJson(current.uiStrings)
-                val text = if (strings.overrides.isEmpty()) {
-                    "当前没有任何 UI 文字被覆盖（全部使用默认中文）。\n\n" +
-                    "用法：在聊天中告诉用户你看到了什么文字，然后调用 set_ui_texts 修改。\n" +
-                    "调用形如：set_ui_texts({\"updates\": {\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}})\n\n" +
-                    "key 命名建议（不强制）：topbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*"
-                } else {
-                    buildString {
-                        appendLine("当前已被 AI 覆盖的 UI 文字（共 ${strings.overrides.size} 项）：")
-                        appendLine()
-                        strings.overrides.toSortedMap().forEach { (k, v) ->
-                            appendLine("  $k = \"$v\"")
+                
+                val allKeys = try {
+                    context.assets.open("ui_text_keys.json").use { input ->
+                        val jsonStr = input.bufferedReader().use { it.readText() }
+                        val obj = JSONObject(jsonStr)
+                        val map = mutableMapOf<String, String>()
+                        obj.keys().forEach { key ->
+                            map[key] = obj.getString(key)
                         }
-                        appendLine()
-                        appendLine("提示：")
-                        appendLine("• 修改更多 key：set_ui_texts({\"updates\": {\"key1\": \"new1\", \"key2\": \"new2\"}})")
-                        appendLine("• 恢复某些 key 为默认：set_ui_texts({\"delete\": [\"key1\", \"key2\"]})")
-                        appendLine("• 一键全部重置：set_ui_texts({\"resetAll\": true})")
+                        map
                     }
+                } catch (e: Exception) {
+                    emptyMap<String, String>()
                 }
+
+                val query = arguments.optString("query").trim()
+                val hasQuery = query.isNotEmpty()
+                
+                val text = buildString {
+                    appendLine("=== App 可调整/翻译的 UI 文字列表 ===")
+                    if (hasQuery) {
+                        appendLine("过滤关键词：「$query」")
+                    } else {
+                        appendLine("提示：当前返回所有文字。可以调用 list_ui_texts 时提供 query 参数进行模糊匹配过滤。")
+                    }
+                    appendLine("格式说明：【Key】 = \"默认值\" -> 如果有覆盖则显示 [当前覆盖: \"新值\"]")
+                    appendLine()
+                    
+                    val unionKeys = (allKeys.keys + strings.overrides.keys).sorted()
+                    var matchCount = 0
+                    
+                    unionKeys.forEach { key ->
+                        val defaultText = allKeys[key] ?: ""
+                        val overrideText = strings.overrides[key]
+                        
+                        val matchesQuery = !hasQuery || 
+                            key.contains(query, ignoreCase = true) || 
+                            defaultText.contains(query, ignoreCase = true) ||
+                            (overrideText != null && overrideText.contains(query, ignoreCase = true))
+                            
+                        if (matchesQuery) {
+                            matchCount++
+                            if (overrideText != null) {
+                                appendLine("• Key: $key")
+                                appendLine("  默认: \"$defaultText\"")
+                                appendLine("  当前已覆盖为: \"$overrideText\"")
+                            } else {
+                                appendLine("• Key: $key")
+                                appendLine("  默认: \"$defaultText\"")
+                            }
+                            appendLine()
+                        }
+                    }
+                    
+                    appendLine("== 统计 ==")
+                    if (hasQuery) {
+                        appendLine("符合过滤条件的文字：$matchCount / ${unionKeys.size} 项")
+                    } else {
+                        appendLine("全部可调整的文字：${unionKeys.size} 项")
+                    }
+                    appendLine()
+                    appendLine("== 提示 ==")
+                    appendLine("• 修改/翻译某些 key：set_ui_texts({\"updates\": {\"key1\": \"new1\", \"key2\": \"new2\"}})")
+                    appendLine("• 恢复某些 key 为默认：set_ui_texts({\"delete\": [\"key1\", \"key2\"]})")
+                    appendLine("• 一键全部重置：set_ui_texts({\"resetAll\": true})")
+                }
+                
                 JSONObject().apply {
                     put("content", JSONArray().apply {
                         put(JSONObject().apply {

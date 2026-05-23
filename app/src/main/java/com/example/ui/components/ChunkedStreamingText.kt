@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import dev.jeziellago.compose.markdowntext.MarkdownText
@@ -22,6 +23,7 @@ fun ChunkedStreamingText(
     textColor: Color,
     fontSize: TextUnit = 15.sp,
     lineHeight: TextUnit = 22.sp,
+    fontFamily: FontFamily = FontFamily.Default,
     modifier: Modifier = Modifier
 ) {
     val parser = remember { MarkdownChunkParser() }
@@ -40,7 +42,8 @@ fun ChunkedStreamingText(
                     style = TextStyle(
                         color = textColor,
                         fontSize = fontSize,
-                        lineHeight = lineHeight
+                        lineHeight = lineHeight,
+                        fontFamily = fontFamily
                     ),
                     syntaxHighlightColor = highlightBg,
                     syntaxHighlightTextColor = highlightText,
@@ -61,6 +64,7 @@ fun ChunkedStreamingText(
                     color = textColor,
                     fontSize = fontSize,
                     lineHeight = lineHeight,
+                    fontFamily = fontFamily,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
@@ -69,7 +73,8 @@ fun ChunkedStreamingText(
                     style = TextStyle(
                         color = textColor,
                         fontSize = fontSize,
-                        lineHeight = lineHeight
+                        lineHeight = lineHeight,
+                        fontFamily = fontFamily
                     ),
                     syntaxHighlightColor = highlightBg,
                     syntaxHighlightTextColor = highlightText,

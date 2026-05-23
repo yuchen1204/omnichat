@@ -142,7 +142,8 @@ fun SessionSidebarPanel(
                             color = if (isActive) sidebarColors.onActiveBackground
                                     else sidebarColors.onBackground,
                             modifier = Modifier.weight(1f),
-                            maxLines = 1
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         // 更多操作按钮（始终显示），菜单锚定在此按钮上
                         Box {
@@ -234,13 +235,13 @@ fun SessionSidebarPanel(
                     text = activeProviderName,
                     fontSize = (11 * fs).sp,
                     color = sidebarColors.onBackground.copy(alpha = 0.6f),
-                    maxLines = 1
+                    maxLines = 2
                 )
                 Text(
                     text = activeModelId,
                     fontSize = (10 * fs).sp,
                     color = sidebarColors.onBackground.copy(alpha = 0.8f),
-                    maxLines = 1
+                    maxLines = 2
                 )
             }
         }

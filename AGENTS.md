@@ -71,7 +71,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (10 enti
 
 ## Data Layer
 
-Room database `ai_chat_memory_db` (version 18) with 10 entities. See `app/src/main/java/com/example/data/Entities.kt`.
+Room database `ai_chat_memory_db` (version 19) with 10 entities. See `app/src/main/java/com/example/data/Entities.kt`.
 
 | Entity | Table | Purpose |
 |--------|-------|---------|
@@ -86,7 +86,7 @@ Room database `ai_chat_memory_db` (version 18) with 10 entities. See `app/src/ma
 | `UISettings` | `ui_settings` | Single-row AI-adjustable color/font/layout settings |
 | `ColorSchemePreset` | `color_scheme_presets` | Up to 5 named color scheme snapshots (UUID-keyed) |
 
-17 sequential migrations exist (v1→v18). Always add new migrations when changing schemas — do not rely on `fallbackToDestructiveMigration`.
+18 sequential migrations exist (v1→v19). Always add new migrations when changing schemas — do not rely on `fallbackToDestructiveMigration`. **Rule: 只加列/加表，绝不删数据** (only add columns/tables, never delete data).
 
 ## Native Code (MCP Runtime)
 
@@ -101,14 +101,21 @@ Room database `ai_chat_memory_db` (version 18) with 10 entities. See `app/src/ma
 
 ## Conventions
 
-- **Chinese UI strings** are hardcoded in Compose (not in `strings.xml`). Keep user-facing text in Chinese.
+- **File naming quirks**: `MainActivity.kt` uses lowercase 'm' (non-standard); `Repository.kt` file contains class `AppRepository` (file name ≠ class name)
+- **Chinese UI strings** are hardcoded in Compose (not `strings.xml`). Keep user-facing text in Chinese.
+- **AI-adjustable UI strings** use the `uiText("namespace.key", "默认中文")` pattern. Keys are auto-collected by the `generateUiTextKeys` Gradle task into `assets/ui_text_keys.json`. Namespaces: `topbar.*`, `sidebar.*`, `chat.*`, `models.*`, `memory.*`, `mcp.*`, `dialog.*`, `action.*`
+- **CompositionLocals**: `MyApplicationTheme` provides `LocalUISettings`, `LocalCustomColors`, `LocalSidebarColors`, `LocalUiStrings`, `LocalChatFontScale`
 - **OpenAI-compatible API**: endpoint auto-correction strips `/chat/completions`, adds `/v1` for OpenAI
 - **Thinking/reasoning support**: `reasoning_effort` (low/medium/high/xhigh) with `budget_tokens`
-- **Memory system**: Dual-layer — session summaries (15-min rolling) + cross-session memory facts injected via `[CROSS_SESSION_MEMORY]` placeholder in prompts
+- **Memory system**: Dual-layer — session summaries (15-min rolling) + cross-session memory facts injected via `[CROSS_SESSION_MEMORY]` placeholder in prompts. LLM outputs structured JSON `{"ops": [...]}` with ADD/UPDATE/REINFORCE/DELETE; **pinned** memories are protected client-side
 - **API keys**: Managed via Secrets Gradle Plugin from `.env` file, never hardcoded
 - **ABI filters**: Only `arm64-v8a` and `x86_64` are packaged
 - **Custom HTTP headers**: `ModelConfig.customHeaders` is a JSON object string (e.g. `'{"X-Custom-Header": "value"}'`) sent with every API request for that provider
 - **AI-adjustable theming**: Full Material 3 palette + font + layout stored in `UISettings` (id=1, single row). AI calls MCP tools to update colors, corner radius, spacing multiplier, and font settings at runtime. Color scheme snapshots saved as `ColorSchemePreset` (max 5)
+- **MCP protocol versions**: Remote HTTP supports both old SSE (2024-11-05) and new Streamable HTTP (2025-03-26)
+- **Storage permissions**: Android 11+ needs `MANAGE_EXTERNAL_STORAGE` (settings page); required for MCP script deployment
+- **Streaming internals**: SSE chunk prefixes `ERROR:`, `INFO:`, `TOOL_CALL_DELTA:`, `RETRY_RESET:` have special handling in `ChatViewModel`. UI updates throttled to 50ms intervals
+- **No minification** (`isMinifyEnabled = false`); `useLegacyPackaging = false` for jniLibs (allows mmap for faster .so loading)
 
 ## Common Tasks
 

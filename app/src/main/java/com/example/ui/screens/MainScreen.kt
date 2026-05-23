@@ -22,6 +22,7 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
+import com.example.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,14 +102,17 @@ fun SettingsView(
     val tabs = listOf(
         uiText("tab.settings.models", "模型配置"),
         uiText("tab.settings.mcp", "MCP工具"),
-        uiText("tab.settings.memory", "长效记忆")
+        uiText("tab.settings.memory", "长效记忆"),
+        uiText("tab.settings.data", "数据管理")
     )
+    val settingsViewModel: SettingsViewModel = viewModel()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(
+        ScrollableTabRow(
             selectedTabIndex = selectedSubTab,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary,
+            edgePadding = 0.dp,
             divider = {
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
@@ -137,6 +141,7 @@ fun SettingsView(
                 0 -> ModelsConfigView(viewModel)
                 1 -> McpConfigScreen(mcpViewModel = mcpViewModel)
                 2 -> MemoryAndPromptView(viewModel)
+                3 -> ExportImportView(settingsViewModel = settingsViewModel)
             }
         }
     }
@@ -179,7 +184,7 @@ fun MainTopAppBar(
                         fontFamily = resolvedFontFamily,
                         letterSpacing = (-0.4).sp,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1
+                        maxLines = 2
                     )
                     if (currentTab == "chat" && defaultProvider != null) {
                         Text(
@@ -187,7 +192,7 @@ fun MainTopAppBar(
                             fontSize = (11 * fs).sp,
                             fontFamily = resolvedFontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 1
+                            maxLines = 2
                         )
                     }
                 }

@@ -241,7 +241,7 @@ fun ModelConfigCard(
                             text = config.endpoint,
                             fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
+                            maxLines = 2
                         )
                     }
                     
@@ -1036,7 +1036,7 @@ fun ProviderModelPicker(
                                             text = config.endpoint,
                                             fontSize = (10 * fs).sp,
                                             color = mutedTextColor,
-                                            maxLines = 1
+                                            maxLines = 2
                                         )
                                     }
                                     Icon(
@@ -1115,7 +1115,7 @@ fun ProviderModelPicker(
                                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary
                                                         else MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1
+                                                maxLines = 2
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1313,7 +1313,7 @@ fun MemoryModelSelectorCard(
                                             fontSize = (13 * fs).sp,
                                             fontWeight = FontWeight.Medium,
                                             color = onSurface,
-                                            maxLines = 1
+                                            maxLines = 2
                                         )
                                         Spacer(modifier = Modifier.height(3.dp))
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -32,6 +32,7 @@ import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.uiText
+import com.example.ui.theme.resolveFontFamily
 
 // ── 工具列表弹窗 ──────────────────────────────────────────────────────────
 
@@ -41,7 +42,9 @@ fun McpToolsDialog(
     tools: List<McpTool>,
     onDismiss: () -> Unit
 ) {
-    val fs = LocalUISettings.current.fontSizeScale
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -59,6 +62,7 @@ fun McpToolsDialog(
                         text = uiText("mcp.dialog.tools_title", "%s 的工具").format(serverName),
                         fontSize = (16 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
+                        fontFamily = resolvedFontFamily,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
@@ -74,7 +78,7 @@ fun McpToolsDialog(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(uiText("mcp.dialog.2df0bd31", "暂无工具"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(uiText("mcp.dialog.2df0bd31", "暂无工具"), fontFamily = resolvedFontFamily, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -90,7 +94,9 @@ fun McpToolsDialog(
 
 @Composable
 fun McpToolItem(tool: McpTool) {
-    val fs = LocalUISettings.current.fontSizeScale
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -110,6 +116,7 @@ fun McpToolItem(tool: McpTool) {
             Text(
                 text = tool.description,
                 fontSize = (12 * fs).sp,
+                fontFamily = resolvedFontFamily,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
@@ -125,7 +132,9 @@ fun McpImportDialog(
 ) {
     var jsonText by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
-    val fs = LocalUISettings.current.fontSizeScale
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -143,13 +152,15 @@ fun McpImportDialog(
                 Text(
                     text = uiText("mcp.dialog.ea4cb678", "导入 MCP 配置 (JSON)"),
                     fontSize = (18 * fs).sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = resolvedFontFamily
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
                     text = uiText("mcp.dialog.79180a54", "粘贴标准的 mcpServers JSON 配置。导入后将自动添加并尝试启动服务。"),
                     fontSize = (12 * fs).sp,
+                    fontFamily = resolvedFontFamily,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
@@ -176,7 +187,7 @@ fun McpImportDialog(
                     ),
                     isError = isError,
                     supportingText = if (isError) {
-                        { Text(uiText("mcp.dialog.23cc670c", "无效的 JSON 格式或缺少 mcpServers 字段")) }
+                        { Text(uiText("mcp.dialog.23cc670c", "无效的 JSON 格式或缺少 mcpServers 字段"), fontFamily = resolvedFontFamily) }
                     } else null
                 )
                 
@@ -189,7 +200,7 @@ fun McpImportDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
-                    ) { Text(uiText("mcp.dialog.e972261b", "取消")) }
+                    ) { Text(uiText("mcp.dialog.e972261b", "取消"), fontFamily = resolvedFontFamily) }
                     
                     Button(
                         onClick = {
@@ -206,7 +217,7 @@ fun McpImportDialog(
                         },
                         modifier = Modifier.weight(1f),
                         enabled = jsonText.isNotBlank()
-                    ) { Text(uiText("mcp.dialog.521cea1b", "确认导入")) }
+                    ) { Text(uiText("mcp.dialog.521cea1b", "确认导入"), fontFamily = resolvedFontFamily) }
                 }
             }
         }
@@ -235,7 +246,9 @@ fun McpServerEditDialog(
     var argsError by remember { mutableStateOf(false) }
     var envError by remember { mutableStateOf(false) }
 
-    val fs = LocalUISettings.current.fontSizeScale
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -254,7 +267,8 @@ fun McpServerEditDialog(
                 Text(
                     text = if (isEdit) uiText("mcp.dialog.edit_title", "编辑 MCP 服务") else uiText("mcp.dialog.add_title", "添加 MCP 服务"),
                     fontSize = (18 * fs).sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = resolvedFontFamily
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -262,10 +276,11 @@ fun McpServerEditDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(uiText("mcp.dialog.a9c7eb71", "服务名称")) },
-                    placeholder = { Text(uiText("mcp.dialog.53eae47f", "例如：文件系统服务")) },
+                    label = { Text(uiText("mcp.dialog.a9c7eb71", "服务名称"), fontFamily = resolvedFontFamily) },
+                    placeholder = { Text(uiText("mcp.dialog.53eae47f", "例如：文件系统服务"), fontFamily = resolvedFontFamily) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = resolvedFontFamily)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -274,15 +289,17 @@ fun McpServerEditDialog(
                     text = uiText("mcp.dialog.8436d4b3", "运行时"),
                     fontSize = (13 * fs).sp,
                     fontWeight = FontWeight.Medium,
+                    fontFamily = resolvedFontFamily,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                RuntimeSelector(selected = runtime, onSelect = { runtime = it })
+                RuntimeSelector(selected = runtime, resolvedFontFamily = resolvedFontFamily, onSelect = { runtime = it })
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // 运行时说明
                 RuntimeHint(
                     runtime = runtime,
+                    resolvedFontFamily = resolvedFontFamily,
                     mcpWorkDir = mcpWorkDir
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -291,8 +308,8 @@ fun McpServerEditDialog(
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it },
-                    label = { Text(commandLabel(runtime)) },
-                    placeholder = { Text(commandPlaceholder(runtime)) },
+                    label = { Text(commandLabel(runtime), fontFamily = resolvedFontFamily) },
+                    placeholder = { Text(commandPlaceholder(runtime), fontFamily = resolvedFontFamily) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace)
@@ -306,11 +323,11 @@ fun McpServerEditDialog(
                         args = it
                         argsError = !isValidJsonArray(it)
                     },
-                    label = { Text(uiText("mcp.dialog.4eee8fef", "参数 (JSON 数组)")) },
-                    placeholder = { Text("[\"--port\", \"3000\"]") },
+                    label = { Text(uiText("mcp.dialog.4eee8fef", "参数 (JSON 数组)"), fontFamily = resolvedFontFamily) },
+                    placeholder = { Text("[\"--port\", \"3000\"]", fontFamily = resolvedFontFamily) },
                     isError = argsError,
                     supportingText = if (argsError) {
-                        { Text(uiText("mcp.dialog.invalid_json_array", "请输入合法的 JSON 数组，例如 [\"arg1\", \"arg2\"]")) }
+                        { Text(uiText("mcp.dialog.invalid_json_array", "请输入合法的 JSON 数组，例如 [\"arg1\", \"arg2\"]"), fontFamily = resolvedFontFamily) }
                     } else null,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -326,19 +343,22 @@ fun McpServerEditDialog(
                         envError = !isValidJsonObject(it)
                     },
                     label = {
-                        Text(if (runtime == "remote_http") uiText("mcp.dialog.custom_headers", "自定义请求头 (JSON 对象)") else uiText("mcp.dialog.env_vars", "环境变量 (JSON 对象)"))
+                        Text(
+                            text = if (runtime == "remote_http") uiText("mcp.dialog.custom_headers", "自定义请求头 (JSON 对象)") 
+                                   else uiText("mcp.dialog.env_vars", "环境变量 (JSON 对象)"), 
+                            fontFamily = resolvedFontFamily
+                        )
                     },
                     placeholder = {
                         Text(
-                            if (runtime == "remote_http")
-                                "{\"Authorization\": \"Bearer token\", \"X-Api-Key\": \"xxx\"}"
-                            else
-                                "{\"API_KEY\": \"your-key\"}"
+                            text = if (runtime == "remote_http") "{\"Authorization\": \"Bearer token\", \"X-Api-Key\": \"xxx\"}"
+                                   else "{\"API_KEY\": \"your-key\"}",
+                            fontFamily = resolvedFontFamily
                         )
                     },
                     isError = envError,
                     supportingText = if (envError) {
-                        { Text(uiText("mcp.dialog.invalid_json_object", "请输入合法的 JSON 对象，例如 {\"KEY\": \"value\"}")) }
+                        { Text(uiText("mcp.dialog.invalid_json_object", "请输入合法的 JSON 对象，例如 {\"KEY\": \"value\"}"), fontFamily = resolvedFontFamily) }
                     } else null,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -354,6 +374,7 @@ fun McpServerEditDialog(
                     Text(
                         text = uiText("mcp.dialog.500fbcfe", "启动时自动运行"),
                         fontSize = (14 * fs).sp,
+                        fontFamily = resolvedFontFamily,
                         modifier = Modifier.weight(1f)
                     )
                     Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
@@ -369,7 +390,7 @@ fun McpServerEditDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
-                    ) { Text(uiText("mcp.dialog.e972261b", "取消")) }
+                    ) { Text(uiText("mcp.dialog.e972261b", "取消"), fontFamily = resolvedFontFamily) }
 
                     Button(
                         onClick = {
@@ -387,7 +408,7 @@ fun McpServerEditDialog(
                         },
                         modifier = Modifier.weight(1f),
                         enabled = name.isNotBlank() && command.isNotBlank() && !argsError && !envError
-                    ) { Text(if (isEdit) uiText("action.save", "保存") else uiText("action.add", "添加")) }
+                    ) { Text(if (isEdit) uiText("action.save", "保存") else uiText("action.add", "添加"), fontFamily = resolvedFontFamily) }
                 }
             }
         }
@@ -397,11 +418,15 @@ fun McpServerEditDialog(
 // ── 运行时选择器 ──────────────────────────────────────────────────────────
 
 @Composable
-fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
+fun RuntimeSelector(
+    selected: String,
+    resolvedFontFamily: FontFamily,
+    onSelect: (String) -> Unit
+) {
     val options = listOf(
-        Triple("node", "Node.js", "内嵌 Node.js"),
-        Triple("python", "Python", "内嵌 Python"),
-        Triple("remote_http", "远程 HTTP", "远程 MCP 服务")
+        Triple("node", uiText("mcp.dialog.runtime.node", "Node.js"), uiText("mcp.dialog.runtime.node.desc", "内嵌 Node.js")),
+        Triple("python", uiText("mcp.dialog.runtime.python", "Python"), uiText("mcp.dialog.runtime.python.desc", "内嵌 Python")),
+        Triple("remote_http", uiText("mcp.dialog.runtime.remote_http", "远程 HTTP"), uiText("mcp.dialog.runtime.remote_http.desc", "远程 MCP 服务"))
     )
     val fs = LocalUISettings.current.fontSizeScale
     Row(
@@ -413,7 +438,7 @@ fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
             FilterChip(
                 selected = isSelected,
                 onClick = { onSelect(value) },
-                label = { Text(label, fontSize = (11 * fs).sp) },
+                label = { Text(label, fontSize = (11 * fs).sp, fontFamily = resolvedFontFamily) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -423,6 +448,7 @@ fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
 @Composable
 fun RuntimeHint(
     runtime: String,
+    resolvedFontFamily: FontFamily,
     mcpWorkDir: String = ""
 ) {
     val nodeHint = uiText(
@@ -469,6 +495,7 @@ fun RuntimeHint(
                 Text(
                     text = text,
                     fontSize = (11 * fs).sp,
+                    fontFamily = resolvedFontFamily,
                     color = contentColor,
                     lineHeight = (16 * fs).sp
                 )
@@ -481,30 +508,33 @@ fun RuntimeHint(
 
 @Composable
 fun McpExampleChips(onAdd: (McpServer) -> Unit) {
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+
     val examples = listOf(
         McpServer(
-            name = "文件系统",
+            name = uiText("mcp.example.filesystem", "文件系统"),
             runtime = "node",
             command = "mcp_filesystem.js",
             args = "[\"/sdcard\"]",
             env = "{}"
         ),
         McpServer(
-            name = "HTTP Fetch",
+            name = uiText("mcp.example.fetch", "HTTP Fetch"),
             runtime = "node",
             command = "mcp_fetch.js",
             args = "[]",
             env = "{}"
         ),
         McpServer(
-            name = "远程示例",
+            name = uiText("mcp.example.remote", "远程示例"),
             runtime = "remote_http",
             command = "https://mcp-server-example.vercel.app/sse",
             args = "[]",
             env = "{}"
         )
     )
-    val fs = LocalUISettings.current.fontSizeScale
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         examples.forEach { example ->
             OutlinedButton(
@@ -516,13 +546,13 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
                 RuntimeBadge(runtime = example.runtime)
                 Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                    Text(example.name, fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
+                    Text(example.name, fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium, fontFamily = resolvedFontFamily)
                     Text(
                         example.command,
                         fontSize = (10 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -534,18 +564,20 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
+@Composable
 fun commandLabel(runtime: String) = when (runtime) {
-    "node" -> "JS 入口文件路径"
-    "python" -> "Python 脚本路径"
-    "remote_http" -> "SSE 端点 URL"
-    else -> "命令"
+    "node" -> uiText("mcp.dialog.command_label.node", "JS 入口文件路径")
+    "python" -> uiText("mcp.dialog.command_label.python", "Python 脚本路径")
+    "remote_http" -> uiText("mcp.dialog.command_label.remote_http", "SSE 端点 URL")
+    else -> uiText("mcp.dialog.command_label.default", "命令")
 }
 
+@Composable
 fun commandPlaceholder(runtime: String) = when (runtime) {
-    "node" -> "mcp_filesystem.js  （或绝对路径）"
-    "python" -> "/sdcard/OmniChat/mcp/my_server.py"
-    "remote_http" -> "https://example.com/mcp/sse"
-    else -> "命令或路径"
+    "node" -> uiText("mcp.dialog.command_placeholder.node", "mcp_filesystem.js  （或绝对路径）")
+    "python" -> uiText("mcp.dialog.command_placeholder.python", "/sdcard/OmniChat/mcp/my_server.py")
+    "remote_http" -> uiText("mcp.dialog.command_placeholder.remote_http", "https://example.com/mcp/sse")
+    else -> uiText("mcp.dialog.command_placeholder.default", "命令或路径")
 }
 
 fun isValidJsonArray(s: String): Boolean {
@@ -575,7 +607,9 @@ fun RuntimeInfoDialog(
     pythonStatus: String,
     onDismiss: () -> Unit
 ) {
-    val fs = LocalUISettings.current.fontSizeScale
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -592,9 +626,10 @@ fun RuntimeInfoDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        uiText("mcp.dialog.runtime_details_title", "运行时状态详情"),
+                        text = uiText("mcp.dialog.runtime_details_title", "运行时状态详情"),
                         fontSize = (17 * fs).sp,
                         fontWeight = FontWeight.Bold,
+                        fontFamily = resolvedFontFamily,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
@@ -609,7 +644,8 @@ fun RuntimeInfoDialog(
                     isReady = isNodeAvailable,
                     statusText = if (isNodeAvailable) uiText("mcp.dialog.node_ok", "libnode.so 已加载，Node.js 可用")
                                  else uiText("mcp.dialog.node_missing", "libnode.so 未找到"),
-                    instructions = if (!isNodeAvailable) uiText("mcp.dialog.node_instructions", "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。") else null
+                    instructions = if (!isNodeAvailable) uiText("mcp.dialog.node_instructions", "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。") else null,
+                    resolvedFontFamily = resolvedFontFamily
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -619,7 +655,8 @@ fun RuntimeInfoDialog(
                     title = uiText("mcp.dialog.python_title", "内嵌 Python"),
                     isReady = isPythonReady,
                     statusText = pythonStatus,
-                    instructions = if (!isPythonReady) uiText("mcp.dialog.python_instructions", "请准备 stdlib.zip 和 .so 文件并重新编译。") else null
+                    instructions = if (!isPythonReady) uiText("mcp.dialog.python_instructions", "请准备 stdlib.zip 和 .so 文件并重新编译。") else null,
+                    resolvedFontFamily = resolvedFontFamily
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -629,14 +666,15 @@ fun RuntimeInfoDialog(
                     title = uiText("mcp.dialog.remote_http_title", "远程 HTTP MCP"),
                     isReady = true,
                     statusText = uiText("mcp.dialog.remote_http_status", "支持通过 HTTP/HTTPS 连接远程 MCP 服务。"),
-                    instructions = uiText("mcp.dialog.remote_http_instructions", "远程服务需要遵循 MCP HTTP 传输标准，支持 SSE 端点和 JSON-RPC POST 请求。")
+                    instructions = uiText("mcp.dialog.remote_http_instructions", "远程服务需要遵循 MCP HTTP 传输标准，支持 SSE 端点和 JSON-RPC POST 请求。"),
+                    resolvedFontFamily = resolvedFontFamily
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(uiText("mcp.dialog.c0fd3fa0", "知道了")) }
+                ) { Text(uiText("mcp.dialog.c0fd3fa0", "知道了"), fontFamily = resolvedFontFamily) }
             }
         }
     }
@@ -647,7 +685,8 @@ fun RuntimeInfoSection(
     title: String,
     isReady: Boolean,
     statusText: String,
-    instructions: String?
+    instructions: String?,
+    resolvedFontFamily: FontFamily
 ) {
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
     val color = if (isReady) successColor else MaterialTheme.colorScheme.error
@@ -674,6 +713,7 @@ fun RuntimeInfoSection(
                 title,
                 fontSize = (14 * fs).sp,
                 fontWeight = FontWeight.SemiBold,
+                fontFamily = resolvedFontFamily,
                 color = color
             )
         }
