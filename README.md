@@ -62,17 +62,13 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-username/omnichat.git
+git clone https://github.com/yuchen1204/omnichat.git
 cd omnichat
 
-# 2. 配置API密钥
-cp .env.example .env
-# 编辑 .env 文件，填入你的 GEMINI_API_KEY
-
-# 3. 构建Debug版本
+# 2. 构建Debug版本
 ./gradlew assembleDebug
 
-# 4. 安装到设备
+# 3. 安装到设备
 ./gradlew installDebug
 ```
 
@@ -183,6 +179,6 @@ omnichat/
 
 **用 ❤️ 和 Kotlin 构建**
 
-[报告问题](https://github.com/your-username/omnichat/issues) · [功能请求](https://github.com/your-username/omnichat/issues/new) · [文档](https://github.com/your-username/omnichat/wiki)
+[报告问题](https://github.com/yuchen1204/omnichat/issues) · [功能请求](https://github.com/yuchen1204/omnichat/issues/new) · [文档](https://github.com/yuchen1204/omnichat/wiki)
 
 </div>
