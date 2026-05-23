@@ -636,8 +636,8 @@ class McpRuntimeManager private constructor(private val context: Context) {
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
-            name = "get_ui_strings",
-            description = "查询当前应用所有 UI 文字标签的当前值与默认值。**在调用 adjust_ui_strings 之前请先调用此工具**，了解所有可修改的字段名、当前生效值和默认中文值。",
+            name = "list_ui_texts",
+            description = "查看当前已被 AI 自定义覆盖的 UI 文字（key → value 列表）。返回所有 override 条目。\n\n应用的所有 UI 文字都通过 `uiText(key, default)` 调用注册，AI 看到的中文界面就是 default 值。要修改某段文字时，告诉用户你看到了哪段中文，**询问用户希望改成什么**，然后基于上下文为它生成一个稳定的 key（推荐 `命名空间.具体含义` 形式，例如 `topbar.title.chat`、`action.confirm`、`chat.input.hint`），最后调用 set_ui_texts 写入。",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject())
@@ -646,88 +646,30 @@ class McpRuntimeManager private constructor(private val context: Context) {
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
-            name = "adjust_ui_strings",
-            description = "修改应用的 UI 文字标签（按钮文字、标题、提示语等）。调用后立即全局生效，无需重启。\n\n**重要**：调用前请先用 get_ui_strings 查看所有可修改字段的当前值。只需传入想修改的字段，未传字段保持当前值不变（增量更新）。\n\n含 %s / %d 的字段为格式化字符串，请保留占位符。\n\n传 resetToDefault=true 可一键恢复全部默认中文。",
+            name = "set_ui_texts",
+            description = "覆盖任意 UI 文字标签（按钮、标题、提示语、占位符等）。立即全局生效，无需重启。\n\n## 工作原理\n\n应用中每个 UI 文字都通过 `uiText(key, default)` 调用注册。每个 key 对应代码里的一段 default 中文。AI 通过本工具为某个 key 写入新文本，所有引用此 key 的位置都会立刻显示新文本。未被覆盖的 key 自动回退到 default。\n\n## 用法\n\n• `updates`：要设置或更新的 key→value 字典。例如 `{\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}`。\n• `delete`：要删除覆盖（恢复成默认中文）的 key 列表。例如 `[\"action.confirm\"]`。\n• `resetAll`：传 true 一键删除所有覆盖，恢复全部默认中文。\n\n## key 命名建议（不强制）\n\ntopbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*\n\n## 重要\n\nkey 必须与代码中调用 uiText 时使用的 key 完全一致才会生效。先调用 list_ui_texts 看现有覆盖；如果用户指出某段文字想改但没有现成 key，请询问用户该文字大致出现在哪个区域（顶部栏 / 侧边栏 / 聊天 / 设置 / 对话框 等），结合代码注释里的命名约定生成 key。常用示例 key：`topbar.title.chat`（顶部栏会话标题）、`topbar.title.settings`（顶部栏设置标题）、`topbar.menu.open`（菜单按钮 contentDescription）、`topbar.memory.syncing`（记忆同步中状态）、`topbar.provider.prefix`（顶部「提供商: 」前缀）、`sidebar.title`（侧边栏对话列表标题）、`sidebar.settings`（侧边栏设置按钮）、`sidebar.session.add`（侧边栏新建会话按钮）、`tab.settings.models` / `tab.settings.mcp` / `tab.settings.memory`、`chat.input.hint`、`chat.send.contentDescription`、`chat.no_provider.warning`、`chat.memory.injected`（含 %d）、`chat.current.model`（含两个 %s）、`models.empty.hint`、`models.default.badge`、`models.add.provider`、`models.set.default.title` / `models.set.default.desc`、`memory.manual.input.title`、`memory.empty.hint`、`mcp.empty.title` / `mcp.empty.desc`、`mcp.examples.title`、`mcp.builtin.title` / `mcp.builtin.status` / `mcp.view.tools`、`dialog.delete.session.title` / `dialog.delete.session.body`（含 %s）、`action.confirm` / `action.cancel` / `action.delete` / `action.save` / `action.edit` / `action.add` / `action.close` / `action.reset`。\n\n## 占位符\n\n部分文字含格式化占位符：`%s` 是字符串、`%d` 是数字。改写时**必须保留相同数量和顺序的占位符**，否则会运行时崩溃。`list_ui_texts` 返回的注释会标明占位符。",
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
-                    put("resetToDefault", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "传 true 立刻重置全部文字标签为默认中文（其他字段被忽略）")
+                    put("updates", JSONObject().apply {
+                        put("type", "object")
+                        put("description", "要设置/更新的 UI 文字 key → value 字典。key 是代码里 uiText() 调用的 key 名，value 是要显示的新文本。")
+                        put("additionalProperties", JSONObject().apply {
+                            put("type", "string")
+                        })
                     })
-                    // 顶部导航栏
-                    put("topbar_title_chat", strProp("聊天页顶部标题，默认「会话」"))
-                    put("topbar_title_settings", strProp("设置页顶部标题，默认「设置」"))
-                    put("topbar_provider_prefix", strProp("顶部栏提供商名称前缀，默认「提供商: 」"))
-                    put("topbar_memory_syncing", strProp("记忆同步中状态文字，默认「记忆同步中」"))
-                    // 导航
-                    put("nav_chat", strProp("底部/侧边导航聊天项文字，默认「会话」"))
-                    put("nav_settings", strProp("底部/侧边导航设置项文字，默认「设置」"))
-                    // 设置子 Tab
-                    put("settings_tab_models", strProp("设置页第一个子 Tab 标签，默认「模型配置」"))
-                    put("settings_tab_mcp", strProp("设置页第二个子 Tab 标签，默认「MCP工具」"))
-                    put("settings_tab_memory", strProp("设置页第三个子 Tab 标签，默认「长效记忆」"))
-                    // 侧边栏
-                    put("sidebar_title", strProp("侧边栏顶部标题，默认「对话列表」"))
-                    put("sidebar_settings", strProp("侧边栏底部设置按钮文字，默认「设置」"))
-                    put("sidebar_delete_confirm", strProp("删除会话确认对话框文字，含 %s 占位符（会话标题），默认「确定要删除「%s」吗？...」"))
-                    // 聊天界面
-                    put("chat_no_provider_warning", strProp("未配置提供商时的警告文字"))
-                    put("chat_memory_injected", strProp("记忆注入提示，含 %d 占位符（记忆条数），默认「已动态融合共 %d 条长效学习偏好记忆」"))
-                    put("chat_current_model", strProp("当前模型信息，含两个 %s 占位符（模型ID、提供商名），默认「当前模型: %s  ·  %s」"))
-                    put("chat_input_hint", strProp("聊天输入框占位提示，默认「输入消息…」"))
-                    put("chat_send", strProp("发送按钮文字，默认「发送」"))
-                    put("chat_stop", strProp("停止生成按钮文字，默认「停止」"))
-                    put("chat_new_session", strProp("新建会话按钮文字，默认「新建会话」"))
-                    put("chat_thinking", strProp("AI 思考中状态文字，默认「思考中」"))
-                    put("chat_tool_calling", strProp("调用工具状态文字，默认「调用工具」"))
-                    // 模型配置页
-                    put("models_empty_hint", strProp("无提供商时的提示文字"))
-                    put("models_default_badge", strProp("默认提供商徽章文字，默认「默认提供商」"))
-                    put("models_set_default", strProp("设为默认配置菜单项，默认「设为默认配置」"))
-                    put("models_set_default_desc", strProp("设为默认配置描述，默认「将此 API 提供商作为全局使用」"))
-                    put("models_custom_headers", strProp("自定义请求头标签，默认「自定义请求头: 」"))
-                    put("models_no_headers", strProp("无自定义请求头提示，默认「暂无自定义请求头」"))
-                    put("models_add_provider", strProp("新增提供商按钮文字，默认「新增提供商」"))
-                    put("models_fetch_models", strProp("拉取模型区域标题，默认「自动拉取并解析可用模型:」"))
-                    put("models_fetch_error_prefix", strProp("拉取错误前缀，默认「拉取错误: 」"))
-                    put("models_no_saved_models", strProp("无已保存模型提示，默认「该 Provider 暂无已保存的模型列表」"))
-                    put("models_fetch_first", strProp("引导先拉取模型的提示，默认「请先在「模型配置」中拉取模型」"))
-                    // MCP 配置页
-                    put("mcp_empty_hint", strProp("无 MCP 服务时的标题，默认「暂无 MCP 服务」"))
-                    put("mcp_empty_desc", strProp("无 MCP 服务时的描述"))
-                    put("mcp_examples_title", strProp("常用示例区域标题，默认「常用示例」"))
-                    put("mcp_builtin_title", strProp("内置工具卡片标题，默认「内置工具」"))
-                    put("mcp_builtin_status", strProp("内置工具运行状态文字，默认「运行中」"))
-                    put("mcp_view_tools", strProp("查看工具按钮文字，默认「查看工具」"))
-                    put("mcp_remote_http_support", strProp("远程 HTTP 支持标签，默认「支持远程 HTTP MCP」"))
-                    put("mcp_import_title", strProp("导入配置对话框标题，默认「导入 MCP 配置 (JSON)」"))
-                    put("mcp_import_desc", strProp("导入配置对话框描述"))
-                    put("mcp_runtime_label", strProp("运行时选择标签，默认「运行时」"))
-                    put("mcp_auto_start", strProp("自动启动开关文字，默认「启动时自动运行」"))
-                    // 长效记忆页
-                    put("memory_manual_input", strProp("手动录入记忆区域标题"))
-                    put("memory_empty_hint", strProp("无记忆时的提示文字"))
-                    // 通用操作
-                    put("action_confirm", strProp("确认按钮，默认「确定」"))
-                    put("action_cancel", strProp("取消按钮，默认「取消」"))
-                    put("action_delete", strProp("删除按钮，默认「删除」"))
-                    put("action_edit", strProp("编辑按钮，默认「编辑」"))
-                    put("action_save", strProp("保存按钮，默认「保存」"))
-                    put("action_add", strProp("添加按钮，默认「添加」"))
-                    put("action_close", strProp("关闭按钮，默认「关闭」"))
-                    put("action_reset", strProp("重置按钮，默认「重置」"))
+                    put("delete", JSONObject().apply {
+                        put("type", "array")
+                        put("description", "要删除覆盖（恢复成默认中文）的 key 列表。")
+                        put("items", JSONObject().apply {
+                            put("type", "string")
+                        })
+                    })
+                    put("resetAll", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "传 true 一键删除所有覆盖，恢复全部默认中文（其他字段被忽略）。")
+                    })
                 })
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "reset_ui_strings",
-            description = "将应用所有 UI 文字标签恢复为默认中文。当用户要求恢复默认文字或你改乱了标签时，请调用此工具。",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
             }
         )
     )

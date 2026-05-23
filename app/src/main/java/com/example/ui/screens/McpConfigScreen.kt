@@ -32,7 +32,7 @@ import com.example.data.McpServer
 import com.example.mcp.McpServerStatus
 import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
-import com.example.ui.theme.LocalUiStrings
+import com.example.ui.theme.uiText
 
 @Composable
 fun McpConfigScreen(
@@ -47,7 +47,6 @@ fun McpConfigScreen(
     var showToolsFor by remember { mutableStateOf<Long?>(null) }
     var showRuntimeInfo by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
-    val strings = LocalUiStrings.current
 
     Column(
         modifier = Modifier
@@ -89,7 +88,7 @@ fun McpConfigScreen(
                 ) {
                     Icon(
                         Icons.Default.Share,
-                        contentDescription = "导入 JSON",
+                        contentDescription = uiText("mcp.b03db521", "导入 JSON"),
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -103,7 +102,7 @@ fun McpConfigScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("添加服务", fontSize = 13.sp)
+                    Text(uiText("mcp.d42727b5", "添加服务"), fontSize = 13.sp)
                 }
             }
         }
@@ -135,14 +134,14 @@ fun McpConfigScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = strings.mcp_empty_hint,
+                        text = uiText("mcp.empty.title", "暂无 MCP 服务"),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = strings.mcp_empty_desc,
+                        text = uiText("mcp.empty.desc", "点击右上角「添加服务」配置 Node.js 或 Python MCP server"),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -150,7 +149,7 @@ fun McpConfigScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     // 快速添加示例
                     Text(
-                        text = strings.mcp_examples_title,
+                        text = uiText("mcp.examples.title", "常用示例"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
@@ -201,7 +200,7 @@ fun McpConfigScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("添加 MCP 服务")
+                        Text(uiText("mcp.df5b1865", "添加 MCP 服务"))
                     }
                 }
             }
@@ -363,24 +362,24 @@ private fun McpServerCard(
                     IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Default.MoreVert,
-                            contentDescription = "更多",
+                            contentDescription = uiText("mcp.2ba645d8", "更多"),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surface) {
                         DropdownMenuItem(
-                            text = { Text("编辑配置") },
+                            text = { Text(uiText("mcp.67aac8d1", "编辑配置")) },
                             leadingIcon = { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)) },
                             onClick = { showMenu = false; onEdit() }
                         )
                         DropdownMenuItem(
-                            text = { Text("重启服务") },
+                            text = { Text(uiText("mcp.5bd26de1", "重启服务")) },
                             leadingIcon = { Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp)) },
                             onClick = { showMenu = false; onRestart() }
                         )
                         DropdownMenuItem(
-                            text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                            text = { Text(uiText("mcp.cd8498ff", "删除"), color = MaterialTheme.colorScheme.error) },
                             leadingIcon = {
                                 Icon(
                                     Icons.Default.Delete, null,
@@ -470,16 +469,16 @@ private fun McpServerCard(
             onDismissRequest = { showDeleteConfirm = false },
             containerColor = MaterialTheme.colorScheme.surface,
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("删除 MCP 服务") },
+            title = { Text(uiText("mcp.203904cd", "删除 MCP 服务")) },
             text = { Text("确定要删除「${server.name}」吗？该服务将被停止并从配置中移除。") },
             confirmButton = {
                 Button(
                     onClick = { onDelete(); showDeleteConfirm = false },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+                ) { Text(uiText("mcp.cd8498ff", "删除")) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(uiText("mcp.40ebbe7b", "取消")) }
             }
         )
     }
@@ -577,7 +576,7 @@ private fun RuntimeStatusBar(
             RuntimeChip(label = "Python", isReady = isPythonReady)
             
             Text(
-                text = "支持远程 HTTP MCP",
+                text = uiText("mcp.84e89d6f", "支持远程 HTTP MCP"),
                 fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 fontWeight = FontWeight.Medium
@@ -636,7 +635,6 @@ private fun BuiltinToolsCard(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val surface = MaterialTheme.colorScheme.surface
-    val strings = LocalUiStrings.current
     
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -670,7 +668,7 @@ private fun BuiltinToolsCard(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = strings.mcp_builtin_title,
+                    text = uiText("mcp.builtin.title", "内置工具"),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = onSurface
@@ -691,7 +689,7 @@ private fun BuiltinToolsCard(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = strings.mcp_builtin_status,
+                    text = uiText("mcp.builtin.status", "运行中"),
                     fontSize = 11.sp,
                     color = com.example.ui.theme.LocalCustomColors.current.success,
                     fontWeight = FontWeight.Medium
@@ -704,7 +702,7 @@ private fun BuiltinToolsCard(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = strings.mcp_view_tools,
+                    text = uiText("mcp.view.tools", "查看工具"),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary
                 )

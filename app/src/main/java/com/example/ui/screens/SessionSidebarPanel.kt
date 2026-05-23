@@ -26,7 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.Session
 import com.example.ui.theme.LocalSidebarColors
 import com.example.ui.theme.LocalUISettings
-import com.example.ui.theme.LocalUiStrings
+import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -43,7 +43,6 @@ fun SessionSidebarPanel(
     
     val uiSettings = LocalUISettings.current
     val sidebarColors = LocalSidebarColors.current
-    val strings = LocalUiStrings.current
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -67,7 +66,7 @@ fun SessionSidebarPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = strings.sidebar_title,
+                text = uiText("sidebar.title", "对话列表"),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = sidebarColors.onBackground
@@ -84,7 +83,7 @@ fun SessionSidebarPanel(
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = "新建会话",
+                    contentDescription = uiText("sidebar.aa75d46c", "新建会话"),
                     tint = sidebarColors.onActiveBackground,
                     modifier = Modifier.size(18.dp)
                 )
@@ -122,7 +121,7 @@ fun SessionSidebarPanel(
                     ) {
                         Icon(
                             imageVector = Icons.Default.List,
-                            contentDescription = "对话",
+                            contentDescription = uiText("sidebar.4b7aa659", "对话"),
                             tint = if (isActive) sidebarColors.onActiveBackground
                                    else sidebarColors.onBackground.copy(alpha = 0.6f),
                             modifier = Modifier.size(18.dp)
@@ -145,7 +144,7 @@ fun SessionSidebarPanel(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "更多操作",
+                                    contentDescription = uiText("sidebar.69defa5f", "更多操作"),
                                     tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.6f)
                                            else sidebarColors.onBackground.copy(alpha = 0.5f),
                                     modifier = Modifier.size(16.dp)
@@ -166,7 +165,7 @@ fun SessionSidebarPanel(
                                                 modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.onSurface)
                                             Spacer(modifier = Modifier.width(10.dp))
-                                            Text("重命名", fontSize = 14.sp)
+                                            Text(uiText("sidebar.286eb70c", "重命名"), fontSize = 14.sp)
                                         }
                                     },
                                     onClick = {
@@ -182,7 +181,7 @@ fun SessionSidebarPanel(
                                                 modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.error)
                                             Spacer(modifier = Modifier.width(10.dp))
-                                            Text("删除", fontSize = 14.sp,
+                                            Text(uiText("sidebar.7c7e3e24", "删除"), fontSize = 14.sp,
                                                 color = MaterialTheme.colorScheme.error)
                                         }
                                     },
@@ -257,13 +256,13 @@ fun SessionSidebarPanel(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
-                        contentDescription = strings.sidebar_settings,
+                        contentDescription = uiText("sidebar.settings", "设置"),
                         tint = sidebarColors.onBackground.copy(alpha = 0.8f),
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = strings.sidebar_settings,
+                        text = uiText("sidebar.settings", "设置"),
                         fontSize = 14.sp,
                         color = sidebarColors.onBackground
                     )
@@ -285,7 +284,7 @@ fun SessionSidebarPanel(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "恢复默认配色",
+                    contentDescription = uiText("sidebar.7f62f6d8", "恢复默认配色"),
                     tint = sidebarColors.onBackground.copy(alpha = 0.7f),
                     modifier = Modifier.size(18.dp)
                 )
@@ -303,10 +302,13 @@ fun SessionSidebarPanel(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text("删除会话") },
+            title = { Text(uiText("dialog.delete.session.title", "删除会话")) },
             text = {
                 Text(
-                    text = strings.sidebar_delete_confirm.format(session.title),
+                    text = uiText(
+                        "dialog.delete.session.body",
+                        "确定要删除「%s」吗？\n该会话的所有消息记录将被永久清除，无法恢复。"
+                    ).format(session.title),
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )
@@ -321,12 +323,12 @@ fun SessionSidebarPanel(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text(strings.action_delete)
+                    Text(uiText("action.delete", "删除"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTargetSession = null }) {
-                    Text(strings.action_cancel)
+                    Text(uiText("action.cancel", "取消"))
                 }
             }
         )
@@ -337,12 +339,12 @@ fun SessionSidebarPanel(
         AlertDialog(
             onDismissRequest = { renameTargetSession = null },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("重命名会话") },
+            title = { Text(uiText("sidebar.cf3487b0", "重命名会话")) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = it },
-                    label = { Text("会话名称") },
+                    label = { Text(uiText("sidebar.e4ceeffb", "会话名称")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -355,12 +357,12 @@ fun SessionSidebarPanel(
                     },
                     enabled = renameText.isNotBlank()
                 ) {
-                    Text("确认")
+                    Text(uiText("sidebar.d5e6dfc3", "确认"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { renameTargetSession = null }) {
-                    Text("取消")
+                    Text(uiText("sidebar.335fc2b7", "取消"))
                 }
             }
         )

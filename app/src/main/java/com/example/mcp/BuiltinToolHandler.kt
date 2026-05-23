@@ -447,223 +447,121 @@ object BuiltinToolHandler {
                     })
                 }
             }
-            "adjust_ui_strings" -> {
+            "set_ui_texts" -> {
                 val db = AppDatabase.getDatabase(context)
                 val repository = AppRepository(db)
                 val current = repository.getUISettings() ?: UISettings()
                 val currentStrings = UiStrings.fromJson(current.uiStrings)
 
-                if (arguments.optBoolean("resetToDefault", false)) {
+                if (arguments.optBoolean("resetAll", false)) {
                     repository.upsertUISettings(current.copy(uiStrings = "{}", updatedAt = System.currentTimeMillis()))
                     return JSONObject().apply {
                         put("content", JSONArray().apply {
                             put(JSONObject().apply {
                                 put("type", "text")
-                                put("text", "UI 文字标签已重置为默认中文。")
+                                put("text", "已重置全部 UI 文字标签为默认中文。")
                             })
                         })
                     }
                 }
 
-                // 逐字段合并：只更新 arguments 中明确提供的非空字段
-                val d = UiStrings.Default
-                fun str(key: String, fallback: String): String {
-                    val v = arguments.optString(key)
-                    return if (v.isNotBlank()) v else fallback
-                }
-
-                val next = UiStrings(
-                    topbar_title_chat = str("topbar_title_chat", currentStrings.topbar_title_chat),
-                    topbar_title_settings = str("topbar_title_settings", currentStrings.topbar_title_settings),
-                    topbar_provider_prefix = str("topbar_provider_prefix", currentStrings.topbar_provider_prefix),
-                    topbar_memory_syncing = str("topbar_memory_syncing", currentStrings.topbar_memory_syncing),
-                    topbar_menu_open = str("topbar_menu_open", currentStrings.topbar_menu_open),
-                    topbar_sync_memory = str("topbar_sync_memory", currentStrings.topbar_sync_memory),
-                    nav_chat = str("nav_chat", currentStrings.nav_chat),
-                    nav_settings = str("nav_settings", currentStrings.nav_settings),
-                    settings_tab_models = str("settings_tab_models", currentStrings.settings_tab_models),
-                    settings_tab_mcp = str("settings_tab_mcp", currentStrings.settings_tab_mcp),
-                    settings_tab_memory = str("settings_tab_memory", currentStrings.settings_tab_memory),
-                    sidebar_title = str("sidebar_title", currentStrings.sidebar_title),
-                    sidebar_settings = str("sidebar_settings", currentStrings.sidebar_settings),
-                    sidebar_delete_confirm = str("sidebar_delete_confirm", currentStrings.sidebar_delete_confirm),
-                    chat_no_provider_warning = str("chat_no_provider_warning", currentStrings.chat_no_provider_warning),
-                    chat_memory_injected = str("chat_memory_injected", currentStrings.chat_memory_injected),
-                    chat_current_model = str("chat_current_model", currentStrings.chat_current_model),
-                    chat_input_hint = str("chat_input_hint", currentStrings.chat_input_hint),
-                    chat_send = str("chat_send", currentStrings.chat_send),
-                    chat_stop = str("chat_stop", currentStrings.chat_stop),
-                    chat_new_session = str("chat_new_session", currentStrings.chat_new_session),
-                    chat_thinking = str("chat_thinking", currentStrings.chat_thinking),
-                    chat_tool_calling = str("chat_tool_calling", currentStrings.chat_tool_calling),
-                    models_empty_hint = str("models_empty_hint", currentStrings.models_empty_hint),
-                    models_default_badge = str("models_default_badge", currentStrings.models_default_badge),
-                    models_set_default = str("models_set_default", currentStrings.models_set_default),
-                    models_set_default_desc = str("models_set_default_desc", currentStrings.models_set_default_desc),
-                    models_custom_headers = str("models_custom_headers", currentStrings.models_custom_headers),
-                    models_no_headers = str("models_no_headers", currentStrings.models_no_headers),
-                    models_add_provider = str("models_add_provider", currentStrings.models_add_provider),
-                    models_fetch_models = str("models_fetch_models", currentStrings.models_fetch_models),
-                    models_fetch_error_prefix = str("models_fetch_error_prefix", currentStrings.models_fetch_error_prefix),
-                    models_list_hint = str("models_list_hint", currentStrings.models_list_hint),
-                    models_no_saved_models = str("models_no_saved_models", currentStrings.models_no_saved_models),
-                    models_fetch_first = str("models_fetch_first", currentStrings.models_fetch_first),
-                    models_memory_model_desc = str("models_memory_model_desc", currentStrings.models_memory_model_desc),
-                    mcp_empty_hint = str("mcp_empty_hint", currentStrings.mcp_empty_hint),
-                    mcp_empty_desc = str("mcp_empty_desc", currentStrings.mcp_empty_desc),
-                    mcp_examples_title = str("mcp_examples_title", currentStrings.mcp_examples_title),
-                    mcp_builtin_title = str("mcp_builtin_title", currentStrings.mcp_builtin_title),
-                    mcp_builtin_status = str("mcp_builtin_status", currentStrings.mcp_builtin_status),
-                    mcp_view_tools = str("mcp_view_tools", currentStrings.mcp_view_tools),
-                    mcp_remote_http_support = str("mcp_remote_http_support", currentStrings.mcp_remote_http_support),
-                    mcp_import_title = str("mcp_import_title", currentStrings.mcp_import_title),
-                    mcp_import_desc = str("mcp_import_desc", currentStrings.mcp_import_desc),
-                    mcp_runtime_label = str("mcp_runtime_label", currentStrings.mcp_runtime_label),
-                    mcp_auto_start = str("mcp_auto_start", currentStrings.mcp_auto_start),
-                    memory_manual_input = str("memory_manual_input", currentStrings.memory_manual_input),
-                    memory_empty_hint = str("memory_empty_hint", currentStrings.memory_empty_hint),
-                    action_confirm = str("action_confirm", currentStrings.action_confirm),
-                    action_cancel = str("action_cancel", currentStrings.action_cancel),
-                    action_delete = str("action_delete", currentStrings.action_delete),
-                    action_edit = str("action_edit", currentStrings.action_edit),
-                    action_save = str("action_save", currentStrings.action_save),
-                    action_add = str("action_add", currentStrings.action_add),
-                    action_close = str("action_close", currentStrings.action_close),
-                    action_reset = str("action_reset", currentStrings.action_reset),
-                )
-
-                repository.upsertUISettings(current.copy(uiStrings = next.toJson(), updatedAt = System.currentTimeMillis()))
-
-                // 统计实际变化的字段
-                val changed = mutableListOf<String>()
-                if (next.topbar_title_chat != currentStrings.topbar_title_chat) changed += "topbar_title_chat"
-                if (next.topbar_title_settings != currentStrings.topbar_title_settings) changed += "topbar_title_settings"
-                if (next.topbar_provider_prefix != currentStrings.topbar_provider_prefix) changed += "topbar_provider_prefix"
-                if (next.topbar_memory_syncing != currentStrings.topbar_memory_syncing) changed += "topbar_memory_syncing"
-                if (next.nav_chat != currentStrings.nav_chat) changed += "nav_chat"
-                if (next.nav_settings != currentStrings.nav_settings) changed += "nav_settings"
-                if (next.settings_tab_models != currentStrings.settings_tab_models) changed += "settings_tab_models"
-                if (next.settings_tab_mcp != currentStrings.settings_tab_mcp) changed += "settings_tab_mcp"
-                if (next.settings_tab_memory != currentStrings.settings_tab_memory) changed += "settings_tab_memory"
-                if (next.sidebar_title != currentStrings.sidebar_title) changed += "sidebar_title"
-                if (next.sidebar_settings != currentStrings.sidebar_settings) changed += "sidebar_settings"
-                if (next.chat_no_provider_warning != currentStrings.chat_no_provider_warning) changed += "chat_no_provider_warning"
-                if (next.chat_input_hint != currentStrings.chat_input_hint) changed += "chat_input_hint"
-                if (next.chat_send != currentStrings.chat_send) changed += "chat_send"
-                if (next.chat_stop != currentStrings.chat_stop) changed += "chat_stop"
-                if (next.chat_new_session != currentStrings.chat_new_session) changed += "chat_new_session"
-                if (next.chat_thinking != currentStrings.chat_thinking) changed += "chat_thinking"
-                if (next.chat_tool_calling != currentStrings.chat_tool_calling) changed += "chat_tool_calling"
-                if (next.models_empty_hint != currentStrings.models_empty_hint) changed += "models_empty_hint"
-                if (next.models_default_badge != currentStrings.models_default_badge) changed += "models_default_badge"
-                if (next.mcp_empty_hint != currentStrings.mcp_empty_hint) changed += "mcp_empty_hint"
-                if (next.mcp_builtin_title != currentStrings.mcp_builtin_title) changed += "mcp_builtin_title"
-                if (next.memory_manual_input != currentStrings.memory_manual_input) changed += "memory_manual_input"
-                if (next.action_confirm != currentStrings.action_confirm) changed += "action_confirm"
-                if (next.action_cancel != currentStrings.action_cancel) changed += "action_cancel"
-                if (next.action_delete != currentStrings.action_delete) changed += "action_delete"
-                if (next.action_save != currentStrings.action_save) changed += "action_save"
-
-                val summary = if (changed.isEmpty()) {
-                    "未检测到任何字段变化（输入可能为空）。"
-                } else {
-                    "已更新 ${changed.size} 项：${changed.joinToString(", ")}"
-                }
-                JSONObject().apply {
-                    put("content", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("type", "text")
-                            put("text", "UI 文字标签已应用，界面立即生效。$summary")
+                val updates = arguments.optJSONObject("updates")
+                val deletes = arguments.optJSONArray("delete")
+                if (updates == null && deletes == null) {
+                    return JSONObject().apply {
+                        put("content", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("type", "text")
+                                put("text", "调用失败：必须提供 updates（要设置的键值对）或 delete（要删除的 key 列表）至少一项，或传 resetAll=true 重置全部。")
+                            })
                         })
-                    })
+                        put("isError", true)
+                    }
                 }
-            }
-            "reset_ui_strings" -> {
-                val db = AppDatabase.getDatabase(context)
-                val repository = AppRepository(db)
-                val current = repository.getUISettings() ?: UISettings()
-                repository.upsertUISettings(current.copy(uiStrings = "{}", updatedAt = System.currentTimeMillis()))
-                JSONObject().apply {
-                    put("content", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("type", "text")
-                            put("text", "UI 文字标签已全部恢复为默认中文。")
-                        })
-                    })
+
+                val merged = currentStrings.overrides.toMutableMap()
+                val applied = mutableListOf<String>()
+                val removed = mutableListOf<String>()
+
+                if (updates != null) {
+                    val it = updates.keys()
+                    while (it.hasNext()) {
+                        val k = it.next()
+                        val v = updates.optString(k)
+                        if (v.isNotEmpty()) {
+                            merged[k] = v
+                            applied += "$k = \"$v\""
+                        }
+                    }
                 }
-            }
-            "get_ui_strings" -> {
-                val db = AppDatabase.getDatabase(context)
-                val repository = AppRepository(db)
-                val current = repository.getUISettings() ?: UISettings()
-                val strings = UiStrings.fromJson(current.uiStrings)
-                val d = UiStrings.Default
+                if (deletes != null) {
+                    for (i in 0 until deletes.length()) {
+                        val k = deletes.optString(i)
+                        if (k.isNotEmpty() && merged.remove(k) != null) {
+                            removed += k
+                        }
+                    }
+                }
+
+                val newJson = UiStrings(merged).toJson()
+                repository.upsertUISettings(current.copy(uiStrings = newJson, updatedAt = System.currentTimeMillis()))
+
                 val text = buildString {
-                    appendLine("=== 当前 UI 文字标签清单（用于配合 adjust_ui_strings 工具使用）===")
+                    appendLine("UI 文字已更新，界面立即生效。")
+                    if (applied.isNotEmpty()) {
+                        appendLine()
+                        appendLine("已设置 ${applied.size} 项：")
+                        applied.forEach { appendLine("  • $it") }
+                    }
+                    if (removed.isNotEmpty()) {
+                        appendLine()
+                        appendLine("已恢复默认（删除覆盖）${removed.size} 项：${removed.joinToString(", ")}")
+                    }
+                    if (applied.isEmpty() && removed.isEmpty()) {
+                        appendLine()
+                        appendLine("未检测到任何变化（输入可能为空）。")
+                    }
                     appendLine()
-                    appendLine("用法：调用 adjust_ui_strings 时只需传想改的字段；未传字段保持当前值。")
-                    appendLine("含 %s / %d 的字段为格式化字符串，请保留占位符。")
-                    appendLine()
-                    appendLine("── 顶部导航栏 ──")
-                    appendLine("• topbar_title_chat        当前: \"${strings.topbar_title_chat}\"  默认: \"${d.topbar_title_chat}\"")
-                    appendLine("• topbar_title_settings    当前: \"${strings.topbar_title_settings}\"  默认: \"${d.topbar_title_settings}\"")
-                    appendLine("• topbar_provider_prefix   当前: \"${strings.topbar_provider_prefix}\"  默认: \"${d.topbar_provider_prefix}\"")
-                    appendLine("• topbar_memory_syncing    当前: \"${strings.topbar_memory_syncing}\"  默认: \"${d.topbar_memory_syncing}\"")
-                    appendLine()
-                    appendLine("── 底部导航 ──")
-                    appendLine("• nav_chat                 当前: \"${strings.nav_chat}\"  默认: \"${d.nav_chat}\"")
-                    appendLine("• nav_settings             当前: \"${strings.nav_settings}\"  默认: \"${d.nav_settings}\"")
-                    appendLine()
-                    appendLine("── 设置子 Tab ──")
-                    appendLine("• settings_tab_models      当前: \"${strings.settings_tab_models}\"  默认: \"${d.settings_tab_models}\"")
-                    appendLine("• settings_tab_mcp         当前: \"${strings.settings_tab_mcp}\"  默认: \"${d.settings_tab_mcp}\"")
-                    appendLine("• settings_tab_memory      当前: \"${strings.settings_tab_memory}\"  默认: \"${d.settings_tab_memory}\"")
-                    appendLine()
-                    appendLine("── 侧边栏 ──")
-                    appendLine("• sidebar_title            当前: \"${strings.sidebar_title}\"  默认: \"${d.sidebar_title}\"")
-                    appendLine("• sidebar_settings         当前: \"${strings.sidebar_settings}\"  默认: \"${d.sidebar_settings}\"")
-                    appendLine()
-                    appendLine("── 聊天界面 ──")
-                    appendLine("• chat_no_provider_warning 当前: \"${strings.chat_no_provider_warning}\"")
-                    appendLine("• chat_memory_injected     当前: \"${strings.chat_memory_injected}\"  (含 %d 占位符)")
-                    appendLine("• chat_input_hint          当前: \"${strings.chat_input_hint}\"  默认: \"${d.chat_input_hint}\"")
-                    appendLine("• chat_send                当前: \"${strings.chat_send}\"  默认: \"${d.chat_send}\"")
-                    appendLine("• chat_stop                当前: \"${strings.chat_stop}\"  默认: \"${d.chat_stop}\"")
-                    appendLine("• chat_new_session         当前: \"${strings.chat_new_session}\"  默认: \"${d.chat_new_session}\"")
-                    appendLine("• chat_thinking            当前: \"${strings.chat_thinking}\"  默认: \"${d.chat_thinking}\"")
-                    appendLine("• chat_tool_calling        当前: \"${strings.chat_tool_calling}\"  默认: \"${d.chat_tool_calling}\"")
-                    appendLine()
-                    appendLine("── 模型配置页 ──")
-                    appendLine("• models_empty_hint        当前: \"${strings.models_empty_hint}\"")
-                    appendLine("• models_default_badge     当前: \"${strings.models_default_badge}\"  默认: \"${d.models_default_badge}\"")
-                    appendLine("• models_set_default       当前: \"${strings.models_set_default}\"  默认: \"${d.models_set_default}\"")
-                    appendLine("• models_add_provider      当前: \"${strings.models_add_provider}\"  默认: \"${d.models_add_provider}\"")
-                    appendLine()
-                    appendLine("── MCP 配置页 ──")
-                    appendLine("• mcp_empty_hint           当前: \"${strings.mcp_empty_hint}\"  默认: \"${d.mcp_empty_hint}\"")
-                    appendLine("• mcp_builtin_title        当前: \"${strings.mcp_builtin_title}\"  默认: \"${d.mcp_builtin_title}\"")
-                    appendLine("• mcp_builtin_status       当前: \"${strings.mcp_builtin_status}\"  默认: \"${d.mcp_builtin_status}\"")
-                    appendLine("• mcp_view_tools           当前: \"${strings.mcp_view_tools}\"  默认: \"${d.mcp_view_tools}\"")
-                    appendLine()
-                    appendLine("── 长效记忆页 ──")
-                    appendLine("• memory_manual_input      当前: \"${strings.memory_manual_input}\"")
-                    appendLine("• memory_empty_hint        当前: \"${strings.memory_empty_hint}\"")
-                    appendLine()
-                    appendLine("── 通用操作 ──")
-                    appendLine("• action_confirm           当前: \"${strings.action_confirm}\"  默认: \"${d.action_confirm}\"")
-                    appendLine("• action_cancel            当前: \"${strings.action_cancel}\"  默认: \"${d.action_cancel}\"")
-                    appendLine("• action_delete            当前: \"${strings.action_delete}\"  默认: \"${d.action_delete}\"")
-                    appendLine("• action_edit              当前: \"${strings.action_edit}\"  默认: \"${d.action_edit}\"")
-                    appendLine("• action_save              当前: \"${strings.action_save}\"  默认: \"${d.action_save}\"")
-                    appendLine("• action_add               当前: \"${strings.action_add}\"  默认: \"${d.action_add}\"")
-                    appendLine("• action_close             当前: \"${strings.action_close}\"  默认: \"${d.action_close}\"")
-                    appendLine("• action_reset             当前: \"${strings.action_reset}\"  默认: \"${d.action_reset}\"")
+                    appendLine("当前共有 ${merged.size} 个被覆盖的 key。")
                 }
                 JSONObject().apply {
                     put("content", JSONArray().apply {
                         put(JSONObject().apply {
                             put("type", "text")
                             put("text", text.trimEnd())
+                        })
+                    })
+                }
+            }
+            "list_ui_texts" -> {
+                val db = AppDatabase.getDatabase(context)
+                val repository = AppRepository(db)
+                val current = repository.getUISettings() ?: UISettings()
+                val strings = UiStrings.fromJson(current.uiStrings)
+                val text = if (strings.overrides.isEmpty()) {
+                    "当前没有任何 UI 文字被覆盖（全部使用默认中文）。\n\n" +
+                    "用法：在聊天中告诉用户你看到了什么文字，然后调用 set_ui_texts 修改。\n" +
+                    "调用形如：set_ui_texts({\"updates\": {\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}})\n\n" +
+                    "key 命名建议（不强制）：topbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*"
+                } else {
+                    buildString {
+                        appendLine("当前已被 AI 覆盖的 UI 文字（共 ${strings.overrides.size} 项）：")
+                        appendLine()
+                        strings.overrides.toSortedMap().forEach { (k, v) ->
+                            appendLine("  $k = \"$v\"")
+                        }
+                        appendLine()
+                        appendLine("提示：")
+                        appendLine("• 修改更多 key：set_ui_texts({\"updates\": {\"key1\": \"new1\", \"key2\": \"new2\"}})")
+                        appendLine("• 恢复某些 key 为默认：set_ui_texts({\"delete\": [\"key1\", \"key2\"]})")
+                        appendLine("• 一键全部重置：set_ui_texts({\"resetAll\": true})")
+                    }
+                }
+                JSONObject().apply {
+                    put("content", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", text)
                         })
                     })
                 }

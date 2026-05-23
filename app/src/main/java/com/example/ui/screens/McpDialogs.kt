@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import com.example.data.McpServer
 import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
+import com.example.ui.theme.uiText
 
 // ── 工具列表弹窗 ──────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ fun McpToolsDialog(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("暂无工具", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(uiText("mcp.dialog.2df0bd31", "暂无工具"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -136,14 +137,14 @@ fun McpImportDialog(
                     .fillMaxSize()
             ) {
                 Text(
-                    text = "导入 MCP 配置 (JSON)",
+                    text = uiText("mcp.dialog.ea4cb678", "导入 MCP 配置 (JSON)"),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
-                    text = "粘贴标准的 mcpServers JSON 配置。导入后将自动添加并尝试启动服务。",
+                    text = uiText("mcp.dialog.79180a54", "粘贴标准的 mcpServers JSON 配置。导入后将自动添加并尝试启动服务。"),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -171,7 +172,7 @@ fun McpImportDialog(
                     ),
                     isError = isError,
                     supportingText = if (isError) {
-                        { Text("无效的 JSON 格式或缺少 mcpServers 字段") }
+                        { Text(uiText("mcp.dialog.23cc670c", "无效的 JSON 格式或缺少 mcpServers 字段")) }
                     } else null
                 )
                 
@@ -184,7 +185,7 @@ fun McpImportDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
-                    ) { Text("取消") }
+                    ) { Text(uiText("mcp.dialog.e972261b", "取消")) }
                     
                     Button(
                         onClick = {
@@ -201,7 +202,7 @@ fun McpImportDialog(
                         },
                         modifier = Modifier.weight(1f),
                         enabled = jsonText.isNotBlank()
-                    ) { Text("确认导入") }
+                    ) { Text(uiText("mcp.dialog.521cea1b", "确认导入")) }
                 }
             }
         }
@@ -255,8 +256,8 @@ fun McpServerEditDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("服务名称") },
-                    placeholder = { Text("例如：文件系统服务") },
+                    label = { Text(uiText("mcp.dialog.a9c7eb71", "服务名称")) },
+                    placeholder = { Text(uiText("mcp.dialog.53eae47f", "例如：文件系统服务")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -264,7 +265,7 @@ fun McpServerEditDialog(
 
                 // 运行时选择
                 Text(
-                    text = "运行时",
+                    text = uiText("mcp.dialog.8436d4b3", "运行时"),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -299,7 +300,7 @@ fun McpServerEditDialog(
                         args = it
                         argsError = !isValidJsonArray(it)
                     },
-                    label = { Text("参数 (JSON 数组)") },
+                    label = { Text(uiText("mcp.dialog.4eee8fef", "参数 (JSON 数组)")) },
                     placeholder = { Text("[\"--port\", \"3000\"]") },
                     isError = argsError,
                     supportingText = if (argsError) {
@@ -345,7 +346,7 @@ fun McpServerEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "启动时自动运行",
+                        text = uiText("mcp.dialog.500fbcfe", "启动时自动运行"),
                         fontSize = 14.sp,
                         modifier = Modifier.weight(1f)
                     )
@@ -362,7 +363,7 @@ fun McpServerEditDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
-                    ) { Text("取消") }
+                    ) { Text(uiText("mcp.dialog.e972261b", "取消")) }
 
                     Button(
                         onClick = {
@@ -617,7 +618,7 @@ fun RuntimeInfoDialog(
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("知道了") }
+                ) { Text(uiText("mcp.dialog.c0fd3fa0", "知道了")) }
             }
         }
     }
