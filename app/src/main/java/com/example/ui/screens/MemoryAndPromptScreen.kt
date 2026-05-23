@@ -52,7 +52,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
             Tab(selected = activeSubTab == "memory", onClick = { activeSubTab = "memory" }) {
-                Text("长效对话记忆库 (${memories.size})", modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
+                Text(uiText("memory.tab.memory_library", "长效对话记忆库 (%d)").format(memories.size), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
             Tab(selected = activeSubTab == "prompts", onClick = { activeSubTab = "prompts" }) {
                 Text(uiText("memory.bbbf4e03", "系统Prompt模板"), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
@@ -137,7 +137,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "AI 自我反省提炼的长效记忆 (${memories.size}):",
+                            text = uiText("memory.list.title", "AI 自我反省提炼的长效记忆 (%d):").format(memories.size),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

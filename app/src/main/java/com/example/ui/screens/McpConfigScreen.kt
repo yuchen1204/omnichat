@@ -77,9 +77,9 @@ fun McpConfigScreen(
                 val runningCount = serverStates.values.count { it.status == McpServerStatus.RUNNING }
                 val toolCount = allTools.size
 
-                StatChip(label = "服务", value = "${servers.size}", color = MaterialTheme.colorScheme.primary)
-                StatChip(label = "运行中", value = "$runningCount", color = com.example.ui.theme.LocalCustomColors.current.success)
-                StatChip(label = "工具", value = "$toolCount", color = com.example.ui.theme.LocalCustomColors.current.warning)
+                StatChip(label = uiText("mcp.stat.servers", "服务"), value = "${servers.size}", color = MaterialTheme.colorScheme.primary)
+                StatChip(label = uiText("mcp.stat.running_servers", "运行中"), value = "$runningCount", color = com.example.ui.theme.LocalCustomColors.current.success)
+                StatChip(label = uiText("mcp.stat.tools_count", "工具"), value = "$toolCount", color = com.example.ui.theme.LocalCustomColors.current.warning)
 
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -260,8 +260,8 @@ fun McpConfigScreen(
     // ── 工具列表弹窗 ──────────────────────────────────────────────────────
     showToolsFor?.let { serverId ->
         val tools = allTools.filter { it.serverId == serverId }
-        val serverName = if (serverId == -1L) "内置工具"
-                         else servers.find { it.id == serverId }?.name ?: "未知"
+        val serverName = if (serverId == -1L) uiText("mcp.builtin.title", "内置工具")
+                         else servers.find { it.id == serverId }?.name ?: uiText("mcp.unknown", "未知")
         McpToolsDialog(
             serverName = serverName,
             tools = tools,
@@ -297,10 +297,10 @@ private fun McpServerCard(
         McpServerStatus.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     }
     val statusLabel = when (status) {
-        McpServerStatus.RUNNING -> "运行中"
-        McpServerStatus.STARTING -> "启动中"
-        McpServerStatus.ERROR -> "错误"
-        McpServerStatus.STOPPED -> "已停止"
+        McpServerStatus.RUNNING -> uiText("mcp.status.running", "运行中")
+        McpServerStatus.STARTING -> uiText("mcp.status.starting", "启动中")
+        McpServerStatus.ERROR -> uiText("mcp.status.error", "错误")
+        McpServerStatus.STOPPED -> uiText("mcp.status.stopped", "已停止")
     }
 
     var showMenu by remember { mutableStateOf(false) }
@@ -443,7 +443,7 @@ private fun McpServerCard(
                     ) {
                         Icon(Icons.Default.List, null, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("$toolCount 个工具", fontSize = (11 * fs).sp)
+                        Text(uiText("mcp.tools_count_label", "%d 个工具").format(toolCount), fontSize = (11 * fs).sp)
                     }
                 }
 
@@ -452,7 +452,7 @@ private fun McpServerCard(
                 // 启用/禁用开关
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (server.isEnabled) "已启用" else "已禁用",
+                        text = if (server.isEnabled) uiText("mcp.enabled", "已启用") else uiText("mcp.disabled", "已禁用"),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -475,7 +475,7 @@ private fun McpServerCard(
             containerColor = MaterialTheme.colorScheme.surface,
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(uiText("mcp.203904cd", "删除 MCP 服务")) },
-            text = { Text("确定要删除「${server.name}」吗？该服务将被停止并从配置中移除。") },
+            text = { Text(uiText("mcp.delete.confirm_body", "确定要删除「%s」吗？该服务将被停止并从配置中移除。").format(server.name)) },
             confirmButton = {
                 Button(
                     onClick = { onDelete(); showDeleteConfirm = false },
@@ -683,7 +683,7 @@ private fun BuiltinToolsCard(
                     color = onSurface
                 )
                 Text(
-                    text = "${tools.size} 个工具 · 始终可用",
+                    text = uiText("mcp.builtin.desc", "%d 个工具 · 始终可用").format(tools.size),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

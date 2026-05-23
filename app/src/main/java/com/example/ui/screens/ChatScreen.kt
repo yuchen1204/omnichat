@@ -88,7 +88,7 @@ fun ChatView(viewModel: ChatViewModel) {
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
     // 当前实际使用的 Provider 和模型
-    val activeProviderName = defaultProvider?.name ?: "未设置"
+    val activeProviderName = defaultProvider?.name ?: uiText("chat.not_set", "未设置")
     val activeModelId = defaultProvider?.selectedModelId ?: ""
 
     Column(
@@ -164,7 +164,9 @@ fun ChatView(viewModel: ChatViewModel) {
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "MCP 工具加载中：${startingServers.joinToString("、") { it.server.name }}",
+                    text = uiText("chat.mcp_loading", "MCP 工具加载中：%s").format(
+                        startingServers.joinToString(uiText("chat.separator", "、")) { it.server.name }
+                    ),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -357,7 +359,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (showToolbar) "收起" else "展开工具",
+                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", "收起") else uiText("chat.toolbar.expand", "展开工具"),
                             tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -491,14 +493,14 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
                 Text(uiText("chat.4d810ed0", "状态一览:"), fontWeight = FontWeight.Bold, fontSize = (13 * fs).sp, fontFamily = resolvedFontFamily)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = if (config != null) "✓ 当前提供商: ${config.name}" else "✗ 未设置 Provider",
+                    text = if (config != null) uiText("chat.status.provider_ok", "✓ 当前提供商: %s").format(config.name) else uiText("chat.status.provider_empty", "✗ 未设置 Provider"),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily,
                     color = if (config != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "✓ 当前存储的长效记忆: ${memories.size} 条",
+                    text = uiText("chat.status.memories_count", "✓ 当前存储的长效记忆: %d 条").format(memories.size),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily
                 )
@@ -535,7 +537,7 @@ fun parseMessageContent(content: String): ParsedMessageContent {
         )
     } else {
         ParsedMessageContent(
-            thinking = contentAfterStart.trim().ifEmpty { "正在深度思考..." },
+            thinking = contentAfterStart.trim(),
             mainBody = "",
             isThinkingFinished = false
         )
@@ -604,7 +606,7 @@ fun ThinkingProcessPanel(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (!isThinkingFinished) "AI 正在深度思考中（实时吐流）..." else "深度思考过程 (已折叠，点击展开)",
+                    text = if (!isThinkingFinished) uiText("chat.thinking.in_progress", "AI 正在深度思考中（实时吐流）...") else uiText("chat.thinking.folded", "深度思考过程 (已折叠，点击展开)"),
                     fontSize = (12 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -612,7 +614,7 @@ fun ThinkingProcessPanel(
             }
             Icon(
                 imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (isExpanded) "折叠" else "展开",
+                contentDescription = if (isExpanded) uiText("chat.action.fold", "折叠") else uiText("chat.action.unfold", "展开"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(18.dp)
             )
@@ -666,7 +668,7 @@ fun ThinkingProcessPanel(
 fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
     // 聚合逻辑：显示 "Tool use [name] x [count]"
     val totalCount = messages.size
-    val label = if (totalCount > 1) "Tools used x$totalCount" else "Tool used"
+    val label = if (totalCount > 1) uiText("chat.tools_used_count", "已调用 %d 个工具").format(totalCount) else uiText("chat.tool_used", "已调用工具")
 
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
@@ -726,7 +728,7 @@ fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
-                                text = "Result: ${msg.content.take(100)}${if(msg.content.length > 100) "..." else ""}",
+                                text = "${uiText("chat.tool_result_prefix", "结果: ")}${msg.content.take(100)}${if(msg.content.length > 100) "..." else ""}",
                                 fontSize = (11 * fs).sp,
                                 modifier = Modifier.padding(8.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -816,7 +818,7 @@ fun BubbleMessage(
                 ) {
                     if (parsed.thinking != null) {
                         ThinkingProcessPanel(
-                            thinkingText = parsed.thinking,
+                            thinkingText = parsed.thinking.ifEmpty { uiText("chat.thinking.default", "正在深度思考...") },
                             isThinkingFinished = parsed.isThinkingFinished
                         )
                     }
@@ -913,7 +915,7 @@ fun StreamingBubble(
         Column(modifier = Modifier.widthIn(max = 290.dp)) {
             if (isThinkingFallback) {
                 ThinkingProcessPanel(
-                    thinkingText = "正在唤醒深度推理模型并深度构思中.....",
+                    thinkingText = uiText("chat.thinking.start", "正在唤醒深度推理模型并深度构思中....."),
                     isThinkingFinished = false
                 )
             } else {
@@ -926,7 +928,7 @@ fun StreamingBubble(
                     }
                     if (bodyText.isNotEmpty() || !isThinkingFinished) {
                         val displayText = bodyText.ifEmpty { 
-                            if (!isThinkingFinished) "" else "正在构思答复内容..." 
+                            if (!isThinkingFinished) "" else uiText("chat.thinking.reply_plan", "正在构思答复内容...") 
                         }
                         if (displayText.isNotEmpty()) {
                             Surface(

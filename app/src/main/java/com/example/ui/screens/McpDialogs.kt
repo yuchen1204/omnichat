@@ -56,7 +56,7 @@ fun McpToolsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "$serverName 的工具",
+                        text = uiText("mcp.dialog.tools_title", "%s 的工具").format(serverName),
                         fontSize = (16 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f)
@@ -252,7 +252,7 @@ fun McpServerEditDialog(
             ) {
                 // 标题
                 Text(
-                    text = if (isEdit) "编辑 MCP 服务" else "添加 MCP 服务",
+                    text = if (isEdit) uiText("mcp.dialog.edit_title", "编辑 MCP 服务") else uiText("mcp.dialog.add_title", "添加 MCP 服务"),
                     fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -310,7 +310,7 @@ fun McpServerEditDialog(
                     placeholder = { Text("[\"--port\", \"3000\"]") },
                     isError = argsError,
                     supportingText = if (argsError) {
-                        { Text("请输入合法的 JSON 数组，例如 [\"arg1\", \"arg2\"]") }
+                        { Text(uiText("mcp.dialog.invalid_json_array", "请输入合法的 JSON 数组，例如 [\"arg1\", \"arg2\"]")) }
                     } else null,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -326,7 +326,7 @@ fun McpServerEditDialog(
                         envError = !isValidJsonObject(it)
                     },
                     label = {
-                        Text(if (runtime == "remote_http") "自定义请求头 (JSON 对象)" else "环境变量 (JSON 对象)")
+                        Text(if (runtime == "remote_http") uiText("mcp.dialog.custom_headers", "自定义请求头 (JSON 对象)") else uiText("mcp.dialog.env_vars", "环境变量 (JSON 对象)"))
                     },
                     placeholder = {
                         Text(
@@ -338,7 +338,7 @@ fun McpServerEditDialog(
                     },
                     isError = envError,
                     supportingText = if (envError) {
-                        { Text("请输入合法的 JSON 对象，例如 {\"KEY\": \"value\"}") }
+                        { Text(uiText("mcp.dialog.invalid_json_object", "请输入合法的 JSON 对象，例如 {\"KEY\": \"value\"}")) }
                     } else null,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -387,7 +387,7 @@ fun McpServerEditDialog(
                         },
                         modifier = Modifier.weight(1f),
                         enabled = name.isNotBlank() && command.isNotBlank() && !argsError && !envError
-                    ) { Text(if (isEdit) "保存" else "添加") }
+                    ) { Text(if (isEdit) uiText("action.save", "保存") else uiText("action.add", "添加")) }
                 }
             }
         }
@@ -425,15 +425,23 @@ fun RuntimeHint(
     runtime: String,
     mcpWorkDir: String = ""
 ) {
+    val nodeHint = uiText(
+        "mcp.dialog.node_hint",
+        "使用 app 内嵌的 Node.js 运行时执行 JS MCP server，无需设备安装 Node.js。\n内置脚本已自动部署到：\n%s\ncommand 填文件名（如 mcp_filesystem.js）或绝对路径均可。"
+    ).format(mcpWorkDir)
+    val pythonHint = uiText(
+        "mcp.dialog.python_hint",
+        "使用 app 内嵌的 Python 运行时执行 Python MCP server，无需设备安装 Python"
+    )
+    val remoteHttpHint = uiText(
+        "mcp.dialog.remote_http_hint",
+        "连接到远程 MCP server。本应用遵循 MCP HTTP 传输标准（SSE + POST）。\ncommand 请填写 SSE 端点 URL。\n自定义请求头字段可填写需要附加的 HTTP 请求头，例如认证 Token。"
+    )
+
     val (icon, text, isError) = when (runtime) {
-        "node" -> Triple(Icons.Default.Info,
-            "使用 app 内嵌的 Node.js 运行时执行 JS MCP server，无需设备安装 Node.js。\n" +
-            "内置脚本已自动部署到：\n$mcpWorkDir\n" +
-            "command 填文件名（如 mcp_filesystem.js）或绝对路径均可。", false)
-        "python" -> Triple(Icons.Default.Info, "使用 app 内嵌的 Python 运行时执行 Python MCP server，无需设备安装 Python", false)
-        "remote_http" -> Triple(Icons.Default.Info, "连接到远程 MCP server。本应用遵循 MCP HTTP 传输标准（SSE + POST）。\n" +
-            "command 请填写 SSE 端点 URL。\n" +
-            "自定义请求头字段可填写需要附加的 HTTP 请求头，例如认证 Token。", false)
+        "node" -> Triple(Icons.Default.Info, nodeHint, false)
+        "python" -> Triple(Icons.Default.Info, pythonHint, false)
+        "remote_http" -> Triple(Icons.Default.Info, remoteHttpHint, false)
         else -> Triple(Icons.Default.Info, "", false)
     }
     if (text.isNotBlank()) {
@@ -584,7 +592,7 @@ fun RuntimeInfoDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "运行时状态详情",
+                        uiText("mcp.dialog.runtime_details_title", "运行时状态详情"),
                         fontSize = (17 * fs).sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
@@ -597,31 +605,31 @@ fun RuntimeInfoDialog(
 
                 // Node.js 状态
                 RuntimeInfoSection(
-                    title = "内嵌 Node.js",
+                    title = uiText("mcp.dialog.node_title", "内嵌 Node.js"),
                     isReady = isNodeAvailable,
-                    statusText = if (isNodeAvailable) "libnode.so 已加载，Node.js 可用"
-                                 else "libnode.so 未找到",
-                    instructions = if (!isNodeAvailable) "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。" else null
+                    statusText = if (isNodeAvailable) uiText("mcp.dialog.node_ok", "libnode.so 已加载，Node.js 可用")
+                                 else uiText("mcp.dialog.node_missing", "libnode.so 未找到"),
+                    instructions = if (!isNodeAvailable) uiText("mcp.dialog.node_instructions", "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。") else null
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Python 状态
                 RuntimeInfoSection(
-                    title = "内嵌 Python",
+                    title = uiText("mcp.dialog.python_title", "内嵌 Python"),
                     isReady = isPythonReady,
                     statusText = pythonStatus,
-                    instructions = if (!isPythonReady) "请准备 stdlib.zip 和 .so 文件并重新编译。" else null
+                    instructions = if (!isPythonReady) uiText("mcp.dialog.python_instructions", "请准备 stdlib.zip 和 .so 文件并重新编译。") else null
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // 远程 HTTP 状态
                 RuntimeInfoSection(
-                    title = "远程 HTTP MCP",
+                    title = uiText("mcp.dialog.remote_http_title", "远程 HTTP MCP"),
                     isReady = true,
-                    statusText = "支持通过 HTTP/HTTPS 连接远程 MCP 服务。",
-                    instructions = "远程服务需要遵循 MCP HTTP 传输标准，支持 SSE 端点和 JSON-RPC POST 请求。"
+                    statusText = uiText("mcp.dialog.remote_http_status", "支持通过 HTTP/HTTPS 连接远程 MCP 服务。"),
+                    instructions = uiText("mcp.dialog.remote_http_instructions", "远程服务需要遵循 MCP HTTP 传输标准，支持 SSE 端点和 JSON-RPC POST 请求。")
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -681,7 +689,7 @@ fun RuntimeInfoSection(
             HorizontalDivider(color = color.copy(alpha = 0.2f))
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "安装步骤：",
+                uiText("mcp.dialog.install_steps", "安装步骤："),
                 fontSize = (11 * fs).sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

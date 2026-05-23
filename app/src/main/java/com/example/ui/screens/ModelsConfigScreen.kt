@@ -215,7 +215,7 @@ fun ModelConfigCard(
 
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (isExpanded) "收起" else "展开",
+                        contentDescription = if (isExpanded) uiText("models.collapse", "收起") else uiText("models.expand", "展开"),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -232,7 +232,7 @@ fun ModelConfigCard(
                     // Endpoint display
                     Row {
                         Text(
-                            text = "Endpoint: ",
+                            text = uiText("models.endpoint_label_colon", "Endpoint: "),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -250,7 +250,7 @@ fun ModelConfigCard(
                     // Masked API Key display
                     Row {
                         Text(
-                            text = "API Key: ",
+                            text = uiText("models.api_key_label_colon", "API Key: "),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -283,7 +283,7 @@ fun ModelConfigCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "$headerCount 个",
+                                text = uiText("models.headers_count", "%d 个").format(headerCount),
                                 fontSize = (12 * fs).sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -459,7 +459,7 @@ fun ModelConfigDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = if (config == null) "新增提供商配置" else "编辑提供商配置",
+                    text = if (config == null) uiText("models.add_provider_config", "新增提供商配置") else uiText("models.edit_provider_config", "编辑提供商配置"),
                     fontSize = (17 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -494,14 +494,14 @@ fun ModelConfigDialog(
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it },
-                    label = { Text("API Key") },
+                    label = { Text(uiText("models.api_key_label", "API Key")) },
                     singleLine = true,
                     visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
                             Icon(
                                 imageVector = if (isApiKeyVisible) Icons.Default.Info else Icons.Default.Lock,
-                                contentDescription = if (isApiKeyVisible) "隐藏密钥" else "显示密钥"
+                                contentDescription = if (isApiKeyVisible) uiText("models.hide_key", "隐藏密钥") else uiText("models.show_key", "显示密钥")
                             )
                         }
                     },
@@ -642,7 +642,7 @@ fun ModelConfigDialog(
 
                 if (fetchError != null) {
                     Text(
-                        text = "拉取错误: $fetchError",
+                        text = uiText("models.fetch_error", "拉取错误: %s").format(fetchError),
                         color = MaterialTheme.colorScheme.error,
                         fontSize = (11 * fs).sp,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -711,7 +711,7 @@ fun ModelConfigDialog(
                                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
                                             Text(
-                                                text = "Context: ${m.contextSize}",
+                                                text = uiText("models.context_size_format", "Context: %s").format(m.contextSize),
                                                 fontSize = (9.5f * fs).sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isSelected) 
@@ -950,7 +950,7 @@ fun ProviderModelPicker(
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (step == 0) "选择 Provider" else "选择模型",
+                            text = if (step == 0) uiText("models.select_provider_title", "选择 Provider") else uiText("models.select_model_title", "选择模型"),
                             fontSize = (16 * fs).sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -1129,15 +1129,15 @@ fun ProviderModelPicker(
                                                         .padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasThinking) Text(
-                                                    "💭 思考", fontSize = (9 * fs).sp, color = successColor,
+                                                    uiText("models.thinking_badge", "💭 思考"), fontSize = (9 * fs).sp, color = successColor,
                                                     modifier = Modifier.background(successColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasVision) Text(
-                                                    "👁️ 视觉", fontSize = (9 * fs).sp, color = infoColor,
+                                                    uiText("models.vision_badge", "👁️ 视觉"), fontSize = (9 * fs).sp, color = infoColor,
                                                     modifier = Modifier.background(infoColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasToolUse) Text(
-                                                    "🛠️ 工具", fontSize = (9 * fs).sp, color = accentColor,
+                                                    uiText("models.tool_badge", "🛠️ 工具"), fontSize = (9 * fs).sp, color = accentColor,
                                                     modifier = Modifier.background(accentColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                             }
@@ -1210,7 +1210,7 @@ fun MemoryModelSelectorCard(
 
     // 找到副模型所属的 Provider 名称
     val memoryProviderName = if (currentMemoryProviderId > 0L) {
-        allConfigs.find { it.id == currentMemoryProviderId }?.name ?: "未知 Provider"
+        allConfigs.find { it.id == currentMemoryProviderId }?.name ?: uiText("models.unknown_provider", "未知 Provider")
     } else {
         defaultProvider?.name ?: allConfigs.firstOrNull()?.name ?: ""
     }
@@ -1259,7 +1259,7 @@ fun MemoryModelSelectorCard(
                 }
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "收起" else "展开",
+                    contentDescription = if (isExpanded) uiText("models.collapse", "收起") else uiText("models.expand", "展开"),
                     tint = onSurface.copy(alpha = 0.6f)
                 )
             }

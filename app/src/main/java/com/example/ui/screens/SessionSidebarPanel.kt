@@ -46,6 +46,9 @@ fun SessionSidebarPanel(
     val sidebarColors = LocalSidebarColors.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    
+    val newSessionDefaultTitle = uiText("sidebar.new_session_default", "新会话")
+    val notSetLabel = uiText("sidebar.not_set", "未设置")
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -77,7 +80,7 @@ fun SessionSidebarPanel(
             )
             IconButton(
                 onClick = {
-                    viewModel.createNewSession("新会话")
+                    viewModel.createNewSession(newSessionDefaultTitle)
                     onSessionSelected()
                 },
                 modifier = Modifier
@@ -204,8 +207,8 @@ fun SessionSidebarPanel(
 
         // ── 设置按钮与状态 ────────────────────────────────────────────
         val defaultProvider = modelConfigs.find { it.isDefaultProvider }
-        val activeProviderName = defaultProvider?.name ?: "未设置"
-        val activeModelId = defaultProvider?.selectedModelId ?: "未设置"
+        val activeProviderName = defaultProvider?.name ?: notSetLabel
+        val activeModelId = defaultProvider?.selectedModelId ?: notSetLabel
 
         HorizontalDivider(
             color = sidebarColors.onBackground.copy(alpha = 0.15f),
