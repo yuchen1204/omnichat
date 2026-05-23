@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import com.example.data.McpServer
 import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
+import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.uiText
 
 // ── 工具列表弹窗 ──────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ fun McpToolsDialog(
     tools: List<McpTool>,
     onDismiss: () -> Unit
 ) {
+    val fs = LocalUISettings.current.fontSizeScale
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -55,7 +57,7 @@ fun McpToolsDialog(
                 ) {
                     Text(
                         text = "$serverName 的工具",
-                        fontSize = 16.sp,
+                        fontSize = (16 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f)
                     )
@@ -88,6 +90,7 @@ fun McpToolsDialog(
 
 @Composable
 fun McpToolItem(tool: McpTool) {
+    val fs = LocalUISettings.current.fontSizeScale
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -97,7 +100,7 @@ fun McpToolItem(tool: McpTool) {
     ) {
         Text(
             text = tool.name,
-            fontSize = 13.sp,
+            fontSize = (13 * fs).sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.primary
@@ -106,7 +109,7 @@ fun McpToolItem(tool: McpTool) {
             Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = tool.description,
-                fontSize = 12.sp,
+                fontSize = (12 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
@@ -122,6 +125,7 @@ fun McpImportDialog(
 ) {
     var jsonText by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
+    val fs = LocalUISettings.current.fontSizeScale
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -138,14 +142,14 @@ fun McpImportDialog(
             ) {
                 Text(
                     text = uiText("mcp.dialog.ea4cb678", "导入 MCP 配置 (JSON)"),
-                    fontSize = 18.sp,
+                    fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
                     text = uiText("mcp.dialog.79180a54", "粘贴标准的 mcpServers JSON 配置。导入后将自动添加并尝试启动服务。"),
-                    fontSize = 12.sp,
+                    fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
@@ -160,7 +164,7 @@ fun McpImportDialog(
                     placeholder = { 
                         Text(
                             "{\n  \"mcpServers\": {\n    \"example\": {\n      \"command\": \"https://example.com/mcp/sse\",\n      \"args\": []\n    }\n  }\n}",
-                            fontSize = 11.sp
+                            fontSize = (11 * fs).sp
                         ) 
                     },
                     modifier = Modifier
@@ -168,7 +172,7 @@ fun McpImportDialog(
                         .weight(1f),
                     textStyle = androidx.compose.ui.text.TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp
+                        fontSize = (11 * fs).sp
                     ),
                     isError = isError,
                     supportingText = if (isError) {
@@ -231,6 +235,8 @@ fun McpServerEditDialog(
     var argsError by remember { mutableStateOf(false) }
     var envError by remember { mutableStateOf(false) }
 
+    val fs = LocalUISettings.current.fontSizeScale
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -247,7 +253,7 @@ fun McpServerEditDialog(
                 // 标题
                 Text(
                     text = if (isEdit) "编辑 MCP 服务" else "添加 MCP 服务",
-                    fontSize = 18.sp,
+                    fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -266,7 +272,7 @@ fun McpServerEditDialog(
                 // 运行时选择
                 Text(
                     text = uiText("mcp.dialog.8436d4b3", "运行时"),
-                    fontSize = 13.sp,
+                    fontSize = (13 * fs).sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -347,7 +353,7 @@ fun McpServerEditDialog(
                 ) {
                     Text(
                         text = uiText("mcp.dialog.500fbcfe", "启动时自动运行"),
-                        fontSize = 14.sp,
+                        fontSize = (14 * fs).sp,
                         modifier = Modifier.weight(1f)
                     )
                     Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
@@ -397,6 +403,7 @@ fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
         Triple("python", "Python", "内嵌 Python"),
         Triple("remote_http", "远程 HTTP", "远程 MCP 服务")
     )
+    val fs = LocalUISettings.current.fontSizeScale
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -406,7 +413,7 @@ fun RuntimeSelector(selected: String, onSelect: (String) -> Unit) {
             FilterChip(
                 selected = isSelected,
                 onClick = { onSelect(value) },
-                label = { Text(label, fontSize = 11.sp) },
+                label = { Text(label, fontSize = (11 * fs).sp) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -435,6 +442,7 @@ fun RuntimeHint(
                             else colorScheme.surfaceVariant.copy(alpha = 0.6f)
         val contentColor = if (isError) colorScheme.onErrorContainer
                           else colorScheme.onSurfaceVariant
+        val fs = LocalUISettings.current.fontSizeScale
 
         Surface(
             color = containerColor,
@@ -452,9 +460,9 @@ fun RuntimeHint(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = text,
-                    fontSize = 11.sp,
+                    fontSize = (11 * fs).sp,
                     color = contentColor,
-                    lineHeight = 16.sp
+                    lineHeight = (16 * fs).sp
                 )
             }
         }
@@ -488,6 +496,7 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
             env = "{}"
         )
     )
+    val fs = LocalUISettings.current.fontSizeScale
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         examples.forEach { example ->
             OutlinedButton(
@@ -499,10 +508,10 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
                 RuntimeBadge(runtime = example.runtime)
                 Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                    Text(example.name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(example.name, fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
                     Text(
                         example.command,
-                        fontSize = 10.sp,
+                        fontSize = (10 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -558,6 +567,7 @@ fun RuntimeInfoDialog(
     pythonStatus: String,
     onDismiss: () -> Unit
 ) {
+    val fs = LocalUISettings.current.fontSizeScale
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -575,7 +585,7 @@ fun RuntimeInfoDialog(
                 ) {
                     Text(
                         "运行时状态详情",
-                        fontSize = 17.sp,
+                        fontSize = (17 * fs).sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
@@ -635,6 +645,7 @@ fun RuntimeInfoSection(
     val color = if (isReady) successColor else MaterialTheme.colorScheme.error
     val bgColor = if (isReady) color.copy(alpha = 0.08f)
                   else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+    val fs = LocalUISettings.current.fontSizeScale
 
     Column(
         modifier = Modifier
@@ -653,7 +664,7 @@ fun RuntimeInfoSection(
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 title,
-                fontSize = 14.sp,
+                fontSize = (14 * fs).sp,
                 fontWeight = FontWeight.SemiBold,
                 color = color
             )
@@ -661,9 +672,9 @@ fun RuntimeInfoSection(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             statusText,
-            fontSize = 12.sp,
+            fontSize = (12 * fs).sp,
             color = MaterialTheme.colorScheme.onSurface,
-            lineHeight = 16.sp
+            lineHeight = (16 * fs).sp
         )
         if (instructions != null) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -671,17 +682,17 @@ fun RuntimeInfoSection(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "安装步骤：",
-                fontSize = 11.sp,
+                fontSize = (11 * fs).sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 instructions,
-                fontSize = 11.sp,
+                fontSize = (11 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace,
-                lineHeight = 16.sp
+                lineHeight = (16 * fs).sp
             )
         }
     }

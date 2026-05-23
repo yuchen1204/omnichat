@@ -32,6 +32,8 @@ import com.example.data.McpServer
 import com.example.mcp.McpServerStatus
 import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
+import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 
 @Composable
@@ -102,7 +104,7 @@ fun McpConfigScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(uiText("mcp.d42727b5", "添加服务"), fontSize = 13.sp)
+                    Text(uiText("mcp.d42727b5", "添加服务"), fontSize = (13 * LocalUISettings.current.fontSizeScale).sp)
                 }
             }
         }
@@ -135,14 +137,14 @@ fun McpConfigScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = uiText("mcp.empty.title", "暂无 MCP 服务"),
-                        fontSize = 18.sp,
+                        fontSize = (18 * LocalUISettings.current.fontSizeScale).sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = uiText("mcp.empty.desc", "点击右上角「添加服务」配置 Node.js 或 Python MCP server"),
-                        fontSize = 13.sp,
+                        fontSize = (13 * LocalUISettings.current.fontSizeScale).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
@@ -150,7 +152,7 @@ fun McpConfigScreen(
                     // 快速添加示例
                     Text(
                         text = uiText("mcp.examples.title", "常用示例"),
-                        fontSize = 12.sp,
+                        fontSize = (12 * LocalUISettings.current.fontSizeScale).sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -285,6 +287,9 @@ private fun McpServerCard(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val surface = MaterialTheme.colorScheme.surface
 
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+
     val statusColor = when (status) {
         McpServerStatus.RUNNING -> com.example.ui.theme.LocalCustomColors.current.success
         McpServerStatus.STARTING -> com.example.ui.theme.LocalCustomColors.current.warning
@@ -322,7 +327,7 @@ private fun McpServerCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = server.name,
-                        fontSize = 15.sp,
+                        fontSize = (15 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
                         color = onSurface,
                         maxLines = 1,
@@ -330,7 +335,7 @@ private fun McpServerCard(
                     )
                     Text(
                         text = server.command,
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -349,7 +354,7 @@ private fun McpServerCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = statusLabel,
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = statusColor,
                         fontWeight = FontWeight.Medium
                     )
@@ -402,7 +407,7 @@ private fun McpServerCard(
                 ) {
                     Text(
                         text = state.errorMessage,
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         maxLines = 2,
@@ -438,7 +443,7 @@ private fun McpServerCard(
                     ) {
                         Icon(Icons.Default.List, null, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("$toolCount 个工具", fontSize = 11.sp)
+                        Text("$toolCount 个工具", fontSize = (11 * fs).sp)
                     }
                 }
 
@@ -448,7 +453,7 @@ private fun McpServerCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (server.isEnabled) "已启用" else "已禁用",
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -491,6 +496,7 @@ fun RuntimeBadge(runtime: String) {
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
     val primaryColor = MaterialTheme.colorScheme.primary
     val warningColor = com.example.ui.theme.LocalCustomColors.current.warning
+    val fs = LocalUISettings.current.fontSizeScale
     
     val (label, color) = when (runtime) {
         "node" -> "Node" to successColor
@@ -510,7 +516,7 @@ fun RuntimeBadge(runtime: String) {
     ) {
         Text(
             text = label,
-            fontSize = 10.sp,
+            fontSize = (10 * fs).sp,
             fontWeight = FontWeight.Bold,
             color = color,
             fontFamily = FontFamily.Monospace
@@ -522,6 +528,7 @@ fun RuntimeBadge(runtime: String) {
 
 @Composable
 private fun StatChip(label: String, value: String, color: Color) {
+    val fs = LocalUISettings.current.fontSizeScale
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -532,7 +539,7 @@ private fun StatChip(label: String, value: String, color: Color) {
         Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = "$value $label",
-            fontSize = 12.sp,
+            fontSize = (12 * fs).sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -577,7 +584,7 @@ private fun RuntimeStatusBar(
             
             Text(
                 text = uiText("mcp.84e89d6f", "支持远程 HTTP MCP"),
-                fontSize = 10.sp,
+                fontSize = (10 * LocalUISettings.current.fontSizeScale).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 fontWeight = FontWeight.Medium
             )
@@ -604,6 +611,7 @@ private fun RuntimeChip(
 ) {
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
     val color = if (isReady) successColor else MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+    val fs = LocalUISettings.current.fontSizeScale
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -616,7 +624,7 @@ private fun RuntimeChip(
         )
         Text(
             text = label,
-            fontSize = 10.sp,
+            fontSize = (10 * fs).sp,
             color = color,
             fontWeight = FontWeight.Medium
         )
@@ -635,6 +643,7 @@ private fun BuiltinToolsCard(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val surface = MaterialTheme.colorScheme.surface
+    val fs = LocalUISettings.current.fontSizeScale
     
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -669,13 +678,13 @@ private fun BuiltinToolsCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = uiText("mcp.builtin.title", "内置工具"),
-                    fontSize = 14.sp,
+                    fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.SemiBold,
                     color = onSurface
                 )
                 Text(
                     text = "${tools.size} 个工具 · 始终可用",
-                    fontSize = 11.sp,
+                    fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -690,7 +699,7 @@ private fun BuiltinToolsCard(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = uiText("mcp.builtin.status", "运行中"),
-                    fontSize = 11.sp,
+                    fontSize = (11 * fs).sp,
                     color = com.example.ui.theme.LocalCustomColors.current.success,
                     fontWeight = FontWeight.Medium
                 )
@@ -703,7 +712,7 @@ private fun BuiltinToolsCard(
             ) {
                 Text(
                     text = uiText("mcp.view.tools", "查看工具"),
-                    fontSize = 12.sp,
+                    fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.primary
                 )
             }

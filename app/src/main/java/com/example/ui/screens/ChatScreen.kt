@@ -36,6 +36,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.MemoryItem
 import com.example.data.ModelConfig
 import com.example.ui.components.ChunkedStreamingText
+import com.example.ui.theme.LocalChatFontScale
+import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 
@@ -50,6 +53,12 @@ fun ChatView(viewModel: ChatViewModel) {
     val isThinkingFinished = viewModel.isThinkingFinished
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     val mcpServerStates by viewModel.mcpServerStates.collectAsStateWithLifecycle()
+
+    // 字体设置
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale  // 全局 UI 字体缩放
+    val chatFs = LocalChatFontScale.current  // 聊天气泡字体缩放
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -106,7 +115,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = uiText("chat.no_provider.warning", "需设置全局自动提供商才能正常会话！"),
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
                     )
@@ -120,7 +129,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = uiText("chat.memory.injected", "已动态融合共 %d 条长效学习偏好记忆").format(memories.size),
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -156,7 +165,7 @@ fun ChatView(viewModel: ChatViewModel) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "MCP 工具加载中：${startingServers.joinToString("、") { it.server.name }}",
-                    fontSize = 11.sp,
+                    fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -273,7 +282,7 @@ fun ChatView(viewModel: ChatViewModel) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = uiText("chat.current.model", "当前模型: %s  ·  %s").format(activeModelId, activeProviderName),
-                                fontSize = 11.sp,
+                                fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1
@@ -317,7 +326,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = uiText("chat.57841df8", "切换模型"),
-                                        fontSize = 12.sp,
+                                        fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -361,10 +370,10 @@ fun ChatView(viewModel: ChatViewModel) {
                     OutlinedTextField(
                         value = textInput,
                         onValueChange = { textInput = it },
-                        placeholder = { Text(uiText("chat.input.hint", "输入消息..."), fontSize = 15.sp) },
+                        placeholder = { Text(uiText("chat.input.hint", "输入消息..."), fontSize = (15 * fs).sp) },
                         maxLines = 4,
                         textStyle = LocalTextStyle.current.copy(
-                            fontSize = 15.sp,
+                            fontSize = (15 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurface
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -433,6 +442,10 @@ fun ChatView(viewModel: ChatViewModel) {
 
 @Composable
 fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -454,14 +467,16 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = uiText("chat.1fda5871", "欢迎使用长效记忆 AI 助手"),
-            fontSize = 18.sp,
+            fontSize = (18 * fs).sp,
             fontWeight = FontWeight.Bold,
+            fontFamily = resolvedFontFamily,
             color = MaterialTheme.colorScheme.onBackground
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = uiText("chat.aa2781f8", "本应用特别支持双模型架构！一个主模型专门负责对话聊天，而一个副模型专门在每次回答后在后台分析提炼对话事实信息，跨越不同对话会话、重启不丢失！"),
-            fontSize = 13.sp,
+            fontSize = (13 * fs).sp,
+            fontFamily = resolvedFontFamily,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -473,17 +488,19 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(uiText("chat.4d810ed0", "状态一览:"), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(uiText("chat.4d810ed0", "状态一览:"), fontWeight = FontWeight.Bold, fontSize = (13 * fs).sp, fontFamily = resolvedFontFamily)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = if (config != null) "✓ 当前提供商: ${config.name}" else "✗ 未设置 Provider",
-                    fontSize = 12.sp,
+                    fontSize = (12 * fs).sp,
+                    fontFamily = resolvedFontFamily,
                     color = if (config != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "✓ 当前存储的长效记忆: ${memories.size} 条",
-                    fontSize = 12.sp
+                    fontSize = (12 * fs).sp,
+                    fontFamily = resolvedFontFamily
                 )
             }
         }
@@ -538,6 +555,9 @@ fun ThinkingProcessPanel(
     val accentColor = com.example.ui.theme.LocalCustomColors.current.accent
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
 
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -585,7 +605,7 @@ fun ThinkingProcessPanel(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (!isThinkingFinished) "AI 正在深度思考中（实时吐流）..." else "深度思考过程 (已折叠，点击展开)",
-                    fontSize = 12.sp,
+                    fontSize = (12 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -620,17 +640,17 @@ fun ThinkingProcessPanel(
                         ChunkedStreamingText(
                             text = thinkingText,
                             textColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                            fontSize = 12.5.sp,
-                            lineHeight = 18.sp
+                            fontSize = (12.5f * fs).sp,
+                            lineHeight = (18 * fs).sp
                         )
                     } else {
                         dev.jeziellago.compose.markdowntext.MarkdownText(
                             markdown = thinkingText,
                             style = androidx.compose.ui.text.TextStyle(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                fontSize = 12.5.sp,
+                                fontSize = (12.5f * fs).sp,
                                 fontFamily = FontFamily.Monospace,
-                                lineHeight = 18.sp
+                                lineHeight = (18 * fs).sp
                             ),
                             syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
                             syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -647,6 +667,9 @@ fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
     // 聚合逻辑：显示 "Tool use [name] x [count]"
     val totalCount = messages.size
     val label = if (totalCount > 1) "Tools used x$totalCount" else "Tool used"
+
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
 
     Row(
         modifier = Modifier
@@ -676,7 +699,7 @@ fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = label,
-                        fontSize = 12.sp,
+                        fontSize = (12 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
@@ -704,7 +727,7 @@ fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
                         ) {
                             Text(
                                 text = "Result: ${msg.content.take(100)}${if(msg.content.length > 100) "..." else ""}",
-                                fontSize = 11.sp,
+                                fontSize = (11 * fs).sp,
                                 modifier = Modifier.padding(8.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontFamily = FontFamily.Monospace
@@ -728,6 +751,11 @@ fun BubbleMessage(
     var pressOffset by remember { mutableStateOf(DpOffset.Zero) }
     val density = LocalDensity.current
     val context = LocalContext.current
+
+    // 聊天气泡字体：使用 chatFontSizeScale + fontFamily
+    val chatFs = LocalChatFontScale.current
+    val uiSettings = LocalUISettings.current
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primary
@@ -774,8 +802,9 @@ fun BubbleMessage(
                     Text(
                         text = message.content,
                         color = textColor,
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp,
+                        fontSize = (15 * chatFs).sp,
+                        lineHeight = (22 * chatFs).sp,
+                        fontFamily = resolvedFontFamily,
                         modifier = Modifier.padding(14.dp, 10.dp)
                     )
                 }
@@ -816,8 +845,9 @@ fun BubbleMessage(
                                 markdown = parsed.mainBody,
                                 style = androidx.compose.ui.text.TextStyle(
                                     color = textColor,
-                                    fontSize = 15.sp,
-                                    lineHeight = 22.sp
+                                    fontSize = (15 * chatFs).sp,
+                                    lineHeight = (22 * chatFs).sp,
+                                    fontFamily = resolvedFontFamily
                                 ),
                                 syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
                                 syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -869,6 +899,11 @@ fun StreamingBubble(
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     val isThinkingFallback = thinkingText.isEmpty() && bodyText.isEmpty() && !isThinkingFinished
 
+    val chatFs = LocalChatFontScale.current
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -909,8 +944,8 @@ fun StreamingBubble(
                                     ChunkedStreamingText(
                                         text = displayText,
                                         textColor = textColor,
-                                        fontSize = 15.sp,
-                                        lineHeight = 22.sp,
+                                        fontSize = (15 * chatFs).sp,
+                                        lineHeight = (22 * chatFs).sp,
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
 
@@ -938,7 +973,7 @@ fun StreamingBubble(
             }
             Text(
                 text = uiText("chat.32423845", "助手正在输入..."),
-                fontSize = 10.sp,
+                fontSize = (10 * fs).sp,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
             )

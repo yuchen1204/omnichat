@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mcp.McpViewModel
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
@@ -120,9 +121,10 @@ fun SettingsView(
                     selected = selectedSubTab == index,
                     onClick = { selectedSubTab = index },
                     text = {
+                        val uiSettings = LocalUISettings.current
                         Text(
                             text = title,
-                            fontSize = 14.sp,
+                            fontSize = (14 * uiSettings.fontSizeScale).sp,
                             fontWeight = if (selectedSubTab == index) FontWeight.Bold else FontWeight.Normal
                         )
                     }
@@ -162,14 +164,19 @@ fun MainTopAppBar(
         else -> "AI"
     }
 
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+
     Column {
         CenterAlignedTopAppBar(
             title = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = titleText,
-                        fontSize = 17.sp,
+                        fontSize = (17 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
+                        fontFamily = resolvedFontFamily,
                         letterSpacing = (-0.4).sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
@@ -177,7 +184,8 @@ fun MainTopAppBar(
                     if (currentTab == "chat" && defaultProvider != null) {
                         Text(
                             text = "${uiText("topbar.provider.prefix", "提供商: ")}${defaultProvider.name}",
-                            fontSize = 11.sp,
+                            fontSize = (11 * fs).sp,
+                            fontFamily = resolvedFontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1
                         )
@@ -218,7 +226,7 @@ fun MainTopAppBar(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = uiText("topbar.memory.syncing", "记忆同步中"),
-                            fontSize = 11.sp,
+                            fontSize = (11 * fs).sp,
                             color = com.example.ui.theme.LocalCustomColors.current.success
                         )
                     }

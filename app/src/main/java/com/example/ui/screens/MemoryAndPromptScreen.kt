@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.PromptTemplate
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 
@@ -37,6 +38,8 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
     val uiSettings = LocalUISettings.current
     val spacingMultiplier = uiSettings.spacingMultiplier
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     Column(
         modifier = Modifier
@@ -49,10 +52,10 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
             Tab(selected = activeSubTab == "memory", onClick = { activeSubTab = "memory" }) {
-                Text("长效对话记忆库 (${memories.size})", modifier = Modifier.padding(12.dp), fontSize = 14.sp)
+                Text("长效对话记忆库 (${memories.size})", modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
             Tab(selected = activeSubTab == "prompts", onClick = { activeSubTab = "prompts" }) {
-                Text(uiText("memory.bbbf4e03", "系统Prompt模板"), modifier = Modifier.padding(12.dp), fontSize = 14.sp)
+                Text(uiText("memory.bbbf4e03", "系统Prompt模板"), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
         }
 
@@ -84,19 +87,20 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Text(
                                 text = uiText("memory.manual.input.title", "手动录入长效记忆 / 用户首选项偏好"),
-                                fontSize = 12.sp,
+                                fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.SemiBold,
+                                fontFamily = resolvedFontFamily,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(8.dp * spacingMultiplier))
                             OutlinedTextField(
                                 value = manualMemoryText,
                                 onValueChange = { manualMemoryText = it },
-                                placeholder = { Text(uiText("memory.eaea8fbf", "例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼..."), fontSize = 12.sp) },
+                                placeholder = { Text(uiText("memory.eaea8fbf", "例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼..."), fontSize = (12 * fs).sp) },
                                 minLines = 2,
                                 maxLines = 4,
                                 modifier = Modifier.fillMaxWidth(),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = (13 * fs).sp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                                     unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -118,7 +122,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     },
                                     shape = RoundedCornerShape(8.dp * spacingMultiplier)
                                 ) {
-                                    Text(uiText("memory.51c52a46", "添加偏好"), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    Text(uiText("memory.51c52a46", "添加偏好"), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
                                 }
                             }
                         }
@@ -134,7 +138,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     ) {
                         Text(
                             text = "AI 自我反省提炼的长效记忆 (${memories.size}):",
-                            fontSize = 12.sp,
+                            fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -143,7 +147,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 onClick = { viewModel.clearAllMemories() },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
-                                Text(uiText("memory.7c4e09ff", "清空全部"), fontSize = 12.sp)
+                                Text(uiText("memory.7c4e09ff", "清空全部"), fontSize = (12 * fs).sp)
                             }
                         }
                     }
@@ -167,9 +171,9 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 Text(
                                     text = uiText("memory.empty.hint", "暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！"),
                                     textAlign = TextAlign.Center,
-                                    fontSize = 12.sp,
+                                    fontSize = (12 * fs).sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                    lineHeight = 16.sp
+                                    lineHeight = (16 * fs).sp
                                 )
                             }
                         }
@@ -197,7 +201,8 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = memory.content,
-                                    fontSize = 13.sp,
+                                    fontSize = (13 * fs).sp,
+                                    fontFamily = resolvedFontFamily,
                                     modifier = Modifier.weight(1f),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -231,7 +236,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(uiText("memory.d1ce90a9", "创建自定义 System 模板"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(uiText("memory.d1ce90a9", "创建自定义 System 模板"), fontWeight = FontWeight.Bold, fontSize = (14 * fs).sp, fontFamily = resolvedFontFamily)
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedTextField(
                             value = newTemplateName,
@@ -290,7 +295,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = uiText("memory.3f63a83c", "新增"))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(uiText("memory.8bed6b57", "新增 System 模版"), fontSize = 13.sp)
+                    Text(uiText("memory.8bed6b57", "新增 System 模版"), fontSize = (13 * fs).sp)
                 }
             }
 
@@ -323,7 +328,8 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     Text(
                                         text = template.name,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
+                                        fontSize = (14 * fs).sp,
+                                        fontFamily = resolvedFontFamily,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
@@ -351,7 +357,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                             ) {
                                 Text(
                                     text = template.templateText,
-                                    fontSize = 11.sp,
+                                    fontSize = (11 * fs).sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 5

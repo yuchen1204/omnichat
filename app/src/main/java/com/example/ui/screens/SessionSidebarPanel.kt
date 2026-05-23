@@ -26,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.Session
 import com.example.ui.theme.LocalSidebarColors
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
@@ -43,6 +44,8 @@ fun SessionSidebarPanel(
     
     val uiSettings = LocalUISettings.current
     val sidebarColors = LocalSidebarColors.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     // 删除确认对话框
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
@@ -67,8 +70,9 @@ fun SessionSidebarPanel(
         ) {
             Text(
                 text = uiText("sidebar.title", "对话列表"),
-                fontSize = 18.sp,
+                fontSize = (18 * fs).sp,
                 fontWeight = FontWeight.Bold,
+                fontFamily = resolvedFontFamily,
                 color = sidebarColors.onBackground
             )
             IconButton(
@@ -129,8 +133,9 @@ fun SessionSidebarPanel(
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = session.title,
-                            fontSize = 14.sp,
+                            fontSize = (14 * fs).sp,
                             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                            fontFamily = resolvedFontFamily,
                             color = if (isActive) sidebarColors.onActiveBackground
                                     else sidebarColors.onBackground,
                             modifier = Modifier.weight(1f),
@@ -165,7 +170,7 @@ fun SessionSidebarPanel(
                                                 modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.onSurface)
                                             Spacer(modifier = Modifier.width(10.dp))
-                                            Text(uiText("sidebar.286eb70c", "重命名"), fontSize = 14.sp)
+                                            Text(uiText("sidebar.286eb70c", "重命名"), fontSize = (14 * fs).sp)
                                         }
                                     },
                                     onClick = {
@@ -181,7 +186,7 @@ fun SessionSidebarPanel(
                                                 modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.error)
                                             Spacer(modifier = Modifier.width(10.dp))
-                                            Text(uiText("sidebar.7c7e3e24", "删除"), fontSize = 14.sp,
+                                            Text(uiText("sidebar.7c7e3e24", "删除"), fontSize = (14 * fs).sp,
                                                 color = MaterialTheme.colorScheme.error)
                                         }
                                     },
@@ -224,13 +229,13 @@ fun SessionSidebarPanel(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = activeProviderName,
-                    fontSize = 11.sp,
+                    fontSize = (11 * fs).sp,
                     color = sidebarColors.onBackground.copy(alpha = 0.6f),
                     maxLines = 1
                 )
                 Text(
                     text = activeModelId,
-                    fontSize = 10.sp,
+                    fontSize = (10 * fs).sp,
                     color = sidebarColors.onBackground.copy(alpha = 0.8f),
                     maxLines = 1
                 )
@@ -263,7 +268,8 @@ fun SessionSidebarPanel(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = uiText("sidebar.settings", "设置"),
-                        fontSize = 14.sp,
+                        fontSize = (14 * fs).sp,
+                        fontFamily = resolvedFontFamily,
                         color = sidebarColors.onBackground
                     )
                 }
@@ -309,8 +315,8 @@ fun SessionSidebarPanel(
                         "dialog.delete.session.body",
                         "确定要删除「%s」吗？\n该会话的所有消息记录将被永久清除，无法恢复。"
                     ).format(session.title),
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
+                    fontSize = (14 * fs).sp,
+                    lineHeight = (20 * fs).sp
                 )
             },
             confirmButton = {

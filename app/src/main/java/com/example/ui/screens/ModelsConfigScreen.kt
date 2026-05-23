@@ -34,6 +34,7 @@ import com.example.data.ModelConfig
 import com.example.data.FetchedModel
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
+import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 
@@ -42,6 +43,10 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
     val configs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     var isAddingNew by remember { mutableStateOf(false) }
     var configToEdit by remember { mutableStateOf<ModelConfig?>(null) }
+
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -58,8 +63,9 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
             ) {
                 Text(
                     text = uiText("models.7b387e08", "API 提供商管理库"),
-                    fontSize = 16.sp,
+                    fontSize = (16 * fs).sp,
                     fontWeight = FontWeight.Bold,
+                    fontFamily = resolvedFontFamily,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Button(
@@ -68,7 +74,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = uiText("models.add.provider", "新增提供商"))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(uiText("models.add.provider", "新增提供商"), fontSize = 13.sp)
+                    Text(uiText("models.add.provider", "新增提供商"), fontSize = (13 * fs).sp)
                 }
             }
 
@@ -82,7 +88,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                     Text(
                         text = uiText("models.empty.hint", "当前未配置任何 API 提供商。\n点击右上角\u201c新增提供商\u201d开始添加！"),
                         textAlign = TextAlign.Center,
-                        fontSize = 13.sp,
+                        fontSize = (13 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(24.dp)
                     )
@@ -151,6 +157,10 @@ fun ModelConfigCard(
     val borderStrokeColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     var isExpanded by remember(config.isDefaultProvider) { mutableStateOf(config.isDefaultProvider) }
 
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,8 +182,9 @@ fun ModelConfigCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = config.name,
-                        fontSize = 16.sp,
+                        fontSize = (16 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
+                        fontFamily = resolvedFontFamily,
                         color = MaterialTheme.colorScheme.onSurface,
                         letterSpacing = (-0.3).sp
                     )
@@ -195,7 +206,7 @@ fun ModelConfigCard(
                         ) {
                             Text(
                                 text = uiText("models.default.badge", "默认提供商"),
-                                fontSize = 10.sp,
+                                fontSize = (10 * fs).sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -222,13 +233,13 @@ fun ModelConfigCard(
                     Row {
                         Text(
                             text = "Endpoint: ",
-                            fontSize = 12.sp,
+                            fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             text = config.endpoint,
-                            fontSize = 12.sp,
+                            fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1
                         )
@@ -240,7 +251,7 @@ fun ModelConfigCard(
                     Row {
                         Text(
                             text = "API Key: ",
-                            fontSize = 12.sp,
+                            fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -251,7 +262,7 @@ fun ModelConfigCard(
                         }
                         Text(
                             text = maskedKey,
-                            fontSize = 12.sp,
+                            fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontFamily = FontFamily.Monospace
                         )
@@ -267,13 +278,13 @@ fun ModelConfigCard(
                         Row {
                             Text(
                                 text = uiText("models.feba7752", "自定义请求头: "),
-                                fontSize = 12.sp,
+                                fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = "$headerCount 个",
-                                fontSize = 12.sp,
+                                fontSize = (12 * fs).sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -311,13 +322,13 @@ fun ModelConfigCard(
                                 Column {
                                     Text(
                                         text = uiText("models.set.default.title", "设为默认配置"),
-                                        fontSize = 14.sp,
+                                        fontSize = (14 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         text = uiText("models.set.default.desc", "将此 API 提供商作为全局使用"),
-                                        fontSize = 11.sp,
+                                        fontSize = (11 * fs).sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
                                 }
@@ -354,7 +365,7 @@ fun ModelConfigCard(
                         ) {
                             Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(uiText("models.e7367561", "编辑"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(uiText("models.e7367561", "编辑"), fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
@@ -365,7 +376,7 @@ fun ModelConfigCard(
                         ) {
                             Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(uiText("models.f8fc9ef5", "删除"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(uiText("models.f8fc9ef5", "删除"), fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -441,6 +452,7 @@ fun ModelConfigDialog(
                 .fillMaxWidth()
                 .padding(vertical = 16.dp)
         ) {
+            val fs = LocalUISettings.current.fontSizeScale
             Column(
                 modifier = Modifier
                     .padding(20.dp)
@@ -448,7 +460,7 @@ fun ModelConfigDialog(
             ) {
                 Text(
                     text = if (config == null) "新增提供商配置" else "编辑提供商配置",
-                    fontSize = 17.sp,
+                    fontSize = (17 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -511,7 +523,7 @@ fun ModelConfigDialog(
                     Text(
                         text = uiText("models.4000c92f", "自定义请求头 (Custom Headers):"),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.5.sp,
+                        fontSize = (12.5f * fs).sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     TextButton(
@@ -520,14 +532,14 @@ fun ModelConfigDialog(
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text(uiText("models.f1db767a", "添加"), fontSize = 12.sp)
+                        Text(uiText("models.f1db767a", "添加"), fontSize = (12 * fs).sp)
                     }
                 }
 
                 if (headerPairs.isEmpty()) {
                     Text(
                         text = uiText("models.bcd68a28", "暂无自定义请求头"),
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -553,10 +565,10 @@ fun ModelConfigDialog(
                                         updated[index] = newKey to hVal
                                         headerPairs = updated
                                     },
-                                    label = { Text(uiText("models.7326ae72", "Header 名"), fontSize = 10.sp) },
+                                    label = { Text(uiText("models.7326ae72", "Header 名"), fontSize = (10 * fs).sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
-                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = (12 * fs).sp)
                                 )
                                 OutlinedTextField(
                                     value = hVal,
@@ -565,10 +577,10 @@ fun ModelConfigDialog(
                                         updated[index] = hKey to newVal
                                         headerPairs = updated
                                     },
-                                    label = { Text(uiText("models.4aa0ac0e", "值"), fontSize = 10.sp) },
+                                    label = { Text(uiText("models.4aa0ac0e", "值"), fontSize = (10 * fs).sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
-                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = (12 * fs).sp)
                                 )
                                 IconButton(
                                     onClick = {
@@ -596,7 +608,7 @@ fun ModelConfigDialog(
                 Text(
                     text = uiText("models.d67d7eff", "自动拉取并解析可用模型:"),
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.5.sp,
+                    fontSize = (12.5f * fs).sp,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
@@ -622,9 +634,9 @@ fun ModelConfigDialog(
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(uiText("models.6ff76247", "正在拉取中..."), fontSize = 12.sp)
+                        Text(uiText("models.6ff76247", "正在拉取中..."), fontSize = (12 * fs).sp)
                     } else {
-                        Text(uiText("models.43d27d4e", "一键获取当前 Endpoint 的可用模型"), fontSize = 12.sp)
+                        Text(uiText("models.43d27d4e", "一键获取当前 Endpoint 的可用模型"), fontSize = (12 * fs).sp)
                     }
                 }
 
@@ -632,7 +644,7 @@ fun ModelConfigDialog(
                     Text(
                         text = "拉取错误: $fetchError",
                         color = MaterialTheme.colorScheme.error,
-                        fontSize = 11.sp,
+                        fontSize = (11 * fs).sp,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
@@ -642,7 +654,7 @@ fun ModelConfigDialog(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = uiText("models.e17ad608", "可用模型列表 (点击模型名选择；点击下方标签可**手动修正** 思考/视觉/工具 调用能力):"),
-                        fontSize = 11.5.sp,
+                        fontSize = (11.5f * fs).sp,
                         fontWeight = FontWeight.Bold,
                         color = LocalCustomColors.current.success,
                         modifier = Modifier.padding(bottom = 6.dp)
@@ -678,7 +690,7 @@ fun ModelConfigDialog(
                                         Text(
                                             text = m.modelId,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 12.5.sp,
+                                            fontSize = (12.5f * fs).sp,
                                             color = if (isSelected) 
                                                 MaterialTheme.colorScheme.onPrimaryContainer 
                                             else 
@@ -700,7 +712,7 @@ fun ModelConfigDialog(
                                         ) {
                                             Text(
                                                 text = "Context: ${m.contextSize}",
-                                                fontSize = 9.5.sp,
+                                                fontSize = (9.5f * fs).sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isSelected) 
                                                     MaterialTheme.colorScheme.onPrimaryContainer 
@@ -809,6 +821,7 @@ fun ModelConfigDialog(
 
 @Composable
 fun InteractiveCapabilityBadge(text: String, enabled: Boolean, color: Color, onClick: () -> Unit) {
+    val fs = LocalUISettings.current.fontSizeScale
     Box(
         modifier = Modifier
             .background(
@@ -825,7 +838,7 @@ fun InteractiveCapabilityBadge(text: String, enabled: Boolean, color: Color, onC
     ) {
         Text(
             text = text,
-            fontSize = 9.5.sp,
+            fontSize = (9.5f * fs).sp,
             fontWeight = if (enabled) FontWeight.Bold else FontWeight.Normal,
             color = if (enabled) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
         )
@@ -834,6 +847,7 @@ fun InteractiveCapabilityBadge(text: String, enabled: Boolean, color: Color, onC
 
 @Composable
 fun CapabilityBadge(text: String, color: Color) {
+    val fs = LocalUISettings.current.fontSizeScale
     Box(
         modifier = Modifier
             .background(color.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
@@ -842,7 +856,7 @@ fun CapabilityBadge(text: String, color: Color) {
     ) {
         Text(
             text = text,
-            fontSize = 9.5.sp,
+            fontSize = (9.5f * fs).sp,
             fontWeight = FontWeight.SemiBold,
             color = color
         )
@@ -911,6 +925,7 @@ fun ProviderModelPicker(
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f)
         ) {
+            val fs = LocalUISettings.current.fontSizeScale
             Column(modifier = Modifier.fillMaxSize()) {
                 // 标题栏
                 Row(
@@ -936,14 +951,14 @@ fun ProviderModelPicker(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = if (step == 0) "选择 Provider" else "选择模型",
-                            fontSize = 16.sp,
+                            fontSize = (16 * fs).sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         if (step == 1 && pickedProvider != null) {
                             Text(
                                 text = pickedProvider!!.name,
-                                fontSize = 11.sp,
+                                fontSize = (11 * fs).sp,
                                 color = mutedTextColor
                             )
                         }
@@ -1000,7 +1015,7 @@ fun ProviderModelPicker(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 text = config.name,
-                                                fontSize = 14.sp,
+                                                fontSize = (14 * fs).sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary
                                                         else MaterialTheme.colorScheme.onSurface
@@ -1009,7 +1024,7 @@ fun ProviderModelPicker(
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
                                                     text = uiText("models.38f845e5", "默认"),
-                                                    fontSize = 9.sp,
+                                                    fontSize = (9 * fs).sp,
                                                     color = successColor,
                                                     modifier = Modifier
                                                         .background(successColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
@@ -1019,7 +1034,7 @@ fun ProviderModelPicker(
                                         }
                                         Text(
                                             text = config.endpoint,
-                                            fontSize = 10.sp,
+                                            fontSize = (10 * fs).sp,
                                             color = mutedTextColor,
                                             maxLines = 1
                                         )
@@ -1053,13 +1068,13 @@ fun ProviderModelPicker(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = uiText("models.455c9a7e", "该 Provider 暂无已保存的模型列表"),
-                                    fontSize = 13.sp,
+                                    fontSize = (13 * fs).sp,
                                     color = mutedTextColor,
                                     textAlign = TextAlign.Center
                                 )
                                 Text(
                                     text = uiText("models.a7ecea12", "请先在「模型配置」中拉取模型"),
-                                    fontSize = 11.sp,
+                                    fontSize = (11 * fs).sp,
                                     color = mutedTextColor,
                                     textAlign = TextAlign.Center
                                 )
@@ -1096,7 +1111,7 @@ fun ProviderModelPicker(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = model.modelId,
-                                                fontSize = 13.sp,
+                                                fontSize = (13 * fs).sp,
                                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary
                                                         else MaterialTheme.colorScheme.onSurface,
@@ -1107,22 +1122,22 @@ fun ProviderModelPicker(
                                                 // Context badge
                                                 Text(
                                                     text = model.contextSize,
-                                                    fontSize = 9.sp,
+                                                    fontSize = (9 * fs).sp,
                                                     color = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier
                                                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
                                                         .padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasThinking) Text(
-                                                    "💭 思考", fontSize = 9.sp, color = successColor,
+                                                    "💭 思考", fontSize = (9 * fs).sp, color = successColor,
                                                     modifier = Modifier.background(successColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasVision) Text(
-                                                    "👁️ 视觉", fontSize = 9.sp, color = infoColor,
+                                                    "👁️ 视觉", fontSize = (9 * fs).sp, color = infoColor,
                                                     modifier = Modifier.background(infoColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasToolUse) Text(
-                                                    "🛠️ 工具", fontSize = 9.sp, color = accentColor,
+                                                    "🛠️ 工具", fontSize = (9 * fs).sp, color = accentColor,
                                                     modifier = Modifier.background(accentColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                             }
@@ -1219,6 +1234,7 @@ fun MemoryModelSelectorCard(
         ),
         border = BorderStroke(0.5.dp, borderCol)
     ) {
+        val fs = LocalUISettings.current.fontSizeScale
         Column(modifier = Modifier.padding(14.dp)) {
             // 标题行
             Row(
@@ -1238,8 +1254,8 @@ fun MemoryModelSelectorCard(
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(uiText("models.b9ea1610", "副模型配置"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
-                    Text(uiText("models.8d492673", "用于记忆优化分析 & 会话标题生成"), fontSize = 11.sp, color = onSurface.copy(alpha = 0.6f))
+                    Text(uiText("models.b9ea1610", "副模型配置"), fontSize = (14 * fs).sp, fontWeight = FontWeight.SemiBold, color = onSurface)
+                    Text(uiText("models.8d492673", "用于记忆优化分析 & 会话标题生成"), fontSize = (11 * fs).sp, color = onSurface.copy(alpha = 0.6f))
                 }
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
@@ -1267,10 +1283,10 @@ fun MemoryModelSelectorCard(
                         ) {
                             Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(uiText("models.5e59ab74", "请先添加提供商"), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            Text(uiText("models.5e59ab74", "请先添加提供商"), fontSize = (12 * fs).sp, color = MaterialTheme.colorScheme.error)
                         }
                     } else {
-                        Text(uiText("models.957abc40", "当前副模型"), fontSize = 11.sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
+                        Text(uiText("models.957abc40", "当前副模型"), fontSize = (11 * fs).sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
 
                         // 当前选择展示 + 点击打开选择器
                         OutlinedCard(
@@ -1290,11 +1306,11 @@ fun MemoryModelSelectorCard(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     if (currentMemoryModelId.isBlank()) {
-                                        Text(uiText("models.a2aeee4c", "未选择（将使用主模型）"), fontSize = 13.sp, color = onSurface.copy(alpha = 0.5f))
+                                        Text(uiText("models.a2aeee4c", "未选择（将使用主模型）"), fontSize = (13 * fs).sp, color = onSurface.copy(alpha = 0.5f))
                                     } else {
                                         Text(
                                             text = currentMemoryModelId,
-                                            fontSize = 13.sp,
+                                            fontSize = (13 * fs).sp,
                                             fontWeight = FontWeight.Medium,
                                             color = onSurface,
                                             maxLines = 1
@@ -1304,7 +1320,7 @@ fun MemoryModelSelectorCard(
                                             // Provider 来源标签
                                             Text(
                                                 text = memoryProviderName,
-                                                fontSize = 9.sp,
+                                                fontSize = (9 * fs).sp,
                                                 color = primaryColor,
                                                 modifier = Modifier
                                                     .background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
@@ -1313,15 +1329,15 @@ fun MemoryModelSelectorCard(
                                             if (currentModelInfo != null) {
                                                 Text(
                                                     text = currentModelInfo.contextSize,
-                                                    fontSize = 9.sp,
+                                                    fontSize = (9 * fs).sp,
                                                     color = MaterialTheme.colorScheme.secondary,
                                                     modifier = Modifier
                                                         .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
                                                         .padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
-                                                if (currentModelInfo.hasThinking) Text("💭", fontSize = 9.sp)
-                                                if (currentModelInfo.hasVision) Text("👁️", fontSize = 9.sp)
-                                                if (currentModelInfo.hasToolUse) Text("🛠️", fontSize = 9.sp)
+                                                if (currentModelInfo.hasThinking) Text("💭", fontSize = (9 * fs).sp)
+                                                if (currentModelInfo.hasVision) Text("👁️", fontSize = (9 * fs).sp)
+                                                if (currentModelInfo.hasToolUse) Text("🛠️", fontSize = (9 * fs).sp)
                                             }
                                         }
                                     }
@@ -1333,9 +1349,9 @@ fun MemoryModelSelectorCard(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = uiText("models.111b8427", "副模型在每次对话后台运行，负责提炼记忆条目并生成会话标题。可选择任意 Provider 的模型，建议用速度快、成本低的小模型。"),
-                            fontSize = 11.sp,
+                            fontSize = (11 * fs).sp,
                             color = onSurface.copy(alpha = 0.6f),
-                            lineHeight = 15.sp
+                            lineHeight = (15 * fs).sp
                         )
                     }
                 }
