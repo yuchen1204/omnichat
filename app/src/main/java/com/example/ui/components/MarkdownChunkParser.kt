@@ -20,6 +20,10 @@ data class ChunkParseResult(
  */
 class MarkdownChunkParser {
 
+    companion object {
+        private val NUMBERED_LIST_REGEX = Regex("^\\d+\\.\\s.*")
+    }
+
     /**
      * Splits [fullText] into a list of stable chunks and one active chunk.
      */
@@ -67,7 +71,7 @@ class MarkdownChunkParser {
         }
 
         // 4. Lists (lockable after non-list line or blank line)
-        if (text.startsWith("- ") || text.startsWith("* ") || text.matches(Regex("^\\d+\\.\\s.*", RegexOption.DOT_MATCHES_ALL))) {
+        if (text.startsWith("- ") || text.startsWith("* ") || text.matches(NUMBERED_LIST_REGEX)) {
             return findListEnd(text)
         }
 
@@ -132,7 +136,7 @@ class MarkdownChunkParser {
 
         for (line in lines) {
             val trimmed = line.trimStart()
-            val isListItem = trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.matches(Regex("^\\d+\\.\\s.*"))
+            val isListItem = trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.matches(NUMBERED_LIST_REGEX)
             val isContinuation = line.startsWith("  ") || line.startsWith("\t")
 
             if (isListItem || isContinuation) {

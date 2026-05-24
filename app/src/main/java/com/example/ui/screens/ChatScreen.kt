@@ -13,21 +13,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -57,33 +63,48 @@ fun ChatView(viewModel: ChatViewModel) {
     // 字体设置
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale  // 全局 UI 字体缩放
-    val chatFs = LocalChatFontScale.current  // 聊天气泡字体缩放
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // 工具栏展开状态
     var showToolbar by remember { mutableStateOf(false) }
     // 模型选择器弹窗
     var showModelPicker by remember { mutableStateOf(false) }
 
-    // Keep scrolled to bottom whenever message sizes change or streaming occurs
-    LaunchedEffect(messages.size, streamingBody, streamingThinking) {
-        // 在 reverseLayout 模式下，索引 0 就是底部。
-        // 为了优化体验：只有当用户已经在底部（firstVisibleItemIndex == 0）时，才在流式输出期间跟随滚动。
-        // 如果用户正在向上翻阅历史消息，不应强行拉回底部。
-        val isAtBottom = listState.firstVisibleItemIndex == 0
-        
-        if (isStreaming) {
-            if (isAtBottom) {
-                listState.scrollToItem(0)
-            }
-        } else if (messages.isNotEmpty()) {
-            // 非流式状态下（如刚发送或刚切回会话），通常期望看到最新消息
+    // 自动滚动到底部的控制逻辑
+    // 核心原则：只在用户已经在底部时跟随滚动，用户主动上翻时不干扰
+    var autoScrollEnabled by remember { mutableStateOf(true) }
+    
+    // 检测用户手动滚动：如果用户向上滚动，暂停自动滚动
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            // 用户正在滚动，检查是否滚出了底部区域
+            val firstVisible = listState.firstVisibleItemIndex
+            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+            // 如果不在第一个item（底部），或者第一个item有明显偏移，说明用户在上翻
+            autoScrollEnabled = firstVisible == 0 && firstVisibleOffset < 50
+        }
+    }
+    
+    // 新消息到来时的自动滚动
+    LaunchedEffect(messages.size) {
+        if (autoScrollEnabled && messages.isNotEmpty()) {
             listState.animateScrollToItem(0)
         }
+    }
+    
+    // 流式输出时的平滑跟随滚动（使用 snapshotFlow 避免 LaunchedEffect 频繁取消重启导致抖动）
+    LaunchedEffect(Unit) {
+        snapshotFlow { streamingBody?.length to streamingThinking?.length }
+            .collect {
+                if (autoScrollEnabled && isStreaming) {
+                    listState.animateScrollToItem(0)
+                }
+            }
     }
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
@@ -195,51 +216,91 @@ fun ChatView(viewModel: ChatViewModel) {
             list.reversed()
         }
 
-        // Messages Box
-        LazyColumn(
-            state = listState,
-            reverseLayout = true,
+        // "回到最新"浮动按钮 - 当用户上翻时显示
+        val showScrollToBottom by remember {
+            derivedStateOf {
+                listState.firstVisibleItemIndex > 0 || 
+                (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset > 100)
+            }
+        }
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
-            contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            // Streaming assistant response (在 reverseLayout 中 index 0 位于最底部)
-            if (isStreaming) {
-                item(key = "streaming_bubble") {
-                    StreamingBubble(
-                        thinkingText = streamingThinking,
-                        bodyText = streamingBody,
-                        isThinkingFinished = isThinkingFinished
-                    )
+            // Messages Box
+            LazyColumn(
+                state = listState,
+                reverseLayout = true,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
+                contentPadding = PaddingValues(vertical = 16.dp)
+            ) {
+                // Streaming assistant response (在 reverseLayout 中 index 0 位于最底部)
+                if (isStreaming) {
+                    item(key = "streaming_bubble") {
+                        StreamingBubble(
+                            thinkingText = streamingThinking,
+                            bodyText = streamingBody,
+                            isThinkingFinished = isThinkingFinished
+                        )
+                    }
                 }
-            }
 
-            items(processedMessages, key = { 
-                when(it) {
-                    is com.example.data.Message -> it.id
-                    is List<*> -> "group_${(it.firstOrNull() as? com.example.data.Message)?.id}"
-                    else -> it.hashCode()
+                items(processedMessages, key = { 
+                    when(it) {
+                        is com.example.data.Message -> it.id
+                        is List<*> -> "group_${(it.firstOrNull() as? com.example.data.Message)?.id}"
+                        else -> it.hashCode()
+                    }
+                }) { item ->
+                    when (item) {
+                        is com.example.data.Message -> BubbleMessage(
+                            message = item,
+                            onRetry = { viewModel.retryMessage(it) }
+                        )
+                        is List<*> -> {
+                            // 渲染工具调用聚合条
+                            @Suppress("UNCHECKED_CAST")
+                            ToolGroupIndicator(messages = item as List<com.example.data.Message>)
+                        }
+                    }
                 }
-            }) { item ->
-                when (item) {
-                    is com.example.data.Message -> BubbleMessage(
-                        message = item,
-                        onRetry = { viewModel.retryMessage(it) }
-                    )
-                    is List<*> -> {
-                        // 渲染工具调用聚合条
-                        @Suppress("UNCHECKED_CAST")
-                        ToolGroupIndicator(messages = item as List<com.example.data.Message>)
+
+                if (messages.isEmpty() && !isStreaming) {
+                    item {
+                        EmptyChatGreeting(defaultProvider, memories)
                     }
                 }
             }
-
-            if (messages.isEmpty() && !isStreaming) {
-                item {
-                    EmptyChatGreeting(defaultProvider, memories)
+            
+            // 浮动按钮，位于右下角
+            if (showScrollToBottom) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 20.dp, bottom = 8.dp)
+                ) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            autoScrollEnabled = true
+                            scope.launch {
+                                listState.animateScrollToItem(0)
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = uiText("chat.scroll_to_bottom", "回到最新"),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -378,6 +439,16 @@ fun ChatView(viewModel: ChatViewModel) {
                             fontSize = (15 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurface
                         ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = {
+                            val toSend = textInput.trim()
+                            if (toSend.isNotBlank() && !isStreaming) {
+                                viewModel.sendMessage(toSend)
+                                textInput = ""
+                                showToolbar = false
+                                keyboardController?.hide()
+                            }
+                        }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
@@ -653,7 +724,7 @@ fun ThinkingProcessPanel(
                             style = androidx.compose.ui.text.TextStyle(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                 fontSize = (12.5f * fs).sp,
-                                fontFamily = FontFamily.Monospace,
+                                fontFamily = resolvedFontFamily,
                                 lineHeight = (18 * fs).sp
                             ),
                             syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -783,37 +854,56 @@ fun BubbleMessage(
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             if (isUser) {
-                Surface(
-                    color = bubbleColor,
-                    shape = RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = 20.dp,
-                        bottomEnd = 4.dp
-                    ),
-                    tonalElevation = 1.dp,
-                    modifier = Modifier
-                        .widthIn(max = 290.dp)
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onLongPress = { offset ->
-                                    pressOffset = DpOffset(offset.x.toDp(), offset.y.toDp())
-                                    showMenu = true
-                                }
-                            )
-                        }
-                ) {
-                    Text(
-                        text = message.content,
-                        color = textColor,
-                        fontSize = (15 * chatFs).sp,
-                        lineHeight = (22 * chatFs).sp,
-                        fontFamily = resolvedFontFamily,
-                        modifier = Modifier.padding(14.dp, 10.dp)
-                    )
+                Box {
+                    Surface(
+                        color = bubbleColor,
+                        shape = RoundedCornerShape(
+                            topStart = 20.dp,
+                            topEnd = 20.dp,
+                            bottomStart = 20.dp,
+                            bottomEnd = 4.dp
+                        ),
+                        tonalElevation = 1.dp,
+                        modifier = Modifier
+                            .widthIn(max = 290.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onLongPress = { offset ->
+                                        pressOffset = DpOffset(offset.x.toDp(), offset.y.toDp())
+                                        showMenu = true
+                                    }
+                                )
+                            }
+                    ) {
+                        Text(
+                            text = message.content,
+                            color = textColor,
+                            fontSize = (15 * chatFs).sp,
+                            lineHeight = (22 * chatFs).sp,
+                            fontFamily = resolvedFontFamily,
+                            modifier = Modifier.padding(14.dp, 10.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        offset = pressOffset,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(uiText("chat.403a6bf8", "复制内容")) },
+                            onClick = {
+                                showMenu = false
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("OmniChat", message.content)
+                                clipboard.setPrimaryClip(clip)
+                            },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
+                        )
+                    }
                 }
             } else {
-                val parsed = parseMessageContent(message.content)
+                val parsed = remember(message.content) { parseMessageContent(message.content) }
                 Column(
                     modifier = Modifier.widthIn(max = 290.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -825,70 +915,69 @@ fun BubbleMessage(
                         )
                     }
                     if (parsed.mainBody.isNotEmpty()) {
-                        Surface(
-                            color = bubbleColor,
-                            shape = RoundedCornerShape(
-                                topStart = 20.dp,
-                                topEnd = 20.dp,
-                                bottomStart = 4.dp,
-                                bottomEnd = 20.dp
-                            ),
-                            tonalElevation = 1.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onLongPress = { offset ->
-                                            pressOffset = DpOffset(offset.x.toDp(), offset.y.toDp())
-                                            showMenu = true
-                                        }
-                                    )
-                                }
-                        ) {
-                            dev.jeziellago.compose.markdowntext.MarkdownText(
-                                markdown = parsed.mainBody,
-                                style = androidx.compose.ui.text.TextStyle(
-                                    color = textColor,
-                                    fontSize = (15 * chatFs).sp,
-                                    lineHeight = (22 * chatFs).sp,
-                                    fontFamily = resolvedFontFamily
+                        Box {
+                            Surface(
+                                color = bubbleColor,
+                                shape = RoundedCornerShape(
+                                    topStart = 20.dp,
+                                    topEnd = 20.dp,
+                                    bottomStart = 4.dp,
+                                    bottomEnd = 20.dp
                                 ),
-                                syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
-                                syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(14.dp, 10.dp)
-                            )
+                                tonalElevation = 1.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onLongPress = { offset ->
+                                                pressOffset = DpOffset(offset.x.toDp(), offset.y.toDp())
+                                                showMenu = true
+                                            }
+                                        )
+                                    }
+                            ) {
+                                dev.jeziellago.compose.markdowntext.MarkdownText(
+                                    markdown = parsed.mainBody,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        color = textColor,
+                                        fontSize = (15 * chatFs).sp,
+                                        lineHeight = (22 * chatFs).sp,
+                                        fontFamily = resolvedFontFamily
+                                    ),
+                                    syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(14.dp, 10.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                offset = pressOffset,
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(uiText("chat.7a875b8c", "重试")) },
+                                    onClick = {
+                                        showMenu = false
+                                        onRetry(message)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(uiText("chat.403a6bf8", "复制内容")) },
+                                    onClick = {
+                                        showMenu = false
+                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("OmniChat", message.content)
+                                        clipboard.setPrimaryClip(clip)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-            offset = pressOffset,
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            if (!isUser) {
-                DropdownMenuItem(
-                    text = { Text(uiText("chat.7a875b8c", "重试")) },
-                    onClick = {
-                        showMenu = false
-                        onRetry(message)
-                    },
-                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(uiText("chat.403a6bf8", "复制内容")) },
-                onClick = {
-                    showMenu = false
-                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("OmniChat", message.content)
-                    clipboard.setPrimaryClip(clip)
-                },
-                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
-            )
         }
     }
 }

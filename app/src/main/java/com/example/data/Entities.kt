@@ -4,6 +4,90 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 多 Agent 工作区相关实体
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Agent 预设模板。
+ *
+ * 用户在设置页预先定义的可复用 Agent 模板，包含名称、描述、系统提示和指定模型。
+ * 在工作区执行时，Orchestrator 可根据角色名称精确匹配预设来初始化 Sub-Agent。
+ */
+@Entity(tableName = "agent_presets")
+data class AgentPreset(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,                          // 必填，不超过 100 字符
+    val description: String = "",              // 选填，摘要展示截取前 50 字符
+    val systemPrompt: String = "",             // 选填，Agent 系统提示
+    val modelConfigId: Long? = null,           // null = 使用工作区默认模型
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * 工作区会话。
+ *
+ * 包含主控 Agent（Orchestrator）和若干子 Agent 的独立会话单元，
+ * 与普通聊天会话分类隔离。isActive=true 表示执行中，false 表示已完成。
+ */
+@Entity(tableName = "workspace_sessions")
+data class WorkspaceSession(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String = "新工作区",
+    val isActive: Boolean = true,              // true = 执行中；false = 已完成
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastActiveAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Agent 实例元数据。
+ *
+ * 记录工作区内每个 Agent 的元数据。仅 Orchestrator 的记录在完成后保留，
+ * Sub-Agent 的记录在工作区完成后被删除。
+ */
+@Entity(
+    tableName = "agent_instances",
+    indices = [Index(value = ["workspaceSessionId"])]
+)
+data class AgentInstance(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val workspaceSessionId: Long,
+    val agentName: String,                     // Orchestrator 固定为 "主控 Agent"
+    val isOrchestrator: Boolean = false,
+    val systemPrompt: String = "",
+    val modelConfigId: Long,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * 工作区消息记录。
+ *
+ * 仅持久化 Orchestrator 的消息；Sub-Agent 消息仅存在内存中，工作区完成后不保留。
+ * isIntervention=true 标记用户干预消息。
+ */
+@Entity(
+    tableName = "workspace_messages",
+    indices = [
+        Index(value = ["workspaceSessionId"]),
+        Index(value = ["agentInstanceId"])
+    ]
+)
+data class WorkspaceMessage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val workspaceSessionId: Long,
+    val agentInstanceId: Long,                 // 关联 AgentInstance
+    val role: String,                          // "user" | "assistant" | "tool" | "system"
+    val content: String,
+    val toolCallId: String? = null,
+    val toolCallsJson: String? = null,
+    val isIntervention: Boolean = false,       // 用户干预消息标记
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 原有实体
+// ═══════════════════════════════════════════════════════════════════════════════
+
 @Entity(tableName = "model_configs")
 data class ModelConfig(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -334,3 +418,54 @@ data class UISettings(
      */
     val uiStrings: String = "{}"
 )
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Agent Team 任务系统实体
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 团队任务。
+ *
+ * 对标 Claude Code 的任务系统（~/.claude/tasks/{teamName}/）。
+ * 空闲 Agent 通过 [TeamTaskDao.claimTask] 自动认领 PENDING 状态且无 owner 的任务。
+ *
+ * 状态流转：PENDING -> IN_PROGRESS -> COMPLETED / FAILED
+ *
+ * @property id 自增主键
+ * @property teamName 所属团队名称
+ * @property subject 任务主题（简短描述）
+ * @property description 任务详细描述
+ * @property status 任务状态：PENDING / IN_PROGRESS / COMPLETED / FAILED
+ * @property owner 认领者 Agent 名称，null 表示未被认领
+ * @property blockedBy 被阻塞的任务 ID 列表，所有依赖任务完成后才能认领
+ * @property createdAt 创建时间戳
+ * @property updatedAt 最近更新时间戳
+ */
+@Entity(
+    tableName = "team_tasks",
+    indices = [Index(value = ["teamName"])]
+)
+data class TeamTask(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val teamName: String,
+    val subject: String,
+    val description: String = "",
+    val status: String = "PENDING",
+    val owner: String? = null,
+    val blockedBy: List<String> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * 任务状态枚举。
+ *
+ * 对标蓝图的 TaskStatus，用于类型安全地表示任务状态。
+ * Room 存储为 String，通过 TypeConverter 自动转换。
+ */
+enum class TaskStatus {
+    PENDING,
+    IN_PROGRESS,
+    COMPLETED,
+    FAILED
+}

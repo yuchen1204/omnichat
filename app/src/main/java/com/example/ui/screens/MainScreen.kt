@@ -25,10 +25,13 @@ import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
+import com.example.ui.viewmodel.WorkspaceViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: ChatViewModel,
+    workspaceViewModel: WorkspaceViewModel,
     modifier: Modifier = Modifier
 ) {
     var currentTab by remember { mutableStateOf("chat") }
@@ -52,8 +55,13 @@ fun MainScreen(
             ) {
                 SessionSidebarPanel(
                     viewModel = viewModel,
+                    workspaceViewModel = workspaceViewModel,
                     onSessionSelected = {
                         currentTab = "chat"
+                        scope.launch { drawerState.close() }
+                    },
+                    onWorkspaceSelected = {
+                        currentTab = "workspace"
                         scope.launch { drawerState.close() }
                     },
                     onSettingsClick = {
@@ -71,6 +79,7 @@ fun MainScreen(
                 MainTopAppBar(
                     currentTab = currentTab,
                     viewModel = viewModel,
+                    workspaceViewModel = workspaceViewModel,
                     onOpenDrawer = {
                         scope.launch { drawerState.open() }
                     }
@@ -86,7 +95,8 @@ fun MainScreen(
             ) {
                 when (currentTab) {
                     "chat" -> ChatView(viewModel)
-                    "settings" -> SettingsView(viewModel, mcpViewModel)
+                    "workspace" -> WorkspaceScreen(workspaceViewModel = workspaceViewModel)
+                    "settings" -> SettingsView(viewModel, mcpViewModel, workspaceViewModel)
                 }
             }
         }
@@ -96,13 +106,15 @@ fun MainScreen(
 @Composable
 fun SettingsView(
     viewModel: ChatViewModel,
-    mcpViewModel: McpViewModel
+    mcpViewModel: McpViewModel,
+    workspaceViewModel: WorkspaceViewModel
 ) {
     var selectedSubTab by remember { mutableStateOf(0) }
     val tabs = listOf(
         uiText("tab.settings.models", "模型配置"),
         uiText("tab.settings.mcp", "MCP工具"),
         uiText("tab.settings.memory", "长效记忆"),
+        uiText("tab.settings.presets", "Agent 预设"),
         uiText("tab.settings.data", "数据管理")
     )
     val settingsViewModel: SettingsViewModel = viewModel()
@@ -141,7 +153,8 @@ fun SettingsView(
                 0 -> ModelsConfigView(viewModel)
                 1 -> McpConfigScreen(mcpViewModel = mcpViewModel)
                 2 -> MemoryAndPromptView(viewModel)
-                3 -> ExportImportView(settingsViewModel = settingsViewModel)
+                3 -> AgentPresetConfigScreen(workspaceViewModel = workspaceViewModel)
+                4 -> ExportImportView(settingsViewModel = settingsViewModel)
             }
         }
     }
@@ -152,6 +165,7 @@ fun SettingsView(
 fun MainTopAppBar(
     currentTab: String,
     viewModel: ChatViewModel,
+    workspaceViewModel: WorkspaceViewModel,
     onOpenDrawer: () -> Unit
 ) {
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
@@ -161,10 +175,13 @@ fun MainTopAppBar(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSession = sessions.find { it.id == activeSessionId }
 
+    val activeWsSession by workspaceViewModel.selectedWorkspaceSession.collectAsStateWithLifecycle()
+
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
 
     val titleText = when (currentTab) {
         "chat" -> activeSession?.title ?: uiText("topbar.title.chat", "会话")
+        "workspace" -> activeWsSession?.title ?: uiText("topbar.title.workspace", "工作区")
         "settings" -> uiText("topbar.title.settings", "设置")
         else -> "AI"
     }

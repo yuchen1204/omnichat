@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(./gradlew testDebugUnitTest --tests \"com.example.workspace.WorkspaceCoreTest\")",
+      "Bash(./gradlew compileDebugKotlin)",
+      "Bash(./gradlew testDebugUnitTest)",
+      "Bash(awk '/^class TeamManager/,0' app/src/main/java/com/example/workspace/TeamManager.kt)"
+    ]
+  }
+}

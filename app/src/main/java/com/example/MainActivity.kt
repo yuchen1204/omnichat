@@ -20,6 +20,7 @@ import com.example.ui.screens.MainScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.SettingsViewModel
+import com.example.ui.viewmodel.WorkspaceViewModel
 
 class MainActivity : AppCompatActivity() {
 
@@ -46,7 +47,11 @@ class MainActivity : AppCompatActivity() {
             
             MyApplicationTheme(uiSettings = uiSettings) {
                 val viewModel: ChatViewModel = viewModel()
-                MainScreen(viewModel = viewModel)
+                val workspaceViewModel: WorkspaceViewModel = viewModel()
+                MainScreen(
+                    viewModel = viewModel,
+                    workspaceViewModel = workspaceViewModel
+                )
             }
         }
     }

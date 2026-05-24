@@ -4,8 +4,27 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverter
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+
+/**
+ * Room TypeConverter，将 List<String> 与 JSON 字符串互转。
+ *
+ * 用于 TeamTask.blockedBy 字段的持久化。
+ */
+class Converters {
+    @TypeConverter
+    fun fromStringList(value: List<String>): String {
+        return if (value.isEmpty()) "" else value.joinToString(",")
+    }
+
+    @TypeConverter
+    fun toStringList(value: String): List<String> {
+        return if (value.isEmpty()) emptyList() else value.split(",")
+    }
+}
 
 @Database(
     entities = [
@@ -19,10 +38,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         McpServer::class,
         UISettings::class,
         ColorSchemePreset::class,
+        // 多 Agent 工作区相关实体
+        AgentPreset::class,
+        WorkspaceSession::class,
+        AgentInstance::class,
+        WorkspaceMessage::class,
+        // Agent Team 任务系统
+        TeamTask::class,
     ],
-    version = 19,
+    version = 21,
     exportSchema = false
 )
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun modelConfigDao(): ModelConfigDao
     abstract fun sessionDao(): SessionDao
@@ -34,6 +61,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun mcpServerDao(): McpServerDao
     abstract fun uiSettingsDao(): UISettingsDao
     abstract fun colorSchemePresetDao(): ColorSchemePresetDao
+    // 多 Agent 工作区相关 DAO
+    abstract fun agentPresetDao(): AgentPresetDao
+    abstract fun workspaceSessionDao(): WorkspaceSessionDao
+    abstract fun agentInstanceDao(): AgentInstanceDao
+    abstract fun workspaceMessageDao(): WorkspaceMessageDao
+    // Agent Team 任务系统 DAO
+    abstract fun teamTaskDao(): TeamTaskDao
 
     companion object {
         @Volatile
@@ -312,6 +346,95 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v19→v20：新增多 Agent 工作区相关表（agent_presets、workspace_sessions、agent_instances、workspace_messages） */
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // agent_presets 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_presets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        systemPrompt TEXT NOT NULL DEFAULT '',
+                        modelConfigId INTEGER,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+
+                // workspace_sessions 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS workspace_sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL DEFAULT '新工作区',
+                        isActive INTEGER NOT NULL DEFAULT 1,
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        lastActiveAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+
+                // agent_instances 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_instances (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        workspaceSessionId INTEGER NOT NULL,
+                        agentName TEXT NOT NULL,
+                        isOrchestrator INTEGER NOT NULL DEFAULT 0,
+                        systemPrompt TEXT NOT NULL DEFAULT '',
+                        modelConfigId INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_instances_workspaceSessionId ON agent_instances(workspaceSessionId)")
+
+                // workspace_messages 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS workspace_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        workspaceSessionId INTEGER NOT NULL,
+                        agentInstanceId INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        toolCallId TEXT,
+                        toolCallsJson TEXT,
+                        isIntervention INTEGER NOT NULL DEFAULT 0,
+                        timestamp INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_messages_workspaceSessionId ON workspace_messages(workspaceSessionId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_messages_agentInstanceId ON workspace_messages(agentInstanceId)")
+            }
+        }
+
+        /** v20→v21：新增 team_tasks 表（Agent Team 任务系统） */
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS team_tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        teamName TEXT NOT NULL,
+                        subject TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'PENDING',
+                        owner TEXT,
+                        blockedBy TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_team_tasks_teamName ON team_tasks(teamName)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -337,7 +460,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_15_16,
                         MIGRATION_16_17,
                         MIGRATION_17_18,
-                        MIGRATION_18_19
+                        MIGRATION_18_19,
+                        MIGRATION_19_20,
+                        MIGRATION_20_21
                     )
                     // 兜底：如果遇到无法处理的跨版本跳跃（如从未知旧版本升级），
                     // 才执行破坏性迁移。正常升级路径不会触发这个。

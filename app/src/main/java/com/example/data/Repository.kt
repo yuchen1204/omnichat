@@ -13,6 +13,12 @@ class AppRepository(private val db: AppDatabase) {
     private val mcpServerDao = db.mcpServerDao()
     private val uiSettingsDao = db.uiSettingsDao()
     private val colorSchemePresetDao = db.colorSchemePresetDao()
+    private val agentPresetDao = db.agentPresetDao()
+    private val workspaceSessionDao = db.workspaceSessionDao()
+    private val agentInstanceDao = db.agentInstanceDao()
+    private val workspaceMessageDao = db.workspaceMessageDao()
+    // Agent Team 任务系统
+    val teamTaskDao: TeamTaskDao = db.teamTaskDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -91,4 +97,81 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getColorSchemePresetById(schemeId: String): ColorSchemePreset? = colorSchemePresetDao.getPresetById(schemeId)
     suspend fun insertColorSchemePreset(preset: ColorSchemePreset) = colorSchemePresetDao.insertPreset(preset)
     suspend fun deleteColorSchemePreset(schemeId: String) = colorSchemePresetDao.deletePresetById(schemeId)
+
+    // Agent Presets
+    val allAgentPresets: Flow<List<AgentPreset>> = agentPresetDao.getAllPresetsFlow()
+    suspend fun getAllAgentPresets(): List<AgentPreset> = agentPresetDao.getAllPresets()
+    suspend fun getAgentPresetById(id: Long): AgentPreset? = agentPresetDao.getPresetById(id)
+    suspend fun insertAgentPreset(preset: AgentPreset): Long = agentPresetDao.insertPreset(preset)
+    suspend fun updateAgentPreset(preset: AgentPreset) = agentPresetDao.updatePreset(preset)
+    suspend fun deleteAgentPreset(preset: AgentPreset) = agentPresetDao.deletePreset(preset)
+
+    // Workspace Sessions
+    val allWorkspaceSessions: Flow<List<WorkspaceSession>> = workspaceSessionDao.getAllSessionsFlow()
+    suspend fun getWorkspaceSessionById(id: Long): WorkspaceSession? = workspaceSessionDao.getById(id)
+    suspend fun insertWorkspaceSession(session: WorkspaceSession): Long = workspaceSessionDao.insertSession(session)
+    suspend fun updateWorkspaceSessionTitle(id: Long, title: String) = workspaceSessionDao.updateTitle(id, title)
+    suspend fun updateWorkspaceSessionStatus(id: Long, isActive: Boolean, lastActiveAt: Long) = 
+        workspaceSessionDao.updateStatus(id, isActive, lastActiveAt)
+    suspend fun deleteWorkspaceSession(id: Long) {
+        // 级联删除：先删除关联的消息和实例
+        workspaceMessageDao.deleteByWorkspaceSession(id)
+        agentInstanceDao.deleteByWorkspaceSession(id)
+        workspaceSessionDao.deleteById(id)
+    }
+
+    // Agent Instances
+    suspend fun getAgentInstancesByWorkspaceSession(wsId: Long): List<AgentInstance> = 
+        agentInstanceDao.getByWorkspaceSession(wsId)
+    suspend fun insertAgentInstance(instance: AgentInstance): Long = agentInstanceDao.insertInstance(instance)
+    suspend fun deleteAgentInstancesByWorkspaceSession(wsId: Long) = agentInstanceDao.deleteByWorkspaceSession(wsId)
+
+    // Workspace Messages
+    fun getWorkspaceMessagesByAgentFlow(agentId: Long): Flow<List<WorkspaceMessage>> = 
+        workspaceMessageDao.getMessagesByAgentFlow(agentId)
+    suspend fun getWorkspaceMessagesByAgent(agentId: Long): List<WorkspaceMessage> = 
+        workspaceMessageDao.getMessagesByAgent(agentId)
+    suspend fun insertWorkspaceMessage(message: WorkspaceMessage): Long = workspaceMessageDao.insertMessage(message)
+    suspend fun deleteWorkspaceMessagesBySession(wsId: Long) = workspaceMessageDao.deleteByWorkspaceSession(wsId)
+
+    // ── Agent Team 任务系统 ─────────────────────────────────────────────
+
+    /**
+     * 观察指定团队的任务列表变化。
+     *
+     * @param teamName 团队名称
+     * @return 任务列表的响应式数据流
+     */
+    fun getTeamTasksFlow(teamName: String): Flow<List<TeamTask>> = teamTaskDao.getTasksFlow(teamName)
+
+    /**
+     * 获取指定团队的所有任务（一次性查询）。
+     */
+    suspend fun getTeamTasks(teamName: String): List<TeamTask> = teamTaskDao.getTasks(teamName)
+
+    /**
+     * 查找可认领的任务。
+     */
+    suspend fun findClaimableTeamTask(teamName: String): TeamTask? = teamTaskDao.findClaimableTask(teamName)
+
+    /**
+     * 插入新任务。
+     */
+    suspend fun insertTeamTask(task: TeamTask): Long = teamTaskDao.insert(task)
+
+    /**
+     * 更新任务。
+     */
+    suspend fun updateTeamTask(task: TeamTask) = teamTaskDao.update(task)
+
+    /**
+     * 原子认领任务。
+     */
+    suspend fun claimTeamTask(taskId: Long, agentName: String, now: Long = System.currentTimeMillis()): Int =
+        teamTaskDao.claimTask(taskId, agentName, now)
+
+    /**
+     * 删除指定团队的所有任务。
+     */
+    suspend fun deleteAllTeamTasks(teamName: String) = teamTaskDao.deleteAllForTeam(teamName)
 }

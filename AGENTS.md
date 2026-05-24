@@ -1,6 +1,6 @@
 # OmniChat — AI Agent Instructions
 
-An Android AI chat app with embedded MCP runtime support, long-term memory, multi-provider model configuration, and AI-adjustable UI theming.
+An Android AI chat app with embedded MCP runtime support, long-term memory, multi-provider model configuration, AI-adjustable UI theming, and a multi-agent workspace system.
 
 ## Quick Reference
 
@@ -17,30 +17,29 @@ An Android AI chat app with embedded MCP runtime support, long-term memory, mult
 ## Build & Run
 
 ```bash
-# Debug build
-./gradlew assembleDebug
-
-# Run unit tests
-./gradlew testDebugUnitTest
-
-# Run Android instrumented tests
-./gradlew connectedDebugAndroidTest
-
-# Screenshot tests (Roborazzi)
-./gradlew verifyRoborazziDebug
+./gradlew assembleDebug           # Debug build
+./gradlew testDebugUnitTest       # Unit tests
+./gradlew testDebugUnitTest --tests "com.example.YourTestClass"  # Single test class
+./gradlew connectedDebugAndroidTest  # Instrumented tests (needs device/emulator)
+./gradlew verifyRoborazziDebug    # Screenshot tests (Roborazzi)
+./gradlew generateUiTextKeys      # Regenerate ui_text_keys.json (runs automatically before asset merge)
 ```
 
-**Before first run:** Create `.env` in project root with `GEMINI_API_KEY=your_key` (see `.env.example`). For debug builds, remove `signingConfig = signingConfigs.getByName("debugConfig")` from `app/build.gradle.kts` if present.
+**Before first run:** Create `.env` in project root with `GEMINI_API_KEY=your_key` (see `.env.example`). The signing config in `app/build.gradle.kts` has hardcoded release keystore passwords — do not commit real secrets.
+
+**Environment quirk:** `gradle.properties` hardcodes `org.gradle.java.home=D:/Program Files/android_studio/jbr`. Override if your JDK is elsewhere.
+
+**CI:** `.github/workflows/release.yml` builds release APKs on tag push (`Release-V*.*`). No CI for PRs or unit tests.
 
 ## Architecture
 
 ```
-Compose UI (Screens) → ViewModels → AppRepository → Room Database (10 entities)
+Compose UI (Screens) → ViewModels → AppRepository → Room Database (15 entities, v21)
                                     ↘ ApiClient (OkHttp + SSE)
                                     ↘ McpRuntimeManager (Node.js / Python / remote_http via JNI)
 ```
 
-- **Single Activity** (`MainActivity`) with two top-level views: `"chat"` and `"settings"` (toggled via `mutableStateOf`)
+- **Single Activity** (`MainActivity`) with three top-level views: `"chat"`, `"workspace"`, and `"settings"` (toggled via `mutableStateOf`)
 - The `"settings"` view contains a **TabRow with 3 sub-tabs**: 模型配置, MCP工具, 长效记忆
 - Session sidebar is a **ModalNavigationDrawer** (hamburger icon in top bar)
 - **No DI framework** — ViewModels directly instantiate `AppDatabase` / `AppRepository`
@@ -52,26 +51,19 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (10 enti
 
 | Package | Purpose |
 |---------|---------|
-| `com.example` | Entry point (`MainActivity.kt`) |
-| `com.example.data` | Room entities, DAOs, database, repository |
-| `com.example.network` | OpenAI-compatible API client with SSE streaming |
+| `com.example` | Entry point (`MainActivity.kt` — note lowercase 'm') |
+| `com.example.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
+| `com.example.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
 | `com.example.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
-| `com.example.ui.screens` | Compose screens and dialogs (`MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`) |
-| `com.example.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
+| `com.example.workspace` | Multi-agent system: `AgentRunner`, `AgentContext`, `TeammateContext`, `TeamManager`, `TaskManager`, `MessageBus` |
+| `com.example.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `WorkspaceScreen`, `AgentPresetConfigScreen`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs` |
+| `com.example.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel`, `WorkspaceViewModel` |
 | `com.example.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
-| `com.example.ui.theme` | Material 3 theming with DB-driven dynamic color |
-
-## App Structure
-
-- **会话中心 (Chat)** — Multi-session chat with SSE streaming; session list in a ModalNavigationDrawer
-- **设置 (Settings)** — Three sub-tabs:
-  1. **模型配置** — Provider/model configuration, endpoint + API key management, custom HTTP headers
-  2. **MCP工具** — MCP server CRUD, runtime status, tool discovery
-  3. **长效记忆** — Cross-session memory items, prompt templates
+| `com.example.ui.theme` | Material 3 theming with DB-driven dynamic color, `UiStrings` |
 
 ## Data Layer
 
-Room database `ai_chat_memory_db` (version 19) with 10 entities. See `app/src/main/java/com/example/data/Entities.kt`.
+Room database `ai_chat_memory_db` (version 21) with 15 entities. See `app/src/main/java/com/example/data/Entities.kt`.
 
 | Entity | Table | Purpose |
 |--------|-------|---------|
@@ -85,8 +77,13 @@ Room database `ai_chat_memory_db` (version 19) with 10 entities. See `app/src/ma
 | `McpServer` | `mcp_servers` | MCP server configs (node/python/remote_http) |
 | `UISettings` | `ui_settings` | Single-row AI-adjustable color/font/layout settings |
 | `ColorSchemePreset` | `color_scheme_presets` | Up to 5 named color scheme snapshots (UUID-keyed) |
+| `AgentPreset` | `agent_presets` | Saved agent configurations for workspace |
+| `WorkspaceSession` | `workspace_sessions` | Multi-agent workspace sessions |
+| `AgentInstance` | `agent_instances` | Running agent instances within a workspace |
+| `WorkspaceMessage` | `workspace_messages` | Messages in workspace agent conversations |
+| `TeamTask` | `team_tasks` | Agent team task management with status/blocking |
 
-18 sequential migrations exist (v1→v19). Always add new migrations when changing schemas — do not rely on `fallbackToDestructiveMigration`. **Rule: 只加列/加表，绝不删数据** (only add columns/tables, never delete data).
+20 sequential migrations exist (v1→v21). A `fallbackToDestructiveMigration` exists as a safety net for unknown old versions — never rely on it for normal development. **Rule: 只加列/加表，绝不删数据** (only add columns/tables, never delete data).
 
 ## Native Code (MCP Runtime)
 
@@ -98,6 +95,26 @@ Room database `ai_chat_memory_db` (version 19) with 10 entities. See `app/src/ma
 - **Constraint**: Node.js can start only once per process (nodejs-mobile limitation) — merge multiple servers into one entry script
 - Native runtimes are optional; app degrades gracefully without them
 - CMake config: `app/src/main/cpp/CMakeLists.txt` with `c++_shared` STL
+
+## Code Search: Always Use Index First
+
+code-index 已为本项目建立了符号索引（628 symbols, 79 files）。**查找代码时必须优先使用索引工具，索引没有结果时才回退到 grep/glob/read。**
+
+| 想做什么 | 优先用 | 回退 |
+|----------|--------|------|
+| 搜索代码模式/关键字 | `code-index_search_code_advanced` | `grep` |
+| 按文件名/模式找文件 | `code-index_find_files` | `glob` |
+| 读文件前先看概要 | `code-index_get_file_summary` | `read` |
+| 查找特定函数/类的源码 | `code-index_get_symbol_body` | `read` + 手动定位 |
+| 查看项目结构/设置 | `code-index_get_settings_info` | — |
+
+**规则：**
+1. 每次搜索前，先调对应的 `code-index_*` 工具
+2. 索引返回了结果 → 直接用，不再调 grep/glob
+3. 索引没返回或返回不够 → 再用 grep/glob 补充
+4. `code-index_find_files` 支持 glob 模式（如 `*.kt`）和纯文件名匹配（如 `README.md`）
+5. `code-index_search_code_advanced` 支持 `file_pattern` 过滤、`regex` 模式、`context_lines` 上下文
+6. 索引可能不含最近几分钟的改动（6秒防抖），如果怀疑索引过期，可调 `code-index_refresh_index`
 
 ## Conventions
 
@@ -116,16 +133,17 @@ Room database `ai_chat_memory_db` (version 19) with 10 entities. See `app/src/ma
 - **Storage permissions**: Android 11+ needs `MANAGE_EXTERNAL_STORAGE` (settings page); required for MCP script deployment
 - **Streaming internals**: SSE chunk prefixes `ERROR:`, `INFO:`, `TOOL_CALL_DELTA:`, `RETRY_RESET:` have special handling in `ChatViewModel`. UI updates throttled to 50ms intervals
 - **No minification** (`isMinifyEnabled = false`); `useLegacyPackaging = false` for jniLibs (allows mmap for faster .so loading)
+- **TypeConverter**: `Converters` class in `AppDatabase.kt` handles `List<String>` ↔ comma-separated string for `TeamTask.blockedBy`
 
 ## Common Tasks
 
 - **Add a new Room entity**: Define in `Entities.kt`, add DAO in `Daos.kt`, update `AppDatabase` with new version + migration, expose in `AppRepository`
 - **Add a new screen/tab**: Add composable in `ui/screens/`, wire into `MainScreen.kt` — either as a top-level view or a sub-tab inside `SettingsView`
 - **Add MCP server support**: Add runtime config in `McpRuntimeManager`, bridge class following `NodeJsBridge`/`PythonBridge` patterns
-- **Add or modify built-in MCP tools (e.g. UI customization, color scheme presets, time tools)**: Add the tool schema in `McpRuntimeManager.kt` (`builtinTools`), and implement the tool logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`)
+- **Add or modify built-in MCP tools**: Add the tool schema in `McpRuntimeManager.kt` (`builtinTools`), and implement the tool logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`)
 - **Add or modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson` methods, add the tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, then use `LocalUiStrings.current` in Compose screens
 - **Modify MCP config/management UI**: Edit `McpConfigScreen.kt` for the main list, and `McpDialogs.kt` for dialogs and overlays (edit/import servers, tool lists, runtime info)
-- **Modify Main screens**: Edit `MainScreen.kt` for main Scaffold/topbar/drawer. Edit `ChatScreen.kt`, `SessionSidebarPanel.kt`, `ModelsConfigScreen.kt`, or `MemoryAndPromptScreen.kt` for respective views/sidebars
+- **Modify Main screens**: Edit `MainScreen.kt` for main Scaffold/topbar/drawer. Edit `ChatScreen.kt`, `SessionSidebarPanel.kt`, `WorkspaceScreen.kt`, `ModelsConfigScreen.kt`, or `MemoryAndPromptScreen.kt` for respective views/sidebars
 - **Modify API client**: Edit `ApiClient.kt` — it handles SSE streaming, model discovery, thinking config, and custom headers
 - **Modify theming**: `UISettings` entity drives the theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it. MCP tools in `BuiltinToolHandler` update it
 - **Add reusable UI components**: Add to `com.example.ui.components` package

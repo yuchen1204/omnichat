@@ -35,11 +35,10 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
+      storeFile = file("${rootDir}/my-upload-key.jks")
+      storePassword = "omnichat123"
       keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      keyPassword = "omnichat123"
     }
   }
 
@@ -48,7 +47,7 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      // signingConfig = signingConfigs.getByName("release")
+      signingConfig = signingConfigs.getByName("release")
     }
     debug {
     }
@@ -170,6 +169,11 @@ val generateUiTextKeys by tasks.registering {
 
 // 在合并 assets 之前先生成 JSON，确保打包进 APK 的是最新版本
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(generateUiTextKeys)
+}
+
+// Lint 任务也依赖 generateUiTextKeys（读取了 assets 目录的输出）
+tasks.matching { it.name.contains("Lint") || it.name.contains("lint") }.configureEach {
     dependsOn(generateUiTextKeys)
 }
 

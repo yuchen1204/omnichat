@@ -226,3 +226,156 @@ interface ColorSchemePresetDao {
     @Query("DELETE FROM color_scheme_presets WHERE schemeId = :schemeId")
     suspend fun deletePresetById(schemeId: String)
 }
+
+@Dao
+interface AgentPresetDao {
+    @Query("SELECT * FROM agent_presets ORDER BY createdAt ASC")
+    fun getAllPresetsFlow(): Flow<List<AgentPreset>>
+
+    @Query("SELECT * FROM agent_presets ORDER BY createdAt ASC")
+    suspend fun getAllPresets(): List<AgentPreset>
+
+    @Query("SELECT * FROM agent_presets WHERE id = :id LIMIT 1")
+    suspend fun getPresetById(id: Long): AgentPreset?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPreset(preset: AgentPreset): Long
+
+    @Update
+    suspend fun updatePreset(preset: AgentPreset)
+
+    @Delete
+    suspend fun deletePreset(preset: AgentPreset)
+}
+
+@Dao
+interface WorkspaceSessionDao {
+    @Query("SELECT * FROM workspace_sessions ORDER BY lastActiveAt DESC")
+    fun getAllSessionsFlow(): Flow<List<WorkspaceSession>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSession(session: WorkspaceSession): Long
+
+    @Query("UPDATE workspace_sessions SET title = :title WHERE id = :id")
+    suspend fun updateTitle(id: Long, title: String)
+
+    @Query("UPDATE workspace_sessions SET isActive = :isActive, lastActiveAt = :lastActiveAt WHERE id = :id")
+    suspend fun updateStatus(id: Long, isActive: Boolean, lastActiveAt: Long)
+
+    @Query("DELETE FROM workspace_sessions WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("SELECT * FROM workspace_sessions WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): WorkspaceSession?
+}
+
+@Dao
+interface AgentInstanceDao {
+    @Query("SELECT * FROM agent_instances WHERE workspaceSessionId = :wsId ORDER BY createdAt ASC")
+    suspend fun getByWorkspaceSession(wsId: Long): List<AgentInstance>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInstance(instance: AgentInstance): Long
+
+    @Query("DELETE FROM agent_instances WHERE workspaceSessionId = :wsId")
+    suspend fun deleteByWorkspaceSession(wsId: Long)
+}
+
+@Dao
+interface WorkspaceMessageDao {
+    @Query("SELECT * FROM workspace_messages WHERE agentInstanceId = :agentId ORDER BY timestamp ASC")
+    fun getMessagesByAgentFlow(agentId: Long): Flow<List<WorkspaceMessage>>
+
+    @Query("SELECT * FROM workspace_messages WHERE agentInstanceId = :agentId ORDER BY timestamp ASC")
+    suspend fun getMessagesByAgent(agentId: Long): List<WorkspaceMessage>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMessage(message: WorkspaceMessage): Long
+
+    @Query("DELETE FROM workspace_messages WHERE workspaceSessionId = :wsId")
+    suspend fun deleteByWorkspaceSession(wsId: Long)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Agent Team 任务系统 DAO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 团队任务数据访问对象。
+ *
+ * 对标 Claude Code 的任务文件操作（~/.claude/tasks/{teamName}/）。
+ * 支持任务的创建、查询、认领和清理。
+ */
+@Dao
+interface TeamTaskDao {
+    /**
+     * 观察指定团队的任务列表变化。
+     *
+     * @param teamName 团队名称
+     * @return 任务列表的响应式数据流，按 ID 升序排列
+     */
+    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName ORDER BY id ASC")
+    fun getTasksFlow(teamName: String): Flow<List<TeamTask>>
+
+    /**
+     * 获取指定团队的所有任务（一次性查询）。
+     *
+     * @param teamName 团队名称
+     * @return 任务列表，按 ID 升序排列
+     */
+    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName ORDER BY id ASC")
+    suspend fun getTasks(teamName: String): List<TeamTask>
+
+    /**
+     * 查找可认领的任务。
+     *
+     * 查找状态为 PENDING 且无认领者的第一个任务。
+     * 对标 inProcessRunner.ts 中 findAvailableTask() 的逻辑。
+     *
+     * @param teamName 团队名称
+     * @return 可认领的任务，如果没有则返回 null
+     */
+    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName AND status IN ('PENDING', 'AVAILABLE') AND owner IS NULL ORDER BY id ASC LIMIT 1")
+    suspend fun findClaimableTask(teamName: String): TeamTask?
+
+    /**
+     * 插入新任务。
+     *
+     * @param task 任务实体
+     * @return 新插入任务的 ID
+     */
+    @Insert
+    suspend fun insert(task: TeamTask): Long
+
+    /**
+     * 更新任务。
+     *
+     * @param task 任务实体（根据 id 匹配）
+     */
+    @Update
+    suspend fun update(task: TeamTask)
+
+    /**
+     * 原子认领任务。
+     *
+     * 通过 SQL 的 WHERE 条件保证原子性：只有当任务尚未被认领（owner IS NULL）时
+     * 才会更新成功。返回值为受影响的行数（0 表示认领失败，1 表示成功）。
+     *
+     * @param taskId 任务 ID
+     * @param agentName 认领者 Agent 名称
+     * @param now 更新时间戳
+     * @return 受影响的行数（0 或 1）
+     */
+    @Query("UPDATE team_tasks SET owner = :agentName, status = 'IN_PROGRESS', updatedAt = :now WHERE id = :taskId AND owner IS NULL")
+    suspend fun claimTask(taskId: Long, agentName: String, now: Long = System.currentTimeMillis()): Int
+
+    /**
+     * 删除指定团队的所有任务。
+     *
+     * 团队解散时调用，清理关联的任务数据。
+     *
+     * @param teamName 团队名称
+     */
+    @Query("DELETE FROM team_tasks WHERE teamName = :teamName")
+    suspend fun deleteAllForTeam(teamName: String)
+}

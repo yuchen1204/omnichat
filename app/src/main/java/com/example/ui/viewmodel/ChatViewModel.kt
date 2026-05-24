@@ -223,9 +223,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun generateSystemPrompt(customSystemPrompt: String): String {
-        // 3. Fetch physical long-term memories list
-        // 按 confidence 降序取前 MEMORY_INJECT_LIMIT 条，避免记忆过多稀释 context
-        val localMemories = repository.getAllMemories().take(MEMORY_INJECT_LIMIT)
+        // 3. Fetch physical long-term memories list (single DB call, reuse for both injection and count)
+        val allMemories = repository.getAllMemories()
+        val localMemories = allMemories.take(MEMORY_INJECT_LIMIT)
         val memoriesText = if (localMemories.isEmpty()) {
             "无 (None recorded)"
         } else {
@@ -256,7 +256,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
 
         // Hidden memory search instruction
-        val totalMemoryCount = repository.getAllMemories().size
+        val totalMemoryCount = allMemories.size
         if (totalMemoryCount > MEMORY_INJECT_LIMIT) {
             finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top $MEMORY_INJECT_LIMIT entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
         }
@@ -296,7 +296,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String) {
+    private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0) {
         val messageHistory = repository.getMessagesBySession(sessionId)
         val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
         
@@ -308,6 +308,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         var accumulatedText = ""
         var lastUiUpdateTime = 0L
         val accumulatedToolCalls = mutableMapOf<Int, org.json.JSONObject>()
+        var errorReceived = false
 
         fun updateStreamingStates(text: String) {
             val thinkStartTag = "<think>"
@@ -337,10 +338,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools)
             .collect { chunk ->
+                if (errorReceived) return@collect
                 if (chunk.startsWith("ERROR:")) {
                     accumulatedText += "\n$chunk"
                     updateStreamingStates(accumulatedText)
                     isStreaming = false
+                    errorReceived = true
                 } else if (chunk.startsWith("INFO:")) {
                     accumulatedText += "\n$chunk"
                     updateStreamingStates(accumulatedText)
@@ -410,8 +413,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         val wasOnlyToolCalls = finalContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
-        isStreaming = false
-        // 清理流式状态
+        // 清理流式状态，但保持 isStreaming=true 直到工具调用处理完毕
         currentStreamingThinking = ""
         currentStreamingBody = ""
         isThinkingFinished = true
@@ -451,10 +453,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             if (hasNewResults) {
-                // Trigger the follow-up turn
-                startAssistantResponse(sessionId, config, systemPrompt)
+                // Trigger the follow-up turn with depth limit to prevent infinite loops
+                if (toolCallDepth < MAX_TOOL_CALL_DEPTH) {
+                    startAssistantResponse(sessionId, config, systemPrompt, toolCallDepth + 1)
+                } else {
+                    repository.insertMessage(
+                        Message(sessionId = sessionId, role = "assistant", content = "⚠️ 工具调用深度超过限制（${MAX_TOOL_CALL_DEPTH}），已自动停止以防止无限循环。")
+                    )
+                }
             }
         }
+
+        // 所有处理完毕后才关闭 streaming 状态
+        isStreaming = false
 
         if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {
             triggerMemorySync()
@@ -749,6 +760,7 @@ Rules:
         private const val MIN_NEW_CHARS_THRESHOLD = 200          // 新消息总字符数低于此值时跳过同步
         private const val DEDUP_SIMILARITY_THRESHOLD = 0.55      // ADD 去重的 Jaccard 相似度阈值
         private const val MEMORY_INJECT_LIMIT = 30               // 注入 system prompt 的最大记忆条数
+        private const val MAX_TOOL_CALL_DEPTH = 10               // 工具调用最大递归深度，防止无限循环
     }
 
     /**
