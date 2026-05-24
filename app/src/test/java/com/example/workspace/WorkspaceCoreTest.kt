@@ -78,10 +78,14 @@ class WorkspaceCoreTest {
     fun testTeamManagerParsingAndMarkers() {
         val teamManager = makeTeamManager()
 
-        // 完成标记检测
-        assertTrue(teamManager.isCompletionMarker("【任务完成】 已经搞定了"))
-        assertTrue(teamManager.isCompletionMarker("  【任务完成】搞定了 "))
-        assertFalse(teamManager.isCompletionMarker("搞定了 【任务完成】"))
+        // 完成标记检测（要求标记出现在末尾，避免中间偶然包含时误触发）
+        assertFalse(teamManager.isCompletionMarker("【任务完成】 已经搞定了"))
+        assertFalse(teamManager.isCompletionMarker("  【任务完成】搞定了 "))
+        assertTrue(teamManager.isCompletionMarker("搞定了 【任务完成】"))
+        assertTrue(teamManager.isCompletionMarker("【任务完成】"))
+        assertTrue(teamManager.isCompletionMarker("全部完成。【任务完成】"))
+        assertTrue(teamManager.isCompletionMarker("全部完成。【任务完成】。"))
+        assertFalse(teamManager.isCompletionMarker("当你完成时输出【任务完成】然后继续"))
 
         // 默认 taskMode = CLAIM
         val directiveJson = """

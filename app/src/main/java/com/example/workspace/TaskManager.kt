@@ -30,17 +30,20 @@ class TaskManager(private val dao: TeamTaskDao) {
      * @param teamName 所属团队名称
      * @param subject 任务主题（简短描述）
      * @param description 任务详细描述（可选）
+     * @param blockedBy 被阻塞的任务 ID 列表，所有依赖任务完成后才能认领（可选）
      * @return 新创建的 TeamTask 对象
      */
     suspend fun createTask(
         teamName: String,
         subject: String,
-        description: String = ""
+        description: String = "",
+        blockedBy: List<String> = emptyList()
     ): TeamTask {
         val task = TeamTask(
             teamName = teamName,
             subject = subject,
             description = description,
+            blockedBy = blockedBy,
         )
         val id = dao.insert(task)
         return task.copy(id = id)
@@ -81,4 +84,27 @@ class TaskManager(private val dao: TeamTaskDao) {
      * @return 任务列表的响应式数据流
      */
     fun observeTasks(teamName: String): Flow<List<TeamTask>> = dao.getTasksFlow(teamName)
+
+    /**
+     * 标记指定 Agent 的任务为完成。
+     *
+     * WHY: executeTask 完成后必须更新任务状态，否则任务永远卡在 IN_PROGRESS，
+     * UI 显示异常且依赖链无法推进。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     */
+    suspend fun completeTask(teamName: String, agentName: String) {
+        dao.completeTaskByOwner(teamName, agentName)
+    }
+
+    /**
+     * 标记指定 Agent 的任务为失败。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     */
+    suspend fun failTask(teamName: String, agentName: String) {
+        dao.failTaskByOwner(teamName, agentName)
+    }
 }

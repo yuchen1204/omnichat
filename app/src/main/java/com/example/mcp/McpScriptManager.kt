@@ -1,6 +1,7 @@
 package com.example.mcp
 
 import android.content.Context
+import android.os.Build
 import android.os.Environment
 import android.util.Log
 import java.io.File
@@ -19,33 +20,44 @@ object McpScriptManager {
 
     fun getMcpDir(context: Context): File {
         val external = Environment.getExternalStorageDirectory()
-        return if (external != null && Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED) {
+        val hasStorageAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            external != null && Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED
+        }
+        val dir = if (hasStorageAccess) {
             File(external, "OmniChat/mcp")
         } else {
             File(context.filesDir, "mcp")
         }
+        Log.i(TAG, "[getMcpDir] hasStorageAccess=$hasStorageAccess, SDK=${Build.VERSION.SDK_INT}, dir=${dir.absolutePath}")
+        return dir
     }
 
     fun ensureScriptsDeployed(context: Context): File {
         val mcpDir = getMcpDir(context)
-        mcpDir.mkdirs()
+        val created = mcpDir.mkdirs()
+        Log.i(TAG, "[ensureScriptsDeployed] mcpDir=${mcpDir.absolutePath}, dirExists=${mcpDir.exists()}, created=$created")
         for ((assetPath, fileName) in BUILTIN_SCRIPTS) {
             val destFile = File(mcpDir, fileName)
             deployScript(context, assetPath, destFile)
         }
-        Log.i(TAG, "MCP dir: ${mcpDir.absolutePath}")
+        Log.i(TAG, "[ensureScriptsDeployed] 部署完成, mcpDir=${mcpDir.absolutePath}")
         return mcpDir
     }
 
     private fun deployScript(context: Context, assetPath: String, destFile: File) {
         try {
             val assetBytes = context.assets.open(assetPath).use { it.readBytes() }
-            if (destFile.exists() && destFile.readBytes().contentEquals(assetBytes)) return
+            if (destFile.exists() && destFile.readBytes().contentEquals(assetBytes)) {
+                Log.d(TAG, "[deployScript] 已是最新: ${destFile.name}")
+                return
+            }
             destFile.parentFile?.mkdirs()
             destFile.writeBytes(assetBytes)
-            Log.d(TAG, "Deployed: ${destFile.absolutePath}")
+            Log.i(TAG, "[deployScript] 已部署: ${destFile.absolutePath}")
         } catch (e: Exception) {
-            Log.e(TAG, "Deploy failed: $assetPath", e)
+            Log.e(TAG, "[deployScript] 部署失败: $assetPath → ${destFile.absolutePath}", e)
         }
     }
 

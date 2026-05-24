@@ -1,5 +1,6 @@
 package com.example.workspace
 
+import android.util.Log
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -117,18 +118,6 @@ sealed class TeamMessage {
      * 结果上报。
      *
      * Teammate 完成任务后向 Leader 上报执行结果。
-     * 对标旧版 AgentMessageBus 中的 result report 格式。
-     *
-     * @property from 发送方 Agent 名称
-     * @property taskId 对应的任务 ID
-     * @property result 执行结果描述
-     * @property success 任务是否成功完成
-     * @property timestamp 发送时间戳
-     */
-    /**
-     * 结果上报。
-     *
-     * Teammate 完成任务后向 Leader 上报执行结果。
      *
      * @property from 发送方 Agent 名称
      * @property taskId 对应的任务 ID
@@ -229,13 +218,13 @@ class MessageBus {
      * 获取或创建指定 Agent 的收件箱 Channel。
      *
      * 如果该 Agent 尚无收件箱，会自动创建一个无界 Channel。
-     * 无界 Channel 确保发送方不会被阻塞（与文件邮箱的异步写入语义一致）。
+     * 使用 [ConcurrentHashMap.computeIfAbsent] 保证原子性，避免并发创建导致 Channel 丢失。
      *
      * @param agentName Agent 名称
      * @return 该 Agent 的收件箱 Channel
      */
     fun getOrCreateInbox(agentName: String): Channel<TeamMessage> {
-        return inboxes.getOrPut(agentName) {
+        return inboxes.computeIfAbsent(agentName) {
             Channel(Channel.UNLIMITED)
         }
     }
@@ -250,14 +239,21 @@ class MessageBus {
      * @param message 要发送的消息
      */
     suspend fun send(recipientName: String, message: TeamMessage) {
-        getOrCreateInbox(recipientName).send(message)
-        _globalEvents.emit(message)
+        // WHY: removeInbox 关闭 Channel 后，其他协程可能仍在尝试发送，
+        // 未捕获的 ClosedSendChannelException 会终止发送方协程
+        try {
+            getOrCreateInbox(recipientName).send(message)
+        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+            Log.w("MessageBus", "Channel closed for $recipientName, message dropped")
+        }
+        // BUG-12：_globalEvents 当前无订阅者，移除无效 emit，保留字段供未来扩展
     }
 
     /**
      * 向团队所有成员广播消息（排除发送方自己）。
      *
      * 对标 Claude Code 中 Leader 向所有 Teammate 广播权限更新等场景。
+     * 只发射一次 globalEvents，避免收集器收到重复消息。
      *
      * @param senderName 发送方名称
      * @param message 要广播的消息
@@ -268,11 +264,19 @@ class MessageBus {
         message: TeamMessage,
         teamMembers: List<String>
     ) {
+        // WHY: 单个成员 Channel 关闭不应阻止其他成员接收广播消息
         for (member in teamMembers) {
             if (member != senderName) {
-                send(member, message)
+                try {
+                    getOrCreateInbox(member).send(message)
+                } catch (e: Exception) {
+                    Log.w("MessageBus", "Failed to broadcast to $member: ${e.message}")
+                }
             }
         }
+        // 只发射一次全局事件
+        // BUG-12：_globalEvents 当前无订阅者，移除无效 emit，保留字段供未来扩展
+        // _globalEvents.emit(message)
     }
 
     /**
@@ -298,6 +302,24 @@ class MessageBus {
      */
     fun tryReceive(agentName: String): TeamMessage? {
         return getOrCreateInbox(agentName).tryReceive().getOrNull()
+    }
+
+    /**
+     * 重新投递消息到收件箱（不触发 globalEvents）。
+     *
+     * 用于 collectPendingResults 等场景，避免重复广播。
+     * WHY: 与 [send] 一致，捕获 ClosedSendChannelException，防止 Channel 在
+     * deleteTeam/triggerWorkspaceComplete 期间被关闭时崩溃调用方协程。
+     *
+     * @param recipientName 接收方 Agent 名称
+     * @param message 要重新投递的消息
+     */
+    suspend fun requeue(recipientName: String, message: TeamMessage) {
+        try {
+            getOrCreateInbox(recipientName).send(message)
+        } catch (e: kotlinx.coroutines.channels.ClosedSendChannelException) {
+            Log.w("MessageBus", "Channel closed for $recipientName, requeue dropped")
+        }
     }
 
     /**

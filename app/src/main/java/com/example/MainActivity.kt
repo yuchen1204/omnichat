@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,6 +25,8 @@ import com.example.ui.viewmodel.WorkspaceViewModel
 
 class MainActivity : AppCompatActivity() {
 
+    private val mcpRuntimeManager by lazy { com.example.mcp.McpRuntimeManager.getInstance(applicationContext) }
+
     // Android 13 以下的运行时权限请求（READ_EXTERNAL_STORAGE）
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -37,10 +40,16 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val hasStorageAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+        Log.i("MainActivity", "[onCreate] hasStorageAccess=$hasStorageAccess, SDK=${Build.VERSION.SDK_INT}")
         requestStoragePermissions()
         // 在 Activity 创建时立即触发 MCP 运行时自动启动（已启用的 server 在数据库就绪后会被自动启动）。
         // 这样不依赖任何 ViewModel 或 Composable 的初始化时机，确保 MCP 在应用启动后第一时间运行。
-        com.example.mcp.McpRuntimeManager.getInstance(applicationContext)
+        mcpRuntimeManager
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             val uiSettings by settingsViewModel.uiSettings.collectAsState()
@@ -56,15 +65,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        val hasStorageAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+        Log.i("MainActivity", "[onResume] hasStorageAccess=$hasStorageAccess")
+        // 外部存储权限可能在 onCreate 时还未授予，此时 MCP 脚本部署和 server 启动会失败。
+        // 在 onResume 中重试，确保权限授予后 MCP 能正常启动。
+        mcpRuntimeManager.ensureAutoStarted()
+    }
+
     private fun requestStoragePermissions() {
         when {
             // Android 11+（API 30+）：请求 MANAGE_EXTERNAL_STORAGE
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                 if (!Environment.isExternalStorageManager()) {
+                    Log.i("MainActivity", "[requestStoragePermissions] 请求 MANAGE_EXTERNAL_STORAGE 权限")
                     val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                         data = Uri.fromParts("package", packageName, null)
                     }
                     manageStorageLauncher.launch(intent)
+                } else {
+                    Log.i("MainActivity", "[requestStoragePermissions] MANAGE_EXTERNAL_STORAGE 已授予")
                 }
             }
             // Android 9-10（API 28-29）：请求 READ_EXTERNAL_STORAGE

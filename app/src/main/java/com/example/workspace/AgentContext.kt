@@ -47,14 +47,14 @@ enum class AgentStatus {
  * @property isOrchestrator 是否为主控 Agent
  * @property systemPrompt 系统提示（已移除 [CROSS_SESSION_MEMORY] 占位符）
  * @property modelConfig 模型配置
- * @property messages 内存中的对话历史（Orchestrator 的消息会被持久化，Sub-Agent 的消息仅存内存）
+ * @property messages 内存中的对话历史（使用 ArrayList + ReentrantReadWriteLock 保证线程安全，见 AgentRunner）
  */
 data class AgentContext(
     val agentName: String,
     val isOrchestrator: Boolean,
     val systemPrompt: String,
     val modelConfig: ModelConfig,
-    val messages: MutableList<AgentMessage> = mutableListOf()
+    val messages: MutableList<AgentMessage> = ArrayList()  // BUG-5/6：改为 ArrayList，由 AgentRunner 的 messagesLock 保护
 )
 
 /**
@@ -82,30 +82,118 @@ fun AgentContext.buildSystemPrompt(
  *
  * 通过 tool call 创建 Sub-Agent，不再依赖 LLM 输出原始 JSON。
  * Orchestrator 调用 create_agents 工具来创建团队，调用 assign_task 工具来分配任务。
+ * 调用 continue_conversation 工具来继续与已有 Agent 对话。
  */
 const val ORCHESTRATOR_SYSTEM_PROMPT = """
 你是一个多 Agent 工作区的主控 Agent（Orchestrator）。你的职责是：
 1. 理解用户任务，制定执行计划
 2. 使用 create_agents 工具创建必要的 Sub-Agent
-3. 使用 assign_task 工具向 Sub-Agent 分配具体的任务
-4. 汇总所有 Sub-Agent 的结果后输出【任务完成】
+3. 使用 assign_task 工具向 Sub-Agent 分配具体的任务（direct 模式）
+4. 使用 continue_conversation 工具继续与已有 Agent 对话（利用已加载的上下文）
+5. 汇总所有 Sub-Agent 的结果后输出【任务完成】
 
-工作流程：
-1. 分析用户任务，确定需要哪些 Sub-Agent 及其角色
-2. 调用 create_agents 工具创建团队（可指定 taskMode: "direct" 或 "claim"）
-3. create_agents 返回后，Agent 已就绪
-4. 如果是 direct 模式且没有 dependsOn，调用 assign_task 工具为每个 Agent 分配具体任务
-5. 等待所有 Sub-Agent 完成（你会在后续消息中收到 <task-notification> 包含结果）
-6. 汇总结果并输出【任务完成】
+## 模式选择
 
-重要规则：
-- 必须使用 create_agents 和 assign_task 工具，不要手动输出 JSON
-- 如果有依赖关系（如 B 需要 A 的结果），在 create_agents 的 dependsOn 中声明。使用 dependsOn 时，系统会自动按依赖顺序执行所有 Agent 并在 create_agents 工具返回值中包含汇总结果，不需要再调用 assign_task
+### direct 模式（推荐用于精确控制）
+- 你负责为每个 Agent 写完整的任务 prompt，通过 assign_task 逐一分配
+- 适合：任务边界清晰、需要精确控制执行内容、Agent 间有信息传递依赖
+- 流程：create_agents(taskMode:"direct") → assign_task(to, task) × N → 等待 <task-notification>
+
+### claim 模式（推荐用于并发独立任务）
+- 系统自动将任务发布到队列，Agent 自行认领执行
+- 适合：多个 Agent 执行同类型的独立子任务（如批量处理、并行分析）
+- 流程：create_agents(taskMode:"claim") → 等待 <task-notification>
+- **关键**：claim 模式下任务描述由 role 字段承载，必须写得足够具体（见下方规范）
+
+### dependsOn 模式（推荐用于流水线）
+- 在 create_agents 中声明 Agent 间的依赖关系，系统自动串行执行
+- 适合：研究→实施、采集→分析→报告等有明确先后顺序的流水线
+- 流程：create_agents(dependsOn:[...]) → 工具直接返回所有结果，无需 assign_task
+- **关键**：上游结果会自动注入下游 Agent 的上下文，下游 role 中说明如何使用上游产出
+
+## create_agents 字段规范
+
+### name（Agent 名称）
+- 使用英文驼峰或下划线，简洁描述职责：FileScanner、DataAnalyzer、ReportWriter
+- 避免泛化名称：Agent1、Worker、Helper
+
+### role（任务描述）—— 最重要的字段
+**direct 模式**：role 是给你自己看的角色说明，实际任务通过 assign_task 发送，可以简短
+  - 示例：`"扫描 /Download 目录，列出所有文件名和扩展名"`
+
+**claim 模式**：role 直接作为任务 prompt 发给 Agent，必须完全自包含：
+  - 必须包含：具体操作目标、输入路径/数据、期望输出格式、完成标准
+  - 示例：`"扫描 /Download 目录下的所有文件（不递归子目录），统计每种扩展名的数量。输出格式：每行一种类型，格式为「扩展名: 数量」，最后一行输出总文件数。无扩展名的文件归类为「无扩展名」。"`
+  - ❌ 错误：`"分析文件"` / `"处理数据"` / `"完成任务"`
+
+**dependsOn 模式**：role 描述本 Agent 的职责以及如何使用上游产出：
+  - 示例：`"基于上游 FileScanner 的扫描结果，计算各文件类型的占比（保留1位小数），生成一份包含类型、数量、占比三列的汇总表格"`
+
+### systemPrompt（系统提示，可选）
+- 用于覆盖 Agent 的默认行为，适合需要特定专业角色的场景
+- 示例：`"你是一个数据分析专家，擅长从原始数据中提取统计规律。回答时优先给出数字结论，再解释原因。"`
+- 不填则使用默认的子 Agent 提示（执行任务、完成即停止）
+
+## assign_task 规范（direct 模式专用）
+
+assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包含：
+
+✅ 正确格式：
+```
+扫描 /Download 目录（不递归子目录），列出所有文件的完整路径和扩展名。
+输出格式：每行一个文件，格式为「文件名.扩展名」。
+完成后直接输出列表，不要写入文件。
+```
+
+❌ 错误格式：
+```
+扫描下载目录（太模糊，没有路径）
+根据之前的分析处理数据（依赖外部上下文）
+完成文件扫描任务（没有任何具体信息）
+```
+
+## 工作流程
+
+1. 分析用户任务，选择合适的模式（direct / claim / dependsOn）
+2. 调用 create_agents 工具，按上述规范填写每个 Agent 的字段
+3. **direct 模式**：create_agents 返回后，立即调用 assign_task 为每个 Agent 分配完整任务
+4. **claim 模式**：create_agents 返回后，等待 <task-notification>（Agent 自动认领执行）
+5. **dependsOn 模式**：create_agents 工具直接返回所有结果，无需 assign_task，直接汇总
+6. 收到所有 <task-notification> 后，汇总结果并输出【任务完成】
+
+## Continue vs Spawn 决策
+
+- 研究的文件就是要编辑的文件 → continue_conversation（高上下文重叠）
+- 研究范围广但实施范围窄 → create_agents（避免探索噪声）
+- 修正失败的实现 → continue_conversation（Agent 有错误上下文）
+- 验证另一个 Agent 刚写的代码 → create_agents（需要独立视角）
+- 第一次方案完全错误 → create_agents（避免锚定效应）
+
+## 重要规则
+
+- 必须使用 create_agents、assign_task、continue_conversation 工具，不要手动输出 JSON
 - 如果任务简单不需要创建 Sub-Agent，直接完成并输出【任务完成】
 - 收到 <task-notification> 时，解析其中的 Agent 结果并继续调度
 - 严禁在没有收到 <task-notification> 或工具返回结果的情况下假设、编造、虚构任务执行结果
 - 不要自己生成 Sub-Agent 的工作输出，必须等待真实的执行结果
-- 当向 Sub-Agent 分配涉及文件操作的任务时，提示它们：文件系统根目录为 "/"，下载目录为 "/Download"
+- 涉及文件操作时，提示 Agent：文件系统根目录为 "/"，下载目录为 "/Download"
+
+## 禁止甩锅式委派（核心铁律）
+
+- 收到 Sub-Agent 的研究结果后，你必须自己做综合分析
+- 禁止写"根据XX的发现"、"基于XX的结果"然后直接转发给另一个 Agent
+- 每个 prompt 必须包含完整上下文，Worker 看不到你的对话历史
+- 你必须理解 Worker 的发现，然后写出具体的实施规格
+
+示例（正确 vs 错误）：
+❌ 错误 - 甩锅式委派：
+  assign_task(to: "coder", task: "根据 researcher 的发现修复 bug")
+
+✅ 正确 - 综合分析后委派：
+  assign_task(to: "coder", task: "修复 src/auth/validate.ts:42 的空指针。Session 过期时 user 字段为 undefined，但 token 仍在缓存中。在访问 user.id 前添加空检查，如果为 null 返回 401 'Session expired'。完成后报告修改的文件和行号。")
+
+✅ 正确 - Continue 场景（研究完成后实施）：
+  continue_conversation(to: "researcher", message: "根据你刚才的研究，请修复 src/auth/validate.ts:42 的空指针。添加空检查，如果 user 为 null 返回 401。完成后报告修改的文件和行号。")
 
 可用工具：
 [MCP_TOOLS]
@@ -121,14 +209,14 @@ val CREATE_AGENTS_TOOL = JSONObject().apply {
     put("type", "function")
     put("function", JSONObject().apply {
         put("name", "create_agents")
-        put("description", "创建子 Agent 团队。调用后系统会自动创建 Agent 并等待就绪。")
+        put("description", "创建子 Agent 团队。支持三种模式：direct（你通过 assign_task 为每个 Agent 写完整任务 prompt，适合精确控制）；claim（role 字段直接作为任务 prompt 发给认领的 Agent，必须完全自包含，适合并发独立任务）；dependsOn（声明 Agent 间依赖关系，系统自动串行执行，工具返回时已包含所有结果）。")
         put("parameters", JSONObject().apply {
             put("type", "object")
             put("properties", JSONObject().apply {
                 put("taskMode", JSONObject().apply {
                     put("type", "string")
                     put("enum", JSONArray().put("direct").put("claim"))
-                    put("description", "任务分配模式。direct=直接分配，claim=自动认领。默认 claim")
+                    put("description", "任务分配模式。direct=精确控制，创建后需调用 assign_task 分配完整任务；claim=自动认领，role 字段直接作为任务 prompt 发给 Agent（必须完全自包含：含路径、输入、输出格式、完成标准）。默认 claim。")
                 })
                 put("agents", JSONObject().apply {
                     put("type", "array")
@@ -138,20 +226,20 @@ val CREATE_AGENTS_TOOL = JSONObject().apply {
                         put("properties", JSONObject().apply {
                             put("name", JSONObject().apply {
                                 put("type", "string")
-                                put("description", "Agent 名称，如 CodeWriter、CodeReviewer")
+                                put("description", "Agent 名称，用英文驼峰描述职责，如 FileScanner、DataAnalyzer、ReportWriter。避免泛化名称如 Agent1、Worker。")
                             })
                             put("role", JSONObject().apply {
                                 put("type", "string")
-                                put("description", "Agent 角色描述，用于任务分配")
+                                put("description", "任务描述。【direct 模式】角色说明，可简短，实际任务通过 assign_task 发送。【claim 模式】直接作为任务 prompt 发给 Agent，必须完全自包含（含具体路径、输入数据、输出格式、完成标准），❌错误：\"分析文件\"，✅正确：\"扫描 /Download 目录（不递归），统计每种扩展名数量，输出格式：每行「扩展名: 数量」，无扩展名归类为「无扩展名」\"。【dependsOn 模式】描述本 Agent 职责及如何使用上游产出。")
                             })
                             put("systemPrompt", JSONObject().apply {
                                 put("type", "string")
-                                put("description", "Agent 的系统提示（可选）")
+                                put("description", "覆盖 Agent 默认行为的系统提示（可选）。适合需要特定专业角色时使用，如「你是数据分析专家，回答时优先给出数字结论」。不填则使用默认子 Agent 提示。")
                             })
                             put("dependsOn", JSONObject().apply {
                                 put("type", "array")
                                 put("items", JSONObject().apply { put("type", "string") })
-                                put("description", "依赖的其他 Agent 名称列表（可选）")
+                                put("description", "依赖的其他 Agent 名称列表（可选）。填写后系统自动串行执行：上游完成后其结果自动注入本 Agent 上下文，create_agents 工具等待整条依赖链全部完成后才返回。")
                             })
                         })
                         put("required", JSONArray().put("name").put("role"))
@@ -167,21 +255,21 @@ val ASSIGN_TASK_TOOL = JSONObject().apply {
     put("type", "function")
     put("function", JSONObject().apply {
         put("name", "assign_task")
-        put("description", "向指定的 Sub-Agent 分配具体任务。仅在 direct 模式下使用。")
+        put("description", "向指定的 Sub-Agent 分配具体任务。仅在 direct 模式下使用。task 字段是 Agent 收到的完整任务 prompt，必须完全自包含（含具体路径、操作目标、输出格式、完成标准），Agent 看不到你的对话历史。❌错误：\"扫描下载目录\"（太模糊）；✅正确：\"扫描 /Download 目录（不递归），列出所有文件的完整路径和扩展名，每行一个文件，格式为「文件名.扩展名」，完成后直接输出列表\"。")
         put("parameters", JSONObject().apply {
             put("type", "object")
             put("properties", JSONObject().apply {
                 put("to", JSONObject().apply {
                     put("type", "string")
-                    put("description", "目标 Agent 名称")
+                    put("description", "目标 Agent 名称（必须是已通过 create_agents 创建的 Agent）")
                 })
                 put("task", JSONObject().apply {
                     put("type", "string")
-                    put("description", "具体任务描述")
+                    put("description", "完整任务 prompt。必须自包含：具体操作目标 + 输入路径/数据 + 期望输出格式 + 完成标准。Agent 没有你的上下文，不能引用「之前的分析」「上面的结果」等。")
                 })
                 put("context", JSONObject().apply {
                     put("type", "string")
-                    put("description", "任务上下文信息（可选）")
+                    put("description", "补充上下文（可选）。可用于传递前序 Agent 的关键输出，作为本次任务的输入数据。")
                 })
             })
             put("required", JSONArray().put("to").put("task"))
@@ -189,5 +277,64 @@ val ASSIGN_TASK_TOOL = JSONObject().apply {
     })
 }
 
+val CONTINUE_CONVERSATION_TOOL = JSONObject().apply {
+    put("type", "function")
+    put("function", JSONObject().apply {
+        put("name", "continue_conversation")
+        put("description", "继续与已有 Sub-Agent 对话，利用其已加载的上下文继续工作，避免重新创建。适用场景：1) 研究完成后让同一 Agent 执行实施（高上下文重叠）；2) 修正失败的实现（Agent 有错误上下文）；3) 追加更多任务。message 必须完全自包含，包含具体文件路径、行号和要做什么。")
+        put("parameters", JSONObject().apply {
+            put("type", "object")
+            put("properties", JSONObject().apply {
+                put("to", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "目标 Agent 名称（必须是当前仍活跃的 Agent）")
+                })
+                put("message", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "要发送的消息内容。必须完全自包含，包含具体文件路径、行号和要做什么改动。Agent 虽有历史上下文，但仍需明确指出操作目标。")
+                })
+            })
+            put("required", JSONArray().put("to").put("message"))
+        })
+    })
+}
+
+val PEER_MESSAGE_TOOL = JSONObject().apply {
+    put("type", "function")
+    put("function", JSONObject().apply {
+        put("name", "peer_message")
+        put("description", """向其他 Sub-Agent 发送消息，实现 Agent 间直接协作。消息会投递到目标 Agent 的收件箱，它会在下一次轮询时收到并处理。
+
+使用场景：
+1. 请求帮助："我需要你帮忙分析这个文件的内容"
+2. 传递中间结果："代码分析完成，以下是关键发现..."
+3. 协调分工："我已经处理了 A 部分，请你处理 B 部分"
+4. 广播通知："所有 Agent 请注意，需求已变更"
+
+注意：消息是异步投递的，目标 Agent 不会立即收到。如果需要等待响应，请在后续轮次中检查收件箱。""")
+        put("parameters", JSONObject().apply {
+            put("type", "object")
+            put("properties", JSONObject().apply {
+                put("to", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "目标 Agent 名称（如 'researcher'、'coder'）。使用 '*' 可广播给团队中所有其他 Sub-Agent（不包括自己）。")
+                })
+                put("message", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "消息正文。可以包含代码、文件路径、问题描述等任何文本内容。")
+                })
+                put("summary", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "消息摘要（5-10 词），用于 UI 预览。例如：'请求代码审查'、'返回分析结果'")
+                })
+            })
+            put("required", JSONArray().put("to").put("message"))
+        })
+    })
+}
+
 /** Orchestrator 专属工具名称集合，子 Agent 不可调用 */
-val ORCHESTRATOR_ONLY_TOOLS = setOf("create_agents", "assign_task")
+val ORCHESTRATOR_ONLY_TOOLS = setOf("create_agents", "assign_task", "continue_conversation")
+
+/** 所有 Agent 共享的协作工具 */
+val COLLABORATION_TOOLS = setOf("peer_message")

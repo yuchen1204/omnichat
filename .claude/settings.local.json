@@ -5,7 +5,8 @@
       "Bash(./gradlew testDebugUnitTest --tests \"com.example.workspace.WorkspaceCoreTest\")",
       "Bash(./gradlew compileDebugKotlin)",
       "Bash(./gradlew testDebugUnitTest)",
-      "Bash(awk '/^class TeamManager/,0' app/src/main/java/com/example/workspace/TeamManager.kt)"
+      "Bash(awk '/^class TeamManager/,0' app/src/main/java/com/example/workspace/TeamManager.kt)",
+      "Bash(xxd -l 20 \"E:/omnichat/app/src/main/java/com/example/ui/screens/WorkspaceScreen.kt\")"
     ]
   }
 }

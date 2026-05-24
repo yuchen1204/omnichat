@@ -335,7 +335,7 @@ interface TeamTaskDao {
      * @param teamName 团队名称
      * @return 可认领的任务，如果没有则返回 null
      */
-    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName AND status IN ('PENDING', 'AVAILABLE') AND owner IS NULL ORDER BY id ASC LIMIT 1")
+    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName AND status = 'PENDING' AND owner IS NULL AND blockedBy = '' ORDER BY id ASC LIMIT 1")
     suspend fun findClaimableTask(teamName: String): TeamTask?
 
     /**
@@ -378,4 +378,26 @@ interface TeamTaskDao {
      */
     @Query("DELETE FROM team_tasks WHERE teamName = :teamName")
     suspend fun deleteAllForTeam(teamName: String)
+
+    /**
+     * 标记指定 Agent 的 IN_PROGRESS 任务为 COMPLETED。
+     *
+     * WHY: Agent 执行完任务后必须更新状态，否则任务永远卡在 IN_PROGRESS。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     * @param now 更新时间戳
+     */
+    @Query("UPDATE team_tasks SET status = 'COMPLETED', updatedAt = :now WHERE teamName = :teamName AND owner = :agentName AND status = 'IN_PROGRESS'")
+    suspend fun completeTaskByOwner(teamName: String, agentName: String, now: Long = System.currentTimeMillis())
+
+    /**
+     * 标记指定 Agent 的 IN_PROGRESS 任务为 FAILED。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     * @param now 更新时间戳
+     */
+    @Query("UPDATE team_tasks SET status = 'FAILED', updatedAt = :now WHERE teamName = :teamName AND owner = :agentName AND status = 'IN_PROGRESS'")
+    suspend fun failTaskByOwner(teamName: String, agentName: String, now: Long = System.currentTimeMillis())
 }

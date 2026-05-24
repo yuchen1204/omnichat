@@ -12,12 +12,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -26,6 +23,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 数据模型
@@ -119,20 +118,6 @@ sealed class WaitResult {
     data object Aborted : WaitResult()
 }
 
-/**
- * Agent 完成信号。
- *
- * 用于 [spawnWithDependencies] 中替代直接读取 Orchestrator 收件箱，
- * 避免多个协程竞争同一个 Channel。
- *
- * @property agentName 完成的 Agent 名称
- * @property success 是否成功完成
- */
-private data class TeammateCompletion(
-    val agentName: String,
-    val success: Boolean,
-)
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // TeamManager
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -212,20 +197,18 @@ class TeamManager(
 
     // ─── 工作区完成标记 ──-
 
-    @Volatile
-    private var isCompleted = false
+    // WHY: @Volatile 只保证可见性不保证原子性，并发调用 triggerWorkspaceComplete
+    // 可能导致 onWorkspaceComplete 触发两次。AtomicBoolean.compareAndSet 保证原子切换。
+    private val isCompleted = AtomicBoolean(false)
 
     // ─── Agent 完成信号（用于依赖流程） ───
-
-    /** Agent 完成信号，replay=1 确保不会丢失 */
-    private val agentCompletionFlow = MutableSharedFlow<TeammateCompletion>(replay = 1)
 
     /** 用于等待特定 Agent 完成的 Deferred 映射 */
     private val agentCompletionDeferreds = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
 
     // ─── 颜色分配索引 ───
 
-    private var colorIndex = 0
+    private val colorIndex = AtomicInteger(0)
 
     // ─── 跨会话记忆文本 ───
 
@@ -431,9 +414,9 @@ class TeamManager(
         onAgentCreated(uniqueName, false)
         Log.d(TAG, "Spawned teammate '$uniqueName' with model ${actualModelConfig.name}")
 
-        // 启动执行循环，传入占位 prompt，实际任务由 TaskAssignment 消息触发
+        // 启动执行循环，实际任务由 TaskAssignment 消息触发
         val job = teammateScope.launch {
-            runTeammateLoop(runner, identity, "等待主控分配任务...")
+            runTeammateLoop(runner, identity)
         }
         teammateJobs[uniqueName] = job
 
@@ -458,6 +441,49 @@ class TeamManager(
     }
 
     /**
+     * 继续与已有 Agent 对话。
+     *
+     * 对标 Claude Code 的 SendMessage 工具，允许 Orchestrator 向已存在的 Agent
+     * 发送后续消息，利用其已加载的上下文继续工作。
+     *
+     * 如果目标 Agent 处于 IDLE 状态，直接发送消息。
+     * 如果目标 Agent 已完成（COMPLETED），会尝试恢复执行。
+     *
+     * @param agentName 目标 Agent 名称
+     * @param message 消息内容
+     * @return 操作结果描述
+     */
+    suspend fun continueAgent(agentName: String, message: String): String {
+        val state = _teamState.value ?: return "Error: 无活跃团队"
+        
+        if (agentName !in state.teammates) {
+            return "Error: Agent '$agentName' 不存在"
+        }
+        
+        if (agentName == ORCHESTRATOR_NAME) {
+            return "Error: 不能向 Orchestrator 发送 continue 消息，请使用用户干预"
+        }
+
+        val teammateState = state.teammates[agentName]!!
+        
+        // WHY: 目标 agent 协程已退出时，消息发到无人读取的 channel，orchestrator 会永久等待响应
+        if (teammateJobs[agentName]?.isActive != true) {
+            return "Error: Agent '$agentName' 已结束，无法继续对话"
+        }
+        
+        Log.d(TAG, "Continue agent '$agentName' (status: ${teammateState.status})")
+        
+        // 通过 MessageBus 发送消息
+        // Teammate 的执行循环会从收件箱中读取消息并继续执行
+        messageBus.send(
+            agentName,
+            TeamMessage.Text(from = ORCHESTRATOR_NAME, content = message)
+        )
+        
+        return "已向 $agentName 发送继续消息，等待其响应..."
+    }
+
+    /**
      * 向所有 Sub-Agent 广播消息。
      *
      * @param message 广播内容
@@ -474,6 +500,72 @@ class TeamManager(
             message = TeamMessage.Text(from = ORCHESTRATOR_NAME, content = message),
             teamMembers = subAgentNames,
         )
+    }
+
+    /**
+     * Sub-Agent 间直接通信。
+     *
+     * 对标 Claude Code 的 SendMessage 工具，允许 Sub-Agent 向其他 Sub-Agent 发送消息。
+     * 支持点对点发送和广播（to = "*"）。
+     *
+     * @param from 发送方 Agent 名称
+     * @param to 接收方 Agent 名称，"*" 表示广播给所有其他 Sub-Agent
+     * @param message 消息内容
+     * @param summary 消息摘要（可选）
+     * @return 操作结果描述
+     */
+    suspend fun sendPeerMessage(
+        from: String,
+        to: String,
+        message: String,
+        summary: String = "",
+    ): String {
+        val state = _teamState.value ?: return "Error: 无活跃团队"
+
+        // 广播模式
+        if (to == "*") {
+            val subAgentNames = state.teammates.values
+                .filter { !it.isOrchestrator && it.identity.agentName != from }
+                .map { it.identity.agentName }
+
+            if (subAgentNames.isEmpty()) {
+                return "Error: 没有其他 Sub-Agent 可以接收消息"
+            }
+
+            messageBus.broadcast(
+                senderName = from,
+                message = TeamMessage.Text(
+                    from = from,
+                    content = message,
+                    summary = summary,
+                ),
+                teamMembers = subAgentNames,
+            )
+
+            Log.d(TAG, "Peer broadcast from '$from' to ${subAgentNames.size} agents")
+            return "已广播给 ${subAgentNames.size} 个 Agent: ${subAgentNames.joinToString(", ")}"
+        }
+
+        // 点对点模式
+        if (to !in state.teammates) {
+            return "Error: 目标 Agent '$to' 不存在"
+        }
+
+        if (to == from) {
+            return "Error: 不能向自己发送消息"
+        }
+
+        messageBus.send(
+            to,
+            TeamMessage.Text(
+                from = from,
+                content = message,
+                summary = summary,
+            ),
+        )
+
+        Log.d(TAG, "Peer message from '$from' to '$to'")
+        return "已向 $to 发送消息"
     }
 
     /**
@@ -503,18 +595,29 @@ class TeamManager(
     /**
      * 强制终止指定 Teammate。
      *
-     * 取消其协程作用域，立即停止执行。不经过 shutdown_request 流程。
+     * 取消其协程作用域，等待 Job 完成后再清理资源。
+     * 确保 finally 块中的清理逻辑能够正常执行。
      *
      * @param agentName 目标 Agent 名称
      */
-    fun killTeammate(agentName: String) {
+    suspend fun killTeammate(agentName: String) {
         Log.d(TAG, "Killing teammate '$agentName'")
+        
+        // 取消协程作用域
         teammateScopes[agentName]?.cancel()
+        
+        // 等待 Job 完成，确保 finally 块执行完毕
+        try {
+            teammateJobs[agentName]?.join()
+        } catch (_: Exception) { }
+        
+        // Job 完成后再清理资源
         teammateScopes.remove(agentName)
         teammateJobs.remove(agentName)
         runners[agentName]?.dispose()
         runners.remove(agentName)
         messageBus.removeInbox(agentName)
+        agentCompletionDeferreds.remove(agentName)
 
         _teamState.update { state ->
             state?.copy(teammates = state.teammates - agentName)
@@ -532,14 +635,24 @@ class TeamManager(
         val state = _teamState.value ?: return@withContext
 
         Log.d(TAG, "Deleting team '${state.teamName}'")
+        Log.d(TAG, "deleteTeam: Current teammateJobs keys = ${teammateJobs.keys}")
 
         // 取消所有 Teammate 协程
         teammateScopes.values.forEach { it.cancel() }
         // 等待所有任务完成
-        teammateJobs.values.forEach {
-            try {
-                it.join()
-            } catch (_: Exception) { }
+        val currentJob = coroutineContext[Job]
+        teammateJobs.forEach { (name, job) ->
+            if (job !== currentJob) {
+                try {
+                    Log.d(TAG, "deleteTeam: joining job for '$name'...")
+                    job.join()
+                    Log.d(TAG, "deleteTeam: joined job for '$name' successfully")
+                } catch (e: Exception) { 
+                    Log.d(TAG, "deleteTeam: error joining job for '$name': ${e.message}")
+                }
+            } else {
+                Log.d(TAG, "deleteTeam: skipping join for current job '$name'")
+            }
         }
 
         // 清理运行时
@@ -548,12 +661,16 @@ class TeamManager(
         runners.values.forEach { it.dispose() }
         runners.clear()
         messageBus.clear()
+        
+        // 清理完成信号（先完成所有 Deferred，避免等待的协程永久挂起）
+        agentCompletionDeferreds.values.forEach { it.complete(Unit) }
+        agentCompletionDeferreds.clear()
 
         // 清理持久化数据
         repository.deleteAllTeamTasks(state.teamName)
 
-        isCompleted = false
-        colorIndex = 0
+        isCompleted.set(false)
+        colorIndex.set(0)
         crossSessionMemoryText = ""
         _teamState.value = null
 
@@ -614,13 +731,19 @@ class TeamManager(
     /**
      * 检测完成标记。
      *
-     * 需求 5.5：最终响应以"【任务完成】"开头。
+     * 要求完成标记出现在文本末尾（允许尾随空白/标点），避免文本中间偶然包含标记时误触发。
      *
      * @param text 输出文本
      * @return true 如果包含完成标记
      */
     fun isCompletionMarker(text: String): Boolean {
-        return text.trim().startsWith(COMPLETION_MARKER)
+        val trimmed = text.trimEnd()
+        // 使用 endsWith 而非 contains：Orchestrator 讨论工作流时可能提到"请输出【任务完成】"，
+        // contains 会将其误判为完成信号导致工作区提前终止。只在文本末尾匹配可排除此类误触发。
+        return trimmed.endsWith(COMPLETION_MARKER)
+            || trimmed.endsWith("【任务完成】。")
+            || trimmed.endsWith("【任务完成】！")
+            || trimmed.endsWith("【任务完成】!")
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -642,17 +765,15 @@ class TeamManager(
      * @param initialTask 用户初始任务，空字符串表示恢复等待
      */
     private suspend fun runOrchestratorLoop(runner: AgentRunner, initialTask: String) {
-        // 会话恢复场景：跳过首轮 LLM 调用，直接等待用户输入
-        if (initialTask.isBlank()) {
+        // 会话恢复场景：跳过首轮 LLM 调用，直接等待用户输入（BUG-1：改为循环，消除尾递归）
+        var currentInput = if (initialTask.isBlank()) {
             updateTeammateStatus(ORCHESTRATOR_NAME, AgentStatus.IDLE)
-            val firstInput = waitForOrchestratorInput()
-            runOrchestratorLoop(runner, firstInput)
-            return
+            waitForOrchestratorInput()
+        } else {
+            initialTask
         }
 
-        var currentInput = initialTask
-
-        while (!isCompleted && coroutineContext.isActive) {
+        while (!isCompleted.get() && coroutineContext.isActive) {
             // 先检查是否有 Sub-Agent 结果待汇总（在 runTurn 之前注入）
             val pendingResults = collectPendingResults()
             if (pendingResults.isNotEmpty()) {
@@ -664,6 +785,10 @@ class TeamManager(
 
             // 执行一轮对话（内部可能触发 create_agents / assign_task 工具调用）
             runner.runTurn(currentInput)
+
+            // 排空 spawnWithDependencies 等工具调用产生的残留 IdleNotification，
+            // 防止下次 collectPendingResults 将其作为新消息重复处理
+            drainExcessIdleNotifications()
 
             // 获取最后一条 assistant 消息
             val history = runner.getHistory()
@@ -704,11 +829,12 @@ class TeamManager(
     private suspend fun runTeammateLoop(
         runner: AgentRunner,
         identity: TeammateIdentity,
-        initialPrompt: String,
     ) {
         // 注册完成 Deferred，供 spawnWithDependencies 等待
-        val completionDeferred = CompletableDeferred<Unit>()
-        agentCompletionDeferreds[identity.agentName] = completionDeferred
+        // 使用 getOrPut 避免覆盖 spawnWithDependencies 已注册的 Deferred
+        val completionDeferred = agentCompletionDeferreds.getOrPut(identity.agentName) {
+            CompletableDeferred()
+        }
 
         try {
             // 创建后立即进入 IDLE 等待状态
@@ -723,8 +849,6 @@ class TeamManager(
                 )
             )
 
-            var currentPrompt = initialPrompt
-
             while (coroutineContext.isActive) {
                 // 等待收到 TaskAssignment 或 Text 消息后才执行
                 val waitResult = waitForNextMessage(identity)
@@ -735,53 +859,10 @@ class TeamManager(
                         break
                     }
                     is WaitResult.NewMessage -> {
-                        currentPrompt = waitResult.message
-                        updateTeammateStatus(identity.agentName, AgentStatus.STREAMING)
-                        runner.runTurn(currentPrompt)
-
-                        // 发送 ResultReport（包含执行结果和工具调用输出）
-                        val resultSummary = collectAgentResult(runner)
-                        messageBus.send(
-                            ORCHESTRATOR_NAME,
-                            TeamMessage.ResultReport(
-                                from = identity.agentName,
-                                taskId = "",
-                                result = resultSummary,
-                                success = true,
-                            )
-                        )
-
-                        updateTeammateStatus(identity.agentName, AgentStatus.IDLE)
-                        messageBus.send(
-                            ORCHESTRATOR_NAME,
-                            TeamMessage.IdleNotification(
-                                from = identity.agentName,
-                                idleReason = IdleReason.AVAILABLE,
-                            )
-                        )
+                        executeTask(runner, identity, waitResult.message)
                     }
                     is WaitResult.TaskClaimed -> {
-                        currentPrompt = waitResult.taskDescription
-                        updateTeammateStatus(identity.agentName, AgentStatus.STREAMING)
-                        runner.runTurn(currentPrompt)
-
-                        // 发送 ResultReport（包含执行结果和工具调用输出）
-                        val resultSummary = collectAgentResult(runner)
-                        messageBus.send(
-                            ORCHESTRATOR_NAME,
-                            TeamMessage.ResultReport(
-                                from = identity.agentName,
-                                taskId = "",
-                                result = resultSummary,
-                                success = true,
-                            )
-                        )
-
-                        updateTeammateStatus(identity.agentName, AgentStatus.IDLE)
-                        messageBus.send(
-                            ORCHESTRATOR_NAME,
-                            TeamMessage.IdleNotification(from = identity.agentName)
-                        )
+                        executeTask(runner, identity, waitResult.taskDescription)
                     }
                     is WaitResult.Aborted -> {
                         break
@@ -793,6 +874,8 @@ class TeamManager(
         } catch (e: Exception) {
             Log.e(TAG, "Teammate '${identity.agentName}' error: ${e.message}", e)
             onError("Agent '${identity.agentName}' 出错: ${e.message}")
+            // WHY: 执行失败时必须更新任务状态为 FAILED，否则任务永远卡在 IN_PROGRESS
+            taskManager.failTask(identity.teamName, identity.agentName)
             // 发送失败报告
             messageBus.send(
                 ORCHESTRATOR_NAME,
@@ -806,15 +889,62 @@ class TeamManager(
         } finally {
             updateTeammateStatus(identity.agentName, AgentStatus.COMPLETED)
             messageBus.removeInbox(identity.agentName)
-            agentCompletionDeferreds.remove(identity.agentName)
 
-            // 发射完成信号，供依赖流程等待
-            val success = true // 如果走到这里说明没有未捕获异常
-            agentCompletionFlow.emit(TeammateCompletion(identity.agentName, success))
+            // WHY: completionDeferred 就是 agentCompletionDeferreds[identity.agentName]
+            // 同一对象，只调用一次 complete() 即可；调用两次第二次会静默返回 false 但属于多余操作。
+            // 先 complete 再 remove，保证 waitForAgentCompletion 中的 await() 能在 remove 前收到信号。
             completionDeferred.complete(Unit)
+            agentCompletionDeferreds.remove(identity.agentName)
 
             Log.d(TAG, "Teammate '${identity.agentName}' loop exited")
         }
+    }
+
+    /**
+     * 执行任务并上报结果（NewMessage / TaskClaimed 共用逻辑）。
+     *
+     * @param runner Teammate 的 AgentRunner
+     * @param identity Teammate 身份信息
+     * @param taskPrompt 任务描述文本
+     */
+    private suspend fun executeTask(
+        runner: AgentRunner,
+        identity: TeammateIdentity,
+        taskPrompt: String,
+    ) {
+        // 记录当前消息偏移量，避免 continueAgent 场景下 collectAgentResult 混入前序任务的工具输出
+        val messageOffset = runner.getHistory().size
+        updateTeammateStatus(identity.agentName, AgentStatus.STREAMING)
+        runner.runTurn(taskPrompt)
+
+        val resultSummary = collectAgentResult(runner, fromIndex = messageOffset)
+
+        // WHY: 检查最后消息是否包含错误，设置准确的 success 状态
+        val history = runner.getHistory()
+        val lastContent = history.lastOrNull()?.content ?: ""
+        val hasError = lastContent.startsWith("ERROR:") || lastContent.contains("执行出错")
+
+        messageBus.send(
+            ORCHESTRATOR_NAME,
+            TeamMessage.ResultReport(
+                from = identity.agentName,
+                taskId = "",
+                result = resultSummary,
+                success = !hasError,
+            )
+        )
+
+        // WHY: 任务完成后必须更新状态为 COMPLETED，否则任务永远卡在 IN_PROGRESS
+        taskManager.completeTask(identity.teamName, identity.agentName)
+
+        updateTeammateStatus(identity.agentName, AgentStatus.IDLE)
+        messageBus.send(
+            ORCHESTRATOR_NAME,
+            TeamMessage.IdleNotification(
+                from = identity.agentName,
+                idleReason = IdleReason.AVAILABLE,
+            )
+        )
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -854,6 +984,18 @@ class TeamManager(
             // 检查任务列表（对标 tryClaimNextTask）
             val task = taskManager.tryClaimNextTask(identity.teamName, identity.agentName)
             if (task != null) {
+                // 认领成功后再检查一次收件箱。
+                // 竞态窗口：tryReceive 返回 null → tryClaimNextTask 期间 → 新消息到达。
+                // 若不补查，该消息会留在收件箱中直到下一轮循环，可能丢失 ShutdownRequest 等高优先级消息。
+                // ShutdownRequest 和 Text 优先于已认领的任务返回；其他消息类型（IdleNotification 等）可延后处理。
+                val pendingMsg = messageBus.tryReceive(identity.agentName)
+                if (pendingMsg != null) {
+                    when (pendingMsg) {
+                        is TeamMessage.ShutdownRequest -> return WaitResult.ShutdownRequest(pendingMsg)
+                        is TeamMessage.Text -> return WaitResult.NewMessage(pendingMsg.content, pendingMsg.from)
+                        else -> { /* 其他消息类型忽略，优先处理已认领的任务 */ }
+                    }
+                }
                 Log.d(TAG, "Teammate '${identity.agentName}' claimed task #${task.id}")
                 return WaitResult.TaskClaimed(
                     "任务 #${task.id}: ${task.subject}\n${task.description}"
@@ -866,6 +1008,10 @@ class TeamManager(
                 withTimeoutOrNull(POLL_INTERVAL_MS) {
                     messageBus.receive(identity.agentName)
                 }
+            } catch (e: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+                // Channel 已关闭，Agent 正在退出
+                Log.d(TAG, "Channel closed for ${identity.agentName}")
+                return WaitResult.Aborted
             } catch (_: Exception) {
                 null
             }
@@ -892,21 +1038,40 @@ class TeamManager(
      *
      * Orchestrator 空闲时阻塞在 [MessageBus.receive] 上，等待用户干预或 Sub-Agent 消息。
      * 收到 ResultReport 时立即返回汇总结果，避免死锁。
-     * 添加 10 分钟超时，防止所有 Sub-Agent 崩溃时 Orchestrator 永久挂起。
+     * 添加 10 分钟超时和连续超时计数器，防止所有 Sub-Agent 崩溃时 Orchestrator 永久挂起。
      *
      * @return 输入内容
      */
     private suspend fun waitForOrchestratorInput(): String {
         val timeoutMs = 10 * 60 * 1000L // 10 分钟
+        val maxConsecutiveTimeouts = 3 // 最多连续超时 3 次（30 分钟）
+        var consecutiveTimeouts = 0
+
+        // 排空积累的 IdleNotification，避免阻塞在空闲通知上
+        drainExcessIdleNotifications()
+
         while (coroutineContext.isActive) {
             val msg = withTimeoutOrNull(timeoutMs) {
                 messageBus.receive(ORCHESTRATOR_NAME)
             }
             if (msg == null) {
-                Log.w(TAG, "Orchestrator input timeout (${timeoutMs / 1000}s), checking state")
-                if (isCompleted) break
+                consecutiveTimeouts++
+                Log.w(TAG, "Orchestrator input timeout ($consecutiveTimeouts/$maxConsecutiveTimeouts)")
+                if (isCompleted.get() || consecutiveTimeouts >= maxConsecutiveTimeouts) {
+                    Log.w(TAG, "Orchestrator giving up after $consecutiveTimeouts timeouts")
+                    // 超时退出前排空多余的 IdleNotification，防止下次调用时积累
+                    drainExcessIdleNotifications()
+                    // WHY: 超时退出时必须标记 isCompleted，否则 ViewModel 捕获异常后
+                    // 团队状态停留在非完成状态，UI 无法正确显示工作区已结束
+                    if (isCompleted.compareAndSet(false, true)) {
+                        _teamState.update { s -> s?.copy(isCompleted = true) }
+                    }
+                    break
+                }
                 continue
             }
+            // 收到消息，重置超时计数器
+            consecutiveTimeouts = 0
             when (msg) {
                 is TeamMessage.Text -> {
                     return msg.content
@@ -914,16 +1079,34 @@ class TeamManager(
                 is TeamMessage.ResultReport -> {
                     // 收到子 Agent 结果报告，立即返回汇总
                     Log.d(TAG, "Received result from '${msg.from}' while orchestrator waiting")
+
+                    // WHY: 如果工作区已完成（triggerWorkspaceComplete 已调用），
+                    // 这是 spawnWithDependencies 之后 Agent 协程延迟发出的残留 ResultReport，
+                    // 直接丢弃，不再注入 Orchestrator 上下文，避免触发多余的 LLM 轮次。
+                    if (isCompleted.get()) {
+                        Log.d(TAG, "Workspace already completed, dropping late ResultReport from '${msg.from}'")
+                        continue
+                    }
+                    
+                    // 从对应的 AgentRunner 获取 usage 数据
+                    val stats = runners[msg.from]?.getUsageStats()
+                    
                     return buildString {
                         appendLine("<task-notification>")
-                        appendLine("  <agent name=\"${msg.from}\">")
-                        appendLine("    <status>${if (msg.success) "completed" else "failed"}</status>")
-                        appendLine("    <result>${msg.result}</result>")
-                        appendLine("  </agent>")
+                        appendLine("  <task-id>${msg.from}</task-id>")
+                        appendLine("  <status>${if (msg.success) "completed" else "failed"}</status>")
+                        appendLine("  <summary>Agent '${msg.from}' ${if (msg.success) "completed" else "failed"}</summary>")
+                        appendLine("  <result>${msg.result}</result>")
+                        appendLine("  <usage>")
+                        appendLine("    <total_tokens>${stats?.totalTokens ?: 0}</total_tokens>")
+                        appendLine("    <tool_uses>${stats?.toolUseCount ?: 0}</tool_uses>")
+                        appendLine("    <duration_ms>${stats?.durationMs ?: 0}</duration_ms>")
+                        appendLine("  </usage>")
                         appendLine("</task-notification>")
                     }
                 }
                 is TeamMessage.IdleNotification -> {
+                    // 正常的单条通知仍正常处理（排空函数已移除多余的）
                     Log.d(TAG, "Sub-agent '${msg.from}' is idle (orchestrator waiting for input)")
                 }
                 else -> {
@@ -931,54 +1114,13 @@ class TeamManager(
                 }
             }
         }
-        error("Orchestrator coroutine cancelled or timed out")
-    }
-
-    /**
-     * 等待所有 Sub-Agent 完成初始任务。
-     *
-     * 阻塞直到所有指定 Sub-Agent 发送 [TeamMessage.IdleNotification]。
-     * 期间收到的非空闲消息会被缓冲并在等待结束后重新注入。
-     * 添加超时机制，避免无限等待。
-     *
-     * @param subAgentNames 需要等待的 Sub-Agent 名称列表
-     * @param timeoutMs 超时时间（毫秒），默认 5 分钟
-     */
-    private suspend fun waitForSubAgents(subAgentNames: List<String>, timeoutMs: Long = 300_000L) {
-        val pending = subAgentNames.toMutableSet()
-        val bufferedMessages = mutableListOf<TeamMessage>()
-        val deadline = System.currentTimeMillis() + timeoutMs
-
-        Log.d(TAG, "Waiting for ${pending.size} sub-agent(s): $pending")
-
-        while (pending.isNotEmpty() && coroutineContext.isActive) {
-            val remaining = deadline - System.currentTimeMillis()
-            if (remaining <= 0) {
-                Log.w(TAG, "Timeout waiting for sub-agents: $pending")
-                break
-            }
-
-            val msg = try {
-                withTimeoutOrNull(remaining) {
-                    messageBus.receive(ORCHESTRATOR_NAME)
-                }
-            } catch (_: Exception) { null }
-
-            if (msg == null) continue // 超时后重试检查 pending
-
-            if (msg is TeamMessage.IdleNotification && msg.from in pending) {
-                pending.remove(msg.from)
-                Log.d(TAG, "Sub-agent '${msg.from}' completed, waiting for ${pending.size} more")
-            } else {
-                // 缓冲非空闲消息，等待结束后重新注入
-                bufferedMessages.add(msg)
-            }
-        }
-
-        // 重新注入缓冲的消息
-        for (msg in bufferedMessages) {
-            messageBus.send(ORCHESTRATOR_NAME, msg)
-        }
+        // WHY: 到这里有两种情况：
+        // 1. 超时正常退出（isCompleted 已设为 true，_teamState 已更新）—— return 空字符串，
+        //    Orchestrator 循环将检测到 isCompleted.get() == true 并正常退出。
+        // 2. 协程被外部取消（coroutineContext.isActive == false）——
+        //    while 循环已因 isActive 判断圆满退出，同样 return 空字符串。
+        // 不再使用 error() 招致 ViewModel 层收到非预期的崩溃异常。
+        return ""
     }
 
     /**
@@ -1034,8 +1176,10 @@ class TeamManager(
             if (msg is TeamMessage.IdleNotification && msg.from in pending) {
                 pending.remove(msg.from)
                 Log.d(TAG, "Agent '${msg.from}' is ready, waiting for ${pending.size} more")
+            } else if (msg != null) {
+                // WHY: 非 IdleNotification 消息必须 requeue，否则 ResultReport/用户干预会被永久丢弃
+                messageBus.requeue(ORCHESTRATOR_NAME, msg)
             }
-            // 忽略其他消息（它们会在后续循环中被处理）
         }
     }
 
@@ -1043,13 +1187,13 @@ class TeamManager(
      * 收集 Orchestrator 收件箱中待处理的 ResultReport 消息。
      *
      * 非阻塞地排空收件箱中的 ResultReport，返回结果列表。
-     * 其他类型的消息会被重新投递。
+     * 其他类型的消息会被重新投递（不触发 globalEvents，避免重复广播）。
      *
      * @return 待处理的结果列表（agentName -> result）
      */
     private suspend fun collectPendingResults(): List<Pair<String, String>> {
         val results = mutableListOf<Pair<String, String>>()
-        val requeue = mutableListOf<TeamMessage>()
+        val requeueMessages = mutableListOf<TeamMessage>()
 
         // 非阻塞排空收件箱
         while (true) {
@@ -1058,16 +1202,56 @@ class TeamManager(
                 is TeamMessage.ResultReport -> {
                     results.add(msg.from to msg.result)
                 }
-                else -> requeue.add(msg)
+                else -> requeueMessages.add(msg)
             }
         }
 
-        // 重新投递非 ResultReport 消息
-        for (msg in requeue) {
-            messageBus.send(ORCHESTRATOR_NAME, msg)
+        // 重新投递非 ResultReport 消息（使用 requeue 避免重复广播）
+        for (msg in requeueMessages) {
+            messageBus.requeue(ORCHESTRATOR_NAME, msg)
         }
 
         return results
+    }
+
+    /**
+     * 排空 Orchestrator 收件箱中多余的 IdleNotification。
+     *
+     * 防止 Sub-Agent 完成任务后发送的 IdleNotification 无限堆积。
+     * 每个 Agent 保留一条最新的 IdleNotification（通过 requeue 投递），
+     * 其余丢弃。排空后收件箱中只保留非 IdleNotification 消息和每个 Agent 一条空闲通知。
+     *
+     * 注意：requeue 不触发 globalEvents。当前无外部订阅者依赖 globalEvents，
+     * Orchestrator 循环通过直接读取收件箱处理消息，不依赖事件流。
+     */
+    private suspend fun drainExcessIdleNotifications() {
+        val kept = mutableMapOf<String, TeamMessage.IdleNotification>()
+        val requeueMessages = mutableListOf<TeamMessage>()
+
+        while (true) {
+            val msg = messageBus.tryReceive(ORCHESTRATOR_NAME) ?: break
+            when (msg) {
+                is TeamMessage.IdleNotification -> {
+                    val existing = kept[msg.from]
+                    if (existing == null) {
+                        kept[msg.from] = msg
+                    } else if (msg.timestamp > existing.timestamp) {
+                        // 保留最新的，旧的丢弃
+                        kept[msg.from] = msg
+                    }
+                    // else: 旧消息，丢弃
+                }
+                else -> requeueMessages.add(msg)
+            }
+        }
+
+        // 重新投递非 IdleNotification 消息和每个 Agent 最新的一条通知
+        for (msg in requeueMessages) {
+            messageBus.requeue(ORCHESTRATOR_NAME, msg)
+        }
+        for (msg in kept.values) {
+            messageBus.requeue(ORCHESTRATOR_NAME, msg)
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -1086,15 +1270,27 @@ class TeamManager(
     private suspend fun summarizeAndInject(runner: AgentRunner, results: List<Pair<String, String>>) {
         if (results.isEmpty()) return
 
+        // WHY: 每个 Agent 生成独立的 <task-notification> 块，与 waitForOrchestratorInput
+        // 中 ResultReport 的格式保持一致，避免 LLM 解析多个 <task-id>/<status> 时混乱。
+        // 同时正确反映 success/failure 状态（而非硬编码 "completed"）。
         val summaryInput = buildString {
-            appendLine("<task-notification>")
             for ((name, result) in results) {
-                appendLine("  <agent name=\"$name\">")
-                appendLine("    <status>completed</status>")
-                appendLine("    <result>$result</result>")
-                appendLine("  </agent>")
+                // 通过检查 result 是否包含错误标记判断成功/失败
+                val success = !result.startsWith("ERROR:") && !result.contains("执行出错") && !result.contains("执行失败")
+                val status = if (success) "completed" else "failed"
+                val stats = runners[name]?.getUsageStats()
+                appendLine("<task-notification>")
+                appendLine("  <task-id>$name</task-id>")
+                appendLine("  <status>$status</status>")
+                appendLine("  <summary>Agent '$name' ${if (success) "completed" else "failed"}</summary>")
+                appendLine("  <result>$result</result>")
+                appendLine("  <usage>")
+                appendLine("    <total_tokens>${stats?.totalTokens ?: 0}</total_tokens>")
+                appendLine("    <tool_uses>${stats?.toolUseCount ?: 0}</tool_uses>")
+                appendLine("    <duration_ms>${stats?.durationMs ?: 0}</duration_ms>")
+                appendLine("  </usage>")
+                appendLine("</task-notification>")
             }
-            appendLine("</task-notification>")
         }
 
         // 用 system 角色注入，不污染 user 对话
@@ -1144,33 +1340,55 @@ class TeamManager(
      * 工具调用的输出也应包含在结果中。
      *
      * @param runner Agent 的 AgentRunner
+     * @param fromIndex 消息历史起始索引（含），只收集此索引之后的消息，避免跨任务污染
      * @return 结果摘要文本
      */
-    private fun collectAgentResult(runner: AgentRunner): String {
+    /**
+     * 收集单个 Agent 的执行结果。
+     *
+     * @param runner Agent 的 AgentRunner
+     * @param fromIndex 消息历史起始索引（含），只收集此索引之后的消息
+     * @param forDependency 是否用于依赖传递（true = 只传 assistant 文本，不传原始工具 JSON）
+     * @return 结果摘要文本
+     */
+    private fun collectAgentResult(runner: AgentRunner, fromIndex: Int = 0, forDependency: Boolean = false): String {
         val history = runner.getHistory()
+        // WHY: coerceIn 确保 fromIndex 处于 [0, history.size] 内，
+        // 边界情况安全：subList(n, n) 返回空列表，而非完整 history。
+        val taskMessages = history.subList(fromIndex.coerceIn(0, history.size), history.size)
         val sb = StringBuilder()
 
-        // 收集工具调用结果（write_file、create_directory 等）
-        val toolResults = history.filter { it.role == "tool" && it.content.isNotBlank() }
-        if (toolResults.isNotEmpty()) {
-            sb.appendLine("【工具执行结果】")
-            for (toolMsg in toolResults) {
-                // 截取工具结果的关键信息，避免过长
-                val content = toolMsg.content
-                if (content.length > 500) {
-                    sb.appendLine(content.take(500) + "...")
-                } else {
-                    sb.appendLine(content)
+        if (forDependency) {
+            // 依赖传递场景：只传 assistant 的文本输出，不传原始工具 JSON。
+            // WHY: 原始工具 JSON（如 list_directory 返回的几十条 {"content":[...]}）对下游 Agent
+            // 没有意义，反而会占满上下文并干扰 LLM 理解。下游 Agent 需要的是上游的分析结论。
+            val assistantMessages = taskMessages.filter { it.role == "assistant" && it.content.isNotBlank() }
+            if (assistantMessages.isNotEmpty()) {
+                // 取最后一条 assistant 消息作为主要结论
+                val lastAssistant = assistantMessages.last()
+                sb.appendLine(lastAssistant.content)
+            }
+        } else {
+            // 普通结果收集（用于 Orchestrator 汇总）：同时包含工具输出和 assistant 文本
+            val toolResults = taskMessages.filter { it.role == "tool" && it.content.isNotBlank() }
+            if (toolResults.isNotEmpty()) {
+                sb.appendLine("【工具执行结果】")
+                for (toolMsg in toolResults) {
+                    val content = toolMsg.content
+                    if (content.length > 500) {
+                        sb.appendLine(content.take(500) + "...")
+                    } else {
+                        sb.appendLine(content)
+                    }
                 }
             }
-        }
 
-        // 收集最后的 assistant 消息（Agent 的总结或说明）
-        val lastAssistant = history.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
-        if (lastAssistant != null) {
-            if (sb.isNotEmpty()) sb.appendLine()
-            sb.appendLine("【Agent 输出】")
-            sb.appendLine(lastAssistant.content)
+            val lastAssistant = taskMessages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
+            if (lastAssistant != null) {
+                if (sb.isNotEmpty()) sb.appendLine()
+                sb.appendLine("【Agent 输出】")
+                sb.appendLine(lastAssistant.content)
+            }
         }
 
         return sb.toString().takeIf { it.isNotBlank() } ?: "子任务已完成，无文本输出"
@@ -1179,17 +1397,15 @@ class TeamManager(
     /**
      * 收集所有 Sub-Agent 的执行结果。
      *
-     * 优先从 Runner 历史中读取最后一条 assistant 消息作为结果。
-     * 用于依赖流程中的结果收集。
-     *
      * @param subAgentNames Sub-Agent 名称列表
-     * @return 结果列表（Pair: agentName -> 最后一条 assistant 消息内容）
+     * @param forDependency 是否用于依赖传递（只传 assistant 文本）
+     * @return 结果列表（Pair: agentName -> 结果文本）
      */
-    private fun collectResults(subAgentNames: List<String>): List<Pair<String, String>> {
+    private fun collectResults(subAgentNames: List<String>, forDependency: Boolean = false): List<Pair<String, String>> {
         return subAgentNames.map { name ->
             val runner = runners[name]
             val result = if (runner != null) {
-                collectAgentResult(runner)
+                collectAgentResult(runner, forDependency = forDependency)
             } else {
                 "子任务已完成，无文本输出"
             }
@@ -1215,32 +1431,60 @@ class TeamManager(
         originalTask: String,
     ): String {
         val allAgents = directive.agents.toMutableList()
-        val completed = mutableSetOf<String>()
-        val failed = mutableSetOf<String>()
+        val completed = mutableSetOf<String>()   // spec names (for dependency resolution)
+        val failed = mutableSetOf<String>()       // spec names
+        val skipped = mutableSetOf<String>()      // spec names
+        // Global mapping: spec.name -> actual spawned name (may differ due to generateUniqueName)
+        val globalSpecToActual = mutableMapOf<String, String>()
 
         while (allAgents.isNotEmpty()) {
-            // 找出当前可以创建的 Agent（依赖已满足，排除已失败的依赖）
+            // 找出当前可以创建的 Agent（依赖全部成功完成）
             val ready = allAgents.filter { spec ->
-                spec.dependsOn.all { dep -> dep in completed || dep in failed }
+                spec.dependsOn.all { it in completed }
             }
+            
+            // 找出依赖失败的 Agent（至少一个依赖失败，且所有依赖都已结束）
+            val toSkip = allAgents.filter { spec ->
+                spec.dependsOn.any { it in failed } && 
+                spec.dependsOn.all { it in completed || it in failed }
+            }
+            
+            // 跳过依赖失败的 Agent
+            for (spec in toSkip) {
+                Log.w(TAG, "Skipping '${spec.name}' because dependency failed")
+                skipped.add(spec.name)
+                failed.add(spec.name) // 标记为失败，供下游依赖判断
+            }
+            
+            // 从待处理列表中移除已跳过的
+            allAgents.removeAll(toSkip.toSet())
 
             if (ready.isEmpty()) {
-                Log.w(TAG, "Circular dependency or unresolvable deps. Remaining: ${allAgents.map { it.name }}")
+                if (allAgents.isNotEmpty()) {
+                    Log.w(TAG, "Circular dependency or unresolvable deps. Remaining: ${allAgents.map { it.name }}")
+                }
                 break
             }
 
+            // spec.name -> actual spawned name (may differ due to generateUniqueName deduplication)
             val spawnedNames = mutableListOf<String>()
+            val specToActualName = mutableMapOf<String, String>()
 
             // 创建这些 Agent
             for (spec in ready) {
                 try {
-                    spawnTeammate(
+                    val identity = spawnTeammate(
                         name = spec.name,
                         prompt = "等待主控分配任务...",
                         systemPrompt = spec.systemPrompt,
                         modelConfigId = spec.modelConfigId,
                     )
-                    spawnedNames.add(spec.name)
+                    // WHY: spawnTeammate 内部调用 generateUniqueName，实际名称可能与 spec.name 不同。
+                    // 必须使用 identity.agentName 作为消息路由和结果匹配的 key，否则 ResultReport.from
+                    // 与 pendingAgents 中的名称不一致，导致 spawnWithDependencies 永久等待。
+                    spawnedNames.add(identity.agentName)
+                    specToActualName[spec.name] = identity.agentName
+                    globalSpecToActual[spec.name] = identity.agentName
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to spawn '${spec.name}'", e)
                     failed.add(spec.name)
@@ -1248,82 +1492,175 @@ class TeamManager(
             }
 
             if (spawnedNames.isNotEmpty()) {
-                // 为本批次创建 per-spawn 完成追踪
-                val spawnCompletionDeferreds = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
-                for (name in spawnedNames) {
-                    spawnCompletionDeferreds[name] = CompletableDeferred()
-                }
-
-                // 注册一次性监听器：当 Agent 发送 IdleNotification 时完成对应 Deferred
-                // 使用 take(1) 确保只处理每批次的第一个 IdleNotification
-                parentScope.launch {
-                    agentCompletionFlow
-                        .filter { it.agentName in spawnedNames }
-                        .take(spawnedNames.size)
-                        .collect { completion ->
-                            spawnCompletionDeferreds[completion.agentName]?.complete(Unit)
-                        }
-                }
-
                 // 分配任务（根据 taskMode）
                 when (directive.taskMode) {
                     TaskMode.DIRECT -> {
                         for (spec in ready) {
-                            if (spec.name !in spawnedNames) continue
+                            val actualName = specToActualName[spec.name] ?: continue
                             messageBus.send(
-                                spec.name,
+                                actualName,
                                 TeamMessage.TaskAssignment(
                                     from = ORCHESTRATOR_NAME,
                                     taskId = "",
-                                    subject = spec.role.ifEmpty { "执行 ${spec.name} 的任务" },
-                                    description = originalTask,
+                                    subject = spec.role.ifEmpty { "执行 ${actualName} 的任务" },
+                                    description = buildString {
+                                        appendLine("## 你的任务")
+                                        appendLine(spec.role)
+                                        if (spec.systemPrompt.isNotBlank()) {
+                                            appendLine()
+                                            appendLine("## 角色说明")
+                                            appendLine(spec.systemPrompt)
+                                        }
+                                        appendLine()
+                                        appendLine("## 背景（仅供参考，不是你的任务）")
+                                        appendLine("用户原始需求：$originalTask")
+                                        appendLine()
+                                        appendLine("## 完成标准")
+                                        appendLine("- 只做「你的任务」中描述的事，不要扩展范围")
+                                        appendLine("- 完成后把关键结果直接写在回复里，不要只说「已生成文件」")
+                                        appendLine("- 结果写完后立即停止，不要继续生成额外内容")
+                                        appendLine("- 如遇无法解决的问题，明确说明原因和阻塞点")
+                                    },
                                 )
                             )
-                            Log.d(TAG, "Direct mode: Assigned task to '${spec.name}'")
+                            Log.d(TAG, "Direct mode: Assigned task to '$actualName'")
                         }
                     }
                     TaskMode.CLAIM -> {
                         val teamName = _teamState.value?.teamName ?: continue
                         for (spec in ready) {
-                            if (spec.name !in spawnedNames) continue
+                            val actualName = specToActualName[spec.name] ?: continue
+                            // claim 模式：role 字段直接作为任务 prompt 发给认领的 Agent。
+                            // Orchestrator 系统提示已要求 claim 模式下 role 必须完全自包含，
+                            // 此处将 role 作为 subject（主要任务描述），originalTask 作为 description
+                            // 补充背景上下文，Agent 认领后收到的是 "任务 #id: {role}\n{originalTask}"。
                             taskManager.createTask(
                                 teamName = teamName,
-                                subject = spec.role.ifEmpty { spec.name },
-                                description = originalTask,
+                                subject = spec.role.ifEmpty { actualName },
+                                description = buildString {
+                                    if (originalTask.isNotBlank()) {
+                                        appendLine("## 背景（仅供参考）")
+                                        appendLine(originalTask)
+                                    }
+                                    if (spec.systemPrompt.isNotBlank()) {
+                                        appendLine()
+                                        appendLine("## 角色说明")
+                                        appendLine(spec.systemPrompt)
+                                    }
+                                    appendLine()
+                                    appendLine("## 完成标准")
+                                    appendLine("- 只做上述任务中描述的事，不要扩展范围")
+                                    appendLine("- 完成后把关键结果直接写在回复里，不要只说「已生成文件」")
+                                    appendLine("- 结果写完后立即停止，不要继续生成额外内容")
+                                },
                             )
-                            Log.d(TAG, "Claim mode: Created task for '${spec.name}'")
+                            Log.d(TAG, "Claim mode: Created task for '$actualName'")
                         }
                     }
                 }
 
-                // 等待本批次所有 Agent 完成（通过 CompletableDeferred，不读取 Orchestrator 收件箱）
-                for (name in spawnedNames) {
-                    val ok = withTimeoutOrNull(300_000L) {
-                        spawnCompletionDeferreds[name]?.await()
+                // 等待本批次所有 Agent 完成任务（读取 Orchestrator 收件箱监听 ResultReport）
+                // WHY: pendingAgents 使用实际名称（actual names），因为 ResultReport.from 是实际名称。
+                // actualToSpecName 用于将实际名称映射回 spec.name，以便更新 completed/failed（依赖解析用 spec.name）。
+                val actualToSpecName = specToActualName.entries.associate { (k, v) -> v to k }
+                val batchFailedActual = mutableSetOf<String>()
+                val pendingAgents = spawnedNames.toMutableSet() // actual names
+                val deadline = System.currentTimeMillis() + 300_000L
+
+                while (pendingAgents.isNotEmpty() && coroutineContext.isActive) {
+                    val remaining = deadline - System.currentTimeMillis()
+                    if (remaining <= 0) {
+                        Log.w(TAG, "Timeout waiting for agents: $pendingAgents")
+                        for (actualName in pendingAgents) {
+                            val specName = actualToSpecName[actualName] ?: actualName
+                            failed.add(specName)
+                            batchFailedActual.add(actualName)
+                            try { killTeammate(actualName) } catch (e: Exception) { Log.e(TAG, "killTeammate failed for $actualName", e) }
+                        }
+                        break
                     }
-                    if (ok == null) {
-                        Log.w(TAG, "Timeout waiting for agent '$name' to complete")
-                        failed.add(name)
+                    val msg = try {
+                        withTimeoutOrNull(remaining) {
+                            messageBus.receive(ORCHESTRATOR_NAME)
+                        }
+                    } catch (_: Exception) { null }
+
+                    if (msg != null) {
+                        if (msg is TeamMessage.ResultReport && msg.from in pendingAgents) {
+                            Log.d(TAG, "spawnWithDependencies: agent '${msg.from}' completed normally")
+                            pendingAgents.remove(msg.from)
+                            if (!msg.success) {
+                                val specName = actualToSpecName[msg.from] ?: msg.from
+                                failed.add(specName)
+                                batchFailedActual.add(msg.from)
+                            }
+                        } else if (msg is TeamMessage.ResultReport) {
+                            // 非本批次的 ResultReport（理论上不该出现），重新投递
+                            messageBus.requeue(ORCHESTRATOR_NAME, msg)
+                        } else {
+                            // 其他消息（Text/IdleNotification等）重新投递给 Orchestrator
+                            messageBus.requeue(ORCHESTRATOR_NAME, msg)
+                        }
                     }
                 }
 
-                // 收集结果并注入给依赖方
-                val results = collectResults(spawnedNames)
-                for ((name, result) in results) {
+                // 收集结果并注入给依赖方；只处理成功的 Agent
+                // WHY: 失败/超时的 Agent 已在 batchFailedActual 中，不应加入 completed，
+                // 否则最终汇总的 if (name !in completed) 判断失效，失败信息不会出现在报告中。
+                val successActualNames = spawnedNames.filter { it !in batchFailedActual }
+                val results = collectResults(successActualNames, forDependency = true)
+                for ((actualName, result) in results) {
+                    val specName = actualToSpecName[actualName] ?: actualName
                     if (result.isNotBlank()) {
-                        val dependents = allAgents.filter { spec -> name in spec.dependsOn }
+                        // 依赖方通过 spec.name 声明依赖，所以用 specName 匹配
+                        val dependents = allAgents.filter { spec -> specName in spec.dependsOn }
                         for (dep in dependents) {
+                            // BUG-3：只向已成功 spawn 的 Agent 发送消息；
+                            // 未创建的 Agent（下一批次才会 spawn）等其 spawn 后会通过 TaskAssignment 收到任务
+                            val depActualName = specToActualName[dep.name]
+                            if (depActualName == null) {
+                                Log.d(TAG, "Dep '${dep.name}' not yet spawned, skipping upstream result send")
+                                continue
+                            }
                             messageBus.send(
-                                dep.name,
+                                depActualName,
                                 TeamMessage.Text(
-                                    from = name,
-                                    content = "【${name} 的产出】\n$result",
-                                    summary = "${name} 完成",
+                                    from = actualName,
+                                    content = buildString {
+                                        appendLine("## 上游 Agent「${actualName}」的产出")
+                                        appendLine(result)
+                                        appendLine()
+                                        appendLine("## 你的任务")
+                                        appendLine(dep.role)
+                                        if (dep.systemPrompt.isNotBlank()) {
+                                            appendLine()
+                                            appendLine("## 任务说明")
+                                            appendLine(dep.systemPrompt)
+                                        }
+                                        appendLine()
+                                        appendLine("## 完成标准")
+                                        appendLine("- 基于上游产出完成你的任务，不要重新执行上游已做过的工作")
+                                        appendLine("- 完成后把关键结果直接写在回复里")
+                                        appendLine("- 结果写完后立即停止，不要继续生成额外内容")
+                                    },
+                                    summary = "${actualName} 完成，传递产出",
                                 )
                             )
                         }
                     }
-                    completed.add(name)
+                    // completed 用 specName，供下一批次的 ready 过滤（spec.dependsOn 用 spec.name）
+                    completed.add(specName)
+                }
+
+                // WHY: 批次完成后 kill 已完成的 Agent，防止它们继续运行产生多余的 ResultReport/IdleNotification，
+                // 这些残留消息会在 waitForOrchestratorInput 中被误当作新任务通知处理。
+                for (actualName in successActualNames) {
+                    try {
+                        killTeammate(actualName)
+                        Log.d(TAG, "spawnWithDependencies: killed completed agent '$actualName'")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "spawnWithDependencies: failed to kill '$actualName': ${e.message}")
+                    }
                 }
             }
 
@@ -1332,21 +1669,49 @@ class TeamManager(
         }
 
         // 汇总最终结果（不注入消息历史，由调用方通过 MessageBus 正常处理）
-        val allResults = collectResults(completed.toList())
-        val summaryInput = allResults.joinToString("\n\n") { (name, result) ->
-            "【${name}的结果】\n$result"
+        // WHY: 汇总必须包含失败/跳过的 agent，否则 orchestrator 可能向用户报告所有任务完成
+        // completed 存的是 spec names，collectResults 需要 actual names
+        val completedActualNames = completed.mapNotNull { specName ->
+            globalSpecToActual[specName] ?: specName.takeIf { runners.containsKey(it) }
+        }
+        val allResults = collectResults(completedActualNames)
+        val summaryInput = buildString {
+            for ((actualName, result) in allResults) {
+                val displayName = globalSpecToActual.entries.find { it.value == actualName }?.key ?: actualName
+                appendLine("【${displayName}的结果】\n$result")
+            }
+            for (name in failed) {
+                if (name !in completed) {
+                    appendLine("【${name}】执行失败或超时")
+                }
+            }
+            for (name in skipped) {
+                appendLine("【${name}】因依赖失败而跳过")
+            }
         }
 
-        // 排空 Orchestrator 收件箱中已有的 ResultReport / IdleNotification 残余消息
-        // 避免依赖链完成后这些消息被再次格式化为 <task-notification> 重复注入
+        // 排空 Orchestrator 收件箱中本依赖链 agent 的残余消息
+        // WHY: 只排空本批次 agent 的消息，不相关的 ResultReport/用户干预必须 requeue，
+        // 否则不属于本依赖链的消息会被误删
+        // chainAgents 包含 spec names 和 actual names，确保两种形式的消息都被排空
+        val chainActualNames = (completed + failed + skipped).mapNotNull { globalSpecToActual[it] }.toSet()
+        val chainAgents = completed + failed + skipped + chainActualNames
+        val requeueList = mutableListOf<TeamMessage>()
         var drained = 0
         while (true) {
             val residual = messageBus.tryReceive(ORCHESTRATOR_NAME) ?: break
-            drained++
-            Log.d(TAG, "Drained residual message from orchestrator inbox: ${residual::class.simpleName} from ${residual.from}")
+            if (residual.from in chainAgents) {
+                drained++
+                Log.d(TAG, "Drained residual message from '${residual.from}': ${residual::class.simpleName}")
+            } else {
+                requeueList.add(residual)
+            }
+        }
+        for (msg in requeueList) {
+            messageBus.requeue(ORCHESTRATOR_NAME, msg)
         }
         if (drained > 0) {
-            Log.d(TAG, "Drained $drained residual message(s) from orchestrator inbox after dependency chain")
+            Log.d(TAG, "Drained $drained residual message(s) from dependency chain agents")
         }
 
         Log.d(TAG, "spawnWithDependencies completed. Agents: ${completed.size}, Failed: ${failed.size}")
@@ -1366,10 +1731,13 @@ class TeamManager(
      * @param runner Orchestrator 的 AgentRunner
      */
     private suspend fun triggerWorkspaceComplete(runner: AgentRunner) {
-        if (isCompleted) return
-        isCompleted = true
+        // WHY: compareAndSet 保证原子性，防止并发调用导致 onWorkspaceComplete 触发两次
+        if (!isCompleted.compareAndSet(false, true)) return
 
         Log.d(TAG, "Triggering workspace complete")
+
+        // 更新 Orchestrator 状态为 COMPLETED，停止 UI 转圈
+        updateTeammateStatus(ORCHESTRATOR_NAME, AgentStatus.COMPLETED)
 
         // 获取 Orchestrator 的消息列表
         val orchestratorMessages = runner.getHistory()
@@ -1397,8 +1765,15 @@ class TeamManager(
             ?.map { it.identity.agentName }
             ?: emptyList()
 
+        Log.d(TAG, "triggerWorkspaceComplete: cleaning up sub-agents: $subAgentNames, current jobs: ${teammateJobs.keys}")
+
         for (name in subAgentNames) {
             teammateScopes[name]?.cancel()
+            // 等待 Job 完成，确保 runTeammateLoop 的 finally 块执行完毕
+            // 否则 agentCompletionDeferreds 可能未完成，导致等待的协程永久挂起
+            try {
+                teammateJobs[name]?.join()
+            } catch (_: Exception) { }
             teammateScopes.remove(name)
             teammateJobs.remove(name)
             runners[name]?.dispose()
@@ -1526,6 +1901,12 @@ class TeamManager(
         when (toolName) {
             "create_agents" -> return handleCreateAgentsTool(args)
             "assign_task" -> return handleAssignTaskTool(args)
+            "continue_conversation" -> return handleContinueConversationTool(args)
+        }
+        
+        // ── 拦截协作工具（所有 Agent 可用）──
+        when (toolName) {
+            "peer_message" -> return handlePeerMessageTool(agentName, args)
         }
 
         onAgentStatusChanged(agentName, AgentStatus.WAITING_TOOL)
@@ -1634,10 +2015,27 @@ class TeamManager(
         if (taskMode == TaskMode.CLAIM) {
             val teamName = state?.teamName ?: ""
             for (spec in agentSpecs) {
+                // claim 模式：role 字段直接作为任务 prompt 发给认领的 Agent（subject），
+                // 补充背景上下文和完成标准作为 description。
                 taskManager.createTask(
                     teamName = teamName,
                     subject = spec.role.ifEmpty { spec.name },
-                    description = originalTask,
+                    description = buildString {
+                        if (originalTask.isNotBlank()) {
+                            appendLine("## 背景（仅供参考）")
+                            appendLine(originalTask)
+                        }
+                        if (spec.systemPrompt.isNotBlank()) {
+                            appendLine()
+                            appendLine("## 角色说明")
+                            appendLine(spec.systemPrompt)
+                        }
+                        appendLine()
+                        appendLine("## 完成标准")
+                        appendLine("- 只做上述任务中描述的事，不要扩展范围")
+                        appendLine("- 完成后把关键结果直接写在回复里，不要只说「已生成文件」")
+                        appendLine("- 结果写完后立即停止，不要继续生成额外内容")
+                    },
                 )
             }
         }
@@ -1695,6 +2093,58 @@ class TeamManager(
     }
 
     /**
+     * 处理 continue_conversation 工具调用。
+     *
+     * 向已有 Sub-Agent 发送后续消息，利用其已加载的上下文继续工作。
+     * 对标 Claude Code 的 SendMessage 工具。
+     *
+     * 适用场景：
+     * 1. 研究完成后，让同一 Agent 执行实施（高上下文重叠）
+     * 2. 修正失败的实现（Agent 有错误上下文）
+     * 3. 追加更多任务
+     *
+     * @param args continue_conversation 工具的参数
+     * @return 执行结果文本
+     */
+    private suspend fun handleContinueConversationTool(args: JSONObject): String {
+        val to = args.optString("to")
+        val message = args.optString("message")
+
+        if (to.isEmpty() || message.isEmpty()) {
+            return "Error: 'to' 和 'message' 参数必填"
+        }
+
+        return continueAgent(to, message)
+    }
+
+    /**
+     * 处理 peer_message 工具调用。
+     *
+     * Sub-Agent 间直接通信，支持点对点和广播。
+     * 对标 Claude Code 的 SendMessage 工具。
+     *
+     * @param senderName 发送方 Agent 名称
+     * @param args peer_message 工具的参数
+     * @return 执行结果文本
+     */
+    private suspend fun handlePeerMessageTool(senderName: String, args: JSONObject): String {
+        val to = args.optString("to")
+        val message = args.optString("message")
+        val summary = args.optString("summary", "")
+
+        if (to.isEmpty() || message.isEmpty()) {
+            return "Error: 'to' 和 'message' 参数必填"
+        }
+
+        return sendPeerMessage(
+            from = senderName,
+            to = to,
+            message = message,
+            summary = summary,
+        )
+    }
+
+    /**
      * 更新指定 Teammate 的状态。
      *
      * 同时更新 [_teamState] 和触发 [onAgentStatusChanged] 回调。
@@ -1735,14 +2185,13 @@ class TeamManager(
     /**
      * 分配 Agent UI 标识色。
      *
-     * 从预定义颜色列表中循环分配。
+     * 从预定义颜色列表中循环分配。使用 AtomicInteger 保证线程安全。
      *
      * @return 颜色值（#RRGGBB 格式）
      */
     private fun assignColor(): String {
-        val color = AGENT_COLORS[colorIndex % AGENT_COLORS.size]
-        colorIndex++
-        return color
+        val idx = colorIndex.getAndIncrement()
+        return AGENT_COLORS[idx % AGENT_COLORS.size]
     }
 
     /**
@@ -2053,10 +2502,58 @@ class TeamManager(
 
     private val DEFAULT_TEAMMATE_PROMPT = """
 你是一个多 Agent 工作区中的子 Agent。你的职责是：
-1. 执行分配给你的具体子任务。
+1. 只执行分配给你的具体子任务，不要自行扩展任务范围。
 2. 使用可用的工具完成工作。
-3. 完成后清晰地汇报执行结果。
-4. 如果遇到无法解决的问题，明确说明原因。
+3. 任务完成后，用简洁的文字汇报执行结果，然后停止。
+4. 如果遇到无法解决的问题，明确说明原因和阻塞点。
+
+## 任务结构说明
+
+你收到的任务消息通常包含以下部分：
+- **你的任务** / 任务主体：这是你必须完成的核心工作，严格按此执行
+- **背景（仅供参考）**：用户原始需求，帮助你理解上下文，但不是你的任务范围
+- **角色说明**：你的专业角色定位（如有）
+- **完成标准**：判断任务完成的标准
+
+## 关键行为准则
+
+**完成即停止**：任务完成后立即输出结果并结束，不要继续"完善"、"优化"或生成额外内容。
+- ❌ 错误：完成分析后继续写报告、生成图表、创建索引文件
+- ✅ 正确：完成分析后输出结论，结束
+
+**不要越权**：严格按照任务描述执行，不要做任务之外的事。
+- 如果任务是"分析文件名"，只分析，不写文件到磁盘
+- 如果任务是"写一份报告"，只写这一份，不要额外生成多份变体
+- 如果任务是"读取数据"，只读取，不要修改任何文件
+
+**结果要自包含**：汇报结果时，把关键数据直接写在回复里，不要只说"已生成报告文件，请查看"。
+- ❌ 错误："分析完成，详见 /Download/report.md"
+- ✅ 正确："分析完成。共 95 个文件：图片 77 个（81%）、文档 12 个（13%）、其他 6 个（6%）。"
+
+## Sub-Agent 间协作（peer_message 工具）
+
+你可以使用 peer_message 工具与其他 Sub-Agent 直接通信：
+
+### 点对点消息
+```
+peer_message(to: "researcher", message: "请把 auth 模块的分析结果发给我", summary: "请求分析结果")
+```
+
+### 广播消息
+```
+peer_message(to: "*", message: "我已完成数据库迁移，请各 Agent 更新相关代码", summary: "通知数据库变更")
+```
+
+### 典型协作场景
+1. **请求帮助**：遇到难题时请求其他 Agent 协助
+2. **传递数据**：将你的输出作为另一个 Agent 的输入
+3. **协调分工**：协商谁负责哪个部分，避免重复工作
+4. **进度同步**：通知其他 Agent 你的进展情况
+
+### 注意事项
+- 消息是异步的，目标 Agent 不会在同一轮对话中立即回复
+- 如果需要等待对方响应，你需要在后续轮次中继续处理
+- 使用 summary 参数可以让 UI 显示消息预览
 
 ## 文件系统环境
 本设备为 Android 系统。文件系统工具（list_directory、search_files 等）的根目录为 "/"，对应设备存储根路径。

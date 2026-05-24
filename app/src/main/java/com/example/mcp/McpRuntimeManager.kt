@@ -379,9 +379,17 @@ class McpRuntimeManager private constructor(private val context: Context) {
     @Volatile
     private var autoStartJob: kotlinx.coroutines.Job? = null
 
+    /** 记录 autoStart 是否成功完成（至少有一个 server 被尝试启动） */
+    @Volatile
+    private var autoStartCompleted = false
+
     private fun triggerAutoStart() {
-        if (autoStartTriggered) return
+        if (autoStartTriggered) {
+            Log.d(TAG, "[autoStart] 已触发过，跳过 (autoStartCompleted=$autoStartCompleted)")
+            return
+        }
         autoStartTriggered = true
+        Log.i(TAG, "[autoStart] 首次触发自动启动")
         autoStartJob = scope.launch {
             try {
                 Log.i(TAG, "[autoStart] 开始部署 MCP 脚本")
@@ -392,9 +400,58 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 if (enabled.isNotEmpty()) {
                     Log.i(TAG, "[autoStart] 即将启动: ${enabled.joinToString { "${it.name}(${it.runtime})" }}")
                     startServers(enabled)
+                    autoStartCompleted = true
+                    Log.i(TAG, "[autoStart] startServers 调用完成, autoStartCompleted=true")
+                } else {
+                    autoStartCompleted = true
+                    Log.i(TAG, "[autoStart] 无已启用的 server, autoStartCompleted=true")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "[autoStart] 自动启动 MCP server 失败", e)
+            }
+        }
+    }
+
+    /**
+     * 确保已启用的 MCP server 已启动。
+     * 如果之前的 autoStart 因外部存储权限未就绪等原因失败，此方法会重试。
+     * 应在存储权限获得后调用（如 Activity.onResume）。
+     */
+    fun ensureAutoStarted() {
+        Log.d(TAG, "[ensureAutoStarted] 调用: autoStartCompleted=$autoStartCompleted, autoStartJob.isActive=${autoStartJob?.isActive}")
+        if (autoStartCompleted) {
+            Log.d(TAG, "[ensureAutoStarted] 已成功完成，跳过")
+            return
+        }
+        if (autoStartJob?.isActive == true) {
+            Log.d(TAG, "[ensureAutoStarted] autoStart 协程仍在运行，跳过")
+            return
+        }
+        scope.launch {
+            try {
+                Log.i(TAG, "[ensureAutoStarted] 重试自动启动")
+                McpScriptManager.ensureScriptsDeployed(context)
+                val db = AppDatabase.getDatabase(context)
+                val enabled = db.mcpServerDao().getEnabledServers()
+                Log.i(TAG, "[ensureAutoStarted] 数据库中已启用的 MCP server 数量: ${enabled.size}")
+                if (enabled.isNotEmpty()) {
+                    val notRunning = enabled.filter { server ->
+                        val state = _serverStates.value[server.id]
+                        val needStart = state == null || state.status == McpServerStatus.STOPPED || state.status == McpServerStatus.ERROR
+                        Log.d(TAG, "[ensureAutoStarted] server [${server.name}] id=${server.id} state=${state?.status}, needStart=$needStart")
+                        needStart
+                    }
+                    if (notRunning.isNotEmpty()) {
+                        Log.i(TAG, "[ensureAutoStarted] 启动未运行的 server: ${notRunning.joinToString { "${it.name}(${it.runtime})" }}")
+                        startServers(notRunning)
+                    } else {
+                        Log.i(TAG, "[ensureAutoStarted] 所有已启用 server 均在运行中，无需重启")
+                    }
+                }
+                autoStartCompleted = true
+                Log.i(TAG, "[ensureAutoStarted] 完成, autoStartCompleted=true")
+            } catch (e: Exception) {
+                Log.e(TAG, "[ensureAutoStarted] 重试自动启动失败", e)
             }
         }
     }
@@ -786,6 +843,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
     // ── 公开 API ──────────────────────────────────────────────────────────
 
     fun startServer(server: McpServer) {
+        Log.i(TAG, "[startServer] name=${server.name}, id=${server.id}, runtime=${server.runtime}, command=${server.command}")
         scope.launch {
             updateState(server.id) { McpServerState(server, McpServerStatus.STARTING) }
             try {
@@ -819,6 +877,8 @@ class McpRuntimeManager private constructor(private val context: Context) {
         val nodeServers = servers.filter { it.runtime == "node" }
         val otherServers = servers.filter { it.runtime != "node" }
 
+        Log.i(TAG, "[startServers] 总计 ${servers.size} 个 server: node=${nodeServers.size}, other=${otherServers.size}")
+
         // 非 Node.js server 正常逐个启动
         otherServers.forEach { startServer(it) }
 
@@ -831,6 +891,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             }
 
             if (!NodeJsBridge.isLoaded) {
+                Log.w(TAG, "[startServers] Node.js 运行时不可用 (isLoaded=false)")
                 nodeServers.forEach { server ->
                     updateState(server.id) {
                         McpServerState(
@@ -845,6 +906,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             if (NodeJsBridge.hasStarted) {
                 // 如果 Node.js 已经启动，说明多路复用 bridge 已经在运行
                 // 此时应该逐个调用 startNodeServer，它会通过控制通道热添加这些 server
+                Log.i(TAG, "[startServers] Node.js 已启动 (hasStarted=true), 逐个热添加")
                 nodeServers.forEach { startNodeServer(it) }
                 return@launch
             }
@@ -856,6 +918,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             nodeServers.forEach { server ->
                 val scriptFile = resolveUserScript(server.command, mcpDir)
                 if (scriptFile == null || !scriptFile.exists()) {
+                    Log.w(TAG, "[startServers] Node.js server [${server.name}] 脚本不存在: command=${server.command}, mcpDir=${mcpDir.absolutePath}, resolved=${scriptFile?.absolutePath}")
                     updateState(server.id) {
                         McpServerState(
                             server, McpServerStatus.ERROR,
@@ -871,8 +934,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 }
             }
 
-            if (validServers.isEmpty()) return@launch
+            if (validServers.isEmpty()) {
+                Log.w(TAG, "[startServers] 没有有效的 Node.js server 可启动")
+                return@launch
+            }
 
+            Log.i(TAG, "[startServers] 启动 Node.js 多路复用 bridge, 共 ${validServers.size} 个 server")
             // 启动多路复用 bridge
             startNodeMultiBridge(mcpDir)
 
@@ -896,6 +963,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
     }
 
     fun stopServer(serverId: Long) {
+        Log.i(TAG, "[stopServer] serverId=$serverId")
         scope.launch {
             val channel = channels[serverId]
             if (channel != null) {
@@ -936,6 +1004,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
     }
 
     suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject): JSONObject? {
+        Log.d(TAG, "[callTool] serverId=$serverId, tool=$toolName")
         // 内置工具直接在本地处理，不走任何网络/进程通道
         if (serverId == BUILTIN_SERVER_ID) {
             return handleBuiltinTool(toolName, arguments)
@@ -965,6 +1034,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     suspend fun refreshTools(serverId: Long) {
         try {
+            Log.i(TAG, "[refreshTools] serverId=$serverId")
             val response = sendRequest(serverId, "tools/list", JSONObject())
             val toolsArray = response.optJSONObject("result")?.optJSONArray("tools") ?: return
             val server = _serverStates.value[serverId]?.server ?: return
@@ -979,6 +1049,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 )
             }
             updateState(serverId) { it.copy(tools = tools) }
+            Log.i(TAG, "[refreshTools] serverId=$serverId, 发现 ${tools.size} 个工具: ${tools.map { it.name }}")
         } catch (e: Exception) {
             Log.e(TAG, "刷新工具列表失败 serverId=$serverId", e)
         }
@@ -987,6 +1058,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
     // ── Python 启动 ───────────────────────────────────────────────────────
 
     private suspend fun startRemoteHttpServer(server: McpServer) {
+        Log.i(TAG, "[startRemoteHttpServer] name=${server.name}, url=${server.command}")
         val url = server.command.trim()
         if (!url.startsWith("http")) {
             updateState(server.id) {
@@ -1088,9 +1160,11 @@ class McpRuntimeManager private constructor(private val context: Context) {
     }
 
     private suspend fun startPythonServer(server: McpServer) {
+        Log.i(TAG, "[startPythonServer] name=${server.name}, command=${server.command}")
         // 确保 Python 运行时已就绪
         val ready = PythonRuntime.ensureReady(context)
         if (!ready) {
+            Log.w(TAG, "[startPythonServer] Python 运行时不可用")
             updateState(server.id) {
                 McpServerState(
                     server, McpServerStatus.ERROR,
@@ -1226,7 +1300,9 @@ exec(open('$scriptPath').read())
     private var nodeControlPort: Int = 0
 
     private suspend fun startNodeServer(server: McpServer) {
+        Log.i(TAG, "[startNodeServer] name=${server.name}, command=${server.command}, hasStarted=${NodeJsBridge.hasStarted}")
         if (!NodeJsBridge.isLoaded) {
+            Log.w(TAG, "[startNodeServer] Node.js 运行时不可用 (isLoaded=false)")
             updateState(server.id) {
                 McpServerState(
                     server, McpServerStatus.ERROR,
@@ -1245,6 +1321,7 @@ exec(open('$scriptPath').read())
         // 解析用户脚本路径
         val userScriptFile = resolveUserScript(server.command, mcpDir)
         if (userScriptFile == null || !userScriptFile.exists()) {
+            Log.w(TAG, "[startNodeServer] 脚本不存在: command=${server.command}, mcpDir=${mcpDir.absolutePath}, resolved=${userScriptFile?.absolutePath}")
             val mcpDirPath = mcpDir.absolutePath
             updateState(server.id) {
                 McpServerState(
@@ -1277,10 +1354,12 @@ exec(open('$scriptPath').read())
 
         if (!NodeJsBridge.hasStarted) {
             // Node.js 尚未启动：将此 server 加入队列，然后启动多路复用 bridge
+            Log.i(TAG, "[startNodeServer] Node.js 未启动, 加入队列并启动多路复用 bridge, port=$port")
             pendingNodeServers[server.id] = Triple(port, userScriptFile, extraArgs)
             startNodeMultiBridge(mcpDir)
         } else {
             // Node.js 已在运行：通过控制通道动态添加
+            Log.i(TAG, "[startNodeServer] Node.js 已运行, 通过控制通道热添加, port=$port, controlPort=$nodeControlPort")
             val success = addServerToRunningBridge(port, userScriptFile, extraArgs)
             if (!success) {
                 updateState(server.id) {
@@ -1334,15 +1413,15 @@ exec(open('$scriptPath').read())
                 Base64.NO_WRAP
             )
 
-            Log.d(TAG, "启动 Node.js 多路复用 bridge，共 ${pendingNodeServers.size} 个 server")
-            Log.d(TAG, "配置: $config")
+            Log.i(TAG, "[startNodeMultiBridge] 启动 Node.js 多路复用 bridge, 共 ${pendingNodeServers.size} 个 server, controlPort=$nodeControlPort")
+            Log.d(TAG, "[startNodeMultiBridge] 配置: $config")
 
             val nodeThread = Thread({
                 val result = NodeJsBridge.startScript(
                     multiBridgeScript.absolutePath,
                     "--config=$configBase64"
                 )
-                Log.i(TAG, "Node.js 多路复用 bridge 退出，返回码: $result")
+                Log.i(TAG, "[startNodeMultiBridge] Node.js 多路复用 bridge 退出, 返回码: $result")
                 nodeMultiBridgeStarted = false
 
                 // 所有 Node.js server 标记为已停止
@@ -1410,6 +1489,7 @@ exec(open('$scriptPath').read())
      * 等待 Node.js bridge 在指定端口就绪，然后建立 socket 连接并完成 MCP 握手。
      */
     private suspend fun connectToNodeServer(server: McpServer, port: Int) {
+        Log.i(TAG, "[connectToNodeServer] name=${server.name}, port=$port")
         // 等待 bridge 启动（最多 15 秒）
         delay(1500)
 
@@ -1433,10 +1513,11 @@ exec(open('$scriptPath').read())
             pendingRequests[server.id] = ConcurrentHashMap()
 
             scope.launch { readChannelOutput(server.id, channel) }
+            Log.i(TAG, "[connectToNodeServer] name=${server.name} 已连接 port=$port, 开始 MCP 握手")
             performHandshake(server)
 
         } catch (e: Exception) {
-            Log.e(TAG, "连接 Node.js MCP server [${server.name}] 失败", e)
+            Log.e(TAG, "[connectToNodeServer] name=${server.name} 连接失败 (port=$port)", e)
             updateState(server.id) {
                 McpServerState(server, McpServerStatus.ERROR, "连接失败: ${e.localizedMessage}")
             }
@@ -1563,6 +1644,7 @@ exec(open('$scriptPath').read())
     // ── MCP 握手 ──────────────────────────────────────────────────────────
 
     private suspend fun performHandshake(server: McpServer) {
+        Log.i(TAG, "[performHandshake] name=${server.name}, id=${server.id}")
         try {
             // Streamable HTTP 服务器使用新版协议版本号
             val channel = channels[server.id]
@@ -1590,16 +1672,18 @@ exec(open('$scriptPath').read())
 
             if (initResponse.has("error")) {
                 val errMsg = initResponse.optJSONObject("error")?.optString("message") ?: "初始化失败"
+                Log.e(TAG, "[performHandshake] name=${server.name} 初始化失败: $errMsg")
                 updateState(server.id) { McpServerState(server, McpServerStatus.ERROR, errMsg) }
                 return
             }
 
             sendNotification(server.id, "notifications/initialized", JSONObject())
             updateState(server.id) { McpServerState(server, McpServerStatus.RUNNING) }
+            Log.i(TAG, "[performHandshake] name=${server.name} 握手成功, 状态=RUNNING")
             refreshTools(server.id)
 
         } catch (e: Exception) {
-            Log.e(TAG, "MCP 握手失败 [${server.name}]", e)
+            Log.e(TAG, "[performHandshake] name=${server.name} 握手超时或失败", e)
             updateState(server.id) {
                 McpServerState(server, McpServerStatus.ERROR, "握手超时或失败: ${e.localizedMessage}")
             }
@@ -1666,6 +1750,7 @@ exec(open('$scriptPath').read())
     }
 
     private suspend fun readChannelOutput(serverId: Long, channel: McpChannel) {
+        Log.d(TAG, "[readChannelOutput] 开始监听 serverId=$serverId")
         try {
             var line: String?
             while (channel.reader.readLine().also { line = it } != null) {
@@ -1679,7 +1764,7 @@ exec(open('$scriptPath').read())
                 }
             }
         } catch (e: IOException) {
-            Log.d(TAG, "Server $serverId 输出流关闭")
+            Log.d(TAG, "[readChannelOutput] serverId=$serverId 输出流关闭: ${e.message}")
         } finally {
             val current = _serverStates.value[serverId]
             if (current?.status == McpServerStatus.RUNNING || current?.status == McpServerStatus.STARTING) {

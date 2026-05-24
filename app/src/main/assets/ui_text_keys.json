@@ -266,6 +266,7 @@
   "sidebar.settings": "设置",
   "sidebar.7f62f6d8": "恢复默认配色",
   "workspace.select.hint": "请在侧边栏选择或新建一个工作区开始协作",
+  "workspace.empty.completed": "该工作区没有可显示的对话记录",
   "workspace.status.completed": "已完成",
   "workspace.status.running": "运行中",
   "workspace.agents.count": "%d 个 Agent",

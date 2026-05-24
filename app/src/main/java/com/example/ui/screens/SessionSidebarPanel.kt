@@ -219,7 +219,8 @@ fun SessionSidebarPanel(
                         scope.launch {
                             val newId = workspaceViewModel.createWorkspaceSession()
                             if (newId > 0) {
-                                workspaceViewModel.selectWorkspaceSession(newId)
+                                // WHY: createWorkspaceSession 已经设置好 _selectedWorkspaceSession，
+                                // 不需要再调 selectWorkspaceSession（会触发异步清空再重载，导致空白）
                                 onWorkspaceSelected()
                             }
                         }

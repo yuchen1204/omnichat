@@ -1,5 +1,6 @@
 package com.example.data
 
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 
 class AppRepository(private val db: AppDatabase) {
@@ -117,6 +118,8 @@ class AppRepository(private val db: AppDatabase) {
         // 级联删除：先删除关联的消息和实例
         workspaceMessageDao.deleteByWorkspaceSession(id)
         agentInstanceDao.deleteByWorkspaceSession(id)
+        // 清理关联的团队任务，防止数据库膨胀（BUG-8）
+        teamTaskDao.deleteAllForTeam("workspace_$id")
         workspaceSessionDao.deleteById(id)
     }
 
@@ -133,6 +136,19 @@ class AppRepository(private val db: AppDatabase) {
         workspaceMessageDao.getMessagesByAgent(agentId)
     suspend fun insertWorkspaceMessage(message: WorkspaceMessage): Long = workspaceMessageDao.insertMessage(message)
     suspend fun deleteWorkspaceMessagesBySession(wsId: Long) = workspaceMessageDao.deleteByWorkspaceSession(wsId)
+
+    /**
+     * 原子地替换工作区的所有消息（先删除旧消息，再插入新消息）。
+     *
+     * WHY: 使用 Room 事务保证原子性。如果在 DELETE 完成后 INSERT 前进程被杀或超时，
+     * 事务会回滚，避免所有消息永久丢失。
+     */
+    suspend fun replaceWorkspaceMessages(wsId: Long, messages: List<WorkspaceMessage>) {
+        db.withTransaction {
+            workspaceMessageDao.deleteByWorkspaceSession(wsId)
+            messages.forEach { workspaceMessageDao.insertMessage(it) }
+        }
+    }
 
     // ── Agent Team 任务系统 ─────────────────────────────────────────────
 
