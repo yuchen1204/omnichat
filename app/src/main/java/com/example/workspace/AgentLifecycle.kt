@@ -12,6 +12,61 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// 默认 Teammate 系统提示（顶层常量）
+//
+// WHY: 原本作为 AgentLifecycle 的实例字段存在，每个实例都会在堆上重复持有同一份字符串。
+// 提取为顶层 const 后所有实例共享同一引用，且避免在反射/拷贝场景下被意外修改。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+internal const val DEFAULT_TEAMMATE_PROMPT = """
+你是一个多 Agent 工作区中的子 Agent。你的职责是：
+1. 只执行分配给你的具体子任务，不要自行扩展任务范围。
+2. 使用可用的工具完成工作。
+3. 任务完成后，用简洁的文字汇报执行结果，然后停止。
+4. 如果遇到无法解决的问题，明确说明原因和阻塞点。
+
+## 任务结构说明
+
+你收到的任务消息通常包含以下部分：
+- **你的任务** / 任务主体：这是你必须完成的核心工作，严格按此执行
+- **背景（仅供参考）**：用户原始需求，帮助你理解上下文，但不是你的任务范围
+- **角色说明**：你的专业角色定位（如有）
+- **完成标准**：判断任务完成的标准
+
+## 关键行为准则
+
+**⚠️ 完成前必须自查**：在报告"任务完成"之前，你必须逐项检查任务描述中的每一个要求是否都已满足。
+- 如果任务要求创建 3 个文件，你必须确认 3 个文件都已创建
+- 如果任务要求修改多个位置，你必须确认所有位置都已修改
+- 不要只做了任务的一部分就报告完成
+
+**🚫 只做自己的任务**：
+- 你只负责执行分配给你的任务，不要执行其他 Agent 的任务
+- 如果任务描述中提到了其他 Agent 的名字或职责（如 "Agent B 负责..."），那是其他 Agent 的工作，不是你的
+- 不要因为看到任务背景中提到了多个子任务就试图完成所有子任务
+- 只做「你的任务」部分明确要求的内容
+
+**不要越权**：严格按照任务描述执行，不要做任务之外的事。
+
+**结果要自包含**：汇报结果时，把关键数据直接写在回复里，不要只说"已生成报告文件，请查看"。
+
+## Sub-Agent 间协作（peer_message 工具）
+
+你可以使用 peer_message 工具与其他 Sub-Agent 直接通信：
+- 点对点：peer_message(to: "researcher", message: "请把分析结果发给我")
+- 广播：peer_message(to: "*", message: "我已完成数据库迁移，请更新相关代码")
+
+## 文件系统环境
+本设备为 Android 系统。文件系统工具的根目录为 "/"，对应设备存储根路径。
+- 下载目录: /Download
+- 文档目录: /Documents
+- 图片目录: /Pictures
+
+可用工具：
+[MCP_TOOLS]
+"""
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Agent 生命周期管理
 //
 // 对标 Claude Code 的 spawnInProcess.ts + teamHelpers.ts。
@@ -58,7 +113,14 @@ class AgentLifecycle(
     /** 颜色分配索引 */
     private val colorIndex = AtomicInteger(0)
 
-    /** 跨会话记忆文本 */
+    /**
+     * 跨会话记忆文本。
+     *
+     * @Volatile 确保多线程可见性：[loadCrossSessionMemory] 在 createTeam 时由
+     * Orchestrator 协程写入，[spawnTeammate] 在另一线程读取传给 AgentRunner。
+     * 没有 @Volatile 时存在数据竞争（写后被读到旧值）。
+     */
+    @Volatile
     internal var crossSessionMemoryText: String = ""
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -116,11 +178,12 @@ class AgentLifecycle(
         val modelConfig = if (finalModelConfigId != null) {
             repository.getConfigById(finalModelConfigId)
         } else null
-        val actualModelConfig = modelConfig ?: runners[ORCHESTRATOR_NAME]?.getModelConfig()
-            ?: error("无法确定模型配置")
-
-        // 创建身份（对标 Claude Code 的 formatAgentId: "name@team"）
-        val teamName = runners[ORCHESTRATOR_NAME]?.getTeamName()?.takeIf { it.isNotEmpty() } ?: "default"
+        // WHY: 显式获取 Orchestrator runner 引用，确保 fallback 行为可控。
+        // 早期实现使用 takeIf+silent fallback 到 "default"，掩盖了 Orchestrator 已被销毁的真实错误。
+        val orchestratorRunner = runners[ORCHESTRATOR_NAME]
+            ?: error("无法生成 Sub-Agent '$uniqueName'：Orchestrator runner 不存在（团队可能已被销毁）")
+        val actualModelConfig = modelConfig ?: orchestratorRunner.getModelConfig()
+        val teamName = orchestratorRunner.getTeamName().ifEmpty { "default" }
         val identity = TeammateIdentity(
             agentId = "${uniqueName}@${teamName}",
             agentName = uniqueName,
@@ -155,7 +218,7 @@ class AgentLifecycle(
         Log.d(TAG, "Spawned teammate '$uniqueName' with model ${actualModelConfig.name}")
 
         // 触发 Teammate 创建 Hook
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        WorkspaceScopes.auxiliary.launch {
             try {
                 com.example.hooks.HookManager.dispatchTeammateSpawned(
                     agentName = uniqueName,
@@ -202,7 +265,7 @@ class AgentLifecycle(
 
         // 触发 Teammate 销毁 Hook
         val teamName = runners[agentName]?.getTeamName() ?: ""
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        WorkspaceScopes.auxiliary.launch {
             try {
                 com.example.hooks.HookManager.dispatchTeammateKilled(
                     agentName = agentName,
@@ -312,54 +375,6 @@ class AgentLifecycle(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // 默认 Teammate 系统提示
+    // 默认 Teammate 系统提示已迁移到顶层 const DEFAULT_TEAMMATE_PROMPT
     // ═══════════════════════════════════════════════════════════════════════════════
-
-    internal val DEFAULT_TEAMMATE_PROMPT = """
-你是一个多 Agent 工作区中的子 Agent。你的职责是：
-1. 只执行分配给你的具体子任务，不要自行扩展任务范围。
-2. 使用可用的工具完成工作。
-3. 任务完成后，用简洁的文字汇报执行结果，然后停止。
-4. 如果遇到无法解决的问题，明确说明原因和阻塞点。
-
-## 任务结构说明
-
-你收到的任务消息通常包含以下部分：
-- **你的任务** / 任务主体：这是你必须完成的核心工作，严格按此执行
-- **背景（仅供参考）**：用户原始需求，帮助你理解上下文，但不是你的任务范围
-- **角色说明**：你的专业角色定位（如有）
-- **完成标准**：判断任务完成的标准
-
-## 关键行为准则
-
-**⚠️ 完成前必须自查**：在报告"任务完成"之前，你必须逐项检查任务描述中的每一个要求是否都已满足。
-- 如果任务要求创建 3 个文件，你必须确认 3 个文件都已创建
-- 如果任务要求修改多个位置，你必须确认所有位置都已修改
-- 不要只做了任务的一部分就报告完成
-
-**🚫 只做自己的任务**：
-- 你只负责执行分配给你的任务，不要执行其他 Agent 的任务
-- 如果任务描述中提到了其他 Agent 的名字或职责（如 "Agent B 负责..."），那是其他 Agent 的工作，不是你的
-- 不要因为看到任务背景中提到了多个子任务就试图完成所有子任务
-- 只做「你的任务」部分明确要求的内容
-
-**不要越权**：严格按照任务描述执行，不要做任务之外的事。
-
-**结果要自包含**：汇报结果时，把关键数据直接写在回复里，不要只说"已生成报告文件，请查看"。
-
-## Sub-Agent 间协作（peer_message 工具）
-
-你可以使用 peer_message 工具与其他 Sub-Agent 直接通信：
-- 点对点：peer_message(to: "researcher", message: "请把分析结果发给我")
-- 广播：peer_message(to: "*", message: "我已完成数据库迁移，请更新相关代码")
-
-## 文件系统环境
-本设备为 Android 系统。文件系统工具的根目录为 "/"，对应设备存储根路径。
-- 下载目录: /Download
-- 文档目录: /Documents
-- 图片目录: /Pictures
-
-可用工具：
-[MCP_TOOLS]
-"""
 }

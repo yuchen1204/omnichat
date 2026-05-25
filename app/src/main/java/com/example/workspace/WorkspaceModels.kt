@@ -2,6 +2,31 @@ package com.example.workspace
 
 import com.example.data.AgentPreset
 import com.example.data.ModelConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 工作区共享协程作用域
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 工作区辅助任务共享作用域。
+ *
+ * WHY: 原代码大量使用 [kotlinx.coroutines.GlobalScope] 触发 Hook、记录日志等
+ * 副作用任务，存在以下问题：
+ * 1. 无法集中取消（应用退出时孤儿协程仍在运行）
+ * 2. 无法挂载结构化的异常处理器
+ * 3. Lint 警告且不被 Kotlin 团队推荐
+ *
+ * 该作用域使用 [SupervisorJob] 隔离子协程异常，统一在 [Dispatchers.Default] 上运行，
+ * 仅用于 fire-and-forget 的辅助任务（如 Hook 分发），主业务循环仍由 TeamManager 自带的
+ * `parentScope` 驱动。
+ */
+internal object WorkspaceScopes {
+    /** 用于 Hook 分发等 fire-and-forget 任务，永远不取消（生命周期与进程一致） */
+    val auxiliary: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 工作区配置

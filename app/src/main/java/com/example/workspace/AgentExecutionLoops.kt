@@ -2,8 +2,6 @@ package com.example.workspace
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -231,7 +229,7 @@ class AgentExecutionLoops(
             // 外部 kill（CancellationException）由 AgentLifecycle.killTeammate() 负责触发 "killed" hook，
             // 避免同一个 Agent 触发两次 onTeammateKilled。
             if (!killedExternally) {
-                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                WorkspaceScopes.auxiliary.launch {
                     try {
                         com.example.hooks.HookManager.dispatchTeammateKilled(
                             agentName = identity.agentName,
@@ -325,18 +323,31 @@ class AgentExecutionLoops(
                 (msg.role == "system" && (msg.content.contains("执行出错") || msg.content.contains("执行失败")))
             }
 
-            messageBus.send(
-                ORCHESTRATOR_NAME,
-                TeamMessage.ResultReport(
-                    from = identity.agentName,
-                    taskId = "",
-                    result = resultSummary,
-                    success = !hasError,
-                )
-            )
-
-            taskManager.completeTask(identity.teamName, identity.agentName)
+            // WHY: 在发送 ResultReport 之前先标记 taskCompleted，避免：
+            // 1. send 抛出异常时 finally 重复发送一份"意外停止"报告，造成主控收到双重消息
+            // 2. completeTask DB 写入失败时 finally 误判为未完成
+            // 业务语义上：runTurn 已正常返回即视为任务执行完毕；上报和 DB 写入是 best-effort。
+            //
+            // WHY: 用 withContext(NonCancellable) 包裹上报 + DB 写入，避免协程取消时
+            // 主控收不到 ResultReport 而永久挂起。runTurn 已经返回，"完成"状态确定。
             taskCompleted = true
+
+            withContext(NonCancellable) {
+                try {
+                    messageBus.send(
+                        ORCHESTRATOR_NAME,
+                        TeamMessage.ResultReport(
+                            from = identity.agentName,
+                            taskId = "",
+                            result = resultSummary,
+                            success = !hasError,
+                        )
+                    )
+                    taskManager.completeTask(identity.teamName, identity.agentName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to deliver completion report for ${identity.agentName}", e)
+                }
+            }
         } finally {
             if (!taskCompleted) {
                 // 执行被异常中断（如协程取消、应用退到后台被杀、无响应等）

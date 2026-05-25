@@ -5,7 +5,6 @@ import com.example.data.AgentPreset
 import com.example.data.AppRepository
 import com.example.data.ModelConfig
 import com.example.mcp.McpRuntimeManager
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -19,9 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -534,6 +531,10 @@ class TeamManager(
             if (ready.isEmpty()) {
                 if (allAgents.isNotEmpty()) {
                     Log.w(TAG, "Circular dependency or unresolvable deps. Remaining: ${allAgents.map { it.name }}")
+                    // WHY: 原实现 break 后不向 failed 中加入这些 agent，导致最终汇总缺失它们的状态。
+                    // 主控收不到任何反馈，会卡在等待，或汇总报告不完整。这里显式标记为失败。
+                    for (spec in allAgents) failed.add(spec.name)
+                    allAgents.clear()
                 }
                 break
             }
@@ -756,7 +757,7 @@ class TeamManager(
         val agentCount = (state?.teammates?.size ?: 0)
         val totalDurationMs = if (workspaceStartTimeMs > 0) System.currentTimeMillis() - workspaceStartTimeMs else 0L
         val orchestratorSummary = orchestratorMessages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }?.content?.take(500) ?: ""
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+        WorkspaceScopes.auxiliary.launch {
             try {
                 com.example.hooks.HookManager.dispatchWorkspaceComplete(
                     teamName = teamName,

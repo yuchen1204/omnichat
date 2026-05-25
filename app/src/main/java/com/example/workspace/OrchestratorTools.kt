@@ -191,11 +191,17 @@ class OrchestratorTools(
         }
 
         // 检查任务描述是否包含其他 Agent 的名字（可能导致混乱）
+        // BUG-13：原实现 task.contains(name, ignoreCase = true) 在短名称（如 "a"）或与英文单词
+        // 重叠的子串场景下产生大量假阳性，连带把合法的任务也判定为冲突。
+        // 改为整词匹配 + 仅当 Agent 名包含字母且长度 >= 3 时才启用此校验，避免误伤。
         val teamState = teamManager.teamState.value
         if (teamState != null) {
-            val otherAgentNames = teamState.teammates.keys.filter { it != to && it != ORCHESTRATOR_NAME }
+            val otherAgentNames = teamState.teammates.keys
+                .filter { it != to && it != ORCHESTRATOR_NAME && it.length >= 3 }
             for (otherName in otherAgentNames) {
-                if (task.contains(otherName, ignoreCase = true)) {
+                // 用 \b 整词边界匹配，避免 "researcher" 命中 "research"
+                val pattern = "\\b${java.util.regex.Pattern.quote(otherName)}\\b".toRegex(RegexOption.IGNORE_CASE)
+                if (pattern.containsMatchIn(task)) {
                     return "Error: 任务描述中包含其他 Agent '$otherName' 的名字，这可能导致 '$to' 混淆。请确保任务只描述 '$to' 需要完成的工作，不要包含其他 Agent 的职责。"
                 }
             }

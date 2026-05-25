@@ -15,6 +15,9 @@ import java.util.concurrent.ConcurrentLinkedDeque
  * Agent 使用统计。
  *
  * 跟踪单个 Agent 的 token 消耗、工具调用次数和执行时长。
+ *
+ * 线程安全：所有可变字段通过 [AgentRunner.usageStatsLock] 保护，
+ * [AgentRunner.getUsageStats] 在锁内复制返回，确保外部读到一致快照。
  */
 data class AgentUsageStats(
     var totalTokens: Int = 0,
@@ -59,36 +62,55 @@ class AgentRunner(
         /** Tool Call 循环最大迭代次数，防止无限循环 */
         private const val MAX_TOOL_CALL_ITERATIONS = 50
 
-        /** Orchestrator 可用的只读工具白名单（MCP 外部工具） */
-        private val ORCHESTRATOR_READ_ONLY_TOOLS = setOf(
-            "list_directory",
-            "read_file",
-            "search_files",
-            "get_file_info",
-            "read_multiple_files",
-            "list_directory_with_sizes",
-            "directory_tree",
-            "search_code",
-            "get_file_contents",
-        )
-
         /**
-         * Orchestrator 可用的内置工具白名单。
+         * Orchestrator 禁用的内置工具黑名单。
          *
-         * 内置工具（serverId == -1）不受 ORCHESTRATOR_READ_ONLY_TOOLS 过滤，
-         * 需要单独维护白名单，避免 Orchestrator 调用文件写入等破坏性工具。
+         * 内置工具（serverId == -1）中，以下破坏性/写操作工具不允许 Orchestrator 直接调用，
+         * 应由 Sub-Agent 执行。未列出的内置工具（包括 get_current_time、ask_user、
+         * search_memory 等）默认对 Orchestrator 开放。
+         *
+         * 外部 MCP 工具（包括 remote_http）不受此黑名单限制，全部对 Orchestrator 开放，
+         * 以避免 remote HTTP MCP 工具因名称不在旧白名单中而被意外屏蔽。
          */
-        private val ORCHESTRATOR_BUILTIN_TOOLS = setOf(
-            "get_current_time",
-            "ask_user",
-            "get_ui_capabilities",
-            "list_mcp_tool_groups",
-            "search_memory",
+        private val ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS = setOf(
+            // 文件写操作
+            "write_file",
+            "create_directory",
+            "move_file",
+            "delete_file",
+            // 文档生成
+            "create_pdf_document",
+            "create_excel_document",
+            "create_word_document",
+            "create_powerpoint_document",
+            // UI 外观修改（由 Sub-Agent 或用户直接操作）
+            "set_primary_color",
+            "set_secondary_color",
+            "set_background_color",
+            "set_surface_color",
+            "set_corner_radius",
+            "set_spacing_multiplier",
+            "set_font_family",
+            "set_font_size_scale",
+            "set_font_weight",
+            // UI 文本修改
+            "set_ui_texts",
+            // MCP 工具组配置
+            "configure_mcp_tool_groups",
         )
     }
 
     /** Agent 使用统计 */
     private val usageStats = AgentUsageStats()
+
+    /**
+     * Usage stats 写入锁。
+     *
+     * WHY: usageStats 在 runTurn 协程中被多次写入（toolUseCount++、durationMs、totalTokens、startTimeMs），
+     * 同时被外部读者（OrchestratorTools.summarizeAndInject、TeamManager.triggerWorkspaceComplete）通过
+     * [getUsageStats] 读取。原实现没有同步，存在数据竞争（撕裂读、可见性问题）。
+     */
+    private val usageStatsLock = Any()
 
     /** 干预队列锁，保护 isStreaming 的 check-then-act 操作 */
     private val interventionLock = Any()
@@ -147,7 +169,9 @@ class AgentRunner(
         }
 
         isStreaming = true
-        usageStats.startTimeMs = System.currentTimeMillis()
+        synchronized(usageStatsLock) {
+            usageStats.startTimeMs = System.currentTimeMillis()
+        }
 
         var lastAssistantResponse = ""
         try {
@@ -308,7 +332,9 @@ class AgentRunner(
                             )
 
                             // 更新工具调用计数
-                            usageStats.toolUseCount++
+                            synchronized(usageStatsLock) {
+                                usageStats.toolUseCount++
+                            }
 
                             // 保存工具结果到上下文
                             messagesLock.writeLock().lock()
@@ -355,23 +381,38 @@ class AgentRunner(
 
         } finally {
             isStreaming = false
-            usageStats.durationMs = System.currentTimeMillis() - usageStats.startTimeMs
-            
+
+            // BUG-7：在锁内读取 messages 计算 token；之前的实现绕过 messagesLock，
+            // 与并发的 injectMessage / compactContext 存在数据竞争（潜在 ConcurrentModificationException）。
+            val totalChars: Int
+            messagesLock.readLock().lock()
+            try {
+                totalChars = context.messages.sumOf {
+                    it.content.length + (it.toolCallsJson?.length ?: 0)
+                }
+            } finally {
+                messagesLock.readLock().unlock()
+            }
+
+            val finalDuration: Long
+            val finalToolUseCount: Int
+            synchronized(usageStatsLock) {
+                usageStats.durationMs = System.currentTimeMillis() - usageStats.startTimeMs
+                // 估算 token 消耗（粗略估算：1 token ≈ 4 字符）
+                usageStats.totalTokens = totalChars / 4
+                finalDuration = usageStats.durationMs
+                finalToolUseCount = usageStats.toolUseCount
+            }
+
             // Dispatch Agent Turn End Hook
             com.example.hooks.HookManager.dispatchAgentTurnEnd(
                 agentId = context.agentName,
                 agentType = if (context.isOrchestrator) "orchestrator" else "teammate",
                 teamName = context.teamName,
                 result = lastAssistantResponse,
-                toolUseCount = usageStats.toolUseCount,
-                durationMs = usageStats.durationMs,
+                toolUseCount = finalToolUseCount,
+                durationMs = finalDuration,
             )
-            
-            // 估算 token 消耗（粗略估算：1 token ≈ 4 字符）
-            val totalChars = context.messages.sumOf { 
-                it.content.length + (it.toolCallsJson?.length ?: 0) 
-            }
-            usageStats.totalTokens = totalChars / 4
 
             // 处理干预消息队列（需求 8.6）
             processInterventionQueue()
@@ -381,9 +422,9 @@ class AgentRunner(
     /**
      * 获取 Agent 使用统计。
      *
-     * @return 使用统计副本
+     * @return 使用统计副本（在锁内拷贝，保证一致快照）
      */
-    fun getUsageStats(): AgentUsageStats = usageStats.copy()
+    fun getUsageStats(): AgentUsageStats = synchronized(usageStatsLock) { usageStats.copy() }
 
     /**
      * 向该 Agent 注入一条消息。
@@ -458,10 +499,17 @@ class AgentRunner(
 
     /**
      * 判断是否需要上下文压缩。
+     *
+     * BUG-8：在 messagesLock 读锁内读取，避免与并发 injectMessage 的写入冲突。
      */
     private fun shouldCompact(): Boolean {
-        val totalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
-        return totalChars > MAX_CONTEXT_CHARS
+        messagesLock.readLock().lock()
+        return try {
+            val totalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
+            totalChars > MAX_CONTEXT_CHARS
+        } finally {
+            messagesLock.readLock().unlock()
+        }
     }
 
     /**
@@ -469,70 +517,73 @@ class AgentRunner(
      *
      * 保留最近 [KEEP_RECENT_MESSAGES] 条消息，将更早的消息压缩为摘要。
      * 确保 tool/tool_call 消息的配对关系不被破坏。
+     *
+     * BUG-8/9：整体在 messagesLock 写锁下进行 read-modify-write，确保读取的快照与
+     * 写入的列表内容一致，避免在并发 injectMessage 介入时产生不一致的 summary。
      */
     private fun compactContext() {
-        if (context.messages.size <= KEEP_RECENT_MESSAGES) return
+        messagesLock.writeLock().lock()
+        try {
+            if (context.messages.size <= KEEP_RECENT_MESSAGES) return
 
-        val recentMessages = context.messages.takeLast(KEEP_RECENT_MESSAGES)
-        val oldMessages = context.messages.dropLast(KEEP_RECENT_MESSAGES)
-        val oldCount = oldMessages.size
+            val recentMessages = context.messages.takeLast(KEEP_RECENT_MESSAGES)
+            val oldMessages = context.messages.dropLast(KEEP_RECENT_MESSAGES)
+            val oldCount = oldMessages.size
 
-        // 找到安全的切割点：确保不切断 tool call 配对
-        // 策略：从 oldMessages 末尾往前找，找到最后一个完整的 tool call 块的结束位置
-        val safeDropIndex = findSafeCutIndex(oldMessages, recentMessages)
+            // 找到安全的切割点：确保不切断 tool call 配对
+            // 策略：从 oldMessages 末尾往前找，找到最后一个完整的 tool call 块的结束位置
+            val safeDropIndex = findSafeCutIndex(oldMessages, recentMessages)
 
-        val toCompress = oldMessages.take(safeDropIndex)
-        val kept = oldMessages.drop(safeDropIndex) + recentMessages
+            val toCompress = oldMessages.take(safeDropIndex)
+            val kept = oldMessages.drop(safeDropIndex) + recentMessages
 
-        val summary = buildString {
-            appendLine("（以上对话已压缩，共 $oldCount 条消息。以下是早期关键信息摘要）")
-            // 提取关键消息作为上下文摘要
-            var userMessageCount = 0
-            var assistantMessageCount = 0
-            val maxUserMessages = 2
-            val maxAssistantMessages = 2
-            var maxToolResults = 3  // 修复：改为 var 以便递减
+            val summary = buildString {
+                appendLine("（以上对话已压缩，共 $oldCount 条消息。以下是早期关键信息摘要）")
+                // 提取关键消息作为上下文摘要
+                var userMessageCount = 0
+                var assistantMessageCount = 0
+                val maxUserMessages = 2
+                val maxAssistantMessages = 2
+                var maxToolResults = 3  // 修复：改为 var 以便递减
 
-            for (msg in toCompress) {
-                when (msg.role) {
-                    "system" -> {
-                        appendLine("[系统] ${msg.content.take(200)}")
-                    }
-                    "user" -> {
-                        if (userMessageCount < maxUserMessages) {
-                            appendLine("[用户] ${msg.content.take(300)}")
-                            userMessageCount++
+                for (msg in toCompress) {
+                    when (msg.role) {
+                        "system" -> {
+                            appendLine("[系统] ${msg.content.take(200)}")
                         }
-                    }
-                    "assistant" -> {
-                        if (msg.content.isNotBlank() && assistantMessageCount < maxAssistantMessages) {
-                            appendLine("[助手] ${msg.content.take(300)}")
-                            assistantMessageCount++
+                        "user" -> {
+                            if (userMessageCount < maxUserMessages) {
+                                appendLine("[用户] ${msg.content.take(300)}")
+                                userMessageCount++
+                            }
                         }
-                    }
-                    "tool" -> {
-                        // 只保留简短的工具结果摘要，避免摘要过大
-                        if (maxToolResults > 0 && msg.content.length < 100) {
-                            appendLine("[工具结果] ${msg.content.take(100)}")
-                            maxToolResults--
+                        "assistant" -> {
+                            if (msg.content.isNotBlank() && assistantMessageCount < maxAssistantMessages) {
+                                appendLine("[助手] ${msg.content.take(300)}")
+                                assistantMessageCount++
+                            }
+                        }
+                        "tool" -> {
+                            // 只保留简短的工具结果摘要，避免摘要过大
+                            if (maxToolResults > 0 && msg.content.length < 100) {
+                                appendLine("[工具结果] ${msg.content.take(100)}")
+                                maxToolResults--
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // BUG-5：使用写锁原子替换消息列表，保证 clear() 和 addAll() 的原子性
-        val newMessages = mutableListOf(AgentMessage(role = "system", content = summary))
-        newMessages.addAll(kept)
-        messagesLock.writeLock().lock()
-        try {
+            // BUG-5：原子替换消息列表
+            val newMessages = mutableListOf(AgentMessage(role = "system", content = summary))
+            newMessages.addAll(kept)
             context.messages.clear()
             context.messages.addAll(newMessages)
+
+            Log.d(TAG, "Compacted context for ${context.agentName}: $oldCount -> ${context.messages.size} messages")
         } finally {
             messagesLock.writeLock().unlock()
         }
-
-        Log.d(TAG, "Compacted context for ${context.agentName}: $oldCount -> ${context.messages.size} messages")
     }
 
     /**
@@ -699,8 +750,9 @@ class AgentRunner(
      * 并为 Orchestrator 追加专属编排工具。
      *
      * Orchestrator 工具隔离规则：
-     * - 内置工具（serverId == -1）：只保留 [ORCHESTRATOR_BUILTIN_TOOLS] 白名单中的工具
-     * - 外部 MCP 工具：只保留 [ORCHESTRATOR_READ_ONLY_TOOLS] 白名单中的只读工具
+     * - 内置工具（serverId == -1）：屏蔽 [ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS] 黑名单中的破坏性工具，
+     *   其余内置工具（get_current_time、ask_user、search_memory 等）全部开放
+     * - 外部 MCP 工具（包括 remote_http）：全部对 Orchestrator 开放，不做额外过滤
      * - 编排工具（create_agents / assign_task / continue_conversation）单独追加
      *
      * @return 过滤后的 OpenAI 格式工具数组
@@ -727,12 +779,10 @@ class AgentRunner(
             if (context.isOrchestrator) {
                 val isBuiltin = name in builtinToolNames
                 if (isBuiltin) {
-                    // 内置工具：只保留 Orchestrator 专属白名单
-                    if (name !in ORCHESTRATOR_BUILTIN_TOOLS) continue
-                } else {
-                    // 外部 MCP 工具：只保留只读工具
-                    if (name !in ORCHESTRATOR_READ_ONLY_TOOLS) continue
+                    // 内置工具：屏蔽黑名单中的破坏性工具，其余全部开放
+                    if (name in ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS) continue
                 }
+                // 外部 MCP 工具（包括 remote_http）：全部透传，不做白名单限制
             }
 
             filtered.put(tool)

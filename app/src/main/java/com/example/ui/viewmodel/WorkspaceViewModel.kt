@@ -356,6 +356,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 // 5. 创建 TeamManager 并启动执行
                 teamManager = createTeamManager(wsId)
 
+                // WHY: 等待所有 MCP 服务（包括 remote_http）完成启动和工具发现，
+                // 确保 allTools.value 已包含 remote HTTP MCP 工具，避免 agent 看不到工具。
+                // ChatViewModel 每次发消息前都有此等待，workspace 也需要同等保障。
+                val runtimeManager = com.example.mcp.McpRuntimeManager.getInstance(getApplication())
+                runtimeManager.waitForStartingServersToFinish()
+
                 // WHY: 取消旧的收集器，避免多个协程同时更新 _teamState/_teamTasks。
                 // 切换会话或重新提交任务时，旧收集器仍持有旧 teamManager 的引用，
                 // 会将旧状态写入新会话的 StateFlow，导致 UI 显示错误数据。
