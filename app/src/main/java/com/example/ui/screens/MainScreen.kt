@@ -26,6 +26,7 @@ import com.example.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
 import com.example.ui.viewmodel.WorkspaceViewModel
+import com.example.mcp.AskUserManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +45,18 @@ fun MainScreen(
         val _unused = mcpViewModel.runtimeManager
     }
     
+    val askUserRequests by AskUserManager.requests.collectAsStateWithLifecycle()
+    val activeAskRequest = askUserRequests.firstOrNull()
+
+    if (activeAskRequest != null) {
+        AskUserDialog(
+            request = activeAskRequest,
+            onRespond = { response ->
+                AskUserManager.respond(activeAskRequest.id, response)
+            }
+        )
+    }
+
     val uiSettings = LocalUISettings.current
     val spacingMultiplier = uiSettings.spacingMultiplier
 

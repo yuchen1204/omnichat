@@ -46,7 +46,7 @@ class Converters {
         // Agent Team 任务系统
         TeamTask::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -394,6 +394,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v21→v22：team_tasks 表新增 intendedAgent 字段（任务认领匹配） */
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE team_tasks ADD COLUMN intendedAgent TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -418,7 +425,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_17_18,
                         MIGRATION_18_19,
                         MIGRATION_19_20,
-                        MIGRATION_20_21
+                        MIGRATION_20_21,
+                        MIGRATION_21_22
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。

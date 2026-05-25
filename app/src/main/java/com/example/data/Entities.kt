@@ -452,6 +452,8 @@ data class TeamTask(
     val description: String = "",
     val status: String = "PENDING",
     val owner: String? = null,
+    /** 预期执行的 Agent 名称。为 null 时表示任意 Agent 可认领 */
+    val intendedAgent: String? = null,
     val blockedBy: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),

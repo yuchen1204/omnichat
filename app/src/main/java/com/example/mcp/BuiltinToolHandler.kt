@@ -1,6 +1,9 @@
 package com.example.mcp
 
 import android.content.Context
+import android.os.Environment
+import android.util.Base64
+import android.webkit.MimeTypeMap
 import com.example.data.AppDatabase
 import com.example.data.AppRepository
 import com.example.data.UISettings
@@ -10,12 +13,13 @@ import com.example.ui.theme.UiStrings
 import com.example.ui.theme.UiStrings.Companion.toJson
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import java.text.SimpleDateFormat
-import java.util.Date
 
 object BuiltinToolHandler {
 
@@ -614,6 +618,225 @@ object BuiltinToolHandler {
                     })
                 }
             }
+            // ── 文件系统工具 ──────────────────────────────────────────────
+            "file_write" -> {
+                val relativePath = arguments.optString("path").trim()
+                val content = arguments.optString("content")
+                val encoding = arguments.optString("encoding", "utf8")
+                if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+                val file = resolveSafePath(context, relativePath)
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                try {
+                    file.parentFile?.mkdirs()
+                    if (encoding == "base64") {
+                        val bytes = Base64.decode(content, Base64.DEFAULT)
+                        file.writeBytes(bytes)
+                    } else {
+                        file.writeText(content, Charsets.UTF_8)
+                    }
+                    successResponse("文件已写入：${file.absolutePath}\n大小：${file.length()} 字节")
+                } catch (e: Exception) {
+                    errorResponse("写入文件失败：${e.localizedMessage}")
+                }
+            }
+            "file_read" -> {
+                val relativePath = arguments.optString("path").trim()
+                val encoding = arguments.optString("encoding", "utf8")
+                val maxBytes = arguments.optInt("maxBytes", 1024 * 1024).coerceIn(1, 10 * 1024 * 1024)
+                if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+                val file = resolveSafePath(context, relativePath)
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                if (!file.exists()) return errorResponse("文件不存在：$relativePath")
+                if (!file.isFile) return errorResponse("路径指向的不是文件：$relativePath")
+                try {
+                    val bytes = file.inputStream().use { stream ->
+                        val buf = ByteArray(maxBytes)
+                        val read = stream.read(buf)
+                        if (read <= 0) ByteArray(0) else buf.copyOf(read)
+                    }
+                    val truncated = file.length() > maxBytes
+                    val resultText = if (encoding == "base64") {
+                        Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    } else {
+                        String(bytes, Charsets.UTF_8)
+                    }
+                    val suffix = if (truncated) "\n\n[文件已截断，仅显示前 $maxBytes 字节，完整大小：${file.length()} 字节]" else ""
+                    successResponse(resultText + suffix)
+                } catch (e: Exception) {
+                    errorResponse("读取文件失败：${e.localizedMessage}")
+                }
+            }
+            "file_append" -> {
+                val relativePath = arguments.optString("path").trim()
+                val content = arguments.optString("content")
+                if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+                val file = resolveSafePath(context, relativePath)
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                try {
+                    file.parentFile?.mkdirs()
+                    val needsNewline = file.exists() && file.length() > 0 && !file.readText(Charsets.UTF_8).endsWith("\n")
+                    file.appendText(if (needsNewline) "\n$content" else content, Charsets.UTF_8)
+                    successResponse("内容已追加到：${file.absolutePath}\n当前文件大小：${file.length()} 字节")
+                } catch (e: Exception) {
+                    errorResponse("追加文件失败：${e.localizedMessage}")
+                }
+            }
+            "file_delete" -> {
+                val relativePath = arguments.optString("path").trim()
+                val recursive = arguments.optBoolean("recursive", false)
+                if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+                val file = resolveSafePath(context, relativePath)
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                if (!file.exists()) return errorResponse("路径不存在：$relativePath")
+                try {
+                    val success = if (recursive) deleteRecursive(file) else file.delete()
+                    if (success) successResponse("已删除：${file.absolutePath}")
+                    else errorResponse("删除失败，目录可能不为空（如需递归删除请传 recursive=true）。")
+                } catch (e: Exception) {
+                    errorResponse("删除失败：${e.localizedMessage}")
+                }
+            }
+            "file_list" -> {
+                val relativePath = arguments.optString("path", "").trim()
+                val showHidden = arguments.optBoolean("showHidden", false)
+                val dir = resolveSafePath(context, relativePath.ifEmpty { "." })
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                if (!dir.exists()) return errorResponse("目录不存在：${relativePath.ifEmpty { "(根目录)" }}")
+                if (!dir.isDirectory) return errorResponse("路径指向的不是目录：$relativePath")
+                val entries = dir.listFiles()
+                    ?.filter { showHidden || !it.name.startsWith(".") }
+                    ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                    ?: emptyList()
+                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                val text = buildString {
+                    appendLine("目录：${dir.absolutePath}")
+                    appendLine("共 ${entries.size} 项")
+                    appendLine()
+                    if (entries.isEmpty()) {
+                        appendLine("（空目录）")
+                    } else {
+                        entries.forEach { entry ->
+                            val type = if (entry.isDirectory) "📁" else "📄"
+                            val size = if (entry.isFile) " (${entry.length()} B)" else ""
+                            val modified = sdf.format(Date(entry.lastModified()))
+                            appendLine("$type ${entry.name}$size  [$modified]")
+                        }
+                    }
+                }
+                successResponse(text.trimEnd())
+            }
+            "file_search" -> {
+                val namePattern = arguments.optString("namePattern").trim().ifEmpty { null }
+                val contentQuery = arguments.optString("contentQuery").trim().ifEmpty { null }
+                val directory = arguments.optString("directory").trim()
+                val maxResults = arguments.optInt("maxResults", 20).coerceIn(1, 100)
+                if (namePattern == null && contentQuery == null) {
+                    return errorResponse("请至少提供 namePattern 或 contentQuery 之一。")
+                }
+                val searchRoot = resolveSafePath(context, directory.ifEmpty { "." })
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                if (!searchRoot.exists()) return errorResponse("搜索目录不存在：${directory.ifEmpty { "(根目录)" }}")
+                val results = mutableListOf<JSONObject>()
+                searchFiles(searchRoot, namePattern, contentQuery, results, maxResults)
+                val filesRoot = getFilesRoot(context)
+                val text = buildString {
+                    appendLine("搜索范围：${searchRoot.absolutePath}")
+                    if (namePattern != null) appendLine("文件名模式：$namePattern")
+                    if (contentQuery != null) appendLine("内容关键词：$contentQuery")
+                    appendLine("找到 ${results.size} 个结果${if (results.size >= maxResults) "（已达上限 $maxResults）" else ""}：")
+                    appendLine()
+                    results.forEach { r ->
+                        val absPath = r.optString("path")
+                        val relPath = try { File(absPath).relativeTo(filesRoot).path } catch (_: Exception) { absPath }
+                        append("• $relPath")
+                        val matchLines = r.optJSONArray("matchLines")
+                        if (matchLines != null && matchLines.length() > 0) {
+                            val lines = (0 until matchLines.length()).map { matchLines.getInt(it) }
+                            append("  (匹配行: ${lines.joinToString(", ")})")
+                        }
+                        appendLine()
+                    }
+                }
+                successResponse(text.trimEnd())
+            }
+            "file_info" -> {
+                val relativePath = arguments.optString("path").trim()
+                if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+                val file = resolveSafePath(context, relativePath)
+                    ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+                if (!file.exists()) return errorResponse("路径不存在：$relativePath")
+                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                val ext = file.extension.lowercase()
+                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+                val text = buildString {
+                    appendLine("路径：${file.absolutePath}")
+                    appendLine("类型：${if (file.isDirectory) "目录" else "文件"}")
+                    if (file.isFile) {
+                        appendLine("大小：${file.length()} 字节 (${String.format("%.2f", file.length() / 1024.0)} KB)")
+                        appendLine("MIME 类型：$mimeType")
+                    } else {
+                        val childCount = file.listFiles()?.size ?: 0
+                        appendLine("子项数量：$childCount")
+                    }
+                    appendLine("最后修改：${sdf.format(Date(file.lastModified()))}")
+                    appendLine("可读：${file.canRead()}")
+                    appendLine("可写：${file.canWrite()}")
+                }
+                successResponse(text.trimEnd())
+            }
+            "file_move" -> {
+                val srcPath = arguments.optString("sourcePath").trim()
+                val dstPath = arguments.optString("destinationPath").trim()
+                val overwrite = arguments.optBoolean("overwrite", false)
+                if (srcPath.isEmpty()) return errorResponse("参数 'sourcePath' 不能为空。")
+                if (dstPath.isEmpty()) return errorResponse("参数 'destinationPath' 不能为空。")
+                val src = resolveSafePath(context, srcPath)
+                    ?: return errorResponse("非法源路径：路径不能包含 '..' 或超出沙盒范围。")
+                val dst = resolveSafePath(context, dstPath)
+                    ?: return errorResponse("非法目标路径：路径不能包含 '..' 或超出沙盒范围。")
+                if (!src.exists()) return errorResponse("源路径不存在：$srcPath")
+                if (dst.exists() && !overwrite) return errorResponse("目标路径已存在：$dstPath（如需覆盖请传 overwrite=true）。")
+                try {
+                    dst.parentFile?.mkdirs()
+                    if (dst.exists()) dst.delete()
+                    val success = src.renameTo(dst)
+                    if (success) {
+                        successResponse("已移动：\n  从：${src.absolutePath}\n  到：${dst.absolutePath}")
+                    } else {
+                        // renameTo 跨文件系统可能失败，回退到复制+删除
+                        src.copyRecursively(dst, overwrite = true)
+                        deleteRecursive(src)
+                        successResponse("已移动（复制+删除）：\n  从：${src.absolutePath}\n  到：${dst.absolutePath}")
+                    }
+                } catch (e: Exception) {
+                    errorResponse("移动失败：${e.localizedMessage}")
+                }
+            }
+            "ask_user" -> {
+                val question = arguments.optString("question").trim()
+                if (question.isEmpty()) {
+                    return errorResponse("参数 'question' 不能为空。")
+                }
+                val optionsArray = arguments.optJSONArray("options")
+                val options = mutableListOf<String>()
+                if (optionsArray != null) {
+                    for (i in 0 until optionsArray.length()) {
+                        val opt = optionsArray.optString(i).trim()
+                        if (opt.isNotEmpty()) {
+                            options.add(opt)
+                        }
+                    }
+                }
+                val response = AskUserManager.askUser(question, options)
+                JSONObject().apply {
+                    put("content", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", response)
+                        })
+                    })
+                }
+            }
             else -> JSONObject().apply {
                 put("content", JSONArray().apply {
                     put(JSONObject().apply {
@@ -624,6 +847,116 @@ object BuiltinToolHandler {
                 put("isError", true)
             }
         }
+    }
+
+    // ── 文件系统工具辅助函数 ──────────────────────────────────────────────
+
+    /**
+     * 返回 OmniChat/files/ 根目录，并确保它存在。
+     * 所有文件工具的路径都相对于此目录。
+     */
+    private fun getFilesRoot(context: Context): File {
+        val externalDir = Environment.getExternalStorageDirectory()
+        val root = File(externalDir, "OmniChat/files")
+        if (!root.exists()) root.mkdirs()
+        return root
+    }
+
+    /**
+     * 将用户提供的相对路径解析为绝对路径，并验证它在沙盒内。
+     * 拒绝包含 ".." 的路径以防止目录遍历攻击。
+     * @return 解析后的 File，或 null（路径非法时）
+     */
+    private fun resolveSafePath(context: Context, relativePath: String): File? {
+        if (relativePath.contains("..")) return null
+        val root = getFilesRoot(context)
+        val normalized = relativePath.trimStart('/', '\\').ifEmpty { "." }
+        val resolved = File(root, normalized).canonicalFile
+        // 确保解析后的路径仍在沙盒内
+        return if (resolved.canonicalPath.startsWith(root.canonicalPath)) resolved else null
+    }
+
+    /** 递归删除目录 */
+    private fun deleteRecursive(file: File): Boolean {
+        if (file.isDirectory) {
+            file.listFiles()?.forEach { deleteRecursive(it) }
+        }
+        return file.delete()
+    }
+
+    /** 递归搜索文件 */
+    private fun searchFiles(
+        dir: File,
+        namePattern: String?,
+        contentQuery: String?,
+        results: MutableList<JSONObject>,
+        maxResults: Int
+    ) {
+        if (results.size >= maxResults) return
+        val entries = dir.listFiles() ?: return
+        for (entry in entries) {
+            if (results.size >= maxResults) break
+            if (entry.isDirectory) {
+                searchFiles(entry, namePattern, contentQuery, results, maxResults)
+            } else {
+                val nameMatch = namePattern == null || matchesGlob(entry.name, namePattern)
+                if (!nameMatch) continue
+                if (contentQuery != null) {
+                    // 只搜索文本文件（< 2MB）
+                    if (entry.length() > 2 * 1024 * 1024) continue
+                    val text = try { entry.readText(Charsets.UTF_8) } catch (_: Exception) { continue }
+                    if (!text.contains(contentQuery, ignoreCase = true)) continue
+                    // 找到匹配行
+                    val lines = text.lines()
+                    val matchLines = lines.mapIndexedNotNull { idx, line ->
+                        if (line.contains(contentQuery, ignoreCase = true)) idx + 1 else null
+                    }.take(3)
+                    results.add(JSONObject().apply {
+                        put("path", entry.path)
+                        put("matchLines", JSONArray(matchLines))
+                    })
+                } else {
+                    results.add(JSONObject().apply { put("path", entry.path) })
+                }
+            }
+        }
+    }
+
+    /** 简单 glob 匹配（仅支持 * 和 ?） */
+    private fun matchesGlob(name: String, pattern: String): Boolean {
+        val regex = buildString {
+            append("(?i)^")
+            for (ch in pattern) {
+                when (ch) {
+                    '*' -> append(".*")
+                    '?' -> append(".")
+                    else -> append(Regex.escape(ch.toString()))
+                }
+            }
+            append("$")
+        }
+        return name.matches(Regex(regex))
+    }
+
+    /** 构造统一的成功响应 */
+    private fun successResponse(text: String): JSONObject = JSONObject().apply {
+        put("content", JSONArray().apply {
+            put(JSONObject().apply {
+                put("type", "text")
+                put("text", text)
+            })
+        })
+    }
+
+    /** 构造统一的错误响应 */
+    private fun errorResponse(message: String): JSONObject = JSONObject().apply {
+        put("content", JSONArray().apply {
+            put(JSONObject().apply {
+                put("type", "text")
+                put("text", message)
+            })
+        })
+        put("isError", true)
     }
 
     private fun buildUiCapabilitiesResponse(current: UISettings): JSONObject {

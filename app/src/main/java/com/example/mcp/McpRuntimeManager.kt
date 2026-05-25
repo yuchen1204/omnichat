@@ -731,6 +731,208 @@ class McpRuntimeManager private constructor(private val context: Context) {
                     })
                 })
             }
+        ),
+        // ── 文件系统工具 ──────────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_write",
+            description = "Write content to a file in the OmniChat/files/ directory on external storage. Creates the file (and any missing parent directories) if it does not exist, or overwrites it if it does. Use this to save notes, generated code, configuration snippets, or any text data the user wants to persist.\n\n**Path rules**: Provide a relative path such as `notes/todo.txt` or `output.json`. Absolute paths and `..` traversal are rejected for safety. The resolved absolute path is returned on success.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\" or \"data/result.json\". Parent directories are created automatically.")
+                    })
+                    put("content", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Text content to write. The file is saved as UTF-8.")
+                    })
+                    put("encoding", JSONObject().apply {
+                        put("type", "string")
+                        put("enum", JSONArray().apply { put("utf8"); put("base64") })
+                        put("description", "Content encoding. \"utf8\" (default) writes the string as-is; \"base64\" decodes the string first (useful for binary files).")
+                    })
+                })
+                put("required", JSONArray().apply { put("path"); put("content") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_read",
+            description = "Read the content of a file from the OmniChat/files/ directory. Returns the file content as a UTF-8 string (or Base64 if `encoding` is set to \"base64\"). Optionally limit the output to a specific byte range for large files.\n\n**Path rules**: Relative paths only; `..` traversal is rejected.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
+                    })
+                    put("encoding", JSONObject().apply {
+                        put("type", "string")
+                        put("enum", JSONArray().apply { put("utf8"); put("base64") })
+                        put("description", "\"utf8\" (default) returns the content as a plain string; \"base64\" returns Base64-encoded bytes (useful for binary files).")
+                    })
+                    put("maxBytes", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Optional. Maximum number of bytes to read from the start of the file. Useful for previewing large files. Default: read the entire file (up to 1 MB).")
+                    })
+                })
+                put("required", JSONArray().apply { put("path") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_append",
+            description = "Append text to the end of an existing file in OmniChat/files/. If the file does not exist it is created. A newline is automatically inserted before the appended content when the file already has content and does not end with a newline.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative file path inside OmniChat/files/.")
+                    })
+                    put("content", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Text to append. Saved as UTF-8.")
+                    })
+                })
+                put("required", JSONArray().apply { put("path"); put("content") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_delete",
+            description = "Delete a file or an empty directory from OmniChat/files/. To delete a directory and all its contents recursively, set `recursive` to true.\n\n**Safety**: `..` traversal is rejected. Deletion is permanent.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative path of the file or directory to delete inside OmniChat/files/.")
+                    })
+                    put("recursive", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "If true, delete the directory and all its contents recursively. Default false (only deletes empty directories or files).")
+                    })
+                })
+                put("required", JSONArray().apply { put("path") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_list",
+            description = "List the contents of a directory inside OmniChat/files/. Returns file names, types (file/directory), sizes, and last-modified timestamps. Pass an empty string or \".\" to list the root OmniChat/files/ directory.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative directory path inside OmniChat/files/. Use \"\" or \".\" for the root. E.g. \"notes\" or \"data/exports\".")
+                    })
+                    put("showHidden", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "Include entries whose names start with a dot. Default false.")
+                    })
+                })
+                put("required", JSONArray())
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_search",
+            description = "Search for files by name pattern or by text content within OmniChat/files/. Supports glob-style name matching (e.g. `*.txt`, `report_*`) and optional full-text content search. Returns matching file paths with optional context lines around content matches.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("namePattern", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional. Glob-style filename pattern, e.g. \"*.txt\", \"report_*\", \"*.json\". Matches against the file name only (not the full path). If omitted, all files are candidates.")
+                    })
+                    put("contentQuery", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional. Search string to look for inside file contents. Case-insensitive plain-text match. Only text files are searched.")
+                    })
+                    put("directory", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional. Relative directory to restrict the search to, e.g. \"notes\". Defaults to the root OmniChat/files/ directory (recursive).")
+                    })
+                    put("maxResults", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Maximum number of results to return. Default 20, max 100.")
+                    })
+                })
+                put("required", JSONArray())
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_info",
+            description = "Get metadata for a file or directory inside OmniChat/files/: absolute path, size in bytes, last-modified timestamp, MIME type guess, whether it is readable/writable, and (for directories) the number of direct children.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
+                    })
+                })
+                put("required", JSONArray().apply { put("path") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_move",
+            description = "Move or rename a file or directory inside OmniChat/files/. The destination parent directory is created automatically if it does not exist. Both source and destination must be within OmniChat/files/.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("sourcePath", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative source path inside OmniChat/files/, e.g. \"drafts/note.txt\".")
+                    })
+                    put("destinationPath", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative destination path inside OmniChat/files/, e.g. \"archive/note_2024.txt\".")
+                    })
+                    put("overwrite", JSONObject().apply {
+                        put("type", "boolean")
+                        put("description", "If true, overwrite the destination if it already exists. Default false (returns an error if destination exists).")
+                    })
+                })
+                put("required", JSONArray().apply { put("sourcePath"); put("destinationPath") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "ask_user",
+            description = "Ask the user a clarifying question when their request is ambiguous or underspecified, or to confirm a decision. You can provide 1 to 5 options for them to choose from, or they can input their custom answer. The function will block and wait for user response.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("question", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The clarifying question or prompt to display to the user.")
+                    })
+                    put("options", JSONObject().apply {
+                        put("type", "array")
+                        put("description", "Optional list of 1 to 5 predefined options that the user can choose from.")
+                        put("items", JSONObject().apply {
+                            put("type", "string")
+                        })
+                    })
+                })
+                put("required", JSONArray().apply { put("question") })
+            }
         )
     )
 

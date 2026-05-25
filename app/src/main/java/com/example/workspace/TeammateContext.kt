@@ -27,14 +27,14 @@ enum class PermissionMode {
  * Teammate 身份信息。
  *
  * 标识一个 Agent 实例的完整身份，用于消息路由、日志和 UI 展示。
- * 对标 Claude Code 的 teammateIdentity（通过 CLI 参数或 AsyncLocalStorage 传递）。
+ * 对标 Claude Code 的 TeammateIdentity（通过 AsyncLocalStorage 传递）。
  *
  * @property agentId 全局唯一标识，格式 "agentName@teamName"（如 "researcher@my-team"）
  * @property agentName Agent 短名称（如 "researcher"）
  * @property teamName 所属团队名称
  * @property color UI 标识色，用于区分不同 Agent 的消息气泡
  * @property agentType 角色类型（如 "researcher"、"coder"、"reviewer"）
- * @property parentSessionId 父会话 ID，用于权限桥接（Leader 的 ToolUseConfirm 对话框）
+ * @property parentSessionId 父会话 ID，用于权限桥接
  */
 data class TeammateIdentity(
     val agentId: String,
@@ -52,17 +52,19 @@ data class TeammateIdentity(
  * 通过 Kotlin 的 [CoroutineContext.Element] 实现：每个 Teammate 运行在独立的
  * [CoroutineScope] 中，通过 [TeammateContext] 携带身份信息和中止控制。
  *
- * 使用方式：
- * ```kotlin
- * val identity = TeammateIdentity(...)
- * val context = TeammateContext(identity)
- * launch(context) {
- *     // 此协程内可通过 coroutineContext[TeammateContext] 获取身份
- *     val name = coroutineContext[TeammateContext]?.identity?.agentName
- * }
- * ```
+ * ## 双 Abort 控制器（对标 Claude Code 的 dual AbortController）
+ *
+ * Claude Code 中 in-process teammate 有两个 AbortController：
+ * - **lifecycle controller**：杀死整个 teammate（killTeammate 调用）
+ * - **per-turn controller**：中断当前工作，teammate 返回 idle 状态（Escape 键）
+ *
+ * 本类实现了相同的双层中止机制：
+ * - [abort] / [isAborted]：生命周期中止，teammate 整个退出
+ * - [abortCurrentTurn] / [isCurrentTurnAborted]：当前轮次中止，teammate 回到 idle
+ * - [resetTurnAbort]：每轮开始时重置 turn abort 标志
  *
  * @property identity Teammate 身份信息
+ * @property permissionMode 权限模式
  */
 class TeammateContext(
     val identity: TeammateIdentity,
@@ -71,25 +73,56 @@ class TeammateContext(
 
     companion object Key : CoroutineContext.Key<TeammateContext>
 
+    // ─── 生命周期 Abort（杀死整个 teammate）───
+
     /**
-     * 中止标志（对标 AbortController）。
+     * 生命周期中止标志。
      *
      * 当 Leader 需要终止 Teammate 时，调用 [abort] 将此标志设为 true。
      * Teammate 的执行循环应定期检查 [isAborted] 以响应中止请求。
+     * 一旦设置为 true，teammate 应立即退出整个执行循环。
      */
     private val _isAborted = MutableStateFlow(false)
 
-    /** 当前是否已被中止 */
+    /** 当前是否已被中止（生命周期级别） */
     val isAborted: Boolean get() = _isAborted.value
 
-    /** 中止此 Teammate 的执行 */
+    /** 中止此 Teammate 的执行（生命周期级别，teammate 将整个退出） */
     fun abort() {
         _isAborted.value = true
+        // 同时中止当前轮次，确保挂起的 runTurn 也能收到信号
+        _isCurrentTurnAborted.value = true
+    }
+
+    // ─── 当前轮次 Abort（中断当前工作，返回 idle）───
+
+    /**
+     * 当前轮次中止标志。
+     *
+     * 对标 Claude Code 的 per-turn AbortController。
+     * 用户按 Escape 或 Leader 中断当前工作时设置。
+     * Teammate 完成当前工具调用后回到 idle 状态，而非整个退出。
+     *
+     * 每轮开始时通过 [resetTurnAbort] 重置。
+     */
+    private val _isCurrentTurnAborted = MutableStateFlow(false)
+
+    /** 当前轮次是否已被中止 */
+    val isCurrentTurnAborted: Boolean get() = _isCurrentTurnAborted.value
+
+    /** 中止当前轮次的工作（teammate 将回到 idle 状态，而非退出） */
+    fun abortCurrentTurn() {
+        _isCurrentTurnAborted.value = true
+    }
+
+    /** 重置当前轮次的中止标志（每轮 runTurn 开始时调用） */
+    fun resetTurnAbort() {
+        _isCurrentTurnAborted.value = false
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 便捷扩展函数（对标 teammate.ts 的 getAgentName() 等）
+// 便捷扩展函数
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -102,24 +135,18 @@ val CoroutineScope.teammateContext: TeammateContext?
 
 /**
  * 获取当前 Teammate 的 Agent 名称。
- *
- * 便捷属性，等价于 `teammateContext?.identity?.agentName`。
  */
 val CoroutineScope.agentName: String?
     get() = teammateContext?.identity?.agentName
 
 /**
  * 获取当前 Teammate 的 Agent ID。
- *
- * 便捷属性，等价于 `teammateContext?.identity?.agentId`。
  */
 val CoroutineScope.agentId: String?
     get() = teammateContext?.identity?.agentId
 
 /**
  * 获取当前 Teammate 所属的团队名称。
- *
- * 便捷属性，等价于 `teammateContext?.identity?.teamName`。
  */
 val CoroutineScope.teamName: String?
     get() = teammateContext?.identity?.teamName
@@ -132,8 +159,6 @@ val CoroutineScope.isTeammate: Boolean
 
 /**
  * 获取当前 Teammate 上下文，如果不在 Teammate 上下文中则抛出异常。
- *
- * 对标蓝图中的 requireTeammateContext() 扩展函数。
  */
 fun CoroutineScope.requireTeammateContext(): TeammateContext =
     teammateContext ?: error("Not running in a teammate context")

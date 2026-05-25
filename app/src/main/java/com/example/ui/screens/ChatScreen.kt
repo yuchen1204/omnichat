@@ -42,6 +42,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.MemoryItem
 import com.example.data.ModelConfig
 import com.example.ui.components.ChunkedStreamingText
+import com.example.ui.components.ToolGroupCard
+import com.example.ui.components.toUIModel
 import com.example.ui.theme.LocalChatFontScale
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
@@ -194,6 +196,10 @@ fun ChatView(viewModel: ChatViewModel) {
             }
         }
 
+        val uiModelMessages = remember(messages) {
+            messages.map { it.toUIModel() }
+        }
+
         // --- 聚合 Tool 消息展示逻辑并反转以适应 reverseLayout ---
         val processedMessages = remember(messages) {
             val list = mutableListOf<Any>()
@@ -264,7 +270,11 @@ fun ChatView(viewModel: ChatViewModel) {
                         is List<*> -> {
                             // 渲染工具调用聚合条
                             @Suppress("UNCHECKED_CAST")
-                            ToolGroupIndicator(messages = item as List<com.example.data.Message>)
+                            val toolMsgs = (item as List<com.example.data.Message>).map { it.toUIModel() }
+                            ToolGroupCard(
+                                messages = toolMsgs,
+                                allMessages = uiModelMessages
+                            )
                         }
                     }
                 }
@@ -737,83 +747,6 @@ fun ThinkingProcessPanel(
     }
 }
 
-@Composable
-fun ToolGroupIndicator(messages: List<com.example.data.Message>) {
-    // 聚合逻辑：显示 "Tool use [name] x [count]"
-    val totalCount = messages.size
-    val label = if (totalCount > 1) uiText("chat.tools_used_count", "已调用 %d 个工具").format(totalCount) else uiText("chat.tool_used", "已调用工具")
-
-    val uiSettings = LocalUISettings.current
-    val fs = uiSettings.fontSizeScale
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        var showDetails by remember { mutableStateOf(false) }
-        
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-                onClick = { showDetails = !showDetails },
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Build,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = label,
-                        fontSize = (12 * fs).sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = if (showDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-            
-            AnimatedVisibility(visible = showDetails) {
-                Column(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .widthIn(max = 300.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    messages.forEach { msg ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = "${uiText("chat.tool_result_prefix", "结果: ")}${msg.content.take(100)}${if(msg.content.length > 100) "..." else ""}",
-                                fontSize = (11 * fs).sp,
-                                modifier = Modifier.padding(8.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

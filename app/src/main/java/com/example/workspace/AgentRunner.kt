@@ -112,10 +112,10 @@ class AgentRunner(
      *
      * @param userMessage 用户消息，可选。如果提供，将追加到对话历史后再调用 API
      */
-    suspend fun runTurn(userMessage: String? = null) {
+    suspend fun runTurn(userMessage: String? = null, source: String = "") {
         // 如果提供了用户消息，先追加到上下文
         if (userMessage != null) {
-            injectMessage("user", userMessage, isIntervention = false)
+            injectMessage("user", userMessage, isIntervention = false, source = source)
         }
 
         // 上下文压缩检查
@@ -355,12 +355,14 @@ class AgentRunner(
      * @param role 消息角色："user" | "assistant" | "tool" | "system"
      * @param content 消息内容
      * @param isIntervention 是否为用户干预消息
+     * @param source 消息来源标识："" = 用户真实输入，"orchestrator" = 主控注入，"subagent" = 子Agent上报
      */
-    fun injectMessage(role: String, content: String, isIntervention: Boolean = false) {
+    fun injectMessage(role: String, content: String, isIntervention: Boolean = false, source: String = "") {
         val message = AgentMessage(
             role = role,
             content = content,
-            isIntervention = isIntervention
+            isIntervention = isIntervention,
+            source = source
         )
 
         synchronized(interventionLock) {
@@ -443,13 +445,35 @@ class AgentRunner(
 
         val summary = buildString {
             appendLine("（以上对话已压缩，共 $oldCount 条消息。以下是早期关键信息摘要）")
-            // 提取 system 和第一条 user 消息作为上下文
+            // 提取关键消息作为上下文摘要
+            var userMessageCount = 0
+            var assistantMessageCount = 0
+            val maxUserMessages = 2
+            val maxAssistantMessages = 2
+            val maxToolResults = 3
+
             for (msg in toCompress) {
                 when (msg.role) {
-                    "system" -> appendLine("[系统] ${msg.content.take(200)}")
+                    "system" -> {
+                        appendLine("[系统] ${msg.content.take(200)}")
+                    }
                     "user" -> {
-                        appendLine("[用户] ${msg.content.take(200)}")
-                        break // 只保留第一条用户消息
+                        if (userMessageCount < maxUserMessages) {
+                            appendLine("[用户] ${msg.content.take(300)}")
+                            userMessageCount++
+                        }
+                    }
+                    "assistant" -> {
+                        if (msg.content.isNotBlank() && assistantMessageCount < maxAssistantMessages) {
+                            appendLine("[助手] ${msg.content.take(300)}")
+                            assistantMessageCount++
+                        }
+                    }
+                    "tool" -> {
+                        // 只保留简短的工具结果摘要，避免摘要过大
+                        if (msg.content.length < 100 && maxToolResults > 0) {
+                            appendLine("[工具结果] ${msg.content.take(100)}")
+                        }
                     }
                 }
             }
@@ -691,4 +715,18 @@ class AgentRunner(
      * @return true 如果是 Orchestrator，false 否则
      */
     fun isOrchestrator(): Boolean = context.isOrchestrator
+
+    /**
+     * 获取 Agent 的模型配置。
+     *
+     * @return ModelConfig 实例
+     */
+    fun getModelConfig(): ModelConfig = context.modelConfig
+
+    /**
+     * 获取 Agent 的团队名称。
+     *
+     * @return 团队名称
+     */
+    fun getTeamName(): String = context.teamName
 }

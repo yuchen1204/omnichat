@@ -294,6 +294,9 @@ interface WorkspaceMessageDao {
 
     @Query("DELETE FROM workspace_messages WHERE workspaceSessionId = :wsId")
     suspend fun deleteByWorkspaceSession(wsId: Long)
+
+    @Query("DELETE FROM workspace_messages WHERE agentInstanceId = :agentInstanceId")
+    suspend fun deleteByAgentInstance(agentInstanceId: Long)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -327,16 +330,31 @@ interface TeamTaskDao {
     suspend fun getTasks(teamName: String): List<TeamTask>
 
     /**
-     * 查找可认领的任务。
+     * 查找可认领的任务（带 Agent 匹配）。
      *
      * 查找状态为 PENDING 且无认领者的第一个任务。
+     * 优先匹配 intendedAgent 与当前 Agent 名称相同的任务，
+     * 如果没有匹配则退化为任意可认领任务（intendedAgent IS NULL）。
+     *
      * 对标 inProcessRunner.ts 中 findAvailableTask() 的逻辑。
      *
      * @param teamName 团队名称
+     * @param agentName 当前 Agent 名称，用于匹配 intendedAgent
      * @return 可认领的任务，如果没有则返回 null
      */
-    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName AND status = 'PENDING' AND owner IS NULL AND blockedBy = '' ORDER BY id ASC LIMIT 1")
-    suspend fun findClaimableTask(teamName: String): TeamTask?
+    @Query("""
+        SELECT * FROM team_tasks 
+        WHERE teamName = :teamName 
+          AND status = 'PENDING' 
+          AND owner IS NULL 
+          AND blockedBy = ''
+          AND (intendedAgent IS NULL OR intendedAgent = :agentName)
+        ORDER BY 
+            CASE WHEN intendedAgent = :agentName THEN 0 ELSE 1 END,
+            id ASC 
+        LIMIT 1
+    """)
+    suspend fun findClaimableTask(teamName: String, agentName: String): TeamTask?
 
     /**
      * 插入新任务。

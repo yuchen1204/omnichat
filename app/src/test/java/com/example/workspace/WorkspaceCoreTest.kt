@@ -99,7 +99,7 @@ class WorkspaceCoreTest {
         assertEquals("Coder", parsedDirective?.agents?.get(0)?.name)
         assertEquals("Code Writer", parsedDirective?.agents?.get(0)?.role)
         assertEquals("Write Kotlin code", parsedDirective?.agents?.get(0)?.systemPrompt)
-        assertEquals(TeamManager.TaskMode.CLAIM, parsedDirective?.taskMode)
+        assertEquals(TaskMode.CLAIM, parsedDirective?.taskMode)
 
         // taskMode = direct
         val directDirectiveJson = """
@@ -107,7 +107,7 @@ class WorkspaceCoreTest {
         """.trimIndent()
         val directParsedDirective = teamManager.parseOrchestratorOutput(directDirectiveJson)
         assertNotNull(directParsedDirective)
-        assertEquals(TeamManager.TaskMode.DIRECT, directParsedDirective?.taskMode)
+        assertEquals(TaskMode.DIRECT, directParsedDirective?.taskMode)
         assertEquals("Researcher", directParsedDirective?.agents?.get(0)?.name)
     }
 
@@ -231,7 +231,7 @@ class WorkspaceCoreTest {
         assertNotNull("系统提示中的 JSON 示例应能被正确解析", directive)
         assertEquals(1, directive?.agents?.size)
         assertEquals("Worker", directive?.agents?.get(0)?.name)
-        assertEquals(TeamManager.TaskMode.DIRECT, directive?.taskMode)
+        assertEquals(TaskMode.DIRECT, directive?.taskMode)
     }
 
     // ─── WorkspaceConfig 配置验证 ────────────────────────────────────────────

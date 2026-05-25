@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.service.WorkspaceForegroundService
 import com.example.workspace.*
 import com.example.workspace.TeamCompletionSnapshot
 import kotlinx.coroutines.Job
@@ -18,6 +19,7 @@ import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.mcp.AskUserManager
 
 /**
  * 多 Agent 工作区 ViewModel。
@@ -203,9 +205,18 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * @param id 工作区会话 ID
      */
     fun selectWorkspaceSession(id: Long) {
+        AskUserManager.clearAll()
         // WHY: 立即从内存中的 workspaceSessions 列表找到目标 session 并设置，
         // 避免协程调度延迟导致 UI 切换后 currentSession==null 显示空白占位页。
         // 如果列表里还没有（极少数情况），先设置 selectedWorkspaceId 让 UI 知道有选中项。
+
+        // WHY: 在更新 _selectedWorkspaceId/_selectedWorkspaceSession 之前，先捕获旧会话的引用。
+        // 协程是异步调度的，若在协程内部读取这些字段，已经是新会话的值，
+        // 导致 persistCurrentSessionMessages 把旧消息写入新会话或因 isActive 判断错误而跳过。
+        val prevWsId = _selectedWorkspaceId.value
+        val prevSession = _selectedWorkspaceSession.value
+        val prevManager = teamManager
+
         val cachedSession = workspaceSessions.value.find { it.id == id }
         if (cachedSession != null) {
             _selectedWorkspaceId.value = id
@@ -215,8 +226,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         viewModelScope.launch {
-            // 切换前持久化当前活跃会话的消息，避免切回时丢失
-            persistCurrentSessionMessages()
+            // 切换前持久化旧会话的消息，避免切回时丢失
+            persistCurrentSessionMessages(prevManager, prevWsId, prevSession)
 
             // WHY: 切换到任何会话前必须清理旧活跃会话的 TeamManager 和收集器，
             // 否则旧协程继续运行并污染新会话的 UI 状态
@@ -229,6 +240,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.w("WorkspaceViewModel", "deleteTeam on switch failed (non-fatal)", e)
             }
+            // 停止前台服务（切换会话时不再需要保活）
+            WorkspaceForegroundService.stop(getApplication())
             messageBus.clear()
             _teamState.value = null
             _teamTasks.value = emptyList()
@@ -273,6 +286,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 } catch (e: Exception) {
                     Log.w("WorkspaceViewModel", "deleteTeam on delete failed (non-fatal)", e)
                 }
+                // 停止前台服务
+                WorkspaceForegroundService.stop(getApplication())
 
                 repository.deleteWorkspaceSession(id)
 
@@ -356,6 +371,13 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 teamManager?.createTeam("workspace_$wsId", orchestratorConfig, presets)
+
+                // 启动前台服务，防止应用进入后台后被杀死
+                WorkspaceForegroundService.start(
+                    getApplication(),
+                    "正在执行多 Agent 协作：${task.take(30)}..."
+                )
+
                 teamManager?.startExecution(task)
 
             } catch (e: Exception) {
@@ -366,6 +388,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 // WHY: 异常时清理 teamManager，避免协程在后台继续运行消耗资源。
                 teamManager?.deleteTeam()
                 teamManager = null
+                // 停止前台服务
+                WorkspaceForegroundService.stop(getApplication())
                 _errorMessage.value = "启动工作区执行失败，请重试"
             }
         }
@@ -619,7 +643,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         dateFormat: SimpleDateFormat
     ) {
         // Orchestrator
-        val orchestratorHistory = teamManager?.getAgentHistory(TeamManager.ORCHESTRATOR_NAME)
+        val orchestratorHistory = teamManager?.getAgentHistory(ORCHESTRATOR_NAME)
         if (!orchestratorHistory.isNullOrEmpty()) {
             appendLine()
             appendLine("═══════════════════════════════════════════════════════════════")
@@ -793,6 +817,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     }
                 }
+            } else {
+                // WHY: orchestratorInstance == null 说明 AgentInstance 还没写入 DB，
+                // 这发生在任务刚提交（submitTask 执行中）但还没切换过会话的情况。
+                // 此时 _agentTabs 已由 submitTask/onAgentCreated 回调填充，
+                // 不应清空，让 UI 继续显示正在执行的内容（BUG-次因修复）。
+                Log.d("WorkspaceViewModel", "No AgentInstance in DB for session $workspaceSessionId yet (task just submitted), keeping current agentTabs")
             }
         } catch (e: Exception) {
             Log.e("WorkspaceViewModel", "Error restoring active workspace session history", e)
@@ -803,84 +833,72 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * 持久化当前活跃会话的消息到数据库。
      *
      * 在切换会话前调用，确保活跃会话的 Orchestrator 和 Sub-Agent 消息不会因 teamManager 销毁而丢失。
-     * 如果当前无活跃会话或 teamManager 为空，跳过。
+     * 如果当前无活跃会话或 manager 为空，跳过。
+     *
+     * WHY: 接收外部传入的 manager/wsId/session 参数而非直接读取字段，
+     * 防止调用方在持久化前已将这些字段更新为新会话的值，导致：
+     * 1. teamManager==null 跳过持久化
+     * 2. wsId/session 指向新会话，旧消息写入错误的 session 或因 isActive 判断错误而跳过
+     * （BUG-主因修复）
+     *
+     * @param manager 要持久化消息的 TeamManager 实例，为 null 时跳过
+     * @param wsId 旧会话 ID，为 null 时跳过
+     * @param session 旧会话对象，为 null 时跳过
      */
-    private suspend fun persistCurrentSessionMessages() {
-        val wsId = _selectedWorkspaceId.value ?: return
-        val session = _selectedWorkspaceSession.value ?: return
+    private suspend fun persistCurrentSessionMessages(
+        manager: TeamManager? = teamManager,
+        wsId: Long? = _selectedWorkspaceId.value,
+        session: WorkspaceSession? = _selectedWorkspaceSession.value
+    ) {
+        if (wsId == null) return
+        if (session == null) return
         if (!session.isActive) return
 
-        val manager = teamManager ?: return
+        // 统一以 _agentTabs 为主数据源持久化消息。
+        // _agentTabs 里的 messages 在每次 onAgentStatusChanged(IDLE/COMPLETED) 和
+        // onWorkspaceComplete 时都会被更新为最新快照，不依赖 runner 是否还在内存中。
+        // 这比直接读 manager.getAgentHistory() 更可靠，避免 runner 被 dispose 后读到空列表。
+        val tabs = _agentTabs.value
+        if (tabs.isEmpty()) return
 
         try {
-            // 获取或创建 Orchestrator 的 AgentInstance
             val instances = repository.getAgentInstancesByWorkspaceSession(wsId)
-            var orchestratorInstance = instances.find { it.isOrchestrator }
-
-            if (orchestratorInstance == null) {
-                val allConfigs = repository.getAllConfigs()
-                val configId = allConfigs.firstOrNull()?.id ?: 1L
-                orchestratorInstance = AgentInstance(
-                    workspaceSessionId = wsId,
-                    agentName = TeamManager.ORCHESTRATOR_NAME,
-                    isOrchestrator = true,
-                    systemPrompt = ORCHESTRATOR_SYSTEM_PROMPT,
-                    modelConfigId = configId
-                )
-                val id = repository.insertAgentInstance(orchestratorInstance)
-                // BUG-4：验证 insert 返回的 ID > 0，失败时跳过持久化，避免 agentInstanceId=0 写入数据库
-                if (id <= 0) {
-                    Log.e("WorkspaceViewModel", "Failed to insert Orchestrator AgentInstance (id=$id), skipping message persistence")
-                    return
-                }
-                orchestratorInstance = orchestratorInstance.copy(id = id)
-            }
-
-            // WHY: 先收集所有消息，再用事务原子替换，避免 DELETE 完成后 INSERT 前崩溃导致数据丢失
             val allMessages = mutableListOf<WorkspaceMessage>()
 
-            // 收集 Orchestrator 消息
-            val orchestratorHistory = manager.getAgentHistory(TeamManager.ORCHESTRATOR_NAME)
-            for (msg in orchestratorHistory) {
-                allMessages.add(WorkspaceMessage(
-                    workspaceSessionId = wsId,
-                    agentInstanceId = orchestratorInstance.id,
-                    role = msg.role,
-                    content = msg.content,
-                    toolCallId = msg.toolCallId,
-                    toolCallsJson = msg.toolCallsJson,
-                    isIntervention = msg.isIntervention,
-                    timestamp = msg.timestamp
-                ))
-            }
+            for (tab in tabs) {
+                // 优先从 _agentTabs 取消息；如果 tab 里是空的，再尝试从 manager 读（活跃 runner）
+                val tabMessages = tab.messages.ifEmpty {
+                    manager?.getAgentHistory(tab.agentName) ?: emptyList()
+                }
+                if (tabMessages.isEmpty()) continue
 
-            // 收集 Sub-Agent 消息
-            val state = _teamState.value
-            val subAgents = state?.teammates?.values?.filter { !it.isOrchestrator } ?: emptyList()
-            for (teammate in subAgents) {
-                val name = teammate.identity.agentName
-                val history = manager.getAgentHistory(name)
-                if (history.isEmpty()) continue
-
-                val existingInstance = instances.find { it.agentName == name }
-                val agentInstance = existingInstance ?: run {
+                // 找到或创建对应的 AgentInstance
+                val existingInstance = instances.find { it.agentName == tab.agentName }
+                val agentInstance: AgentInstance = if (existingInstance != null) {
+                    existingInstance
+                } else {
+                    // AgentInstance 还没写入 DB（任务刚提交），创建一条
+                    val orchestratorConfigId = instances.find { it.isOrchestrator }?.modelConfigId
+                        ?: manager?.let { m ->
+                            // 从 manager 里拿 Orchestrator 的 modelConfigId
+                            try { repository.getAllConfigs().firstOrNull()?.id ?: 1L } catch (_: Exception) { 1L }
+                        } ?: 1L
                     val newInstance = AgentInstance(
                         workspaceSessionId = wsId,
-                        agentName = name,
-                        isOrchestrator = false,
-                        systemPrompt = "",
-                        modelConfigId = orchestratorInstance.modelConfigId
+                        agentName = tab.agentName,
+                        isOrchestrator = tab.isOrchestrator,
+                        systemPrompt = if (tab.isOrchestrator) ORCHESTRATOR_SYSTEM_PROMPT else "",
+                        modelConfigId = orchestratorConfigId
                     )
                     val id = repository.insertAgentInstance(newInstance)
-                    // BUG-4：验证 insert 返回的 ID > 0，失败时跳过该 Sub-Agent 的消息
                     if (id <= 0) {
-                        Log.e("WorkspaceViewModel", "Failed to insert AgentInstance for $name (id=$id), skipping")
-                        return@run null
+                        Log.e("WorkspaceViewModel", "Failed to insert AgentInstance for ${tab.agentName}, skipping")
+                        continue
                     }
                     newInstance.copy(id = id)
-                } ?: continue
+                }
 
-                for (msg in history) {
+                for (msg in tabMessages) {
                     allMessages.add(WorkspaceMessage(
                         workspaceSessionId = wsId,
                         agentInstanceId = agentInstance.id,
@@ -894,9 +912,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            repository.replaceWorkspaceMessages(wsId, allMessages)
-
-            Log.d("WorkspaceViewModel", "Persisted messages before session switch: ${orchestratorHistory.size} orchestrator + ${subAgents.sumOf { manager.getAgentHistory(it.identity.agentName).size }} sub-agent")
+            if (allMessages.isNotEmpty()) {
+                repository.replaceWorkspaceMessages(wsId, allMessages)
+                Log.d("WorkspaceViewModel", "Persisted ${allMessages.size} messages from _agentTabs before session switch")
+            }
         } catch (e: Exception) {
             Log.e("WorkspaceViewModel", "Failed to persist messages before session switch", e)
         }
@@ -922,7 +941,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 val configId = allConfigs.firstOrNull()?.id ?: 1L
                 orchestratorInstance = AgentInstance(
                     workspaceSessionId = workspaceSessionId,
-                    agentName = TeamManager.ORCHESTRATOR_NAME,
+                    agentName = ORCHESTRATOR_NAME,
                     isOrchestrator = true,
                     systemPrompt = ORCHESTRATOR_SYSTEM_PROMPT,
                     modelConfigId = configId
@@ -1111,12 +1130,43 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     _agentTabs.update { tabs ->
                         tabs.map { tab ->
                             if (tab.agentName == agentName) {
-                                tab.copy(status = status, messages = history)
+                                // 如果读到的 history 为空（runner 可能已被 dispose），
+                                // 保留 tab 里已有的 messages，避免覆盖为空列表
+                                val newMessages = history.ifEmpty { tab.messages }
+                                tab.copy(status = status, messages = newMessages)
                             } else tab
                         }
                     }
                     // 清除该 Agent 的流式缓冲区
                     _agentStreamBuffers.update { it.toMutableMap().apply { remove(agentName) } }
+
+                    // COMPLETED 时立即把该 Agent 的消息持久化到 DB，
+                    // 确保切换会话时 DB 里一定有最新数据，不依赖切换时的 persistCurrentSessionMessages
+                    if (status == AgentStatus.COMPLETED && history.isNotEmpty()) {
+                        viewModelScope.launch {
+                            try {
+                                val currentWsId = _selectedWorkspaceId.value ?: return@launch
+                                val instances = repository.getAgentInstancesByWorkspaceSession(currentWsId)
+                                val instance = instances.find { it.agentName == agentName } ?: return@launch
+                                val messages = history.map { msg ->
+                                    WorkspaceMessage(
+                                        workspaceSessionId = currentWsId,
+                                        agentInstanceId = instance.id,
+                                        role = msg.role,
+                                        content = msg.content,
+                                        toolCallId = msg.toolCallId,
+                                        toolCallsJson = msg.toolCallsJson,
+                                        isIntervention = msg.isIntervention,
+                                        timestamp = msg.timestamp
+                                    )
+                                }
+                                repository.replaceAgentMessages(currentWsId, instance.id, messages)
+                                Log.d("WorkspaceViewModel", "Eagerly persisted ${messages.size} messages for $agentName on COMPLETED")
+                            } catch (e: Exception) {
+                                Log.w("WorkspaceViewModel", "Eager persist for $agentName failed (non-fatal)", e)
+                            }
+                        }
+                    }
                 } else {
                     _agentTabs.update { tabs ->
                         tabs.map { tab ->
@@ -1130,6 +1180,25 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             onWorkspaceComplete = { snapshot ->
                 viewModelScope.launch {
                     try {
+                        // 用 snapshot 里的完整消息更新 _agentTabs，
+                        // 确保工作区完成时所有 Agent 的消息都正确显示，
+                        // 不依赖 runner 是否还在内存中（runner 可能已被 dispose）
+                        _agentTabs.update { tabs ->
+                            tabs.map { tab ->
+                                val snapshotMessages = when {
+                                    tab.isOrchestrator ->
+                                        snapshot.orchestratorMessages
+                                    else ->
+                                        snapshot.subAgentMessages[tab.agentName]
+                                            ?: tab.messages  // 没有快照就保留现有
+                                }
+                                tab.copy(
+                                    status = AgentStatus.COMPLETED,
+                                    messages = snapshotMessages.ifEmpty { tab.messages }
+                                )
+                            }
+                        }
+
                         persistAllAgentMessages(wsId, snapshot)
 
                         val firstUserMsg = snapshot.orchestratorMessages.find { it.role == "user" }?.content ?: "新工作区"
@@ -1142,6 +1211,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                         if (updatedSession != null) {
                             _selectedWorkspaceSession.value = updatedSession
                         }
+
+                        // 更新通知为完成状态
+                        WorkspaceForegroundService.complete(
+                            getApplication(),
+                            "任务已完成：$title"
+                        )
 
                         // WHY: identity check 确认当前 teamManager 仍是完成的那个，
                         // 否则快速 submitTask 可能导致新 manager 被误删
@@ -1184,11 +1259,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         super.onCleared()
+        AskUserManager.clearAll()
         // WHY: 改为 GlobalScope.launch(NonCancellable) 异步执行，不阻塞主线程，避免 ANR（BUG-2）。
         // runBlocking 在主线程最多阻塞 5 秒，deleteTeam() 内部 join 所有协程，低端设备高概率 ANR。
         kotlinx.coroutines.GlobalScope.launch(NonCancellable) {
             try {
-                persistCurrentSessionMessages()
+                persistCurrentSessionMessages(teamManager)
                 teamManager?.deleteTeam()
             } catch (e: Exception) {
                 Log.e("WorkspaceViewModel", "Cleanup failed in onCleared", e)

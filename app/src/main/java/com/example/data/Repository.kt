@@ -150,6 +150,19 @@ class AppRepository(private val db: AppDatabase) {
         }
     }
 
+    /**
+     * 原子地替换单个 Agent 的消息（COMPLETED 时即时持久化用）。
+     *
+     * 只删除该 agentInstanceId 的消息，不影响同一 workspace 里其他 Agent 的消息。
+     * 比 replaceWorkspaceMessages 更细粒度，避免覆盖其他 Agent 正在写入的消息。
+     */
+    suspend fun replaceAgentMessages(wsId: Long, agentInstanceId: Long, messages: List<WorkspaceMessage>) {
+        db.withTransaction {
+            workspaceMessageDao.deleteByAgentInstance(agentInstanceId)
+            messages.forEach { workspaceMessageDao.insertMessage(it) }
+        }
+    }
+
     // ── Agent Team 任务系统 ─────────────────────────────────────────────
 
     /**
@@ -166,9 +179,10 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getTeamTasks(teamName: String): List<TeamTask> = teamTaskDao.getTasks(teamName)
 
     /**
-     * 查找可认领的任务。
+     * 查找可认领的任务（带 Agent 匹配）。
      */
-    suspend fun findClaimableTeamTask(teamName: String): TeamTask? = teamTaskDao.findClaimableTask(teamName)
+    suspend fun findClaimableTeamTask(teamName: String, agentName: String): TeamTask? = 
+        teamTaskDao.findClaimableTask(teamName, agentName)
 
     /**
      * 插入新任务。

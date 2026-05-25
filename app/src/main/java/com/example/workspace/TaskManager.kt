@@ -30,6 +30,7 @@ class TaskManager(private val dao: TeamTaskDao) {
      * @param teamName 所属团队名称
      * @param subject 任务主题（简短描述）
      * @param description 任务详细描述（可选）
+     * @param intendedAgent 预期执行的 Agent 名称（可选，null 表示任意 Agent 可认领）
      * @param blockedBy 被阻塞的任务 ID 列表，所有依赖任务完成后才能认领（可选）
      * @return 新创建的 TeamTask 对象
      */
@@ -37,12 +38,14 @@ class TaskManager(private val dao: TeamTaskDao) {
         teamName: String,
         subject: String,
         description: String = "",
+        intendedAgent: String? = null,
         blockedBy: List<String> = emptyList()
     ): TeamTask {
         val task = TeamTask(
             teamName = teamName,
             subject = subject,
             description = description,
+            intendedAgent = intendedAgent,
             blockedBy = blockedBy,
         )
         val id = dao.insert(task)
@@ -55,6 +58,9 @@ class TaskManager(private val dao: TeamTaskDao) {
      * 查找团队中状态为 PENDING 且无认领者的第一个任务，然后通过原子更新将其
      * 分配给指定 Agent。如果在查找和认领之间被其他 Agent 抢占，返回 null。
      *
+     * 认领时优先匹配 intendedAgent 与当前 Agent 相同的任务，
+     * 如果没有则退化为任意可认领任务（intendedAgent IS NULL）。
+     *
      * 对标 inProcessRunner.ts 中的 tryClaimNextTask() 逻辑。
      *
      * @param teamName 团队名称
@@ -65,7 +71,7 @@ class TaskManager(private val dao: TeamTaskDao) {
         teamName: String,
         agentName: String
     ): TeamTask? {
-        val task = dao.findClaimableTask(teamName) ?: return null
+        val task = dao.findClaimableTask(teamName, agentName) ?: return null
         val claimed = dao.claimTask(task.id, agentName)
         return if (claimed > 0) {
             task.copy(owner = agentName, status = "IN_PROGRESS")

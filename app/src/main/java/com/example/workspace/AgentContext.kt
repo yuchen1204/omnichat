@@ -15,6 +15,7 @@ import org.json.JSONObject
  * @property toolCallId 工具调用 ID（仅 tool 角色消息有效）
  * @property toolCallsJson 工具调用 JSON 数组字符串（仅 assistant 角色消息有效，包含 tool_calls）
  * @property isIntervention 是否为用户干预消息
+ * @property source 消息来源标识："" = 用户真实输入，"orchestrator" = 主控注入，"subagent" = 子Agent上报
  * @property timestamp 消息时间戳
  */
 data class AgentMessage(
@@ -23,6 +24,7 @@ data class AgentMessage(
     val toolCallId: String? = null,
     val toolCallsJson: String? = null,
     val isIntervention: Boolean = false,
+    val source: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -47,6 +49,7 @@ enum class AgentStatus {
  * @property isOrchestrator 是否为主控 Agent
  * @property systemPrompt 系统提示（已移除 [CROSS_SESSION_MEMORY] 占位符）
  * @property modelConfig 模型配置
+ * @property teamName 所属团队名称（用于 AgentRunner.getTeamName() 等场景）
  * @property messages 内存中的对话历史（使用 ArrayList + ReentrantReadWriteLock 保证线程安全，见 AgentRunner）
  */
 data class AgentContext(
@@ -54,6 +57,7 @@ data class AgentContext(
     val isOrchestrator: Boolean,
     val systemPrompt: String,
     val modelConfig: ModelConfig,
+    val teamName: String = "",
     val messages: MutableList<AgentMessage> = ArrayList()  // BUG-5/6：改为 ArrayList，由 AgentRunner 的 messagesLock 保护
 )
 
@@ -86,7 +90,7 @@ fun AgentContext.buildSystemPrompt(
  */
 const val ORCHESTRATOR_SYSTEM_PROMPT = """
 你是一个多 Agent 工作区的主控 Agent（Orchestrator）。你的职责是：
-1. 理解用户任务，制定执行计划
+1. 理解用户任务，制定执行计划。若用户要求不够具体、存在歧义或需要确认，你可以使用 `ask_user` 工具向用户发起提问，获取更多详细细节以澄清与优化请求。
 2. 使用 create_agents 工具创建必要的 Sub-Agent
 3. 使用 assign_task 工具向 Sub-Agent 分配具体的任务（direct 模式）
 4. 使用 continue_conversation 工具继续与已有 Agent 对话（利用已加载的上下文）
@@ -122,9 +126,11 @@ const val ORCHESTRATOR_SYSTEM_PROMPT = """
   - 示例：`"扫描 /Download 目录，列出所有文件名和扩展名"`
 
 **claim 模式**：role 直接作为任务 prompt 发给 Agent，必须完全自包含：
-  - 必须包含：具体操作目标、输入路径/数据、期望输出格式、完成标准
-  - 示例：`"扫描 /Download 目录下的所有文件（不递归子目录），统计每种扩展名的数量。输出格式：每行一种类型，格式为「扩展名: 数量」，最后一行输出总文件数。无扩展名的文件归类为「无扩展名」。"`
+  - 必须包含：具体操作目标、输入路径/数据、期望输出格式、**完成标准（逐项列出）**
+  - 示例：`"扫描 /Download 目录下的所有文件（不递归子目录），统计每种扩展名的数量。输出格式：每行一种类型，格式为「扩展名: 数量」，最后一行输出总文件数。无扩展名的文件归类为「无扩展名」。完成标准：1) 已列出所有文件 2) 已统计每种扩展名数量 3) 已输出总文件数"`
   - ❌ 错误：`"分析文件"` / `"处理数据"` / `"完成任务"`
+  - ❌ 错误：只列出了任务目标但没有完成标准，Agent 不知道做到什么程度算完成
+  - ❌ 错误：role 为空或太简短（如"执行任务"），Agent 认领后不知道具体要做什么
 
 **dependsOn 模式**：role 描述本 Agent 的职责以及如何使用上游产出：
   - 示例：`"基于上游 FileScanner 的扫描结果，计算各文件类型的占比（保留1位小数），生成一份包含类型、数量、占比三列的汇总表格"`
@@ -132,7 +138,7 @@ const val ORCHESTRATOR_SYSTEM_PROMPT = """
 ### systemPrompt（系统提示，可选）
 - 用于覆盖 Agent 的默认行为，适合需要特定专业角色的场景
 - 示例：`"你是一个数据分析专家，擅长从原始数据中提取统计规律。回答时优先给出数字结论，再解释原因。"`
-- 不填则使用默认的子 Agent 提示（执行任务、完成即停止）
+- 不填则使用默认的子 Agent 提示（执行任务、完成前自查）
 
 ## assign_task 规范（direct 模式专用）
 
@@ -143,6 +149,17 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 扫描 /Download 目录（不递归子目录），列出所有文件的完整路径和扩展名。
 输出格式：每行一个文件，格式为「文件名.扩展名」。
 完成后直接输出列表，不要写入文件。
+完成标准：1) 已扫描所有文件 2) 每个文件都有完整路径和扩展名 3) 已输出总数
+```
+
+✅ 正确格式（多文件创建）：
+```
+创建一个静态网页项目，包含以下三个文件：
+1. /Download/index.html - 主页面，包含导航栏和内容区
+2. /Download/style.css - 样式文件，定义布局和配色
+3. /Download/script.js - 交互逻辑，实现按钮点击事件
+完成后报告每个文件的路径和前 5 行内容。
+完成标准：1) 三个文件都已创建 2) HTML 引用了 CSS 和 JS 3) 文件内容符合描述
 ```
 
 ❌ 错误格式：
@@ -150,6 +167,7 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 扫描下载目录（太模糊，没有路径）
 根据之前的分析处理数据（依赖外部上下文）
 完成文件扫描任务（没有任何具体信息）
+创建一个网页（没有列出具体要创建的文件）
 ```
 
 ## 工作流程
@@ -160,6 +178,7 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 4. **claim 模式**：create_agents 返回后，等待 <task-notification>（Agent 自动认领执行）
 5. **dependsOn 模式**：create_agents 工具直接返回所有结果，无需 assign_task，直接汇总
 6. 收到所有 <task-notification> 后，汇总结果并输出【任务完成】
+7. 如果用户在你输出【任务完成】后发送了反馈消息，说明用户对结果不满意或需要修改，请根据反馈继续调度 Sub-Agent 完成修改，然后再次输出【任务完成】
 
 ## Continue vs Spawn 决策
 
@@ -172,11 +191,22 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 ## 重要规则
 
 - 必须使用 create_agents、assign_task、continue_conversation 工具，不要手动输出 JSON
+- **优化请求与澄清需求**：如果用户的任务描述模糊、关键细节缺失或存在歧义，你应该优先调用 `ask_user` 工具向用户发起提问并获取更多细节以优化和清晰化请求，不要盲目猜测需求。
 - 如果任务简单不需要创建 Sub-Agent，直接完成并输出【任务完成】
 - 收到 <task-notification> 时，解析其中的 Agent 结果并继续调度
 - 严禁在没有收到 <task-notification> 或工具返回结果的情况下假设、编造、虚构任务执行结果
 - 不要自己生成 Sub-Agent 的工作输出，必须等待真实的执行结果
 - 涉及文件操作时，提示 Agent：文件系统根目录为 "/"，下载目录为 "/Download"
+- **不要催促正在执行的 Agent**：如果工具返回 "Warning: Agent 正在执行任务中"，说明该 Agent 还在工作，请等待其 <task-notification> 到达后再操作它
+- **每个任务只分配给一个 Agent**：不要把同一个任务分配给多个 Agent，也不要让一个 Agent 去执行另一个 Agent 的任务。每个 Agent 有自己的职责，互不干扰
+
+## 结果完整性验证（核心铁律）
+
+收到 Sub-Agent 的 <task-notification> 后，你必须验证结果是否完整：
+- 检查 Sub-Agent 的输出是否完成了任务中要求的所有事项
+- 如果任务要求创建多个文件/组件，确认全部已创建
+- 如果结果明显不完整（例如要求创建3个文件但只提到了1个），使用 continue_conversation 追问或创建新的 Agent 补完
+- 不要因为 Agent 报告 "completed" 就盲目相信任务已完成
 
 ## 禁止甩锅式委派（核心铁律）
 
@@ -230,7 +260,7 @@ val CREATE_AGENTS_TOOL = JSONObject().apply {
                             })
                             put("role", JSONObject().apply {
                                 put("type", "string")
-                                put("description", "任务描述。【direct 模式】角色说明，可简短，实际任务通过 assign_task 发送。【claim 模式】直接作为任务 prompt 发给 Agent，必须完全自包含（含具体路径、输入数据、输出格式、完成标准），❌错误：\"分析文件\"，✅正确：\"扫描 /Download 目录（不递归），统计每种扩展名数量，输出格式：每行「扩展名: 数量」，无扩展名归类为「无扩展名」\"。【dependsOn 模式】描述本 Agent 职责及如何使用上游产出。")
+                                put("description", "任务描述。【direct 模式】角色说明，可简短，实际任务通过 assign_task 发送。【claim 模式】直接作为任务 prompt 发给 Agent，必须完全自包含（含具体路径、输入数据、输出格式、完成标准清单），❌错误：\"分析文件\"，❌错误：\"创建一个网页\"（没有列出具体文件），✅正确：\"扫描 /Download 目录（不递归），统计每种扩展名数量，输出格式：每行「扩展名: 数量」，无扩展名归类为「无扩展名」。完成标准：1) 已列出所有文件 2) 已统计每种扩展名 3) 已输出总数\"。【dependsOn 模式】描述本 Agent 职责及如何使用上游产出。")
                             })
                             put("systemPrompt", JSONObject().apply {
                                 put("type", "string")
@@ -255,7 +285,7 @@ val ASSIGN_TASK_TOOL = JSONObject().apply {
     put("type", "function")
     put("function", JSONObject().apply {
         put("name", "assign_task")
-        put("description", "向指定的 Sub-Agent 分配具体任务。仅在 direct 模式下使用。task 字段是 Agent 收到的完整任务 prompt，必须完全自包含（含具体路径、操作目标、输出格式、完成标准），Agent 看不到你的对话历史。❌错误：\"扫描下载目录\"（太模糊）；✅正确：\"扫描 /Download 目录（不递归），列出所有文件的完整路径和扩展名，每行一个文件，格式为「文件名.扩展名」，完成后直接输出列表\"。")
+        put("description", "向指定的 Sub-Agent 分配具体任务。仅在 direct 模式下使用。task 字段是 Agent 收到的完整任务 prompt，必须完全自包含（含具体路径、操作目标、输出格式、完成标准清单），Agent 看不到你的对话历史。❌错误：\"扫描下载目录\"（太模糊）；❌错误：\"创建一个网页\"（没有列出具体要创建的文件）；✅正确：\"创建一个网页项目，包含三个文件：1) index.html（主页面，包含导航和内容区）2) style.css（样式文件，定义布局和颜色）3) script.js（交互逻辑，实现按钮点击事件）。完成后报告每个文件的路径和内容摘要。\"")
         put("parameters", JSONObject().apply {
             put("type", "object")
             put("properties", JSONObject().apply {
@@ -265,7 +295,7 @@ val ASSIGN_TASK_TOOL = JSONObject().apply {
                 })
                 put("task", JSONObject().apply {
                     put("type", "string")
-                    put("description", "完整任务 prompt。必须自包含：具体操作目标 + 输入路径/数据 + 期望输出格式 + 完成标准。Agent 没有你的上下文，不能引用「之前的分析」「上面的结果」等。")
+                    put("description", "完整任务 prompt。必须自包含：具体操作目标 + 输入路径/数据 + 期望输出格式 + 完成标准清单（逐项列出）。Agent 没有你的上下文，不能引用「之前的分析」「上面的结果」等。")
                 })
                 put("context", JSONObject().apply {
                     put("type", "string")
@@ -281,7 +311,7 @@ val CONTINUE_CONVERSATION_TOOL = JSONObject().apply {
     put("type", "function")
     put("function", JSONObject().apply {
         put("name", "continue_conversation")
-        put("description", "继续与已有 Sub-Agent 对话，利用其已加载的上下文继续工作，避免重新创建。适用场景：1) 研究完成后让同一 Agent 执行实施（高上下文重叠）；2) 修正失败的实现（Agent 有错误上下文）；3) 追加更多任务。message 必须完全自包含，包含具体文件路径、行号和要做什么。")
+        put("description", "继续与已有 Sub-Agent 对话，利用其已加载的上下文继续工作，避免重新创建。适用场景：1) 研究完成后让同一 Agent 执行实施（高上下文重叠）；2) 修正失败的实现（Agent 有错误上下文）；3) 追加更多任务；4) 补完不完整的结果（如 Agent 只创建了部分文件）。message 必须完全自包含，包含具体文件路径、行号和要做什么。")
         put("parameters", JSONObject().apply {
             put("type", "object")
             put("properties", JSONObject().apply {
@@ -291,7 +321,7 @@ val CONTINUE_CONVERSATION_TOOL = JSONObject().apply {
                 })
                 put("message", JSONObject().apply {
                     put("type", "string")
-                    put("description", "要发送的消息内容。必须完全自包含，包含具体文件路径、行号和要做什么改动。Agent 虽有历史上下文，但仍需明确指出操作目标。")
+                    put("description", "要发送的消息内容。必须完全自包含，包含具体文件路径、行号和要做什么改动。Agent 虽有历史上下文，但仍需明确指出操作目标。如果是补完任务，明确列出还缺少什么。")
                 })
             })
             put("required", JSONArray().put("to").put("message"))
@@ -333,8 +363,4 @@ val PEER_MESSAGE_TOOL = JSONObject().apply {
     })
 }
 
-/** Orchestrator 专属工具名称集合，子 Agent 不可调用 */
-val ORCHESTRATOR_ONLY_TOOLS = setOf("create_agents", "assign_task", "continue_conversation")
-
-/** 所有 Agent 共享的协作工具 */
-val COLLABORATION_TOOLS = setOf("peer_message")
+// ORCHESTRATOR_ONLY_TOOLS 和 COLLABORATION_TOOLS 已迁移至 WorkspaceModels.kt

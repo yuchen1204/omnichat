@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.example.mcp.AskUserManager
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
@@ -112,6 +113,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSession(sessionId: Long) {
+        AskUserManager.clearAll()
         _selectedSessionId.value = sessionId
     }
 
@@ -1022,5 +1024,10 @@ Rules:
                 )
             )
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        AskUserManager.clearAll()
     }
 }

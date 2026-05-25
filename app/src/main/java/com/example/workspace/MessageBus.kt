@@ -2,8 +2,6 @@ package com.example.workspace
 
 import android.util.Log
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
 import java.util.concurrent.ConcurrentHashMap
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -209,10 +207,6 @@ enum class IdleReason {
 class MessageBus {
     /** 每个 Agent 一个 Channel 收件箱（对标 inboxes/{agent}.json） */
     private val inboxes = ConcurrentHashMap<String, Channel<TeamMessage>>()
-
-    /** 全局事件流，Leader 通过此流监听所有消息 */
-    private val _globalEvents = MutableSharedFlow<TeamMessage>(extraBufferCapacity = 64)
-    val globalEvents: SharedFlow<TeamMessage> = _globalEvents
 
     /**
      * 获取或创建指定 Agent 的收件箱 Channel。
