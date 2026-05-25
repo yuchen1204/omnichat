@@ -291,7 +291,8 @@ fun WorkspaceReadyView(
                                 DropdownMenu(
                                     expanded = dropdownExpanded,
                                     onDismissRequest = { dropdownExpanded = false },
-                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp)
                                 ) {
                                     modelConfigs.forEach { config ->
                                         val providerModels = modelsByProvider[config.id] ?: emptyList()

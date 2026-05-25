@@ -451,6 +451,14 @@ interface McpFilePermissionDao {
     @Query("SELECT * FROM mcp_file_permissions WHERE path = :path LIMIT 1")
     suspend fun getPermissionByPath(path: String): McpFilePermission?
 
+    /**
+     * 前缀匹配：查找已授权的父目录。
+     * 例如用户对 /sdcard/Documents 授权后，访问 /sdcard/Documents/a.txt 也应放行。
+     * 用 LIKE 匹配以 path 开头的记录（path 本身是被查路径，记录中存的是父目录）。
+     */
+    @Query("SELECT * FROM mcp_file_permissions WHERE :path LIKE path || '%' AND path != :path ORDER BY length(path) DESC LIMIT 1")
+    suspend fun getPermissionByPathPrefix(path: String): McpFilePermission?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPermission(permission: McpFilePermission): Long
 

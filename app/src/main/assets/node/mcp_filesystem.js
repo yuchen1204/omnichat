@@ -39,13 +39,16 @@ function sendNotification(method, params) {
 // ── 路径安全检查 ──────────────────────────────────────────────────────────
 
 function safePath(inputPath) {
+    let resolved;
     if (path.isAbsolute(inputPath)) {
-        // 对于绝对路径，MCP Hook 已经做了拦截检查和用户授权，直接放行
-        return path.normalize(inputPath);
-    }
-    const resolved = path.resolve(rootDir, inputPath);
-    if (!resolved.startsWith(path.resolve(rootDir))) {
-        throw new Error('路径越界：不允许访问根目录之外的相对路径');
+        resolved = path.normalize(inputPath);
+    } else {
+        // 相对路径：resolve 到 rootDir 下，并检查不越界
+        resolved = path.resolve(rootDir, inputPath);
+        if (!resolved.startsWith(path.resolve(rootDir) + path.sep) &&
+            resolved !== path.resolve(rootDir)) {
+            throw new Error('路径越界：不允许访问根目录之外的相对路径');
+        }
     }
     return resolved;
 }
@@ -268,7 +271,16 @@ function handleRequest(req) {
             return;
         }
         try {
-            const result = tool.handler(params.arguments || {});
+            // 在执行前将 args 中的路径字段 resolve 为绝对路径，
+            // 确保 Kotlin 侧 McpFilePermissionHook 拿到的是绝对路径，能正确触发权限弹窗。
+            const rawArgs = params.arguments || {};
+            const normalizedArgs = Object.assign({}, rawArgs);
+            for (const key of ['path', 'source', 'destination']) {
+                if (typeof normalizedArgs[key] === 'string' && !path.isAbsolute(normalizedArgs[key])) {
+                    normalizedArgs[key] = path.resolve(rootDir, normalizedArgs[key]);
+                }
+            }
+            const result = tool.handler(normalizedArgs);
             sendResponse(id, result);
         } catch (e) {
             sendResponse(id, {

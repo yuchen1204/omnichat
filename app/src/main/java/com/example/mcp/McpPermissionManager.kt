@@ -32,18 +32,18 @@ object McpPermissionManager {
     /**
      * Checks if the given path is inside the app's private sandbox.
      * If it is, no permission is needed.
+     *
+     * 注意：相对路径不能直接放行——mcp_filesystem.js 会把相对路径 resolve 到
+     * rootDir（默认 /sdcard），实际访问的是外部存储，必须走权限弹窗。
+     * 这里将相对路径视为"不在沙盒内"，让调用方触发权限请求。
      */
     private fun isPathInSandbox(context: Context, path: String): Boolean {
         try {
             val file = File(path)
-            
-            // If the path is not absolute, it is treated as relative to the tool's sandbox root.
-            // As long as it doesn't contain "..", it is safely inside the sandbox.
+
+            // 相对路径：无法确定实际访问位置，一律要求用户授权
             if (!file.isAbsolute) {
-                if (path.contains("..")) {
-                    return false // Potential escape attempt
-                }
-                return true
+                return false
             }
 
             val absolutePath = file.canonicalPath
@@ -52,20 +52,22 @@ object McpPermissionManager {
             val cacheDir = context.cacheDir.canonicalPath
             val externalFilesDirs = context.getExternalFilesDirs(null).mapNotNull { it?.canonicalPath }
             val externalCacheDirs = context.externalCacheDirs.mapNotNull { it?.canonicalPath }
-            
-            // Add OmniChat/files to sandbox whitelist
+
+            // OmniChat/mcp 工作目录（脚本部署目录）也视为沙盒内，无需额外授权
+            val omniChatMcp = File(android.os.Environment.getExternalStorageDirectory(), "OmniChat/mcp").canonicalPath
             val omniChatFiles = File(android.os.Environment.getExternalStorageDirectory(), "OmniChat/files").canonicalPath
 
             if (absolutePath.startsWith(filesDir)) return true
             if (absolutePath.startsWith(cacheDir)) return true
             if (externalFilesDirs.any { absolutePath.startsWith(it) }) return true
             if (externalCacheDirs.any { absolutePath.startsWith(it) }) return true
+            if (absolutePath.startsWith(omniChatMcp)) return true
             if (absolutePath.startsWith(omniChatFiles)) return true
 
             return false
         } catch (e: Exception) {
             Log.e(TAG, "Error resolving path canonical path: $path", e)
-            return false // Assume outside if error
+            return false // 出错时保守处理，要求授权
         }
     }
 
@@ -74,22 +76,36 @@ object McpPermissionManager {
      * @return true if access is allowed, false if denied.
      */
     suspend fun checkAndRequestPermission(context: Context, path: String): Boolean {
-        if (isPathInSandbox(context, path)) {
+        // 先将路径规范化为绝对路径，保证与数据库中存储的路径格式一致
+        val canonicalPath = try {
+            File(path).canonicalPath
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resolve canonical path: $path", e)
+            path
+        }
+
+        if (isPathInSandbox(context, canonicalPath)) {
             return true
         }
 
         val db = AppDatabase.getDatabase(context)
         val dao = db.mcpFilePermissionDao()
 
-        // 1. Check existing permission
-        val existingPerm = dao.getPermissionByPath(path)
-        if (existingPerm != null) {
-            return existingPerm.isAllowed
+        // 1. 精确匹配：检查该路径本身是否已有授权记录
+        val exactPerm = dao.getPermissionByPath(canonicalPath)
+        if (exactPerm != null) {
+            return exactPerm.isAllowed
         }
 
-        // 2. Request from UI
+        // 2. 前缀匹配：检查是否有已授权的父目录（父目录授权覆盖所有子路径）
+        val parentPerm = dao.getPermissionByPathPrefix(canonicalPath)
+        if (parentPerm != null) {
+            return parentPerm.isAllowed
+        }
+
+        // 3. 没有任何已有授权，向用户请求
         val result = suspendCancellableCoroutine<PermissionResult> { continuation ->
-            val request = PermissionRequest(path) { res ->
+            val request = PermissionRequest(canonicalPath) { res ->
                 if (continuation.isActive) {
                     continuation.resume(res)
                 }
@@ -105,16 +121,16 @@ object McpPermissionManager {
             }
         }
 
-        // 3. Handle result
+        // 4. Handle result
         return when (result) {
             PermissionResult.ALLOW_ONCE -> true
             PermissionResult.DENY -> false
             PermissionResult.ALLOW_ALWAYS -> {
-                dao.insertPermission(McpFilePermission(path = path, isAllowed = true))
+                dao.insertPermission(McpFilePermission(path = canonicalPath, isAllowed = true))
                 true
             }
             PermissionResult.DONT_ASK_AGAIN -> {
-                dao.insertPermission(McpFilePermission(path = path, isAllowed = false))
+                dao.insertPermission(McpFilePermission(path = canonicalPath, isAllowed = false))
                 false
             }
         }
