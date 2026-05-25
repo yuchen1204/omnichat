@@ -17,16 +17,13 @@ class McpFilePermissionHook(private val context: Context) : McpHook {
             return args
         }
 
-        // Try to extract the path parameter(s)
+        // 提取所有可能包含路径的参数（内置工具和外部工具的参数名不同）
         val pathsToCheck = mutableListOf<String>()
-        if (args.has("path")) {
-            pathsToCheck.add(args.getString("path"))
-        }
-        if (args.has("source")) {
-            pathsToCheck.add(args.getString("source"))
-        }
-        if (args.has("destination")) {
-            pathsToCheck.add(args.getString("destination"))
+        for (key in listOf("path", "source", "destination", "sourcePath", "destinationPath", "directory")) {
+            if (args.has(key)) {
+                val v = args.optString(key)
+                if (v.isNotEmpty()) pathsToCheck.add(v)
+            }
         }
 
         for (path in pathsToCheck) {

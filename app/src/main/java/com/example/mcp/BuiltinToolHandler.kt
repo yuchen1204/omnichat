@@ -1585,17 +1585,29 @@ object BuiltinToolHandler {
     }
 
     /**
-     * 将用户提供的相对路径解析为绝对路径，并验证它在沙盒内。
-     * 拒绝包含 ".." 的路径以防止目录遍历攻击。
+     * 将用户提供的路径解析为绝对路径，并验证它在沙盒内。
+     * - 相对路径：resolve 到 OmniChat/files/ 下，并检查不越界
+     * - 绝对路径：必须在沙盒白名单内（OmniChat/files/ 或 OmniChat/mcp/），否则拒绝
+     *   注意：沙盒外的绝对路径访问应通过 McpFilePermissionHook 在调用前弹窗授权，
+     *   但 resolveSafePath 本身不做异步弹窗，只做最终的安全兜底。
      * @return 解析后的 File，或 null（路径非法时）
      */
     private fun resolveSafePath(context: Context, path: String): File? {
         if (path.contains("..")) return null
-        
+
         val file = File(path)
         if (file.isAbsolute) {
-            // 对于绝对路径，MCP Hook 已经做了拦截检查和用户授权，直接放行
-            return file.canonicalFile
+            // 绝对路径：只允许访问沙盒白名单目录
+            val canonical = try { file.canonicalPath } catch (_: Exception) { return null }
+            val externalDir = Environment.getExternalStorageDirectory()
+            val allowedRoots = listOf(
+                File(externalDir, "OmniChat/files").canonicalPath,
+                File(externalDir, "OmniChat/mcp").canonicalPath,
+                context.filesDir.canonicalPath,
+                context.cacheDir.canonicalPath
+            )
+            val inSandbox = allowedRoots.any { canonical.startsWith(it) }
+            return if (inSandbox) file.canonicalFile else null
         }
 
         val root = getFilesRoot(context)
