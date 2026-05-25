@@ -33,14 +33,20 @@ object PythonBridge {
     var isInitialized: Boolean = false
         private set
 
-    init {
-        try {
+    /**
+     * 确保 python_bridge JNI 库已加载。
+     */
+    fun ensureLoaded(): Boolean {
+        if (isLoaded) return true
+        return try {
             System.loadLibrary("python_bridge")
             isLoaded = true
             Log.i(TAG, "python_bridge JNI 库加载成功")
+            true
         } catch (e: UnsatisfiedLinkError) {
             isLoaded = false
             Log.e(TAG, "python_bridge JNI 库加载失败: ${e.message}")
+            false
         }
     }
 

@@ -1335,7 +1335,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 updateState(server.id) { McpServerState(server, McpServerStatus.STARTING) }
             }
 
-            if (!NodeJsBridge.isLoaded) {
+            if (!NodeJsBridge.ensureLoaded()) {
                 Log.w(TAG, "[startServers] Node.js 运行时不可用 (isLoaded=false)")
                 nodeServers.forEach { server ->
                     updateState(server.id) {
@@ -1796,7 +1796,7 @@ exec(open('$scriptPath').read())
 
     private suspend fun startNodeServer(server: McpServer) {
         Log.i(TAG, "[startNodeServer] name=${server.name}, command=${server.command}, hasStarted=${NodeJsBridge.hasStarted}")
-        if (!NodeJsBridge.isLoaded) {
+        if (!NodeJsBridge.ensureLoaded()) {
             Log.w(TAG, "[startNodeServer] Node.js 运行时不可用 (isLoaded=false)")
             updateState(server.id) {
                 McpServerState(
@@ -1824,7 +1824,7 @@ exec(open('$scriptPath').read())
                     "找不到脚本文件: ${server.command}\n\n" +
                     "请将 .js 脚本放入 MCP 工作目录：\n$mcpDirPath\n\n" +
                     "内置脚本（已自动部署）：\n" +
-                    "  • mcp_filesystem.js — 文件系统访问\n" +
+                    "  • mcp_filesystem.js — 文件系统访问（读/写/追加/复制/移动/删除/搜索内容）\n" +
                     "  • mcp_fetch.js      — HTTP 请求\n" +
                     "  • mcp_pkg_manager.js — 包管理器"
                 )

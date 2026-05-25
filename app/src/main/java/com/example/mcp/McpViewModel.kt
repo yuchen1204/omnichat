@@ -34,7 +34,8 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
     // ── 运行时可用性状态 ──────────────────────────────────────────────────
 
     /** Node.js 运行时（libnode.so）是否已加载 */
-    val isNodeRuntimeAvailable: Boolean get() = NodeJsBridge.isLoaded
+    var isNodeRuntimeAvailable by mutableStateOf(false)
+        private set
 
     /** Python 运行时是否已就绪 */
     var isPythonRuntimeReady by mutableStateOf(false)
@@ -49,12 +50,14 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         // McpRuntimeManager 单例在创建时已自动启动所有已启用的 server（见 McpRuntimeManager.init）。
-        // 这里只需检测 Python 运行时状态，用于 UI 展示。
+        // 这里根据全局运行时开关更新状态，并按需检测 Python 运行时。
         viewModelScope.launch {
             // 监听全局运行时开关变化
             repository.uiSettings.collect { settings ->
                 if (settings == null) return@collect
-                val servers = repository.getAllMcpServers() // 获取最新列表
+                
+                // 1. 更新各 server 运行状态
+                val servers = repository.getAllMcpServers()
                 servers.forEach { server ->
                     val isAllowed = when (server.runtime) {
                         "node" -> settings.isNodeEnabled
@@ -67,25 +70,35 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
                     if (!isAllowed && isRunning) {
                         runtimeManager.stopServer(server.id)
                     } else if (isAllowed && !isRunning && server.isEnabled) {
-                        // 如果运行时被重新启用，且服务本身是启用状态，则尝试启动
                         runtimeManager.startServer(server)
                     }
                 }
-            }
-        }
 
-        viewModelScope.launch {
-            // 检测 Python 运行时
-            val ready = withContext(Dispatchers.IO) { PythonRuntime.ensureReady(application) }
-            if (ready) {
-                isPythonRuntimeReady = true
-                pythonRuntimeStatus = "就绪 (Python 3.14, PYTHONHOME=${PythonRuntime.getPythonHome(application)})"
-            } else {
-                isPythonRuntimeReady = false
-                val abi = PythonRuntime.getSupportedAbi()
-                val abiName = if (abi == "arm64-v8a") "aarch64" else abi
-                pythonRuntimeStatus = "未就绪 — 请下载 python-3.14.5-$abiName-linux-android.tar.gz\n" +
-                    "并将 .so 放入 jniLibs/$abi/，stdlib.zip 放入 assets/python/"
+                // 2. 更新 Node.js 可用性状态 (仅在启用时加载 native 库)
+                if (settings.isNodeEnabled) {
+                    isNodeRuntimeAvailable = NodeJsBridge.ensureLoaded()
+                } else {
+                    // 如果未启用，则不触发加载，仅报告当前内存中的加载状态
+                    isNodeRuntimeAvailable = NodeJsBridge.isLoaded
+                }
+
+                // 3. 更新 Python 可用性状态 (仅在启用时初始化解释器)
+                if (settings.isPythonEnabled) {
+                    val ready = withContext(Dispatchers.IO) { PythonRuntime.ensureReady(application) }
+                    if (ready) {
+                        isPythonRuntimeReady = true
+                        pythonRuntimeStatus = "就绪 (Python 3.14, PYTHONHOME=${PythonRuntime.getPythonHome(application)})"
+                    } else {
+                        isPythonRuntimeReady = false
+                        val abi = PythonRuntime.getSupportedAbi()
+                        val abiName = if (abi == "arm64-v8a") "aarch64" else abi
+                        pythonRuntimeStatus = "未就绪 — 请下载 python-3.14.5-$abiName-linux-android.tar.gz\n" +
+                                "并将 .so 放入 jniLibs/$abi/，stdlib.zip 放入 assets/python/"
+                    }
+                } else {
+                    isPythonRuntimeReady = false
+                    pythonRuntimeStatus = "运行时已禁用"
+                }
             }
         }
     }

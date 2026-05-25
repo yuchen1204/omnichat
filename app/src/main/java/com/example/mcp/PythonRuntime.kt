@@ -91,8 +91,8 @@ object PythonRuntime {
         }
 
         // ── Step 2: 加载 libpython ────────────────────────────────────────
-        if (!PythonBridge.isLoaded) {
-            Log.e(TAG, "python_bridge JNI 库未加载")
+        if (!PythonBridge.ensureLoaded()) {
+            Log.e(TAG, "python_bridge JNI 库加载失败")
             return@withContext false
         }
 

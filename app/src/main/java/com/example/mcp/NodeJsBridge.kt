@@ -28,18 +28,25 @@ object NodeJsBridge {
     var hasStarted: Boolean = false
         private set
 
-    init {
-        try {
+    /**
+     * 确保 Node.js native 库已加载。
+     * 如果已加载则直接返回 true。
+     */
+    fun ensureLoaded(): Boolean {
+        if (isLoaded) return true
+        return try {
             // 先加载 libnode.so（被 node_bridge 依赖）
             System.loadLibrary("node")
             // 再加载我们的 JNI 桥接库
             System.loadLibrary("node_bridge")
             isLoaded = true
             Log.i(TAG, "Node.js native 库加载成功")
+            true
         } catch (e: UnsatisfiedLinkError) {
             isLoaded = false
             Log.e(TAG, "Node.js native 库加载失败: ${e.message}")
             Log.e(TAG, "请确认已将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录")
+            false
         }
     }
 
