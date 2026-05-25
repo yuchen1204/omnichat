@@ -18,6 +18,9 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+    // 避免 BuildConfig 中残留 GEMINI_API_KEY 空值（secrets plugin 已移除）
+    buildConfigField("String", "GEMINI_API_KEY", "\"\"")
+
     // 只打包主流 ABI，减小 APK 体积（libnode.so 和 python 二进制都按 ABI 分包）
     ndk {
       abiFilters += listOf("arm64-v8a", "x86_64")

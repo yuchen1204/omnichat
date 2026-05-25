@@ -340,7 +340,6 @@
   "workspace.ready.title": "准备好了",
   "workspace.ready.hint": "描述你的任务，AI 将自动分析并派遣多个 Agent 协作完成",
   "workspace.setup.task_placeholder": "例如：请帮我写一段 Kotlin 代码，并创建子 Agent 进行 Code Review...",
-  "workspace.setup.submit": "提交并启动",
   "workspace.select.hint": "请在侧边栏选择或新建一个工作区开始协作",
   "workspace.agents.count": "%d 个 Agent",
   "workspace.export_log": "导出日志",
