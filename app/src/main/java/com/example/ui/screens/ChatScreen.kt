@@ -529,7 +529,6 @@ fun ChatView(viewModel: ChatViewModel) {
                                 shape = toolBtnShape,
                                 border = toolBtnBorder,
                                 colors = toolBtnColors
-                                )
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
