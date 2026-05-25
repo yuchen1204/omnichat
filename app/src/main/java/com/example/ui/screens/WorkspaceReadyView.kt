@@ -76,6 +76,40 @@ fun WorkspaceReadyView(
         }
     }
 
+    val cameraPermissionState = remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        cameraPermissionState.value = isGranted
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            val tempFile = java.io.File(
+                context.cacheDir,
+                "camera_${System.currentTimeMillis()}.jpg"
+            )
+            java.io.FileOutputStream(tempFile).use { out ->
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+            }
+            selectedImagePath = tempFile.absolutePath
+            selectedImageUri = Uri.fromFile(tempFile)
+        }
+    }
+
+    var showToolbar by remember { mutableStateOf(false) }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
     LaunchedEffect(modelConfigs) {
         if (selectedConfigId == null && modelConfigs.isNotEmpty()) {
             val cfg = modelConfigs.find { it.isDefaultProvider } ?: modelConfigs.first()
@@ -147,213 +181,387 @@ fun WorkspaceReadyView(
             }
         }
 
-        // 底部输入区
+        // Send Area (Material design)
         Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+            tonalElevation = 4.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
+            Column {
                 HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                    thickness = 0.5.dp,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.5f),
+                    thickness = 0.5.dp
                 )
 
-                // 模型选择器（小 Chip 风格）
-                Box {
-                    FilterChip(
-                        selected = true,
-                        onClick = { dropdownExpanded = true },
-                        label = {
-                            Text(
-                                text = selectedModelName,
-                                fontSize = (12 * fs).sp,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.SmartToy,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            Icon(
-                                imageVector = if (dropdownExpanded) Icons.Default.KeyboardArrowUp
-                                              else Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        },
-                        modifier = Modifier.height(32.dp)
-                    )
-                    DropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                // ── 工具栏（展开时显示）──────────────────────────────
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showToolbar,
+                    enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
-                        modelConfigs.forEach { config ->
-                            val providerModels = modelsByProvider[config.id] ?: emptyList()
-                            
-                            // 标题：Provider Name
-                            DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        config.name, 
-                                        fontSize = (13 * fs).sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    ) 
-                                },
-                                onClick = {
-                                    // 仅选择 Provider 默认模型
-                                    selectedConfigId = config.id
-                                    selectedModelId = config.selectedModelId
-                                    dropdownExpanded = false
-                                }
+                        // 当前模型状态行
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(com.example.ui.theme.LocalCustomColors.current.success)
                             )
-                            
-                            // 列表：该 Provider 下的所有模型
-                            if (providerModels.isNotEmpty()) {
-                                providerModels.forEach { fm ->
-                                    DropdownMenuItem(
-                                        text = { 
-                                            Text(
-                                                "  ${fm.modelId}", 
-                                                fontSize = (13 * fs).sp,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            ) 
-                                        },
-                                        onClick = {
-                                            selectedConfigId = config.id
-                                            selectedModelId = fm.modelId
-                                            dropdownExpanded = false
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = uiText("chat.current.model", "当前模型: %s  ·  %s").format(
+                                    selectedModelId ?: "",
+                                    selectedConfig?.name ?: ""
+                                ),
+                                fontSize = (11 * fs).sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2
+                            )
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            thickness = 0.5.dp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        // 工具按钮行
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
+                            val toolBtnBorder = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                            val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
+
+                            // 切换模型按钮
+                            Box {
+                                OutlinedCard(
+                                    modifier = Modifier
+                                        .androidx.compose.foundation.clickable { dropdownExpanded = true },
+                                    shape = toolBtnShape,
+                                    border = toolBtnBorder,
+                                    colors = toolBtnColors
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Build,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = uiText("chat.57841df8", "切换模型"),
+                                            fontSize = (12 * fs).sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                DropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false },
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                                ) {
+                                    modelConfigs.forEach { config ->
+                                        val providerModels = modelsByProvider[config.id] ?: emptyList()
+                                        DropdownMenuItem(
+                                            text = { 
+                                                Text(
+                                                    config.name, 
+                                                    fontSize = (13 * fs).sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                ) 
+                                            },
+                                            onClick = {
+                                                selectedConfigId = config.id
+                                                selectedModelId = config.selectedModelId
+                                                dropdownExpanded = false
+                                            }
+                                        )
+                                        if (providerModels.isNotEmpty()) {
+                                            providerModels.forEach { fm ->
+                                                DropdownMenuItem(
+                                                    text = { 
+                                                        Text(
+                                                            "  ${fm.modelId}", 
+                                                            fontSize = (13 * fs).sp,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        ) 
+                                                    },
+                                                    onClick = {
+                                                        selectedConfigId = config.id
+                                                        selectedModelId = fm.modelId
+                                                        dropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        } else {
+                                            DropdownMenuItem(
+                                                text = { 
+                                                    Text(
+                                                        "  ${config.selectedModelId} (默认)", 
+                                                        fontSize = (13 * fs).sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    ) 
+                                                },
+                                                onClick = {
+                                                    selectedConfigId = config.id
+                                                    selectedModelId = config.selectedModelId
+                                                    dropdownExpanded = false
+                                                }
+                                            )
                                         }
+                                    }
+                                }
+                            }
+
+                            // 图片选择按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .androidx.compose.foundation.clickable {
+                                        imagePickerLauncher.launch("image/*")
+                                    },
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = toolBtnColors
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiText("chat.select_image", "选择图片"),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
-                            } else {
-                                // 如果没有 fetched models，展示一个默认项
-                                DropdownMenuItem(
-                                    text = { 
-                                        Text(
-                                            "  ${config.selectedModelId} (默认)", 
-                                            fontSize = (13 * fs).sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ) 
+                            }
+
+                            // 拍照按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .androidx.compose.foundation.clickable {
+                                        if (cameraPermissionState.value) {
+                                            cameraLauncher.launch(null)
+                                        } else {
+                                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                        }
                                     },
-                                    onClick = {
-                                        selectedConfigId = config.id
-                                        selectedModelId = config.selectedModelId
-                                        dropdownExpanded = false
-                                    }
-                                )
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = toolBtnColors
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiText("chat.take_photo", "拍照"),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                if (selectedImageUri != null) {
-                    Box(modifier = Modifier.padding(bottom = 8.dp)) {
-                        AsyncImage(
-                            model = selectedImageUri,
-                            contentDescription = "Selected Image",
+                // ── 已选图片预览 ────────────────────────────────────────────
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = selectedImageUri != null || selectedImagePath != null,
+                    enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 图片预览
+                        Box(
                             modifier = Modifier
-                                .size(100.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .androidx.compose.foundation.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant,
+                                    RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            if (selectedImagePath != null || selectedImageUri != null) {
+                                AsyncImage(
+                                    model = selectedImageUri ?: selectedImagePath,
+                                    contentDescription = uiText("chat.selected_image", "已选图片"),
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = uiText("chat.image_attached", "已添加图片"),
+                            fontSize = (12 * fs).sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // 清除图片按钮
                         IconButton(
                             onClick = {
                                 selectedImageUri = null
                                 selectedImagePath = null
                             },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(24.dp)
-                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Remove Image",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
+                                contentDescription = uiText("chat.remove_image", "移除图片"),
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
 
-                // 任务输入 + 发送
+                // ── 输入行 ────────────────────────────────────────────
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = { imagePickerLauncher.launch("image/*") },
-                        modifier = Modifier.padding(bottom = 4.dp, end = 4.dp)
+                    // + 按钮
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                if (showToolbar) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .androidx.compose.foundation.clickable { showToolbar = !showToolbar },
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Image,
-                            contentDescription = "Add Image",
-                            tint = MaterialTheme.colorScheme.primary
+                            imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
+                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", "收起") else uiText("chat.toolbar.expand", "展开工具"),
+                            tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Material styled text input block
                     OutlinedTextField(
                         value = taskText,
                         onValueChange = { taskText = it },
                         placeholder = {
-                            Text(
-                                text = uiText("workspace.setup.task_placeholder", "例如：请帮我写一段 Kotlin 代码，并创建子 Agent 进行 Code Review..."),
-                                fontSize = (13 * fs).sp
-                            )
+                            val hint = if (selectedImagePath != null || selectedImageUri != null) {
+                                uiText("chat.input.hint_with_image", "添加描述（可选）...")
+                            } else {
+                                uiText("workspace.setup.task_placeholder", "例如：请帮我写一段 Kotlin 代码，并创建子 Agent 进行 Code Review...")
+                            }
+                            Text(hint, fontSize = (15 * fs).sp)
                         },
-                        minLines = 1,
-                        maxLines = 5,
-                        modifier = Modifier.weight(1f),
-                        textStyle = LocalTextStyle.current.copy(fontSize = (14 * fs).sp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                        maxLines = 4,
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = (15 * fs).sp,
+                            color = MaterialTheme.colorScheme.onSurface
                         ),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = {
-                            if (taskText.isNotBlank() && selectedConfigId != null) {
-                                onSubmit(taskText.trim(), selectedConfigId!!, selectedModelId, selectedImagePath)
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = {
+                            val toSend = taskText.trim()
+                            val hasImage = selectedImagePath != null || selectedImageUri != null
+                            if ((toSend.isNotBlank() || hasImage) && selectedConfigId != null) {
+                                onSubmit(toSend, selectedConfigId!!, selectedModelId, selectedImagePath)
                                 taskText = ""
                                 selectedImageUri = null
                                 selectedImagePath = null
+                                showToolbar = false
+                                keyboardController?.hide()
                             }
-                        },
+                        }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    // Material filled icon button
+                    val canSend = (taskText.isNotBlank() || selectedImagePath != null || selectedImageUri != null) && selectedConfigId != null
+                    Box(
                         modifier = Modifier
-                            .padding(bottom = 4.dp)
-                            .size(48.dp)
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(22.dp))
                             .background(
-                                if (taskText.isNotBlank() && selectedModelId != null)
-                                    MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant,
-                                androidx.compose.foundation.shape.CircleShape
+                                if (canSend) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
                             )
+                            .androidx.compose.foundation.clickable(enabled = canSend) {
+                                val toSend = taskText.trim()
+                                val hasImage = selectedImagePath != null || selectedImageUri != null
+                                if ((toSend.isNotBlank() || hasImage) && selectedConfigId != null) {
+                                    onSubmit(toSend, selectedConfigId!!, selectedModelId, selectedImagePath)
+                                    taskText = ""
+                                    selectedImageUri = null
+                                    selectedImagePath = null
+                                    showToolbar = false
+                                    keyboardController?.hide()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = uiText("workspace.setup.submit", "提交并启动"),
-                            tint = if (taskText.isNotBlank() && selectedModelId != null)
-                                MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            imageVector = Icons.Default.Send,
+                            contentDescription = uiText("chat.send.contentDescription", "发送"),
+                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
                     }
