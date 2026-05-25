@@ -41,10 +41,6 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/my-upload-key.jks
 
-      - name: Create .env file
-        run: |
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-
       - name: Create local.properties for CI
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties

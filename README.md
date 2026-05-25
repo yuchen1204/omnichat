@@ -75,11 +75,7 @@
 git clone https://github.com/yuchen1204/omnichat.git
 cd omnichat
 
-# 2. 配置 API Key
-cp .env.example .env
-# 编辑 .env，填入 GEMINI_API_KEY 或其他 API Key
-
-# 3. 构建并安装 Debug 版本
+# 2. 构建并安装 Debug 版本
 ./gradlew assembleDebug
 ./gradlew installDebug
 ```

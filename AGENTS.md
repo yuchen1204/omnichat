@@ -25,7 +25,7 @@ An Android AI chat app with embedded MCP runtime support, long-term memory, mult
 ./gradlew generateUiTextKeys      # Regenerate ui_text_keys.json (runs automatically before asset merge)
 ```
 
-**Before first run:** Create `.env` in project root with `GEMINI_API_KEY=your_key` (see `.env.example`). The signing config in `app/build.gradle.kts` has hardcoded release keystore passwords — do not commit real secrets.
+**Before first run:** No special configuration needed. API keys are configured per-provider in the app UI (模型配置 tab). The signing config in `app/build.gradle.kts` has hardcoded release keystore passwords — do not commit real secrets.
 
 **Environment quirk:** `gradle.properties` hardcodes `org.gradle.java.home=D:/Program Files/android_studio/jbr`. Override if your JDK is elsewhere.
 
@@ -125,7 +125,7 @@ code-index 已为本项目建立了符号索引（628 symbols, 79 files）。**�
 - **OpenAI-compatible API**: endpoint auto-correction strips `/chat/completions`, adds `/v1` for OpenAI
 - **Thinking/reasoning support**: `reasoning_effort` (low/medium/high/xhigh) with `budget_tokens`
 - **Memory system**: Dual-layer — session summaries (15-min rolling) + cross-session memory facts injected via `[CROSS_SESSION_MEMORY]` placeholder in prompts. LLM outputs structured JSON `{"ops": [...]}` with ADD/UPDATE/REINFORCE/DELETE; **pinned** memories are protected client-side
-- **API keys**: Managed via Secrets Gradle Plugin from `.env` file, never hardcoded
+- **API keys**: Configured per-provider in the app UI (ModelConfig entity), never hardcoded
 - **ABI filters**: Only `arm64-v8a` and `x86_64` are packaged
 - **Custom HTTP headers**: `ModelConfig.customHeaders` is a JSON object string (e.g. `'{"X-Custom-Header": "value"}'`) sent with every API request for that provider
 - **AI-adjustable theming**: Full Material 3 palette + font + layout stored in `UISettings` (id=1, single row). AI calls MCP tools to update colors, corner radius, spacing multiplier, and font settings at runtime. Color scheme snapshots saved as `ColorSchemePreset` (max 5)
