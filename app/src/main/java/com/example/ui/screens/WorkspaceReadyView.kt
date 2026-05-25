@@ -3,8 +3,19 @@ package com.example.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -246,14 +257,14 @@ fun WorkspaceReadyView(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
-                            val toolBtnBorder = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                            val toolBtnBorder = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
                             val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
 
                             // 切换模型按钮
                             Box {
                                 OutlinedCard(
                                     modifier = Modifier
-                                        .androidx.compose.foundation.clickable { dropdownExpanded = true },
+                                        .clickable { dropdownExpanded = true },
                                     shape = toolBtnShape,
                                     border = toolBtnBorder,
                                     colors = toolBtnColors
@@ -339,7 +350,7 @@ fun WorkspaceReadyView(
                             // 图片选择按钮
                             OutlinedCard(
                                 modifier = Modifier
-                                    .androidx.compose.foundation.clickable {
+                                    .clickable {
                                         imagePickerLauncher.launch("image/*")
                                     },
                                 shape = toolBtnShape,
@@ -369,7 +380,7 @@ fun WorkspaceReadyView(
                             // 拍照按钮
                             OutlinedCard(
                                 modifier = Modifier
-                                    .androidx.compose.foundation.clickable {
+                                    .clickable {
                                         if (cameraPermissionState.value) {
                                             cameraLauncher.launch(null)
                                         } else {
@@ -404,10 +415,10 @@ fun WorkspaceReadyView(
                 }
 
                 // ── 已选图片预览 ────────────────────────────────────────────
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = selectedImageUri != null || selectedImagePath != null,
-                    enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
                 ) {
                     Row(
                         modifier = Modifier
@@ -420,7 +431,7 @@ fun WorkspaceReadyView(
                             modifier = Modifier
                                 .size(60.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .androidx.compose.foundation.border(
+                                .border(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant,
                                     RoundedCornerShape(8.dp)
@@ -480,7 +491,7 @@ fun WorkspaceReadyView(
                                 if (showToolbar) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
-                            .androidx.compose.foundation.clickable { showToolbar = !showToolbar },
+                            .clickable { showToolbar = !showToolbar },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -511,8 +522,8 @@ fun WorkspaceReadyView(
                             fontSize = (15 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurface
                         ),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = {
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = {
                             val toSend = taskText.trim()
                             val hasImage = selectedImagePath != null || selectedImageUri != null
                             if ((toSend.isNotBlank() || hasImage) && selectedConfigId != null) {
@@ -546,7 +557,7 @@ fun WorkspaceReadyView(
                                 if (canSend) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
-                            .androidx.compose.foundation.clickable(enabled = canSend) {
+                            .clickable(enabled = canSend) {
                                 val toSend = taskText.trim()
                                 val hasImage = selectedImagePath != null || selectedImageUri != null
                                 if ((toSend.isNotBlank() || hasImage) && selectedConfigId != null) {
