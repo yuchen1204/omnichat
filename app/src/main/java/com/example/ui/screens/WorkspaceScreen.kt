@@ -42,6 +42,7 @@ fun WorkspaceScreen(
     val agentStreamBuffers by workspaceViewModel.agentStreamBuffers.collectAsStateWithLifecycle()
     val agentStatuses by workspaceViewModel.agentStatuses.collectAsStateWithLifecycle()
     val modelConfigs by workspaceViewModel.modelConfigs.collectAsStateWithLifecycle()
+    val fetchedModels by workspaceViewModel.fetchedModels.collectAsStateWithLifecycle()
     val teamState by workspaceViewModel.teamState.collectAsStateWithLifecycle()
     val teamTasks by workspaceViewModel.teamTasks.collectAsStateWithLifecycle()
     val exportLogStatus by workspaceViewModel.exportLogStatus.collectAsStateWithLifecycle()
@@ -101,7 +102,8 @@ fun WorkspaceScreen(
         WorkspaceReadyView(
             sessionTitle = session.title,
             modelConfigs = modelConfigs,
-            onSubmit = { taskText, modelId -> workspaceViewModel.submitTask(taskText, modelId) }
+            fetchedModels = fetchedModels,
+            onSubmit = { taskText, configId, modelId, imagePath -> workspaceViewModel.submitTask(taskText, configId, modelId, imagePath) }
         )
         return
     }
@@ -199,7 +201,7 @@ fun WorkspaceScreen(
                 if (session.isActive && activeAgentName.isNotEmpty()) {
                     InterventionInputArea(
                         agentName = activeAgentName,
-                        onSend = { text -> workspaceViewModel.sendIntervention(activeAgentName, text) },
+                        onSend = { text, imagePath -> workspaceViewModel.sendIntervention(activeAgentName, text, imagePath) },
                         isStreaming = activeAgentStreaming,
                     )
                 }

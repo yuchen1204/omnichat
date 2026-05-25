@@ -17,3 +17,6 @@ local.properties
 .env
 debug.keystore
 ClaudeCode-main
+
+# Release build output
+app/release/

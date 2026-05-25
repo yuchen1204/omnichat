@@ -69,6 +69,8 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteTemplate(template: PromptTemplate) = promptTemplateDao.deleteTemplate(template)
 
     // Fetched Models Helper methods
+    val allFetchedModels: Flow<List<FetchedModel>> = fetchedModelDao.getAllFetchedModelsFlow()
+    suspend fun getAllFetchedModels(): List<FetchedModel> = fetchedModelDao.getAllFetchedModels()
     fun getModelsByProviderFlow(providerId: Long): Flow<List<FetchedModel>> = fetchedModelDao.getModelsByProviderFlow(providerId)
     suspend fun getModelsByProvider(providerId: Long): List<FetchedModel> = fetchedModelDao.getModelsByProvider(providerId)
     suspend fun insertFetchedModel(model: FetchedModel): Long = fetchedModelDao.insertFetchedModel(model)
@@ -177,6 +179,12 @@ class AppRepository(private val db: AppDatabase) {
      * 获取指定团队的所有任务（一次性查询）。
      */
     suspend fun getTeamTasks(teamName: String): List<TeamTask> = teamTaskDao.getTasks(teamName)
+
+    /**
+     * 查找可认领的任务（带 Agent 匹配，返回候选列表供应用层过滤 blockedBy）。
+     */
+    suspend fun findClaimableTeamTasks(teamName: String, agentName: String): List<TeamTask> =
+        teamTaskDao.findClaimableTasks(teamName, agentName)
 
     /**
      * 查找可认领的任务（带 Agent 匹配）。

@@ -23,6 +23,8 @@ import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.SettingsViewModel
 import com.example.ui.viewmodel.WorkspaceViewModel
 
+import com.example.mcp.TimerManager
+
 class MainActivity : AppCompatActivity() {
 
     private val mcpRuntimeManager by lazy { com.example.mcp.McpRuntimeManager.getInstance(applicationContext) }
@@ -37,6 +39,11 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { /* 从设置页返回后无需处理，UI 层按需检查 */ }
 
+    // Android 13+ 通知权限请求
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* 通知权限结果无需处理，用户拒绝时定时器仍可在聊天中插入消息 */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -47,6 +54,18 @@ class MainActivity : AppCompatActivity() {
         }
         Log.i("MainActivity", "[onCreate] hasStorageAccess=$hasStorageAccess, SDK=${Build.VERSION.SDK_INT}")
         requestStoragePermissions()
+        requestNotificationPermission()
+        // 初始化定时器通知 Channel
+        TimerManager.initNotificationChannel(applicationContext)
+        
+        // 注册全局 Hook 示例
+        com.example.hooks.LoggingHooks.registerAll()
+        
+        // 注册 MCP 文件访问权限 Hook
+        com.example.hooks.HookManager.registerMcpHook(
+            com.example.hooks.McpFilePermissionHook(applicationContext)
+        )
+
         // 在 Activity 创建时立即触发 MCP 运行时自动启动（已启用的 server 在数据库就绪后会被自动启动）。
         // 这样不依赖任何 ViewModel 或 Composable 的初始化时机，确保 MCP 在应用启动后第一时间运行。
         mcpRuntimeManager
@@ -109,6 +128,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             // Android 6 以下：Manifest 声明即可，无需运行时请求
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        // Android 13+（API 33+）需要运行时请求 POST_NOTIFICATIONS 权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.i("MainActivity", "[requestNotificationPermission] 请求 POST_NOTIFICATIONS 权限")
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 }

@@ -395,8 +395,20 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 Log.i(TAG, "[autoStart] 开始部署 MCP 脚本")
                 McpScriptManager.ensureScriptsDeployed(context)
                 val db = AppDatabase.getDatabase(context)
-                val enabled = db.mcpServerDao().getEnabledServers()
-                Log.i(TAG, "[autoStart] 数据库中已启用的 MCP server 数量: ${enabled.size}")
+                val settings = db.uiSettingsDao().getSettings() ?: com.example.data.UISettings()
+                
+                var enabled = db.mcpServerDao().getEnabledServers()
+                
+                // 根据全局运行时开关过滤
+                enabled = enabled.filter { server ->
+                    when (server.runtime) {
+                        "node" -> settings.isNodeEnabled
+                        "python" -> settings.isPythonEnabled
+                        else -> true
+                    }
+                }
+
+                Log.i(TAG, "[autoStart] 数据库中已启用且运行时合规的 MCP server 数量: ${enabled.size} (node_enabled=${settings.isNodeEnabled}, python_enabled=${settings.isPythonEnabled})")
                 if (enabled.isNotEmpty()) {
                     Log.i(TAG, "[autoStart] 即将启动: ${enabled.joinToString { "${it.name}(${it.runtime})" }}")
                     startServers(enabled)
@@ -432,8 +444,20 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 Log.i(TAG, "[ensureAutoStarted] 重试自动启动")
                 McpScriptManager.ensureScriptsDeployed(context)
                 val db = AppDatabase.getDatabase(context)
-                val enabled = db.mcpServerDao().getEnabledServers()
-                Log.i(TAG, "[ensureAutoStarted] 数据库中已启用的 MCP server 数量: ${enabled.size}")
+                val settings = db.uiSettingsDao().getSettings() ?: com.example.data.UISettings()
+                
+                var enabled = db.mcpServerDao().getEnabledServers()
+
+                // 根据全局运行时开关过滤
+                enabled = enabled.filter { server ->
+                    when (server.runtime) {
+                        "node" -> settings.isNodeEnabled
+                        "python" -> settings.isPythonEnabled
+                        else -> true
+                    }
+                }
+
+                Log.i(TAG, "[ensureAutoStarted] 数据库中已启用且合规的 MCP server 数量: ${enabled.size}")
                 if (enabled.isNotEmpty()) {
                     val notRunning = enabled.filter { server ->
                         val state = _serverStates.value[server.id]
@@ -911,6 +935,62 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 put("required", JSONArray().apply { put("sourcePath"); put("destinationPath") })
             }
         ),
+        // ── 文档创建工具 ──────────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "create_document",
+            description = "Create an exquisite, formatted document (PDF, Excel, Word, or PowerPoint) with rich sections and styling. Use this for reports, presentations, or data analysis.\n\n**Sections support:**\n- `heading`: Title/Header text with hierarchy (1-3).\n- `text`: Paragraph text, supports **bold**, *italic*, and lists if `markdown` is true.\n- `table`: Data grid with headers and rows.\n- `image`: Insert image from local path (OmniChat/files/path.jpg).\n- `page_break`: Force a new page or slide.\n\n**Style options:**\n- `themeColor`: Hex color code (e.g., \"#1A73E8\").\n- `preset`: \"business\", \"modern\", or \"classic\".",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("path", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Relative file path inside OmniChat/files/, e.g. \"reports/analysis.pdf\".")
+                    })
+                    put("format", JSONObject().apply {
+                        put("type", "string")
+                        put("enum", JSONArray().apply { put("pdf"); put("xlsx"); put("docx"); put("pptx") })
+                    })
+                    put("title", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Main document title.")
+                    })
+                    put("style", JSONObject().apply {
+                        put("type", "object")
+                        put("properties", JSONObject().apply {
+                            put("themeColor", JSONObject().apply { put("type", "string"); put("description", "Hex color code.") })
+                            put("preset", JSONObject().apply { put("type", "string"); put("enum", JSONArray().apply { put("business"); put("modern"); put("classic") }) })
+                        })
+                    })
+                    put("sections", JSONObject().apply {
+                        put("type", "array")
+                        put("description", "List of document sections in order.")
+                        put("items", JSONObject().apply {
+                            put("type", "object")
+                            put("properties", JSONObject().apply {
+                                put("type", JSONObject().apply { put("type", "string"); put("enum", JSONArray().apply { put("heading"); put("text"); put("table"); put("image"); put("page_break") }) })
+                                put("content", JSONObject().apply { put("type", "string"); put("description", "Text content for heading/text, or image path.") })
+                                put("level", JSONObject().apply { put("type", "integer"); put("description", "For heading: 1 (main), 2 (sub), 3 (minor).") })
+                                put("markdown", JSONObject().apply { put("type", "boolean"); put("description", "Apply markdown formatting to text.") })
+                                put("table", JSONObject().apply {
+                                    put("type", "object")
+                                    put("properties", JSONObject().apply {
+                                        put("headers", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "string") }) })
+                                        put("rows", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "string") }) }) })
+                                    })
+                                })
+                            })
+                        })
+                    })
+                    // Backward compatibility fields
+                    put("paragraphs", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "string") }); put("description", "Legacy: use sections instead.") })
+                    put("table", JSONObject().apply { put("type", "object"); put("description", "Legacy: use sections instead.") })
+                    put("slides", JSONObject().apply { put("type", "array"); put("description", "Legacy: use sections instead.") })
+                })
+                put("required", JSONArray().apply { put("path"); put("format") })
+            }
+        ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
@@ -933,7 +1013,131 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 })
                 put("required", JSONArray().apply { put("question") })
             }
+        ),
+        // ── 定时器工具 ────────────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "create_timer",
+            description = "Create a one-shot timer that fires after a specified delay. When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Use this when the user asks to be reminded about something after a delay (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\").\n\nReturns a `timerId` that can be used with `cancel_timer` to cancel the timer before it fires.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("delay_seconds", JSONObject().apply {
+                        put("type", "integer")
+                        put("description", "Delay in seconds before the timer fires. Range: 1 to 86400 (24 hours). Examples: 60 = 1 minute, 1800 = 30 minutes, 3600 = 1 hour.")
+                    })
+                    put("message", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable, e.g. \"Time to take a break!\", \"Check the oven\", \"Meeting starts now\".")
+                    })
+                    put("label", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
+                    })
+                })
+                put("required", JSONArray().apply {
+                    put("delay_seconds")
+                    put("message")
+                })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "cancel_timer",
+            description = "Cancel a pending timer before it fires. Use the `timerId` returned by `create_timer`. Returns an error if the timer does not exist or has already fired.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("timer_id", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The timer ID returned by create_timer.")
+                    })
+                })
+                put("required", JSONArray().apply { put("timer_id") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "list_timers",
+            description = "List all currently pending (not yet fired) timers created in this session. Returns each timer's ID, label, message, remaining seconds, and scheduled fire time.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
+        ),
+        // ── 运行时工具组管理 ──────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "list_mcp_tool_groups",
+            description = "List all available built-in MCP tool groups and their current enabled/disabled status. Use this tool to discover what capabilities are currently available to you or can be activated. Groups: core (essential), ui_appearance (theming/colors), ui_text (i18n), files (storage), documents (office), efficiency (timers), memory (long-term facts).",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "configure_mcp_tool_groups",
+            description = "Enable or disable specific built-in MCP tool groups. Use this when you need a tool that is currently disabled, or when you want to simplify your toolset. Note: 'core' group cannot be disabled. Changes persist across sessions.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("enable", JSONArray().apply {
+                        put("ui_text"); put("files"); put("documents"); put("efficiency"); put("memory")
+                    }.let { 
+                        JSONObject().apply {
+                            put("type", "array")
+                            put("items", JSONObject().apply { put("type", "string") })
+                            put("description", "List of group names to enable.")
+                        }
+                    })
+                    put("disable", JSONObject().apply {
+                        put("type", "array")
+                        put("items", JSONObject().apply { put("type", "string") })
+                        put("description", "List of group names to disable.")
+                    })
+                })
+            }
         )
+    )
+
+    /**
+     * 将内置工具映射到分类组
+     */
+    private val builtinToolGroups = mapOf(
+        "get_current_time" to "core",
+        "search_memory" to "memory",
+        "get_ui_capabilities" to "ui_appearance",
+        "adjust_ui" to "ui_appearance",
+        "reset_ui_to_default" to "ui_appearance",
+        "save_color_scheme" to "ui_appearance",
+        "list_color_schemes" to "ui_appearance",
+        "apply_color_scheme" to "ui_appearance",
+        "delete_color_scheme" to "ui_appearance",
+        "adjust_font" to "ui_appearance",
+        "reset_font_to_default" to "ui_appearance",
+        "list_ui_texts" to "ui_text",
+        "set_ui_texts" to "ui_text",
+        "file_write" to "files",
+        "file_read" to "files",
+        "file_append" to "files",
+        "file_delete" to "files",
+        "file_list" to "files",
+        "file_search" to "files",
+        "file_info" to "files",
+        "file_move" to "files",
+        "create_document" to "documents",
+        "ask_user" to "core",
+        "create_timer" to "efficiency",
+        "cancel_timer" to "efficiency",
+        "list_timers" to "efficiency",
+        "list_mcp_tool_groups" to "core",
+        "configure_mcp_tool_groups" to "core"
     )
 
     /** Internal helper: build a HEX color schema node */
@@ -965,9 +1169,20 @@ class McpRuntimeManager private constructor(private val context: Context) {
     )
     val serverStates: StateFlow<Map<Long, McpServerState>> = _serverStates.asStateFlow()
 
-    val allTools: StateFlow<List<McpTool>> = serverStates
-        .map { states -> states.values.flatMap { it.tools } }
-        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+    private val enabledBuiltinTools: StateFlow<List<McpTool>> = AppDatabase.getDatabase(context).uiSettingsDao().getSettingsFlow()
+        .map { settings ->
+            val enabledGroups = settings?.enabledMcpGroups?.split(",")?.toSet() ?: setOf("core", "ui_appearance", "efficiency", "memory")
+            builtinTools.filter { tool ->
+                val group = builtinToolGroups[tool.name] ?: "core"
+                group == "core" || group in enabledGroups
+            }
+        }
+        .stateIn(scope, SharingStarted.Eagerly, builtinTools.filter { builtinToolGroups[it.name] == "core" || builtinToolGroups[it.name] in listOf("ui_appearance", "efficiency", "memory") })
+
+    val allTools: StateFlow<List<McpTool>> = combine(serverStates, enabledBuiltinTools) { states, builtins ->
+        val otherTools = states.filter { it.key != BUILTIN_SERVER_ID }.values.flatMap { it.tools }
+        builtins + otherTools
+    }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /**
      * 等待 MCP server 就绪，分两阶段：
@@ -1047,6 +1262,23 @@ class McpRuntimeManager private constructor(private val context: Context) {
     fun startServer(server: McpServer) {
         Log.i(TAG, "[startServer] name=${server.name}, id=${server.id}, runtime=${server.runtime}, command=${server.command}")
         scope.launch {
+            val db = AppDatabase.getDatabase(context)
+            val settings = db.uiSettingsDao().getSettings() ?: com.example.data.UISettings()
+            
+            val isRuntimeEnabled = when (server.runtime) {
+                "node" -> settings.isNodeEnabled
+                "python" -> settings.isPythonEnabled
+                else -> true
+            }
+
+            if (!isRuntimeEnabled) {
+                Log.w(TAG, "[startServer] 运行时 ${server.runtime} 已全局禁用，拒绝启动 server [${server.name}]")
+                updateState(server.id) {
+                    McpServerState(server, McpServerStatus.ERROR, "运行时 ${server.runtime} 已在设置中禁用。")
+                }
+                return@launch
+            }
+
             updateState(server.id) { McpServerState(server, McpServerStatus.STARTING) }
             try {
                 when (server.runtime) {
@@ -1076,18 +1308,29 @@ class McpRuntimeManager private constructor(private val context: Context) {
      * 非 Node.js 类型的 server 仍然逐个独立启动。
      */
     fun startServers(servers: List<McpServer>) {
-        val nodeServers = servers.filter { it.runtime == "node" }
-        val otherServers = servers.filter { it.runtime != "node" }
-
-        Log.i(TAG, "[startServers] 总计 ${servers.size} 个 server: node=${nodeServers.size}, other=${otherServers.size}")
-
-        // 非 Node.js server 正常逐个启动
-        otherServers.forEach { startServer(it) }
-
-        if (nodeServers.isEmpty()) return
-
-        // Node.js server 批量启动
         scope.launch {
+            val db = AppDatabase.getDatabase(context)
+            val settings = db.uiSettingsDao().getSettings() ?: com.example.data.UISettings()
+
+            val allowedServers = servers.filter { server ->
+                when (server.runtime) {
+                    "node" -> settings.isNodeEnabled
+                    "python" -> settings.isPythonEnabled
+                    else -> true
+                }
+            }
+
+            val nodeServers = allowedServers.filter { it.runtime == "node" }
+            val otherServers = allowedServers.filter { it.runtime != "node" }
+
+            Log.i(TAG, "[startServers] 请求 ${servers.size} 个，允许启动 ${allowedServers.size} 个 (node=${nodeServers.size}, other=${otherServers.size})")
+
+            // 非 Node.js server 正常逐个启动
+            otherServers.forEach { startServer(it) }
+
+            if (nodeServers.isEmpty()) return@launch
+
+            // Node.js server 批量启动
             nodeServers.forEach { server ->
                 updateState(server.id) { McpServerState(server, McpServerStatus.STARTING) }
             }
@@ -1205,33 +1448,83 @@ class McpRuntimeManager private constructor(private val context: Context) {
         return allTools.value.find { it.name == toolName }?.serverId
     }
 
-    suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject): JSONObject? {
+    suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject? {
         Log.d(TAG, "[callTool] serverId=$serverId, tool=$toolName")
-        // 内置工具直接在本地处理，不走任何网络/进程通道
-        if (serverId == BUILTIN_SERVER_ID) {
-            return handleBuiltinTool(toolName, arguments)
+
+        // 1. Dispatch Before Execute Hook
+        val processedArgs = com.example.hooks.HookManager.dispatchBeforeToolExecute(toolName, arguments)
+        if (processedArgs == null) {
+            Log.w(TAG, "[callTool] Hook blocked execution of tool $toolName")
+            return JSONObject().apply {
+                put("content", org.json.JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("type", "text")
+                        put("text", "Error: Execution blocked by Hook")
+                    })
+                })
+                put("isError", true)
+            }
         }
-        return try {
-            val response = sendRequest(
-                serverId = serverId,
-                method = "tools/call",
-                params = JSONObject().apply {
-                    put("name", toolName)
-                    put("arguments", arguments)
+
+        val rawResult = if (serverId == BUILTIN_SERVER_ID) {
+            try {
+                handleBuiltinTool(toolName, processedArgs, sessionId)
+            } catch (t: Throwable) {
+                Log.e(TAG, "内置工具 $toolName 执行发生严重错误", t)
+                JSONObject().apply {
+                    put("content", org.json.JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", "Error running builtin tool $toolName: ${t.localizedMessage}")
+                        })
+                    })
+                    put("isError", true)
                 }
-            )
-            response.optJSONObject("result")
-        } catch (e: Exception) {
-            Log.e(TAG, "调用工具 $toolName 失败", e)
-            null
+            }
+        } else {
+            try {
+                val response = sendRequest(
+                    serverId = serverId,
+                    method = "tools/call",
+                    params = JSONObject().apply {
+                        put("name", toolName)
+                        put("arguments", processedArgs)
+                    }
+                )
+                response.optJSONObject("result")
+            } catch (e: Exception) {
+                Log.e(TAG, "调用工具 $toolName 失败", e)
+                null
+            }
         }
+
+        // 2. Dispatch After Execute Hook
+        if (rawResult != null) {
+            val resultStr = rawResult.toString()
+            val processedResultStr = com.example.hooks.HookManager.dispatchAfterToolExecute(toolName, resultStr)
+            return try {
+                JSONObject(processedResultStr)
+            } catch (e: Exception) {
+                Log.w(TAG, "Hook returned invalid JSON for tool $toolName, falling back to wrapping as text: $processedResultStr", e)
+                JSONObject().apply {
+                    put("content", org.json.JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("type", "text")
+                            put("text", processedResultStr)
+                        })
+                    })
+                }
+            }
+        }
+
+        return null
     }
 
     /**
      * 处理内置工具调用，直接在 JVM 层执行，无需外部进程。
      */
-    private suspend fun handleBuiltinTool(toolName: String, arguments: JSONObject): JSONObject {
-        return BuiltinToolHandler.handleBuiltinTool(context, toolName, arguments)
+    private suspend fun handleBuiltinTool(toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject {
+        return BuiltinToolHandler.handleBuiltinTool(context, toolName, arguments, sessionId)
     }
 
     suspend fun refreshTools(serverId: Long) {

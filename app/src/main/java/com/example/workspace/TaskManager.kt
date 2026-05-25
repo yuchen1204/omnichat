@@ -61,6 +61,9 @@ class TaskManager(private val dao: TeamTaskDao) {
      * 认领时优先匹配 intendedAgent 与当前 Agent 相同的任务，
      * 如果没有则退化为任意可认领任务（intendedAgent IS NULL）。
      *
+     * blockedBy 依赖检查在应用层完成：查询所有候选任务后，过滤掉仍有未完成
+     * 依赖的任务（依赖任务的 status != COMPLETED），再取第一个尝试认领。
+     *
      * 对标 inProcessRunner.ts 中的 tryClaimNextTask() 逻辑。
      *
      * @param teamName 团队名称
@@ -71,7 +74,22 @@ class TaskManager(private val dao: TeamTaskDao) {
         teamName: String,
         agentName: String
     ): TeamTask? {
-        val task = dao.findClaimableTask(teamName, agentName) ?: return null
+        // 获取所有候选任务（PENDING、无 owner、intendedAgent 匹配）
+        val candidates = dao.findClaimableTasks(teamName, agentName)
+        if (candidates.isEmpty()) return null
+
+        // 获取当前团队所有已完成任务的 ID 集合，用于 blockedBy 检查
+        val allTasks = dao.getTasks(teamName)
+        val completedIds = allTasks
+            .filter { it.status == "COMPLETED" }
+            .map { it.id.toString() }
+            .toSet()
+
+        // 找到第一个 blockedBy 全部已完成的任务
+        val task = candidates.firstOrNull { candidate ->
+            candidate.blockedBy.isEmpty() || completedIds.containsAll(candidate.blockedBy)
+        } ?: return null
+
         val claimed = dao.claimTask(task.id, agentName)
         return if (claimed > 0) {
             task.copy(owner = agentName, status = "IN_PROGRESS")

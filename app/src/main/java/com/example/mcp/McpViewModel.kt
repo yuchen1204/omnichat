@@ -51,6 +51,30 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
         // McpRuntimeManager 单例在创建时已自动启动所有已启用的 server（见 McpRuntimeManager.init）。
         // 这里只需检测 Python 运行时状态，用于 UI 展示。
         viewModelScope.launch {
+            // 监听全局运行时开关变化
+            repository.uiSettings.collect { settings ->
+                if (settings == null) return@collect
+                val servers = repository.getAllMcpServers() // 获取最新列表
+                servers.forEach { server ->
+                    val isAllowed = when (server.runtime) {
+                        "node" -> settings.isNodeEnabled
+                        "python" -> settings.isPythonEnabled
+                        else -> true
+                    }
+                    val currentState = serverStates.value[server.id]
+                    val isRunning = currentState?.status == McpServerStatus.RUNNING || currentState?.status == McpServerStatus.STARTING
+                    
+                    if (!isAllowed && isRunning) {
+                        runtimeManager.stopServer(server.id)
+                    } else if (isAllowed && !isRunning && server.isEnabled) {
+                        // 如果运行时被重新启用，且服务本身是启用状态，则尝试启动
+                        runtimeManager.startServer(server)
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
             // 检测 Python 运行时
             val ready = withContext(Dispatchers.IO) { PythonRuntime.ensureReady(application) }
             if (ready) {

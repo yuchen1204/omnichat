@@ -140,6 +140,7 @@ data class AgentSpec(
     val role: String,
     val systemPrompt: String,
     val modelConfigId: Long?,
+    val modelId: String? = null,
     val dependsOn: List<String> = emptyList(),
 )
 

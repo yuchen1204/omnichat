@@ -34,6 +34,7 @@ sealed class TeamMessage {
         val content: String,
         val summary: String = "",
         val color: String = "",
+        val imagePath: String? = null,
         override val timestamp: Long = System.currentTimeMillis(),
     ) : TeamMessage()
 

@@ -25,6 +25,7 @@ data class AgentMessage(
     val toolCallsJson: String? = null,
     val isIntervention: Boolean = false,
     val source: String = "",
+    val imagePath: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -57,6 +58,7 @@ data class AgentContext(
     val isOrchestrator: Boolean,
     val systemPrompt: String,
     val modelConfig: ModelConfig,
+    val overrideModelId: String? = null,
     val teamName: String = "",
     val messages: MutableList<AgentMessage> = ArrayList()  // BUG-5/6：改为 ArrayList，由 AgentRunner 的 messagesLock 保护
 )
@@ -75,10 +77,12 @@ data class AgentContext(
 fun AgentContext.buildSystemPrompt(
     mcpToolsJson: String = "[]",
     crossSessionMemory: String = "",
+    availableModels: String = "",
 ): String {
     return systemPrompt
         .replace("[CROSS_SESSION_MEMORY]", crossSessionMemory)
         .replace("[MCP_TOOLS]", mcpToolsJson)
+        .replace("[AVAILABLE_MODELS]", availableModels)
 }
 
 /**
@@ -114,6 +118,10 @@ const val ORCHESTRATOR_SYSTEM_PROMPT = """
 - 适合：研究→实施、采集→分析→报告等有明确先后顺序的流水线
 - 流程：create_agents(dependsOn:[...]) → 工具直接返回所有结果，无需 assign_task
 - **关键**：上游结果会自动注入下游 Agent 的上下文，下游 role 中说明如何使用上游产出
+
+## 可用模型
+如果你需要为某个 Sub-Agent 指定不同于主控 Agent 的大语言模型，请在 `create_agents` 的 `modelConfigId`（填 Provider ID）和 `modelId`（填具体模型标识）字段中指定。当前系统全局支持的模型列表如下：
+[AVAILABLE_MODELS]
 
 ## create_agents 字段规范
 
@@ -270,6 +278,14 @@ val CREATE_AGENTS_TOOL = JSONObject().apply {
                                 put("type", "array")
                                 put("items", JSONObject().apply { put("type", "string") })
                                 put("description", "依赖的其他 Agent 名称列表（可选）。填写后系统自动串行执行：上游完成后其结果自动注入本 Agent 上下文，create_agents 工具等待整条依赖链全部完成后才返回。")
+                            })
+                            put("modelConfigId", JSONObject().apply {
+                                put("type", "integer")
+                                put("description", "如果要为本 Agent 指定特定的模型，请填写该模型所属的 Provider ID（参考 [AVAILABLE_MODELS] 中的 modelConfigId）。")
+                            })
+                            put("modelId", JSONObject().apply {
+                                put("type", "string")
+                                put("description", "如果要为本 Agent 指定特定的模型，请填写该模型的标识（参考 [AVAILABLE_MODELS] 中的具体名称，例如 'gpt-4o'）。必须与 modelConfigId 配合使用。")
                             })
                         })
                         put("required", JSONArray().put("name").put("role"))

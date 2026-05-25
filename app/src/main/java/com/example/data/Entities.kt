@@ -56,6 +56,7 @@ data class AgentInstance(
     val isOrchestrator: Boolean = false,
     val systemPrompt: String = "",
     val modelConfigId: Long,
+    val overrideModelId: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -81,6 +82,7 @@ data class WorkspaceMessage(
     val toolCallId: String? = null,
     val toolCallsJson: String? = null,
     val isIntervention: Boolean = false,       // 用户干预消息标记
+    val imagePath: String? = null,             // 图片路径
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -122,7 +124,14 @@ data class Message(
     val content: String,
     val toolCallId: String? = null,
     val toolCallsJson: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    /**
+     * 图片的本地路径或 Base64 数据 URL。
+     * - 本地路径: /storage/emulated/0/Pictures/photo.jpg
+     * - Base64 Data URL: data:image/jpeg;base64,/9j/4AAQ...
+     * 为 null 时表示纯文本消息。
+     */
+    val imagePath: String? = null
 )
 
 @Entity(
@@ -408,6 +417,18 @@ data class UISettings(
      */
     val fontFamily: String = "default",
 
+    /** 是否启用 Node.js 运行时 */
+    val isNodeEnabled: Boolean = true,
+    /** 是否启用 Python 运行时 */
+    val isPythonEnabled: Boolean = true,
+
+    /**
+     * 已启用的内置 MCP 工具组，逗号分隔。
+     * 默认启用: core,ui_appearance,efficiency,memory
+     * 可选禁用: files,documents,ui_text
+     */
+    val enabledMcpGroups: String = "core,ui_appearance,efficiency,memory",
+
     val updatedAt: Long = System.currentTimeMillis(),
 
     /**
@@ -471,3 +492,19 @@ enum class TaskStatus {
     COMPLETED,
     FAILED
 }
+
+/**
+ * MCP File Access Permission
+ * Records user's choice for accessing a file outside the sandbox.
+ * 
+ * isAllowed:
+ * - true: "Allow always"
+ * - false: "Don't ask again" (Deny always)
+ */
+@Entity(tableName = "mcp_file_permissions")
+data class McpFilePermission(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val path: String,
+    val isAllowed: Boolean,
+    val createdAt: Long = System.currentTimeMillis()
+)

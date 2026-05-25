@@ -45,13 +45,15 @@ fun McpToolsDialog(
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val cornerRadius = uiSettings.cornerRadiusDp.dp
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -63,14 +65,15 @@ fun McpToolsDialog(
                         fontSize = (16 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = resolvedFontFamily,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (tools.isEmpty()) {
@@ -97,10 +100,11 @@ fun McpToolItem(tool: McpTool) {
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val cornerRadius = (uiSettings.cornerRadiusDp * 0.7f).coerceAtLeast(6f).dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(cornerRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .padding(10.dp)
     ) {
@@ -135,14 +139,16 @@ fun McpImportDialog(
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val cornerRadius = uiSettings.cornerRadiusDp.dp
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.7f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -199,7 +205,8 @@ fun McpImportDialog(
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) { Text(uiText("mcp.dialog.e972261b", "取消"), fontFamily = resolvedFontFamily) }
                     
                     Button(
@@ -216,7 +223,8 @@ fun McpImportDialog(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = jsonText.isNotBlank()
+                        enabled = jsonText.isNotBlank(),
+                        shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) { Text(uiText("mcp.dialog.521cea1b", "确认导入"), fontFamily = resolvedFontFamily) }
                 }
             }
@@ -249,14 +257,16 @@ fun McpServerEditDialog(
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val cornerRadius = uiSettings.cornerRadiusDp.dp
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -389,7 +399,8 @@ fun McpServerEditDialog(
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) { Text(uiText("mcp.dialog.e972261b", "取消"), fontFamily = resolvedFontFamily) }
 
                     Button(
@@ -407,7 +418,8 @@ fun McpServerEditDialog(
                             onSave(saved)
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = name.isNotBlank() && command.isNotBlank() && !argsError && !envError
+                        enabled = name.isNotBlank() && command.isNotBlank() && !argsError && !envError,
+                        shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) { Text(if (isEdit) uiText("action.save", "保存") else uiText("action.add", "添加"), fontFamily = resolvedFontFamily) }
                 }
             }
@@ -535,12 +547,13 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
             env = "{}"
         )
     )
+    val cornerRadius = uiSettings.cornerRadiusDp.dp
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         examples.forEach { example ->
             OutlinedButton(
                 onClick = { onAdd(example) },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(cornerRadius),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 RuntimeBadge(runtime = example.runtime)
@@ -604,17 +617,21 @@ fun isValidJsonObject(s: String): Boolean {
 fun RuntimeInfoDialog(
     isNodeAvailable: Boolean,
     isPythonReady: Boolean,
+    isNodeEnabled: Boolean,
+    isPythonEnabled: Boolean,
     pythonStatus: String,
     onDismiss: () -> Unit
 ) {
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val cornerRadius = uiSettings.cornerRadiusDp.dp
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -633,7 +650,7 @@ fun RuntimeInfoDialog(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -642,9 +659,11 @@ fun RuntimeInfoDialog(
                 RuntimeInfoSection(
                     title = uiText("mcp.dialog.node_title", "内嵌 Node.js"),
                     isReady = isNodeAvailable,
-                    statusText = if (isNodeAvailable) uiText("mcp.dialog.node_ok", "libnode.so 已加载，Node.js 可用")
+                    isEnabled = isNodeEnabled,
+                    statusText = if (!isNodeEnabled) uiText("mcp.dialog.node_disabled", "已在设置中禁用")
+                                 else if (isNodeAvailable) uiText("mcp.dialog.node_ok", "libnode.so 已加载，Node.js 可用")
                                  else uiText("mcp.dialog.node_missing", "libnode.so 未找到"),
-                    instructions = if (!isNodeAvailable) uiText("mcp.dialog.node_instructions", "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。") else null,
+                    instructions = if (!isNodeAvailable && isNodeEnabled) uiText("mcp.dialog.node_instructions", "请将 libnode.so 放入 app/src/main/jniLibs/<ABI>/ 目录并重新编译。") else null,
                     resolvedFontFamily = resolvedFontFamily
                 )
 
@@ -654,8 +673,9 @@ fun RuntimeInfoDialog(
                 RuntimeInfoSection(
                     title = uiText("mcp.dialog.python_title", "内嵌 Python"),
                     isReady = isPythonReady,
-                    statusText = pythonStatus,
-                    instructions = if (!isPythonReady) uiText("mcp.dialog.python_instructions", "请准备 stdlib.zip 和 .so 文件并重新编译。") else null,
+                    isEnabled = isPythonEnabled,
+                    statusText = if (!isPythonEnabled) uiText("mcp.dialog.python_disabled", "已在设置中禁用") else pythonStatus,
+                    instructions = if (!isPythonReady && isPythonEnabled) uiText("mcp.dialog.python_instructions", "请准备 stdlib.zip 和 .so 文件并重新编译。") else null,
                     resolvedFontFamily = resolvedFontFamily
                 )
 
@@ -673,7 +693,8 @@ fun RuntimeInfoDialog(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) { Text(uiText("mcp.dialog.c0fd3fa0", "知道了"), fontFamily = resolvedFontFamily) }
             }
         }
@@ -684,14 +705,22 @@ fun RuntimeInfoDialog(
 fun RuntimeInfoSection(
     title: String,
     isReady: Boolean,
+    isEnabled: Boolean = true,
     statusText: String,
     instructions: String?,
     resolvedFontFamily: FontFamily
 ) {
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
-    val color = if (isReady) successColor else MaterialTheme.colorScheme.error
-    val bgColor = if (isReady) color.copy(alpha = 0.08f)
-                  else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+    val color = when {
+        !isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        isReady -> successColor
+        else -> MaterialTheme.colorScheme.error
+    }
+    val bgColor = when {
+        !isEnabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        isReady -> color.copy(alpha = 0.08f)
+        else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+    }
     val fs = LocalUISettings.current.fontSizeScale
 
     Column(
@@ -703,7 +732,11 @@ fun RuntimeInfoSection(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                if (isReady) Icons.Default.Check else Icons.Default.Warning,
+                when {
+                    !isEnabled -> Icons.Default.Close
+                    isReady -> Icons.Default.Check
+                    else -> Icons.Default.Warning
+                },
                 contentDescription = null,
                 tint = color,
                 modifier = Modifier.size(16.dp)

@@ -42,6 +42,7 @@ class AgentRunner(
     private val context: AgentContext,
     private val mcpRuntimeManager: McpRuntimeManager,
     private val crossSessionMemory: String = "",
+    private val availableModels: String = "",
     private val disallowedTools: Set<String> = emptySet(),
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
     private val onToolCall: suspend (agentName: String, toolName: String, args: JSONObject, callId: String) -> String,
@@ -58,7 +59,7 @@ class AgentRunner(
         /** Tool Call 循环最大迭代次数，防止无限循环 */
         private const val MAX_TOOL_CALL_ITERATIONS = 50
 
-        /** Orchestrator 可用的只读工具白名单 */
+        /** Orchestrator 可用的只读工具白名单（MCP 外部工具） */
         private val ORCHESTRATOR_READ_ONLY_TOOLS = setOf(
             "list_directory",
             "read_file",
@@ -69,6 +70,20 @@ class AgentRunner(
             "directory_tree",
             "search_code",
             "get_file_contents",
+        )
+
+        /**
+         * Orchestrator 可用的内置工具白名单。
+         *
+         * 内置工具（serverId == -1）不受 ORCHESTRATOR_READ_ONLY_TOOLS 过滤，
+         * 需要单独维护白名单，避免 Orchestrator 调用文件写入等破坏性工具。
+         */
+        private val ORCHESTRATOR_BUILTIN_TOOLS = setOf(
+            "get_current_time",
+            "ask_user",
+            "get_ui_capabilities",
+            "list_mcp_tool_groups",
+            "search_memory",
         )
     }
 
@@ -112,10 +127,18 @@ class AgentRunner(
      *
      * @param userMessage 用户消息，可选。如果提供，将追加到对话历史后再调用 API
      */
-    suspend fun runTurn(userMessage: String? = null, source: String = "") {
+    suspend fun runTurn(userMessage: String? = null, source: String = "", imagePath: String? = null) {
+        // Dispatch Agent Turn Start Hook（传入简洁的 agentType 而非完整系统提示）
+        com.example.hooks.HookManager.dispatchAgentTurnStart(
+            agentId = context.agentName,
+            agentType = if (context.isOrchestrator) "orchestrator" else "teammate",
+            teamName = context.teamName,
+            task = userMessage?.take(200) ?: ""
+        )
+
         // 如果提供了用户消息，先追加到上下文
         if (userMessage != null) {
-            injectMessage("user", userMessage, isIntervention = false, source = source)
+            injectMessage("user", userMessage, isIntervention = false, source = source, imagePath = imagePath)
         }
 
         // 上下文压缩检查
@@ -126,6 +149,7 @@ class AgentRunner(
         isStreaming = true
         usageStats.startTimeMs = System.currentTimeMillis()
 
+        var lastAssistantResponse = ""
         try {
             var iterationCount = 0
             do {
@@ -152,8 +176,8 @@ class AgentRunner(
                 // 获取过滤后的工具列表
                 val tools = getFilteredTools()
 
-                // 构建系统提示（替换 [CROSS_SESSION_MEMORY] 和 [MCP_TOOLS]）
-                val systemPrompt = context.buildSystemPrompt(tools.toString(), crossSessionMemory)
+                // 构建系统提示（替换 [CROSS_SESSION_MEMORY]、[MCP_TOOLS] 和 [AVAILABLE_MODELS]）
+                val systemPrompt = context.buildSystemPrompt(tools.toString(), crossSessionMemory, availableModels)
 
                 // 累积的文本响应
                 var accumulatedText = ""
@@ -162,7 +186,10 @@ class AgentRunner(
 
                 // 执行流式 API 调用
                 ApiClient.executeStreamingChat(
-                    config = context.modelConfig,
+                    config = context.modelConfig.let { 
+                        if (context.overrideModelId != null) it.copy(selectedModelId = context.overrideModelId) 
+                        else it 
+                    },
                     systemPrompt = systemPrompt,
                     history = history,
                     tools = tools
@@ -235,6 +262,9 @@ class AgentRunner(
 
                 // 保存 assistant 消息到上下文
                 val finalContent = if (accumulatedText.trim() == "null") "" else accumulatedText
+                if (finalContent.isNotEmpty()) {
+                    lastAssistantResponse = finalContent
+                }
                 val toolCallsJson = if (accumulatedToolCalls.isNotEmpty()) {
                     val arr = JSONArray()
                     accumulatedToolCalls.values.forEach { arr.put(it) }
@@ -327,6 +357,16 @@ class AgentRunner(
             isStreaming = false
             usageStats.durationMs = System.currentTimeMillis() - usageStats.startTimeMs
             
+            // Dispatch Agent Turn End Hook
+            com.example.hooks.HookManager.dispatchAgentTurnEnd(
+                agentId = context.agentName,
+                agentType = if (context.isOrchestrator) "orchestrator" else "teammate",
+                teamName = context.teamName,
+                result = lastAssistantResponse,
+                toolUseCount = usageStats.toolUseCount,
+                durationMs = usageStats.durationMs,
+            )
+            
             // 估算 token 消耗（粗略估算：1 token ≈ 4 字符）
             val totalChars = context.messages.sumOf { 
                 it.content.length + (it.toolCallsJson?.length ?: 0) 
@@ -357,12 +397,13 @@ class AgentRunner(
      * @param isIntervention 是否为用户干预消息
      * @param source 消息来源标识："" = 用户真实输入，"orchestrator" = 主控注入，"subagent" = 子Agent上报
      */
-    fun injectMessage(role: String, content: String, isIntervention: Boolean = false, source: String = "") {
+    fun injectMessage(role: String, content: String, isIntervention: Boolean = false, source: String = "", imagePath: String? = null) {
         val message = AgentMessage(
             role = role,
             content = content,
             isIntervention = isIntervention,
-            source = source
+            source = source,
+            imagePath = imagePath
         )
 
         synchronized(interventionLock) {
@@ -450,7 +491,7 @@ class AgentRunner(
             var assistantMessageCount = 0
             val maxUserMessages = 2
             val maxAssistantMessages = 2
-            val maxToolResults = 3
+            var maxToolResults = 3  // 修复：改为 var 以便递减
 
             for (msg in toCompress) {
                 when (msg.role) {
@@ -471,8 +512,9 @@ class AgentRunner(
                     }
                     "tool" -> {
                         // 只保留简短的工具结果摘要，避免摘要过大
-                        if (msg.content.length < 100 && maxToolResults > 0) {
+                        if (maxToolResults > 0 && msg.content.length < 100) {
                             appendLine("[工具结果] ${msg.content.take(100)}")
+                            maxToolResults--
                         }
                     }
                 }
@@ -641,6 +683,7 @@ class AgentRunner(
                     content = agentMsg.content,
                     toolCallId = agentMsg.toolCallId,
                     toolCallsJson = agentMsg.toolCallsJson,
+                    imagePath = agentMsg.imagePath,
                     timestamp = agentMsg.timestamp
                 )
             }
@@ -655,27 +698,43 @@ class AgentRunner(
      * 从 MCP 工具列表中移除 [disallowedTools] 中的工具，
      * 并为 Orchestrator 追加专属编排工具。
      *
-     * Orchestrator 工具隔离：只保留只读工具 + 编排工具，禁止写操作。
+     * Orchestrator 工具隔离规则：
+     * - 内置工具（serverId == -1）：只保留 [ORCHESTRATOR_BUILTIN_TOOLS] 白名单中的工具
+     * - 外部 MCP 工具：只保留 [ORCHESTRATOR_READ_ONLY_TOOLS] 白名单中的只读工具
+     * - 编排工具（create_agents / assign_task / continue_conversation）单独追加
      *
      * @return 过滤后的 OpenAI 格式工具数组
      */
     fun getFilteredTools(): JSONArray {
         val allTools = mcpRuntimeManager.getAllToolsAsOpenAiFormat()
+        // 获取内置工具的 serverId（-1L），用于区分内置工具和外部工具
+        val builtinServerId = -1L
+        val builtinToolNames = mcpRuntimeManager.allTools.value
+            .filter { it.serverId == builtinServerId }
+            .map { it.name }
+            .toSet()
+
         val filtered = JSONArray()
 
         for (i in 0 until allTools.length()) {
             val tool = allTools.getJSONObject(i)
             val function = tool.optJSONObject("function") ?: continue
             val name = function.optString("name")
-            
+
             // 基础过滤：移除 disallowedTools 中的工具
             if (name in disallowedTools) continue
-            
-            // Orchestrator 工具隔离：只保留只读工具
-            if (context.isOrchestrator && name !in ORCHESTRATOR_READ_ONLY_TOOLS) {
-                continue
+
+            if (context.isOrchestrator) {
+                val isBuiltin = name in builtinToolNames
+                if (isBuiltin) {
+                    // 内置工具：只保留 Orchestrator 专属白名单
+                    if (name !in ORCHESTRATOR_BUILTIN_TOOLS) continue
+                } else {
+                    // 外部 MCP 工具：只保留只读工具
+                    if (name !in ORCHESTRATOR_READ_ONLY_TOOLS) continue
+                }
             }
-            
+
             filtered.put(tool)
         }
 
@@ -685,7 +744,7 @@ class AgentRunner(
             filtered.put(ASSIGN_TASK_TOOL)
             filtered.put(CONTINUE_CONVERSATION_TOOL)
         }
-        
+
         // WHY: Orchestrator 有专属编排工具，不应使用 peer_message 绕过编排流程。
         // peer_message 仅用于 Sub-Agent 间协作。
         if (!context.isOrchestrator) {

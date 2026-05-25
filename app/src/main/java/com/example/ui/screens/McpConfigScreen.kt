@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -19,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -38,11 +40,13 @@ import com.example.ui.theme.uiText
 
 @Composable
 fun McpConfigScreen(
-    mcpViewModel: McpViewModel = viewModel()
+    mcpViewModel: McpViewModel = viewModel(),
+    settingsViewModel: com.example.ui.viewmodel.SettingsViewModel = viewModel()
 ) {
     val servers by mcpViewModel.mcpServers.collectAsStateWithLifecycle()
     val serverStates by mcpViewModel.serverStates.collectAsStateWithLifecycle()
     val allTools by mcpViewModel.allTools.collectAsStateWithLifecycle()
+    val currentUiSettings by settingsViewModel.uiSettings.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<McpServer?>(null) }
@@ -59,6 +63,18 @@ fun McpConfigScreen(
         RuntimeStatusBar(
             isNodeAvailable = mcpViewModel.isNodeRuntimeAvailable,
             isPythonReady = mcpViewModel.isPythonRuntimeReady,
+            isNodeEnabled = currentUiSettings?.isNodeEnabled ?: true,
+            isPythonEnabled = currentUiSettings?.isPythonEnabled ?: true,
+            onToggleNode = { enabled ->
+                currentUiSettings?.copy(isNodeEnabled = enabled, updatedAt = System.currentTimeMillis())?.let {
+                    settingsViewModel.updateUISettings(it)
+                }
+            },
+            onTogglePython = { enabled ->
+                currentUiSettings?.copy(isPythonEnabled = enabled, updatedAt = System.currentTimeMillis())?.let {
+                    settingsViewModel.updateUISettings(it)
+                }
+            },
             onInfoClick = { showRuntimeInfo = true }
         )
 
@@ -191,6 +207,22 @@ fun McpConfigScreen(
                     )
                 }
 
+                // ── 内置工具分组管理 ────────────────────────
+                item {
+                    McpBuiltinGroupsCard(
+                        enabledGroups = currentUiSettings?.enabledMcpGroups ?: "core,ui_appearance,efficiency,memory",
+                        onToggleGroup = { group, enabled ->
+                            val current = currentUiSettings ?: com.example.data.UISettings()
+                            val groups = current.enabledMcpGroups.split(",").toMutableSet()
+                            if (enabled) groups.add(group) else groups.remove(group)
+                            settingsViewModel.updateUISettings(current.copy(
+                                enabledMcpGroups = groups.sorted().joinToString(","),
+                                updatedAt = System.currentTimeMillis()
+                            ))
+                        }
+                    )
+                }
+
                 // 底部添加按钮
                 item {
                     OutlinedButton(
@@ -214,6 +246,8 @@ fun McpConfigScreen(
         RuntimeInfoDialog(
             isNodeAvailable = mcpViewModel.isNodeRuntimeAvailable,
             isPythonReady = mcpViewModel.isPythonRuntimeReady,
+            isNodeEnabled = currentUiSettings?.isNodeEnabled ?: true,
+            isPythonEnabled = currentUiSettings?.isPythonEnabled ?: true,
             pythonStatus = mcpViewModel.pythonRuntimeStatus,
             onDismiss = { showRuntimeInfo = false }
         )
@@ -307,7 +341,9 @@ private fun McpServerCard(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = surface
@@ -372,7 +408,7 @@ private fun McpServerCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surface) {
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp)) {
                         DropdownMenuItem(
                             text = { Text(uiText("mcp.67aac8d1", "编辑配置")) },
                             leadingIcon = { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)) },
@@ -473,19 +509,107 @@ private fun McpServerCard(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(uiSettings.cornerRadiusDp.dp),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(uiText("mcp.203904cd", "删除 MCP 服务")) },
             text = { Text(uiText("mcp.delete.confirm_body", "确定要删除「%s」吗？该服务将被停止并从配置中移除。").format(server.name)) },
             confirmButton = {
                 Button(
                     onClick = { onDelete(); showDeleteConfirm = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) { Text(uiText("mcp.cd8498ff", "删除")) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text(uiText("mcp.40ebbe7b", "取消")) }
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
+                ) { Text(uiText("mcp.40ebbe7b", "取消")) }
             }
         )
+    }
+}
+
+@Composable
+private fun McpBuiltinGroupsCard(
+    enabledGroups: String,
+    onToggleGroup: (String, Boolean) -> Unit
+) {
+    val fs = LocalUISettings.current.fontSizeScale
+    val groups = listOf(
+        "memory" to uiText("mcp.group.memory", "长效记忆"),
+        "ui_appearance" to uiText("mcp.group.ui_appearance", "界面外观"),
+        "efficiency" to uiText("mcp.group.efficiency", "效率提醒"),
+        "ui_text" to uiText("mcp.group.ui_text", "界面文案"),
+        "files" to uiText("mcp.group.files", "文件管理"),
+        "documents" to uiText("mcp.group.documents", "文档创作")
+    )
+    val enabledSet = enabledGroups.split(",").toSet()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = uiText("mcp.builtin_groups.title", "内置工具组权限控制"),
+                fontSize = (14 * fs).sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = uiText("mcp.builtin_groups.desc", "AI 可以主动开启或关闭这些功能。 core 组始终开启。"),
+                fontSize = (11 * fs).sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 使用 FlowRow 效果的布局
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                groups.chunked(2).forEach { rowGroups ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        rowGroups.forEach { (id, label) ->
+                            val isEnabled = id in enabledSet
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onToggleGroup(id, !isEnabled) },
+                                color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) 
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                border = BorderStroke(
+                                    0.5.dp, 
+                                    if (isEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) 
+                                    else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = if (isEnabled) FontWeight.Medium else FontWeight.Normal,
+                                        color = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Checkbox(
+                                        checked = isEnabled,
+                                        onCheckedChange = { onToggleGroup(id, it) },
+                                        modifier = Modifier.size(20.dp).scale(0.7f)
+                                    )
+                                }
+                            }
+                        }
+                        if (rowGroups.size == 1) Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -553,64 +677,90 @@ private fun StatChip(label: String, value: String, color: Color) {
 private fun RuntimeStatusBar(
     isNodeAvailable: Boolean,
     isPythonReady: Boolean,
+    isNodeEnabled: Boolean,
+    isPythonEnabled: Boolean,
+    onToggleNode: (Boolean) -> Unit,
+    onTogglePython: (Boolean) -> Unit,
     onInfoClick: () -> Unit
 ) {
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
     val warningColor = com.example.ui.theme.LocalCustomColors.current.warning
     
-    val anyReady = isNodeAvailable || isPythonReady
+    val anyEnabled = isNodeEnabled || isPythonEnabled
+    val anyReady = (isNodeEnabled && isNodeAvailable) || (isPythonEnabled && isPythonReady)
+    
     val barColor = when {
-        allRuntimesReady(isNodeAvailable, isPythonReady) -> successColor.copy(alpha = 0.12f)
+        allRuntimesReady(isNodeAvailable, isPythonReady, isNodeEnabled, isPythonEnabled) -> successColor.copy(alpha = 0.12f)
+        !anyEnabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         !anyReady -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
         else -> warningColor.copy(alpha = 0.12f)
     }
 
     Surface(
         color = barColor,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onInfoClick)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 内嵌运行时
-            RuntimeChip(label = "Node", isReady = isNodeAvailable)
-            RuntimeChip(label = "Python", isReady = isPythonReady)
-            
-            Text(
-                text = uiText("mcp.84e89d6f", "支持远程 HTTP MCP"),
-                fontSize = (10 * LocalUISettings.current.fontSizeScale).sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                fontWeight = FontWeight.Medium
-            )
+            // Node.js 开关 + 状态
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RuntimeChip(label = "Node", isReady = isNodeAvailable && isNodeEnabled, isEnabled = isNodeEnabled)
+                Spacer(modifier = Modifier.width(4.dp))
+                Switch(
+                    checked = isNodeEnabled,
+                    onCheckedChange = onToggleNode,
+                    modifier = Modifier.scale(0.6f).height(20.dp).width(34.dp)
+                )
+            }
 
+            // Python 开关 + 状态
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RuntimeChip(label = "Python", isReady = isPythonReady && isPythonEnabled, isEnabled = isPythonEnabled)
+                Spacer(modifier = Modifier.width(4.dp))
+                Switch(
+                    checked = isPythonEnabled,
+                    onCheckedChange = onTogglePython,
+                    modifier = Modifier.scale(0.6f).height(20.dp).width(34.dp)
+                )
+            }
+            
             Spacer(modifier = Modifier.weight(1f))
-            Icon(
-                Icons.Default.Info,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
+
+            IconButton(onClick = onInfoClick, modifier = Modifier.size(24.dp)) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
         }
     }
 }
 
-private fun allRuntimesReady(node: Boolean, py: Boolean): Boolean {
-    return node && py
+private fun allRuntimesReady(node: Boolean, py: Boolean, nodeEnabled: Boolean, pyEnabled: Boolean): Boolean {
+    val nodeOk = !nodeEnabled || node
+    val pyOk = !pyEnabled || py
+    return nodeOk && pyOk && (nodeEnabled || pyEnabled)
 }
 
 @Composable
 private fun RuntimeChip(
     label: String,
-    isReady: Boolean
+    isReady: Boolean,
+    isEnabled: Boolean
 ) {
     val successColor = com.example.ui.theme.LocalCustomColors.current.success
-    val color = if (isReady) successColor else MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+    val color = when {
+        !isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        isReady -> successColor
+        else -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+    }
     val fs = LocalUISettings.current.fontSizeScale
     Row(
         verticalAlignment = Alignment.CenterVertically,

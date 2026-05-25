@@ -86,9 +86,10 @@ class AgentLifecycle(
         prompt: String,
         systemPrompt: String = "",
         modelConfigId: Long? = null,
+        overrideModelId: String? = null,
         existingNames: Set<String>,
         parentScope: CoroutineScope,
-        createRunner: (AgentContext, Boolean) -> AgentRunner,
+        createRunner: suspend (AgentContext, Boolean) -> AgentRunner,
         executeLoop: suspend (AgentRunner, TeammateIdentity) -> Unit,
     ): TeammateIdentity {
         // 检查 Sub-Agent 数量上限
@@ -134,6 +135,7 @@ class AgentLifecycle(
             isOrchestrator = false,
             systemPrompt = finalSystemPrompt.ifEmpty { DEFAULT_TEAMMATE_PROMPT },
             modelConfig = actualModelConfig,
+            overrideModelId = overrideModelId,
             teamName = teamName,
         )
 
@@ -151,6 +153,20 @@ class AgentLifecycle(
         agentCompletionDeferreds[uniqueName] = CompletableDeferred()
 
         Log.d(TAG, "Spawned teammate '$uniqueName' with model ${actualModelConfig.name}")
+
+        // 触发 Teammate 创建 Hook
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                com.example.hooks.HookManager.dispatchTeammateSpawned(
+                    agentName = uniqueName,
+                    role = finalSystemPrompt.take(200),
+                    teamName = identity.teamName,
+                    color = identity.color,
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "dispatchTeammateSpawned failed (non-fatal)", e)
+            }
+        }
 
         // 启动执行循环
         val job = teammateScope.launch {
@@ -183,6 +199,20 @@ class AgentLifecycle(
         try {
             teammateJobs[agentName]?.join()
         } catch (_: Exception) { }
+
+        // 触发 Teammate 销毁 Hook
+        val teamName = runners[agentName]?.getTeamName() ?: ""
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                com.example.hooks.HookManager.dispatchTeammateKilled(
+                    agentName = agentName,
+                    teamName = teamName,
+                    reason = "killed",
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "dispatchTeammateKilled failed (non-fatal)", e)
+            }
+        }
 
         // 清理资源
         cleanupAgent(agentName)

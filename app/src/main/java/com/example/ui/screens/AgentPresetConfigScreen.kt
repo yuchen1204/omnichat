@@ -292,6 +292,8 @@ fun AgentPresetConfigScreen(
                         DropdownMenu(
                             expanded = dropdownExpanded,
                             onDismissRequest = { dropdownExpanded = false },
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.coerceIn(8, 16).dp),
                             modifier = Modifier.fillMaxWidth(0.9f)
                         ) {
                             DropdownMenuItem(
@@ -357,6 +359,7 @@ fun AgentPresetConfigScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = null },
             containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
             icon = {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -378,13 +381,17 @@ fun AgentPresetConfigScreen(
                         workspaceViewModel.deleteAgentPreset(preset)
                         showDeleteDialog = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) {
                     Text(uiText("action.delete", "删除"))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) {
+                TextButton(
+                    onClick = { showDeleteDialog = null },
+                    shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
+                ) {
                     Text(uiText("action.cancel", "取消"))
                 }
             }

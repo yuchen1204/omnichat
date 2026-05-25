@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -80,9 +81,23 @@ fun AgentMessageArea(
 
     val totalCount = processedMessages.size + (if (showStreamBubble) 1 else 0)
 
+    var autoScrollEnabled by remember { mutableStateOf(true) }
+
+    // 检测用户手动滚动：如果用户正在拖动且不在底部，说明用户主动上翻，暂停自动滚动
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(listState.canScrollForward, isDragged) {
+        if (!listState.canScrollForward) {
+            // 已经在最底部，恢复自动滚动
+            autoScrollEnabled = true
+        } else if (isDragged) {
+            // 用户正在手动拖动且不在底部，说明用户主动上翻，暂停自动滚动
+            autoScrollEnabled = false
+        }
+    }
+
     // 新内容到来时滚动到底部
     LaunchedEffect(processedMessages.size, streamingText.length) {
-        if (totalCount > 0) {
+        if (autoScrollEnabled && totalCount > 0) {
             listState.animateScrollToItem(totalCount - 1)
         }
     }

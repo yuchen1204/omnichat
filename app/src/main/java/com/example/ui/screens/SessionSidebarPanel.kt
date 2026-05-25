@@ -168,6 +168,7 @@ fun SessionSidebarPanel(
                                     expanded = showItemMenu,
                                     onDismissRequest = { showItemMenu = false },
                                     containerColor = MaterialTheme.colorScheme.surface,
+                                    shape = RoundedCornerShape(cornerRadius.coerceIn(8.dp, 16.dp)),
                                     offset = DpOffset(x = (-80).dp, y = 0.dp),
                                 ) {
                                     DropdownMenuItem(
@@ -292,23 +293,29 @@ fun SessionSidebarPanel(
         AlertDialog(
             onDismissRequest = { deleteTargetSession = null },
             containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(cornerRadius),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(uiText("dialog.delete.session.title", "删除会话")) },
+            title = { Text(uiText("dialog.delete.session.title", "删除会话"), fontFamily = resolvedFontFamily) },
             text = {
                 Text(
                     text = uiText("dialog.delete.session.body", "确定要删除「%s」吗？\n该会话的所有消息记录将被永久清除，无法恢复。").format(session.title),
                     fontSize = (14 * fs).sp,
-                    lineHeight = (20 * fs).sp
+                    lineHeight = (20 * fs).sp,
+                    fontFamily = resolvedFontFamily
                 )
             },
             confirmButton = {
                 Button(
                     onClick = { viewModel.deleteSession(session.id); deleteTargetSession = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text(uiText("action.delete", "删除")) }
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text(uiText("action.delete", "删除"), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTargetSession = null }) { Text(uiText("action.cancel", "取消")) }
+                TextButton(
+                    onClick = { deleteTargetSession = null },
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text(uiText("action.cancel", "取消"), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -317,24 +324,30 @@ fun SessionSidebarPanel(
         AlertDialog(
             onDismissRequest = { renameTargetSession = null },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text(uiText("sidebar.cf3487b0", "重命名会话")) },
+            shape = RoundedCornerShape(cornerRadius),
+            title = { Text(uiText("sidebar.cf3487b0", "重命名会话"), fontFamily = resolvedFontFamily) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = it },
-                    label = { Text(uiText("sidebar.e4ceeffb", "会话名称")) },
+                    label = { Text(uiText("sidebar.e4ceeffb", "会话名称"), fontFamily = resolvedFontFamily) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape((cornerRadius.value * 0.6f).coerceAtLeast(4f).dp)
                 )
             },
             confirmButton = {
                 Button(
                     onClick = { viewModel.renameSession(session.id, renameText); renameTargetSession = null },
-                    enabled = renameText.isNotBlank()
-                ) { Text(uiText("sidebar.d5e6dfc3", "确认")) }
+                    enabled = renameText.isNotBlank(),
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text(uiText("sidebar.d5e6dfc3", "确认"), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTargetSession = null }) { Text(uiText("sidebar.335fc2b7", "取消")) }
+                TextButton(
+                    onClick = { renameTargetSession = null },
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text(uiText("sidebar.335fc2b7", "取消"), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -343,23 +356,29 @@ fun SessionSidebarPanel(
         AlertDialog(
             onDismissRequest = { deleteTargetWorkspace = null },
             containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(cornerRadius),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(uiText("dialog.delete.workspace.title", "删除工作区")) },
+            title = { Text(uiText("dialog.delete.workspace.title", "删除工作区"), fontFamily = resolvedFontFamily) },
             text = {
                 Text(
                     text = uiText("dialog.delete.workspace.body", "确定要删除工作区「%s」吗？\n该工作区内的所有协作对话记录及实例元数据将被永久级联删除，无法恢复。").format(ws.title),
                     fontSize = (14 * fs).sp,
-                    lineHeight = (20 * fs).sp
+                    lineHeight = (20 * fs).sp,
+                    fontFamily = resolvedFontFamily
                 )
             },
             confirmButton = {
                 Button(
                     onClick = { workspaceViewModel.deleteWorkspaceSession(ws.id); deleteTargetWorkspace = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text(uiText("action.delete", "删除")) }
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text(uiText("action.delete", "删除"), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTargetWorkspace = null }) { Text(uiText("action.cancel", "取消")) }
+                TextButton(
+                    onClick = { deleteTargetWorkspace = null },
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text(uiText("action.cancel", "取消"), fontFamily = resolvedFontFamily) }
             }
         )
     }

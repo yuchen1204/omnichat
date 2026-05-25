@@ -287,6 +287,7 @@ class OrchestratorTools(
                     systemPrompt = agentObj.optString("systemPrompt", ""),
                     modelConfigId = agentObj.optLong("modelConfigId", -1)
                         .let { if (it == -1L) null else it },
+                    modelId = agentObj.optString("modelId").takeIf { it.isNotEmpty() },
                     dependsOn = agentObj.optJSONArray("dependsOn")
                         ?.let { arr ->
                             (0 until arr.length()).mapNotNull {
@@ -351,6 +352,7 @@ class OrchestratorTools(
                 role = role,
                 systemPrompt = "执行任务: $role",
                 modelConfigId = null,
+                modelId = null,
                 dependsOn = emptyList()
             )
         }.filter { it.name.isNotEmpty() }
@@ -390,6 +392,7 @@ class OrchestratorTools(
                         systemPrompt = agentObj.optString("systemPrompt", ""),
                         modelConfigId = agentObj.optLong("modelConfigId", -1)
                             .let { if (it == -1L) null else it },
+                        modelId = agentObj.optString("modelId").takeIf { it.isNotEmpty() },
                         dependsOn = agentObj.optJSONArray("dependsOn")
                             ?.let { arr ->
                                 (0 until arr.length()).mapNotNull {

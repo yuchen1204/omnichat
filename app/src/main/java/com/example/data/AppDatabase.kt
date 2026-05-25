@@ -45,8 +45,9 @@ class Converters {
         WorkspaceMessage::class,
         // Agent Team 任务系统
         TeamTask::class,
+        McpFilePermission::class,
     ],
-    version = 22,
+    version = 28,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -68,6 +69,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun workspaceMessageDao(): WorkspaceMessageDao
     // Agent Team 任务系统 DAO
     abstract fun teamTaskDao(): TeamTaskDao
+    // MCP 文件权限 DAO
+    abstract fun mcpFilePermissionDao(): McpFilePermissionDao
 
     companion object {
         @Volatile
@@ -401,6 +404,58 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v22→v23：messages 表新增 imagePath 字段（图片消息支持） */
+        private val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN imagePath TEXT")
+            }
+        }
+
+        /** v23→v24：agent_instances 表新增 overrideModelId 字段 */
+        private val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE agent_instances ADD COLUMN overrideModelId TEXT")
+            }
+        }
+
+        /** v24→v25：workspace_messages 表新增 imagePath 字段（工作区图片消息支持） */
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE workspace_messages ADD COLUMN imagePath TEXT")
+            }
+        }
+
+        /** v25→v26：ui_settings 增加 isNodeEnabled 和 isPythonEnabled 字段 */
+        private val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN isNodeEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN isPythonEnabled INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        /** v26→v27：ui_settings 增加 enabledMcpGroups 字段 */
+        private val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN enabledMcpGroups TEXT NOT NULL DEFAULT 'core,ui_appearance,efficiency,memory'")
+            }
+        }
+
+        /** v27→v28：新增 mcp_file_permissions 表，用于记录 MCP 工具访问沙盒外文件的用户授权 */
+        private val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS mcp_file_permissions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        path TEXT NOT NULL,
+                        isAllowed INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -426,7 +481,13 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_18_19,
                         MIGRATION_19_20,
                         MIGRATION_20_21,
-                        MIGRATION_21_22
+                        MIGRATION_21_22,
+                        MIGRATION_22_23,
+                        MIGRATION_23_24,
+                        MIGRATION_24_25,
+                        MIGRATION_25_26,
+                        MIGRATION_26_27,
+                        MIGRATION_27_28
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。

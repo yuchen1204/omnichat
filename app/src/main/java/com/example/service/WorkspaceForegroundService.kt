@@ -167,7 +167,7 @@ class WorkspaceForegroundService : Service() {
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.mipmap.ic_launcher_foreground)
                 .setContentTitle("OmniChat")
                 .setContentText(message)
                 .setContentIntent(pendingIntent)
@@ -177,7 +177,7 @@ class WorkspaceForegroundService : Service() {
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.mipmap.ic_launcher_foreground)
                 .setContentTitle("OmniChat")
                 .setContentText(message)
                 .setContentIntent(pendingIntent)
@@ -202,7 +202,7 @@ class WorkspaceForegroundService : Service() {
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID_COMPLETE)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.mipmap.ic_launcher_foreground)
                 .setContentTitle("OmniChat")
                 .setContentText(message)
                 .setContentIntent(pendingIntent)
@@ -212,7 +212,7 @@ class WorkspaceForegroundService : Service() {
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.mipmap.ic_launcher_foreground)
                 .setContentTitle("OmniChat")
                 .setContentText(message)
                 .setContentIntent(pendingIntent)

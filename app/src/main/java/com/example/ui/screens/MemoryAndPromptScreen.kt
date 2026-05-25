@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -62,7 +64,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
         if (activeSubTab == "memory") {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp * spacingMultiplier)
+                verticalArrangement = Arrangement.spacedBy(8.dp * spacingMultiplier)
             ) {
                 // 1. 副模型配置卡片
                 item {
@@ -301,12 +303,13 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
 
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(templates) { template ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .animateContentSize(animationSpec = androidx.compose.animation.core.spring(dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy, stiffness = androidx.compose.animation.core.Spring.StiffnessMedium))
                             .testTag("prompt_template_${template.id}"),
                         colors = CardDefaults.cardColors(
                             containerColor = if (template.isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)

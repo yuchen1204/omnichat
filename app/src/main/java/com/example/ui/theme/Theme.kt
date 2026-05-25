@@ -194,12 +194,21 @@ fun MyApplicationTheme(
     accent = settings.accentColor.parseOr(Color(0xFFFF9500)),
   )
 
-  val sidebarColors = SidebarColors(
-    background = settings.sidebarBackgroundColor.parseOr(Color(0xFFFFFBFE)),
-    onBackground = settings.sidebarOnBackgroundColor.parseOr(Color(0xFF1C1B1F)),
-    activeBackground = settings.sidebarActiveColor.parseOr(Color(0xFFEADDFF)),
-    onActiveBackground = settings.sidebarOnActiveColor.parseOr(Color(0xFF21005D))
-  )
+  val sidebarColors = if (hasUserOverride) {
+    SidebarColors(
+      background = settings.sidebarBackgroundColor.parseOr(Color(0xFFFFFBFE)),
+      onBackground = settings.sidebarOnBackgroundColor.parseOr(Color(0xFF1C1B1F)),
+      activeBackground = settings.sidebarActiveColor.parseOr(Color(0xFFEADDFF)),
+      onActiveBackground = settings.sidebarOnActiveColor.parseOr(Color(0xFF21005D))
+    )
+  } else {
+    SidebarColors(
+      background = colorScheme.surface,
+      onBackground = colorScheme.onSurface,
+      activeBackground = colorScheme.primaryContainer,
+      onActiveBackground = colorScheme.onPrimaryContainer
+    )
+  }
 
   // 字体：解析字体族 + 构建带缩放的 Typography
   val resolvedFontFamily = resolveFontFamily(settings.fontFamily)

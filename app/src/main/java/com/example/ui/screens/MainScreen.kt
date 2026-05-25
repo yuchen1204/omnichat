@@ -27,6 +27,11 @@ import kotlinx.coroutines.launch
 
 import com.example.ui.viewmodel.WorkspaceViewModel
 import com.example.mcp.AskUserManager
+import com.example.mcp.McpPermissionManager
+import com.example.mcp.PermissionResult
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.text.style.TextOverflow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,14 +62,144 @@ fun MainScreen(
         )
     }
 
+    val permissionRequest by McpPermissionManager.permissionRequestFlow.collectAsStateWithLifecycle()
+    if (permissionRequest != null) {
+        val uiSettingsPerm = LocalUISettings.current
+        val fsPerm = uiSettingsPerm.fontSizeScale
+        val cornerPerm = uiSettingsPerm.cornerRadiusDp.dp
+        val resolvedFontFamilyPerm = resolveFontFamily(uiSettingsPerm.fontFamily)
+        Dialog(
+            onDismissRequest = { permissionRequest?.onResult?.invoke(PermissionResult.DENY) },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                shape = RoundedCornerShape(cornerPerm),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .wrapContentHeight(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    // 图标 + 标题
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape((cornerPerm.value * 0.6f).dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = uiText("dialog.permission.title", "文件访问权限请求"),
+                                fontSize = (16 * fsPerm).sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = resolvedFontFamilyPerm,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = uiText("dialog.permission.subtitle", "MCP 工具请求"),
+                                fontSize = (11 * fsPerm).sp,
+                                fontFamily = resolvedFontFamilyPerm,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 路径展示
+                    Text(
+                        text = uiText("dialog.permission.desc", "AI 助手想要访问沙盒外的文件："),
+                        fontSize = (13 * fsPerm).sp,
+                        fontFamily = resolvedFontFamilyPerm,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape((cornerPerm.value * 0.5f).coerceAtLeast(4f).dp)
+                    ) {
+                        Text(
+                            text = permissionRequest?.path ?: "",
+                            fontSize = (12 * fsPerm).sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            maxLines = 4,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 操作按钮 - 垂直排列，从最宽松到最严格
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { permissionRequest?.onResult?.invoke(PermissionResult.ALLOW_ALWAYS) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(Icons.Default.LockOpen, null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(uiText("dialog.permission.allow_always", "始终允许"), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
+                        }
+                        OutlinedButton(
+                            onClick = { permissionRequest?.onResult?.invoke(PermissionResult.ALLOW_ONCE) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
+                        ) {
+                            Icon(Icons.Default.Check, null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(uiText("dialog.permission.allow_once", "允许一次"), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(
+                                onClick = { permissionRequest?.onResult?.invoke(PermissionResult.DONT_ASK_AGAIN) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
+                            ) {
+                                Text(uiText("dialog.permission.dont_ask", "不再询问"), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(
+                                onClick = { permissionRequest?.onResult?.invoke(PermissionResult.DENY) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
+                            ) {
+                                Text(uiText("dialog.permission.deny", "拒绝"), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     val uiSettings = LocalUISettings.current
     val spacingMultiplier = uiSettings.spacingMultiplier
+
+    val sidebarColors = com.example.ui.theme.LocalSidebarColors.current
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerContainerColor = sidebarColors.background,
+                drawerShape = RoundedCornerShape(topEnd = uiSettings.cornerRadiusDp.dp, bottomEnd = uiSettings.cornerRadiusDp.dp)
             ) {
                 SessionSidebarPanel(
                     viewModel = viewModel,

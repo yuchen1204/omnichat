@@ -145,6 +145,12 @@ interface PromptTemplateDao {
 
 @Dao
 interface FetchedModelDao {
+    @Query("SELECT * FROM fetched_models ORDER BY providerId ASC, modelId ASC")
+    fun getAllFetchedModelsFlow(): Flow<List<FetchedModel>>
+
+    @Query("SELECT * FROM fetched_models ORDER BY providerId ASC, modelId ASC")
+    suspend fun getAllFetchedModels(): List<FetchedModel>
+
     @Query("SELECT * FROM fetched_models WHERE providerId = :providerId ORDER BY modelId ASC")
     fun getModelsByProviderFlow(providerId: Long): Flow<List<FetchedModel>>
 
@@ -336,11 +342,31 @@ interface TeamTaskDao {
      * 优先匹配 intendedAgent 与当前 Agent 名称相同的任务，
      * 如果没有匹配则退化为任意可认领任务（intendedAgent IS NULL）。
      *
+     * 注意：blockedBy 的依赖检查在应用层（TaskManager.tryClaimNextTask）完成，
+     * 此处只返回 PENDING 且无 owner 的候选任务，由调用方过滤掉仍被阻塞的任务。
+     *
      * 对标 inProcessRunner.ts 中 findAvailableTask() 的逻辑。
      *
      * @param teamName 团队名称
      * @param agentName 当前 Agent 名称，用于匹配 intendedAgent
-     * @return 可认领的任务，如果没有则返回 null
+     * @return 可认领的任务列表（未过滤 blockedBy），按优先级排序
+     */
+    @Query("""
+        SELECT * FROM team_tasks 
+        WHERE teamName = :teamName 
+          AND status = 'PENDING' 
+          AND owner IS NULL 
+          AND (intendedAgent IS NULL OR intendedAgent = :agentName)
+        ORDER BY 
+            CASE WHEN intendedAgent = :agentName THEN 0 ELSE 1 END,
+            id ASC 
+    """)
+    suspend fun findClaimableTasks(teamName: String, agentName: String): List<TeamTask>
+
+    /**
+     * 查找可认领的任务（带 Agent 匹配，兼容旧调用）。
+     *
+     * @deprecated 使用 findClaimableTasks 替代，以支持应用层 blockedBy 过滤
      */
     @Query("""
         SELECT * FROM team_tasks 
@@ -418,4 +444,16 @@ interface TeamTaskDao {
      */
     @Query("UPDATE team_tasks SET status = 'FAILED', updatedAt = :now WHERE teamName = :teamName AND owner = :agentName AND status = 'IN_PROGRESS'")
     suspend fun failTaskByOwner(teamName: String, agentName: String, now: Long = System.currentTimeMillis())
+}
+
+@Dao
+interface McpFilePermissionDao {
+    @Query("SELECT * FROM mcp_file_permissions WHERE path = :path LIMIT 1")
+    suspend fun getPermissionByPath(path: String): McpFilePermission?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPermission(permission: McpFilePermission): Long
+
+    @Query("DELETE FROM mcp_file_permissions WHERE path = :path")
+    suspend fun deletePermissionByPath(path: String)
 }

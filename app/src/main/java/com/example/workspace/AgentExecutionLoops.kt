@@ -3,8 +3,10 @@ package com.example.workspace
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
@@ -60,6 +62,7 @@ class AgentExecutionLoops(
     suspend fun runOrchestratorLoop(
         runner: AgentRunner,
         initialTask: String,
+        imagePath: String? = null,
         isCompleted: java.util.concurrent.atomic.AtomicBoolean,
         onWorkspaceComplete: suspend (AgentRunner) -> Unit,
     ) {
@@ -68,7 +71,7 @@ class AgentExecutionLoops(
             onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.IDLE)
             waitForOrchestratorInput(isCompleted)
         } else {
-            initialTask to ""
+            Triple(initialTask, "", imagePath)
         }
 
         var completionTriggered = false
@@ -83,8 +86,8 @@ class AgentExecutionLoops(
 
             onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.STREAMING)
 
-            // 执行一轮对话，传入消息来源
-            runner.runTurn(currentInput.first, source = currentInput.second)
+            // 执行一轮对话，传入消息来源和图片路径
+            runner.runTurn(currentInput.first, source = currentInput.second, imagePath = currentInput.third)
 
             // 排空残留 IdleNotification
             drainExcessIdleNotifications()
@@ -113,7 +116,7 @@ class AgentExecutionLoops(
                 // 用户提供了反馈，继续执行
                 Log.d(TAG, "Received user feedback after completion, continuing...")
                 completionTriggered = false
-                currentInput = feedbackInput to ""
+                currentInput = Triple(feedbackInput, "", null)
                 continue
             }
 
@@ -156,6 +159,7 @@ class AgentExecutionLoops(
             kotlinx.coroutines.CompletableDeferred()
         }
 
+        var killedExternally = false
         try {
             // 创建后立即进入 IDLE 等待状态
             onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
@@ -201,6 +205,7 @@ class AgentExecutionLoops(
                 }
             }
         } catch (e: CancellationException) {
+            killedExternally = true
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Teammate '${identity.agentName}' error: ${e.message}", e)
@@ -221,6 +226,23 @@ class AgentExecutionLoops(
 
             completionDeferred.complete(Unit)
             lifecycle.agentCompletionDeferreds.remove(identity.agentName)
+
+            // WHY: 只在非外部 kill 时触发 "completed" hook。
+            // 外部 kill（CancellationException）由 AgentLifecycle.killTeammate() 负责触发 "killed" hook，
+            // 避免同一个 Agent 触发两次 onTeammateKilled。
+            if (!killedExternally) {
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                    try {
+                        com.example.hooks.HookManager.dispatchTeammateKilled(
+                            agentName = identity.agentName,
+                            teamName = identity.teamName,
+                            reason = "completed",
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "dispatchTeammateKilled(completed) failed (non-fatal)", e)
+                    }
+                }
+            }
 
             Log.d(TAG, "Teammate '${identity.agentName}' loop exited")
         }
@@ -263,64 +285,90 @@ class AgentExecutionLoops(
             return
         }
 
-        // 重置 per-turn abort 标志
-        val teammateCtx = coroutineContext[TeammateContext]
-        teammateCtx?.resetTurnAbort()
+        var taskCompleted = false
+        try {
+            // 重置 per-turn abort 标志
+            val teammateCtx = coroutineContext[TeammateContext]
+            teammateCtx?.resetTurnAbort()
 
-        val messageOffset = runner.getHistory().size
-        onAgentStatusChanged(identity.agentName, AgentStatus.STREAMING)
-        // 标记来源为 orchestrator，UI 中显示为"来自主控 Agent"而非用户消息
-        runner.runTurn(taskPrompt, source = "orchestrator")
+            val messageOffset = runner.getHistory().size
+            onAgentStatusChanged(identity.agentName, AgentStatus.STREAMING)
+            // 标记来源为 orchestrator，UI 中显示为"来自主控 Agent"而非用户消息
+            runner.runTurn(taskPrompt, source = "orchestrator")
 
-        // 检查 per-turn abort
-        if (teammateCtx?.isCurrentTurnAborted == true) {
-            Log.d(TAG, "Teammate '${identity.agentName}' turn aborted, returning to idle")
-            onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
+            // 检查 per-turn abort
+            if (teammateCtx?.isCurrentTurnAborted == true) {
+                Log.d(TAG, "Teammate '${identity.agentName}' turn aborted, returning to idle")
+                onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
+                messageBus.send(
+                    ORCHESTRATOR_NAME,
+                    TeamMessage.IdleNotification(
+                        from = identity.agentName,
+                        idleReason = IdleReason.INTERRUPTED,
+                    )
+                )
+                return
+            }
+
+            val resultSummary = collectAgentResult(runner, fromIndex = messageOffset)
+
+            // 检测执行错误：只检查 API 级别错误和工具执行错误，
+            // 避免把 Agent 分析的文本内容（如包含"执行失败"字样的日志）误判为任务失败
+            val history = runner.getHistory()
+            val taskMessages = history.subList(messageOffset.coerceIn(0, history.size), history.size)
+            val hasError = taskMessages.any { msg ->
+                // API 级别错误（来自 ApiClient 的 ERROR: 前缀）
+                (msg.role == "assistant" && msg.content.startsWith("ERROR:")) ||
+                // 工具执行错误（来自 MCP 工具的 Error: 前缀）
+                (msg.role == "tool" && msg.content.startsWith("Error:")) ||
+                // 系统注入的错误标记（来自 AgentRunner 的 system 消息）
+                (msg.role == "system" && (msg.content.contains("执行出错") || msg.content.contains("执行失败")))
+            }
+
             messageBus.send(
                 ORCHESTRATOR_NAME,
-                TeamMessage.IdleNotification(
+                TeamMessage.ResultReport(
                     from = identity.agentName,
-                    idleReason = IdleReason.INTERRUPTED,
+                    taskId = "",
+                    result = resultSummary,
+                    success = !hasError,
                 )
             )
-            return
+
+            taskManager.completeTask(identity.teamName, identity.agentName)
+            taskCompleted = true
+        } finally {
+            if (!taskCompleted) {
+                // 执行被异常中断（如协程取消、应用退到后台被杀、无响应等）
+                // 使用 NonCancellable 确保在取消状态下也能发送消息，避免主控永久等待
+                withContext(NonCancellable) {
+                    try {
+                        messageBus.send(
+                            ORCHESTRATOR_NAME,
+                            TeamMessage.ResultReport(
+                                from = identity.agentName,
+                                taskId = "",
+                                result = "Agent 意外停止或被系统中断，任务未完成。",
+                                success = false,
+                            )
+                        )
+                        taskManager.failTask(identity.teamName, identity.agentName)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to send interruption report for ${identity.agentName}", e)
+                    }
+                }
+            }
+            onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
+            if (taskCompleted) {
+                messageBus.send(
+                    ORCHESTRATOR_NAME,
+                    TeamMessage.IdleNotification(
+                        from = identity.agentName,
+                        idleReason = IdleReason.AVAILABLE,
+                    )
+                )
+            }
         }
-
-        val resultSummary = collectAgentResult(runner, fromIndex = messageOffset)
-
-        // 检测执行错误：多维度判断，避免单一字符串匹配遗漏
-        val history = runner.getHistory()
-        val taskMessages = history.subList(messageOffset.coerceIn(0, history.size), history.size)
-        val hasError = taskMessages.any { msg ->
-            // API 级别错误
-            msg.content.startsWith("ERROR:") ||
-            // 工具执行错误
-            (msg.role == "tool" && msg.content.startsWith("Error:")) ||
-            // 上下文中明确标记的错误
-            msg.content.contains("执行出错") ||
-            msg.content.contains("执行失败")
-        }
-
-        messageBus.send(
-            ORCHESTRATOR_NAME,
-            TeamMessage.ResultReport(
-                from = identity.agentName,
-                taskId = "",
-                result = resultSummary,
-                success = !hasError,
-            )
-        )
-
-        taskManager.completeTask(identity.teamName, identity.agentName)
-
-        onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
-        messageBus.send(
-            ORCHESTRATOR_NAME,
-            TeamMessage.IdleNotification(
-                from = identity.agentName,
-                idleReason = IdleReason.AVAILABLE,
-            )
-        )
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -404,9 +452,9 @@ class AgentExecutionLoops(
      * Orchestrator 空闲时阻塞在 MessageBus.receive 上，等待用户干预或 Sub-Agent 消息。
      * 添加 10 分钟超时和连续超时计数器，防止所有 Sub-Agent 崩溃时永久挂起。
      *
-     * @return Pair(消息内容, 来源标识)。来源："" = 用户输入，"subagent" = 子Agent上报
+     * @return Triple(消息内容, 来源标识, 图片路径)。来源："" = 用户输入，"subagent" = 子Agent上报
      */
-    internal suspend fun waitForOrchestratorInput(isCompleted: java.util.concurrent.atomic.AtomicBoolean): Pair<String, String> {
+    internal suspend fun waitForOrchestratorInput(isCompleted: java.util.concurrent.atomic.AtomicBoolean): Triple<String, String, String?> {
         val timeoutMs = 10 * 60 * 1000L
         val maxConsecutiveTimeouts = 3
         var consecutiveTimeouts = 0
@@ -423,9 +471,8 @@ class AgentExecutionLoops(
                 if (isCompleted.get() || consecutiveTimeouts >= maxConsecutiveTimeouts) {
                     Log.w(TAG, "Orchestrator giving up after $consecutiveTimeouts timeouts")
                     drainExcessIdleNotifications()
-                    if (isCompleted.compareAndSet(false, true)) {
-                        // 超时退出，通知上层
-                    }
+                    // 设置 isCompleted=true，runOrchestratorLoop 末尾的补救逻辑会调用 onWorkspaceComplete
+                    isCompleted.compareAndSet(false, true)
                     break
                 }
                 continue
@@ -437,7 +484,7 @@ class AgentExecutionLoops(
                     val isFromSubAgent = msg.from != "user" && msg.from != "system"
                         && lifecycle.runners.containsKey(msg.from)
                     val source = if (isFromSubAgent) "subagent" else ""
-                    return msg.content to source
+                    return Triple(msg.content, source, msg.imagePath)
                 }
                 is TeamMessage.ResultReport -> {
                     Log.d(TAG, "Received result from '${msg.from}' while orchestrator waiting")
@@ -446,7 +493,7 @@ class AgentExecutionLoops(
                         continue
                     }
                     val stats = lifecycle.runners[msg.from]?.getUsageStats()
-                    return buildTaskNotification(msg, stats) to "subagent"
+                    return Triple(buildTaskNotification(msg, stats), "subagent", null)
                 }
                 is TeamMessage.IdleNotification -> {
                     Log.d(TAG, "Sub-agent '${msg.from}' is idle (orchestrator waiting for input)")
@@ -456,7 +503,7 @@ class AgentExecutionLoops(
                 }
             }
         }
-        return "" to ""
+        return Triple("", "", null)
     }
 
     /**
@@ -650,10 +697,11 @@ class AgentExecutionLoops(
 
         val summaryInput = buildString {
             for ((name, result) in results) {
-                // 与 executeTask 保持一致的错误检测逻辑
+                // 与 executeTask 保持一致的错误检测逻辑：只检查特定角色+前缀
                 val hasError = result.startsWith("ERROR:") ||
-                    result.contains("执行出错") || result.contains("执行失败") ||
-                    result.startsWith("Error:")
+                    result.startsWith("Error:") ||
+                    result.startsWith("执行出错") ||
+                    result.startsWith("执行失败")
                 val status = if (!hasError) "completed" else "failed"
                 val stats = lifecycle.runners[name]?.getUsageStats()
                 appendLine("<task-notification>")

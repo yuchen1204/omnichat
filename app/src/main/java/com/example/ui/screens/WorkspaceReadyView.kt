@@ -17,6 +17,15 @@ import com.example.data.ModelConfig
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import java.io.File
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 工作区就绪界面（空状态 + 任务输入）
@@ -33,7 +42,8 @@ import com.example.ui.theme.uiText
 fun WorkspaceReadyView(
     sessionTitle: String,
     modelConfigs: List<ModelConfig>,
-    onSubmit: (String, Long) -> Unit,
+    fetchedModels: List<com.example.data.FetchedModel>,
+    onSubmit: (String, Long, String?, String?) -> Unit,
 ) {
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
@@ -42,18 +52,49 @@ fun WorkspaceReadyView(
 
     var taskText by remember { mutableStateOf("") }
 
-    val defaultModel = modelConfigs.find { it.isDefaultProvider } ?: modelConfigs.firstOrNull()
-    var selectedModelId by remember { mutableStateOf<Long?>(defaultModel?.id) }
+    val defaultModelConfig = modelConfigs.find { it.isDefaultProvider } ?: modelConfigs.firstOrNull()
+    var selectedConfigId by remember { mutableStateOf<Long?>(defaultModelConfig?.id) }
+    var selectedModelId by remember { mutableStateOf<String?>(defaultModelConfig?.selectedModelId) }
     var dropdownExpanded by remember { mutableStateOf(false) }
+    
+    val context = LocalContext.current
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedImagePath by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(modelConfigs) {
-        if (selectedModelId == null && modelConfigs.isNotEmpty()) {
-            selectedModelId = modelConfigs.find { it.isDefaultProvider }?.id ?: modelConfigs.first().id
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val file = File(context.cacheDir, "workspace_upload_${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(it)?.use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            selectedImageUri = it
+            selectedImagePath = file.absolutePath
         }
     }
 
-    val selectedModelName = modelConfigs.find { it.id == selectedModelId }?.name
-        ?: uiText("workspace.setup.model.none", "选择模型")
+    LaunchedEffect(modelConfigs) {
+        if (selectedConfigId == null && modelConfigs.isNotEmpty()) {
+            val cfg = modelConfigs.find { it.isDefaultProvider } ?: modelConfigs.first()
+            selectedConfigId = cfg.id
+            selectedModelId = cfg.selectedModelId
+        }
+    }
+
+    val selectedConfig = modelConfigs.find { it.id == selectedConfigId }
+    val selectedModelName = if (selectedConfig != null) {
+        "${selectedConfig.name} - ${selectedModelId ?: selectedConfig.selectedModelId}"
+    } else {
+        uiText("workspace.setup.model.none", "选择模型")
+    }
+
+    // 预处理数据以按 Provider 分组展示
+    val modelsByProvider = remember(fetchedModels) {
+        fetchedModels.groupBy { it.providerId }
+    }
 
     Column(
         modifier = Modifier
@@ -155,27 +196,117 @@ fun WorkspaceReadyView(
                     )
                     DropdownMenu(
                         expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false }
+                        onDismissRequest = { dropdownExpanded = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
                     ) {
                         modelConfigs.forEach { config ->
+                            val providerModels = modelsByProvider[config.id] ?: emptyList()
+                            
+                            // 标题：Provider Name
                             DropdownMenuItem(
-                                text = { Text(config.name, fontSize = (14 * fs).sp) },
+                                text = { 
+                                    Text(
+                                        config.name, 
+                                        fontSize = (13 * fs).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    ) 
+                                },
                                 onClick = {
-                                    selectedModelId = config.id
+                                    // 仅选择 Provider 默认模型
+                                    selectedConfigId = config.id
+                                    selectedModelId = config.selectedModelId
                                     dropdownExpanded = false
                                 }
                             )
+                            
+                            // 列表：该 Provider 下的所有模型
+                            if (providerModels.isNotEmpty()) {
+                                providerModels.forEach { fm ->
+                                    DropdownMenuItem(
+                                        text = { 
+                                            Text(
+                                                "  ${fm.modelId}", 
+                                                fontSize = (13 * fs).sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            ) 
+                                        },
+                                        onClick = {
+                                            selectedConfigId = config.id
+                                            selectedModelId = fm.modelId
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            } else {
+                                // 如果没有 fetched models，展示一个默认项
+                                DropdownMenuItem(
+                                    text = { 
+                                        Text(
+                                            "  ${config.selectedModelId} (默认)", 
+                                            fontSize = (13 * fs).sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ) 
+                                    },
+                                    onClick = {
+                                        selectedConfigId = config.id
+                                        selectedModelId = config.selectedModelId
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
+                if (selectedImageUri != null) {
+                    Box(modifier = Modifier.padding(bottom = 8.dp)) {
+                        AsyncImage(
+                            model = selectedImageUri,
+                            contentDescription = "Selected Image",
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        IconButton(
+                            onClick = {
+                                selectedImageUri = null
+                                selectedImagePath = null
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(24.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove Image",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
                 // 任务输入 + 发送
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Bottom
                 ) {
+                    IconButton(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier.padding(bottom = 4.dp, end = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = "Add Image",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                     OutlinedTextField(
                         value = taskText,
                         onValueChange = { taskText = it },
@@ -200,16 +331,16 @@ fun WorkspaceReadyView(
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(
                         onClick = {
-                            val toSend = taskText.trim()
-                            val modelId = selectedModelId
-                            if (toSend.isNotEmpty() && modelId != null) {
-                                onSubmit(toSend, modelId)
+                            if (taskText.isNotBlank() && selectedConfigId != null) {
+                                onSubmit(taskText.trim(), selectedConfigId!!, selectedModelId, selectedImagePath)
                                 taskText = ""
+                                selectedImageUri = null
+                                selectedImagePath = null
                             }
                         },
-                        enabled = taskText.isNotBlank() && selectedModelId != null,
                         modifier = Modifier
-                            .size(44.dp)
+                            .padding(bottom = 4.dp)
+                            .size(48.dp)
                             .background(
                                 if (taskText.isNotBlank() && selectedModelId != null)
                                     MaterialTheme.colorScheme.primary

@@ -114,6 +114,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     val modelConfigs: StateFlow<List<ModelConfig>> = repository.allConfigs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * 所有抓取的具体模型列表。
+     */
+    val fetchedModels: StateFlow<List<FetchedModel>> = repository.allFetchedModels
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // ── 辅助属性 ───────────────────────────────────────────────────────────
 
     /**
@@ -317,9 +323,9 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * 需求 4.1、4.5、5.4、5.5、7.2、7.4、7.5、9.1、9.2、9.5、10.6
      */
-    fun submitTask(task: String, orchestratorModelConfigId: Long) {
-        val wsId = selectedWorkspaceId.value ?: return
-        val currentSession = selectedWorkspaceSession.value ?: return
+    fun submitTask(task: String, orchestratorModelConfigId: Long, orchestratorOverrideModelId: String? = null, imagePath: String? = null) {
+        val currentSession = _selectedWorkspaceSession.value ?: return
+        val wsId = currentSession.id
         if (!currentSession.isActive) return
 
         viewModelScope.launch {
@@ -370,7 +376,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                teamManager?.createTeam("workspace_$wsId", orchestratorConfig, presets)
+                teamManager?.createTeam("workspace_$wsId", orchestratorConfig, orchestratorOverrideModelId, presets)
 
                 // 启动前台服务，防止应用进入后台后被杀死
                 WorkspaceForegroundService.start(
@@ -378,7 +384,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     "正在执行多 Agent 协作：${task.take(30)}..."
                 )
 
-                teamManager?.startExecution(task)
+                teamManager?.startExecution(task, imagePath)
 
             } catch (e: Exception) {
                 Log.e("WorkspaceViewModel", "Failed to start workspace execution", e)
@@ -402,7 +408,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * - 委托给 TeamManager 发送干预消息
      * - 立即更新 VM 的消息列表，以便 UI 能立即显示干预内容
      */
-    fun sendIntervention(targetAgentName: String, message: String) {
+    fun sendIntervention(targetAgentName: String, message: String, imagePath: String? = null) {
         viewModelScope.launch {
             try {
                 // WHY: teamManager 为 null 时 safe-call 是 no-op，但 UI 仍显示消息已发送，
@@ -414,13 +420,14 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 // 1. 委托给 TeamManager
-                manager.sendIntervention(targetAgentName, message)
+                manager.sendIntervention(targetAgentName, message, imagePath)
 
                 // 2. 立即向 UI 注入该消息，以快速响应用户
                 val userMsg = AgentMessage(
                     role = "user",
                     content = message,
                     isIntervention = true,
+                    imagePath = imagePath,
                     timestamp = System.currentTimeMillis()
                 )
                 _agentTabs.update { tabs ->
@@ -795,7 +802,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     // BUG-10：设置恢复模式标志，防止 onAgentCreated 回调覆盖 _agentTabs
                     isRestoringSession = true
                     // 创建团队并启动 Orchestrator 等待新用户输入
-                    teamManager?.createTeam("workspace_$workspaceSessionId", orchestratorConfig, presets)
+                    teamManager?.createTeam("workspace_$workspaceSessionId", orchestratorConfig, agentPresets = presets)
 
                     // 恢复 DB 中的 Agent tabs（onAgentCreated 在恢复模式下不会覆盖此赋值）
                     _agentTabs.value = agentInstances.map { instance ->
@@ -878,11 +885,19 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     existingInstance
                 } else {
                     // AgentInstance 还没写入 DB（任务刚提交），创建一条
+                    // 优先从已有实例中找 Orchestrator 的 modelConfigId，
+                    // 其次从 manager 的 Orchestrator runner 获取，最后 fallback 到 1L
                     val orchestratorConfigId = instances.find { it.isOrchestrator }?.modelConfigId
-                        ?: manager?.let { m ->
-                            // 从 manager 里拿 Orchestrator 的 modelConfigId
-                            try { repository.getAllConfigs().firstOrNull()?.id ?: 1L } catch (_: Exception) { 1L }
-                        } ?: 1L
+                        ?: try {
+                            manager?.getAgentHistory(ORCHESTRATOR_NAME)
+                                ?.let { _ ->
+                                    // manager 存在但 instances 为空，说明任务刚提交
+                                    // 从 repository 获取默认 provider 的 ID
+                                    repository.getDefaultProvider()?.id
+                                        ?: repository.getAllConfigs().firstOrNull()?.id
+                                        ?: 1L
+                                } ?: 1L
+                        } catch (_: Exception) { 1L }
                     val newInstance = AgentInstance(
                         workspaceSessionId = wsId,
                         agentName = tab.agentName,

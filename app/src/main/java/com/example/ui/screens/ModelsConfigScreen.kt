@@ -96,7 +96,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(configs) { config ->
                         ModelConfigCard(
@@ -164,12 +164,13 @@ fun ModelConfigCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium))
             .testTag("model_card_${config.id}"),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             // Header Row
             Row(
                 modifier = Modifier
@@ -290,9 +291,9 @@ fun ModelConfigCard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // iOS-Style Toggles (Grouped Settings Rows)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -349,9 +350,9 @@ fun ModelConfigCard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
                     Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     // Edit / Delete Actions row
                     Row(
@@ -445,9 +446,10 @@ fun ModelConfigDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
+            shadowElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 16.dp)
@@ -918,9 +920,10 @@ fun ProviderModelPicker(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
+            shadowElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f)

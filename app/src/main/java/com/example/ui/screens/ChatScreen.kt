@@ -1,9 +1,17 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,11 +31,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -38,7 +48,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.data.MemoryItem
 import com.example.data.ModelConfig
 import com.example.ui.components.ChunkedStreamingText
@@ -49,6 +61,7 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -61,6 +74,7 @@ fun ChatView(viewModel: ChatViewModel) {
     val isThinkingFinished = viewModel.isThinkingFinished
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     val mcpServerStates by viewModel.mcpServerStates.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     // 字体设置
     val uiSettings = LocalUISettings.current
@@ -77,18 +91,83 @@ fun ChatView(viewModel: ChatViewModel) {
     // 模型选择器弹窗
     var showModelPicker by remember { mutableStateOf(false) }
 
+    // 图片选择相关状态
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedImagePath by remember { mutableStateOf<String?>(null) }
+
+    // 图片选择器 (Photo Picker - Android 13+ 推荐)
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedImageUri = uri
+            // content:// URI 无法被 File() 直接读取，需要通过 ContentResolver 复制到 cache 目录
+            try {
+                val tempFile = java.io.File(
+                    context.cacheDir,
+                    "picked_${System.currentTimeMillis()}.jpg"
+                )
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    java.io.FileOutputStream(tempFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                selectedImagePath = tempFile.absolutePath
+            } catch (e: Exception) {
+                // 回退：直接用 URI 字符串（仅用于预览，API 发送会失败）
+                selectedImagePath = uri.toString()
+            }
+        }
+    }
+
+    // 相机权限检查
+    val cameraPermissionState = remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    // 相机权限请求
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        cameraPermissionState.value = isGranted
+    }
+
+    // 相机启动器
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            // 将拍摄的图片保存到临时文件
+            val tempFile = java.io.File(
+                context.cacheDir,
+                "camera_${System.currentTimeMillis()}.jpg"
+            )
+            java.io.FileOutputStream(tempFile).use { out ->
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+            }
+            selectedImagePath = tempFile.absolutePath
+            selectedImageUri = Uri.fromFile(tempFile)
+        }
+    }
+
     // 自动滚动到底部的控制逻辑
     // 核心原则：只在用户已经在底部时跟随滚动，用户主动上翻时不干扰
     var autoScrollEnabled by remember { mutableStateOf(true) }
     
-    // 检测用户手动滚动：如果用户向上滚动，暂停自动滚动
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
-            // 用户正在滚动，检查是否滚出了底部区域
-            val firstVisible = listState.firstVisibleItemIndex
-            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
-            // 如果不在第一个item（底部），或者第一个item有明显偏移，说明用户在上翻
-            autoScrollEnabled = firstVisible == 0 && firstVisibleOffset < 50
+    // 检测用户手动滚动：如果用户正在拖动，且不在底部，说明用户主动上翻，暂停自动滚动
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(listState.canScrollBackward, isDragged) {
+        if (!listState.canScrollBackward) {
+            // 已经在底部了，恢复自动滚动
+            autoScrollEnabled = true
+        } else if (isDragged) {
+            // 不在底部且用户正在手动拖动，说明用户主动上翻，暂停自动滚动
+            autoScrollEnabled = false
         }
     }
     
@@ -241,7 +320,7 @@ fun ChatView(viewModel: ChatViewModel) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.Bottom),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
                 // Streaming assistant response (在 reverseLayout 中 index 0 位于最底部)
@@ -336,7 +415,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         // 当前模型状态行
@@ -373,18 +452,17 @@ fun ChatView(viewModel: ChatViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
+                            val toolBtnBorder = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                            val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
+
                             // 切换模型按钮
                             OutlinedCard(
                                 modifier = Modifier
                                     .clickable { showModelPicker = true },
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(
-                                    0.5.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                ),
-                                colors = CardDefaults.outlinedCardColors(
-                                    containerColor = Color.Transparent
-                                )
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = toolBtnColors
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -405,6 +483,134 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                 }
                             }
+
+                            // 图片选择按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .clickable {
+                                        photoPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    },
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = toolBtnColors
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiText("chat.select_image", "选择图片"),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            // 拍照按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .clickable {
+                                        if (cameraPermissionState.value) {
+                                            cameraLauncher.launch(null)
+                                        } else {
+                                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                        }
+                                    },
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = toolBtnColors
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiText("chat.take_photo", "拍照"),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── 已选图片预览 ────────────────────────────────────────────
+                AnimatedVisibility(
+                    visible = selectedImageUri != null || selectedImagePath != null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 图片预览
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant,
+                                    RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            if (selectedImagePath != null) {
+                                AsyncImage(
+                                    model = selectedImageUri ?: selectedImagePath,
+                                    contentDescription = uiText("chat.selected_image", "已选图片"),
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = uiText("chat.image_attached", "已添加图片"),
+                            fontSize = (12 * fs).sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // 清除图片按钮
+                        IconButton(
+                            onClick = {
+                                selectedImageUri = null
+                                selectedImagePath = null
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = uiText("chat.remove_image", "移除图片"),
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }
@@ -443,7 +649,14 @@ fun ChatView(viewModel: ChatViewModel) {
                     OutlinedTextField(
                         value = textInput,
                         onValueChange = { textInput = it },
-                        placeholder = { Text(uiText("chat.input.hint", "输入消息..."), fontSize = (15 * fs).sp) },
+                        placeholder = {
+                            val hint = if (selectedImagePath != null) {
+                                uiText("chat.input.hint_with_image", "添加描述（可选）...")
+                            } else {
+                                uiText("chat.input.hint", "输入消息...")
+                            }
+                            Text(hint, fontSize = (15 * fs).sp)
+                        },
                         maxLines = 4,
                         textStyle = LocalTextStyle.current.copy(
                             fontSize = (15 * fs).sp,
@@ -452,9 +665,12 @@ fun ChatView(viewModel: ChatViewModel) {
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = {
                             val toSend = textInput.trim()
-                            if (toSend.isNotBlank() && !isStreaming) {
-                                viewModel.sendMessage(toSend)
+                            val hasImage = selectedImagePath != null
+                            if ((toSend.isNotBlank() || hasImage) && !isStreaming) {
+                                viewModel.sendMessageWithImage(toSend, selectedImagePath)
                                 textInput = ""
+                                selectedImageUri = null
+                                selectedImagePath = null
                                 showToolbar = false
                                 keyboardController?.hide()
                             }
@@ -474,19 +690,23 @@ fun ChatView(viewModel: ChatViewModel) {
                     Spacer(modifier = Modifier.width(10.dp))
 
                     // Material filled icon button
+                    val canSend = (textInput.isNotBlank() || selectedImagePath != null) && !isStreaming
                     Box(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(22.dp))
                             .background(
-                                if (textInput.isNotBlank() && !isStreaming) MaterialTheme.colorScheme.primary
+                                if (canSend) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
-                            .clickable(enabled = textInput.isNotBlank() && !isStreaming) {
+                            .clickable(enabled = canSend) {
                                 val toSend = textInput.trim()
-                                if (toSend.isNotBlank() && !isStreaming) {
-                                    viewModel.sendMessage(toSend)
+                                val hasImage = selectedImagePath != null
+                                if ((toSend.isNotBlank() || hasImage) && !isStreaming) {
+                                    viewModel.sendMessageWithImage(toSend, selectedImagePath)
                                     textInput = ""
+                                    selectedImageUri = null
+                                    selectedImagePath = null
                                     showToolbar = false
                                 }
                             }
@@ -496,7 +716,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         Icon(
                             imageVector = Icons.Default.Send,
                             contentDescription = uiText("chat.send.contentDescription", "发送"),
-                            tint = if (textInput.isNotBlank() && !isStreaming) MaterialTheme.colorScheme.onPrimary
+                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
@@ -780,7 +1000,7 @@ fun BubbleMessage(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp, horizontal = 12.dp),
+            .padding(vertical = 2.dp, horizontal = 12.dp),
         contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     ) {
         Column(
@@ -808,20 +1028,46 @@ fun BubbleMessage(
                                 )
                             }
                     ) {
-                        Text(
-                            text = message.content,
-                            color = textColor,
-                            fontSize = (15 * chatFs).sp,
-                            lineHeight = (22 * chatFs).sp,
-                            fontFamily = resolvedFontFamily,
-                            modifier = Modifier.padding(14.dp, 10.dp)
-                        )
+                        Column(
+                            modifier = Modifier.padding(14.dp, 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 显示图片（如果有）
+                            if (!message.imagePath.isNullOrBlank()) {
+                                val imagePath = message.imagePath
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 180.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.1f))
+                                ) {
+                                    AsyncImage(
+                                        model = imagePath,
+                                        contentDescription = uiText("chat.image", "图片"),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
+                            }
+                            // 显示文本（如果有）
+                            if (message.content.isNotBlank()) {
+                                Text(
+                                    text = message.content,
+                                    color = textColor,
+                                    fontSize = (15 * chatFs).sp,
+                                    lineHeight = (22 * chatFs).sp,
+                                    fontFamily = resolvedFontFamily
+                                )
+                            }
+                        }
                     }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                         offset = pressOffset,
                         containerColor = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                     ) {
                         DropdownMenuItem(
                             text = { Text(uiText("chat.403a6bf8", "复制内容")) },
@@ -887,6 +1133,7 @@ fun BubbleMessage(
                                 onDismissRequest = { showMenu = false },
                                 offset = pressOffset,
                                 containerColor = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                             ) {
                                 DropdownMenuItem(
                                     text = { Text(uiText("chat.7a875b8c", "重试")) },

@@ -21,6 +21,10 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.workspace.AgentMessage
+import java.io.File
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 消息气泡组件
@@ -224,18 +228,31 @@ fun AgentBubbleMessage(message: AgentMessage) {
                                         textColor = textColor
                                     )
                                 } else {
-                                    dev.jeziellago.compose.markdowntext.MarkdownText(
-                                        markdown = message.content,
-                                        style = androidx.compose.ui.text.TextStyle(
-                                            color = textColor,
-                                            fontSize = (14.5f * fs).sp,
-                                            lineHeight = (21 * fs).sp,
-                                            fontFamily = resolvedFontFamily
-                                        ),
-                                        syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
-                                        syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(12.dp, 8.dp)
-                                    )
+                                    if (message.imagePath != null) {
+                                        AsyncImage(
+                                            model = File(message.imagePath),
+                                            contentDescription = "Image",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = if (message.content.isBlank()) 12.dp else 0.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.FillWidth
+                                        )
+                                    }
+                                    if (message.content.isNotBlank()) {
+                                        dev.jeziellago.compose.markdowntext.MarkdownText(
+                                            markdown = message.content,
+                                            style = androidx.compose.ui.text.TextStyle(
+                                                color = textColor,
+                                                fontSize = (14.5f * fs).sp,
+                                                lineHeight = (21 * fs).sp,
+                                                fontFamily = resolvedFontFamily
+                                            ),
+                                            syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(12.dp, 8.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

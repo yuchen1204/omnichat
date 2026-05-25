@@ -83,6 +83,9 @@ class TeamManager(
 
     private val isCompleted = AtomicBoolean(false)
 
+    // ─── 工作区开始时间（用于计算总耗时）───
+    private var workspaceStartTimeMs: Long = 0L
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // 公开 API
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -95,6 +98,7 @@ class TeamManager(
     suspend fun createTeam(
         teamName: String,
         orchestratorConfig: ModelConfig,
+        orchestratorOverrideModelId: String? = null,
         agentPresets: List<AgentPreset>,
     ): TeamState {
         require(_teamState.value == null) { "已有活跃团队，请先删除当前团队" }
@@ -116,6 +120,7 @@ class TeamManager(
             isOrchestrator = true,
             systemPrompt = ORCHESTRATOR_SYSTEM_PROMPT,
             modelConfig = orchestratorConfig,
+            overrideModelId = orchestratorOverrideModelId,
             teamName = teamName,
         )
 
@@ -145,13 +150,15 @@ class TeamManager(
     /**
      * 启动 Orchestrator 执行循环。
      */
-    suspend fun startExecution(userTask: String) {
+    suspend fun startExecution(userTask: String, imagePath: String? = null) {
         val state = _teamState.value ?: error("无活跃团队，请先调用 createTeam")
         val runner = lifecycle.runners[ORCHESTRATOR_NAME] ?: error("Orchestrator 未初始化")
         val identity = state.teammates[ORCHESTRATOR_NAME]?.identity
             ?: error("Orchestrator 身份信息缺失")
 
         Log.d(TAG, "Starting orchestrator execution with task: ${userTask.take(80)}...")
+
+        workspaceStartTimeMs = System.currentTimeMillis()
 
         val orchestratorScope = CoroutineScope(
             parentScope.coroutineContext + SupervisorJob() + TeammateContext(identity)
@@ -160,7 +167,7 @@ class TeamManager(
 
         val job = orchestratorScope.launch {
             try {
-                executionLoops.runOrchestratorLoop(runner, userTask, isCompleted) { completedRunner ->
+                executionLoops.runOrchestratorLoop(runner, userTask, imagePath, isCompleted) { completedRunner ->
                     triggerWorkspaceComplete(completedRunner)
                 }
             } finally {
@@ -181,6 +188,7 @@ class TeamManager(
         prompt: String,
         systemPrompt: String = "",
         modelConfigId: Long? = null,
+        overrideModelId: String? = null,
     ): TeammateIdentity {
         val state = _teamState.value ?: error("无活跃团队")
 
@@ -189,6 +197,7 @@ class TeamManager(
             prompt = prompt,
             systemPrompt = systemPrompt,
             modelConfigId = modelConfigId,
+            overrideModelId = overrideModelId,
             existingNames = state.teammates.keys,
             parentScope = parentScope,
             createRunner = { ctx, isSub -> createAgentRunner(ctx, isSub) },
@@ -317,15 +326,17 @@ class TeamManager(
         // 先取消所有协程作用域，触发正在执行的 runTurn 等操作退出
         lifecycle.teammateScopes.values.forEach { it.cancel() }
 
-        // 等待所有 Job 完成（排除当前 Job 以避免自 join 死锁）
-        // 如果 deleteTeam 从外部调用（如 UI 线程），当前 Job 不是 teammate 的 Job，
-        // 所有 teammate Job 都会被 join；如果是从 Orchestrator 自身调用，
-        // 跳过自身 Job 是正确的，因为 cancel 已触发其退出。
-        val currentJob = kotlin.coroutines.coroutineContext[Job]
+        // 等待所有 Job 完成，跳过 Orchestrator 自身的 Job 避免自 join 死锁。
+        //
+        // WHY: withContext(NonCancellable) 会将 coroutineContext[Job] 替换为
+        // NonCancellable 的内部 Job，而不是调用方协程的 Job。因此不能用
+        // coroutineContext[Job] 来识别"当前 Job"——它永远不等于任何 teammate Job。
+        //
+        // 正确做法：直接跳过 Orchestrator 的 Job（按名称），因为 Orchestrator 的
+        // scope 已经被 cancel()，其 Job 会自行完成，无需 join。
         lifecycle.teammateJobs.forEach { (name, job) ->
-            if (job !== currentJob) {
-                try { job.join() } catch (_: Exception) { }
-            }
+            if (name == ORCHESTRATOR_NAME) return@forEach  // 跳过 Orchestrator，避免自 join
+            try { job.join() } catch (_: Exception) { }
         }
 
         // 清理所有资源（包括 runners、messageBus、completionDeferreds 等）
@@ -339,9 +350,9 @@ class TeamManager(
     }
 
     /**
-     * 发送干预消息。
+     * 发送用户干预消息（给指定的 Agent）。
      */
-    suspend fun sendIntervention(targetAgentName: String, message: String) {
+    suspend fun sendIntervention(targetAgentName: String, message: String, imagePath: String? = null) {
         val state = _teamState.value ?: run {
             onError("无活跃团队")
             return
@@ -352,7 +363,12 @@ class TeamManager(
             return
         }
 
-        messageBus.send(targetAgentName, TeamMessage.Text(from = "user", content = message))
+        val teamMsg = TeamMessage.Text(
+            from = "user",
+            content = message,
+            imagePath = imagePath
+        )
+        messageBus.send(targetAgentName, teamMsg)
 
         if (targetAgentName != ORCHESTRATOR_NAME) {
             messageBus.send(
@@ -463,6 +479,7 @@ class TeamManager(
                     prompt = "等待主控分配任务...",
                     systemPrompt = spec.systemPrompt,
                     modelConfigId = spec.modelConfigId,
+                    overrideModelId = spec.modelId,
                 )
                 subAgentNames.add(identity.agentName)
             } catch (e: Exception) {
@@ -534,6 +551,7 @@ class TeamManager(
                         prompt = "等待主控分配任务...",
                         systemPrompt = spec.systemPrompt,
                         modelConfigId = spec.modelConfigId,
+                        overrideModelId = spec.modelId,
                     )
                     spawnedNames.add(identity.agentName)
                     specToActualName[spec.name] = identity.agentName
@@ -732,6 +750,24 @@ class TeamManager(
             subAgentIdentities = subAgentIdentities,
         )
         onWorkspaceComplete(snapshot)
+
+        // 触发工作区完成 Hook
+        val teamName = state?.teamName ?: ""
+        val agentCount = (state?.teammates?.size ?: 0)
+        val totalDurationMs = if (workspaceStartTimeMs > 0) System.currentTimeMillis() - workspaceStartTimeMs else 0L
+        val orchestratorSummary = orchestratorMessages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }?.content?.take(500) ?: ""
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                com.example.hooks.HookManager.dispatchWorkspaceComplete(
+                    teamName = teamName,
+                    agentCount = agentCount,
+                    totalDurationMs = totalDurationMs,
+                    orchestratorSummary = orchestratorSummary,
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "dispatchWorkspaceComplete failed (non-fatal)", e)
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -740,12 +776,34 @@ class TeamManager(
 
     /**
      * 创建 AgentRunner。
+     *
+     * suspend 函数，避免在 Dispatchers.Default 线程池上使用 runBlocking 阻塞线程。
      */
-    private fun createAgentRunner(context: AgentContext, isSubAgent: Boolean = false): AgentRunner {
+    private suspend fun createAgentRunner(context: AgentContext, isSubAgent: Boolean = false): AgentRunner {
+        // 构建可用的模型列表，供 Orchestrator 参考
+        val allConfigs = repository.getAllConfigs()
+        val allFetchedModels = repository.getAllFetchedModels()
+
+        val availableModelsStr = buildString {
+            val modelsByProvider = allFetchedModels.groupBy { it.providerId }
+            for (config in allConfigs) {
+                appendLine("- Provider: ${config.name} (modelConfigId: ${config.id})")
+                val models = modelsByProvider[config.id] ?: emptyList()
+                if (models.isEmpty()) {
+                    appendLine("  - ${config.selectedModelId} (默认)")
+                } else {
+                    for (m in models) {
+                        appendLine("  - ${m.modelId}")
+                    }
+                }
+            }
+        }
+
         return AgentRunner(
             context = context,
             mcpRuntimeManager = mcpRuntimeManager,
             crossSessionMemory = lifecycle.crossSessionMemoryText,
+            availableModels = availableModelsStr,
             disallowedTools = if (isSubAgent) ORCHESTRATOR_ONLY_TOOLS else emptySet(),
             onStreamChunk = onStreamChunk,
             onToolCall = { agentName, toolName, args, callId ->

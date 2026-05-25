@@ -1,5 +1,9 @@
 package com.example.network
 
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
 import com.example.data.ModelConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -13,6 +17,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -24,6 +29,137 @@ object ApiClient {
         .build()
 
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
+
+    /**
+     * 将图片转换为 Base64 Data URL。
+     * 支持本地 file 路径、file:// URI、content:// URI 和已有的 Data URL。
+     * 自动压缩大图片以避免超过 API 限制。
+     *
+     * @param context android.content.Context 用于解析 URI
+     * @param imagePath 本地文件路径、URI 或 Data URL
+     * @param maxWidth 最大宽度，超过会压缩
+     * @param quality JPEG 压缩质量 (0-100)
+     * @return Base64 Data URL 或 null（转换失败时）
+     */
+    private fun imageToBase64DataUrl(
+        context: Context?,
+        imagePath: String,
+        maxWidth: Int = 1024,
+        quality: Int = 85
+    ): String? {
+        // 如果已经是 Data URL，直接返回
+        if (imagePath.startsWith("data:image/")) {
+            return imagePath
+        }
+
+        return try {
+            val uri = Uri.parse(imagePath)
+            val scheme = uri.scheme
+            val isContentUri = scheme == "content" || scheme == "android.resource"
+
+            // 1. 读取图片尺寸 (inJustDecodeBounds = true)
+            val options = android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            if (isContentUri) {
+                if (context == null) return null
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input, null, options)
+                }
+            } else {
+                val filePath = if (scheme == "file") uri.path ?: imagePath else imagePath
+                val file = File(filePath)
+                if (!file.exists()) return null
+                java.io.FileInputStream(file).use { input ->
+                    BitmapFactory.decodeStream(input, null, options)
+                }
+            }
+
+            // 计算采样率
+            var sampleSize = 1
+            while (options.outWidth / sampleSize > maxWidth * 2) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = android.graphics.BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+
+            // 2. 解码图片
+            val bitmap = if (isContentUri) {
+                if (context == null) return null
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input, null, decodeOptions)
+                }
+            } else {
+                val filePath = if (scheme == "file") uri.path ?: imagePath else imagePath
+                val file = File(filePath)
+                java.io.FileInputStream(file).use { input ->
+                    BitmapFactory.decodeStream(input, null, decodeOptions)
+                }
+            } ?: return null
+
+            // 如果仍然太大，进一步缩放
+            val scaledBitmap = if (bitmap.width > maxWidth) {
+                val ratio = maxWidth.toFloat() / bitmap.width
+                val newHeight = (bitmap.height * ratio).toInt()
+                android.graphics.Bitmap.createScaledBitmap(bitmap, maxWidth, newHeight, true)
+                    .also { if (it != bitmap) bitmap.recycle() }
+            } else {
+                bitmap
+            }
+
+            // 压缩为 JPEG
+            val outputStream = java.io.ByteArrayOutputStream()
+            scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, outputStream)
+            scaledBitmap.recycle()
+
+            val base64 = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+            "data:image/jpeg;base64,$base64"
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * 构建消息内容。
+     * 如果消息包含图片，返回 multimodal content 数组；否则返回纯文本字符串。
+     */
+    private fun buildMessageContent(context: Context?, msg: com.example.data.Message): Any {
+        // 如果没有图片，直接返回文本
+        if (msg.imagePath.isNullOrBlank()) {
+            return msg.content
+        }
+
+        // 有图片，构建 multimodal content 数组
+        val imageUrl = imageToBase64DataUrl(context, msg.imagePath)
+        
+        // 如果图片转换失败，直接退化为纯文本
+        if (imageUrl == null) {
+            return msg.content
+        }
+
+        val contentArray = JSONArray()
+
+        // 添加文本部分
+        if (msg.content.isNotBlank()) {
+            contentArray.put(JSONObject().apply {
+                put("type", "text")
+                put("text", msg.content)
+            })
+        }
+
+        // 添加图片部分
+        contentArray.put(JSONObject().apply {
+            put("type", "image_url")
+            put("image_url", JSONObject().apply {
+                put("url", imageUrl)
+            })
+        })
+
+        return contentArray
+    }
 
     /**
      * Parses a JSON object string into a map of header name → value.
@@ -222,7 +358,8 @@ object ApiClient {
         config: ModelConfig,
         systemPrompt: String,
         history: List<com.example.data.Message>,
-        tools: JSONArray? = null
+        tools: JSONArray? = null,
+        context: Context? = null
     ): Flow<String> = flow {
         val endpoint = config.endpoint.trim().removeSuffix("/")
         val apiKey = config.apiKey.trim()
@@ -266,16 +403,25 @@ object ApiClient {
                 })
             }
             history.forEach { msg ->
-                messagesArray.put(JSONObject().apply {
+                val messageObj = JSONObject().apply {
                     put("role", msg.role)
-                    put("content", msg.content)
                     if (msg.toolCallId != null) {
                         put("tool_call_id", msg.toolCallId)
                     }
                     if (msg.toolCallsJson != null) {
                         put("tool_calls", JSONArray(msg.toolCallsJson))
                     }
-                })
+                }
+
+                // 处理 multimodal 内容
+                val content = buildMessageContent(context, msg)
+                if (content is JSONArray) {
+                    messageObj.put("content", content)
+                } else {
+                    messageObj.put("content", content as String)
+                }
+
+                messagesArray.put(messageObj)
             }
             put("messages", messagesArray)
         }

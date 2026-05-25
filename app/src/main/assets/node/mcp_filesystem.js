@@ -39,9 +39,13 @@ function sendNotification(method, params) {
 // ── 路径安全检查 ──────────────────────────────────────────────────────────
 
 function safePath(inputPath) {
-    const resolved = path.resolve(rootDir, inputPath.replace(/^\//, ''));
+    if (path.isAbsolute(inputPath)) {
+        // 对于绝对路径，MCP Hook 已经做了拦截检查和用户授权，直接放行
+        return path.normalize(inputPath);
+    }
+    const resolved = path.resolve(rootDir, inputPath);
     if (!resolved.startsWith(path.resolve(rootDir))) {
-        throw new Error('路径越界：不允许访问根目录之外的路径');
+        throw new Error('路径越界：不允许访问根目录之外的相对路径');
     }
     return resolved;
 }

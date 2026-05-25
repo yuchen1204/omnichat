@@ -7,7 +7,7 @@ An Android AI chat app with embedded MCP runtime support, long-term memory, mult
 | Item | Value |
 |------|-------|
 | Package | `com.example` (applicationId: `com.aistudio.aichatmemory.qwzkvp`) |
-| Min SDK | 24 · Target SDK | 36 |
+| Min SDK | 26 · Target SDK | 36 |
 | Language | Kotlin 2.2.10 + C++17 (JNI bridges) |
 | KSP | 2.2.10-2.0.2 |
 | UI | Jetpack Compose (Material 3) |

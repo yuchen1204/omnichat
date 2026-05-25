@@ -574,6 +574,7 @@ private fun ImportConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         icon = {
             Icon(
                 Icons.Default.Warning,
@@ -641,6 +642,7 @@ private fun ImportConfirmDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
+                shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp),
                 colors = if (replaceExisting)
                     ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 else
@@ -650,7 +652,10 @@ private fun ImportConfirmDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
+            ) {
                 Text(uiText("import.confirm.cancel", "取消"), fontSize = (13 * fs).sp)
             }
         }

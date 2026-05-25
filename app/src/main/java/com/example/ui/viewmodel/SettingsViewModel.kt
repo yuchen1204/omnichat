@@ -42,6 +42,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = initialSettings
         )
 
+    fun updateUISettings(settings: UISettings) {
+        viewModelScope.launch {
+            repository.upsertUISettings(settings)
+        }
+    }
+
     // ── 导出/导入状态 ────────────────────────────────────────────────────
 
     var exportImportStatus by mutableStateOf<ExportImportStatus>(ExportImportStatus.Idle)
@@ -349,6 +355,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         put("fontSizeScale", s.fontSizeScale)
         put("chatFontSizeScale", s.chatFontSizeScale)
         put("fontFamily", s.fontFamily)
+        put("isNodeEnabled", s.isNodeEnabled)
+        put("isPythonEnabled", s.isPythonEnabled)
+        put("enabledMcpGroups", s.enabledMcpGroups)
         put("uiStrings", s.uiStrings)
     }
 
@@ -391,6 +400,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             fontSizeScale = obj.optDouble("fontSizeScale", defaults.fontSizeScale.toDouble()).toFloat(),
             chatFontSizeScale = obj.optDouble("chatFontSizeScale", defaults.chatFontSizeScale.toDouble()).toFloat(),
             fontFamily = obj.optString("fontFamily", defaults.fontFamily),
+            isNodeEnabled = obj.optBoolean("isNodeEnabled", defaults.isNodeEnabled),
+            isPythonEnabled = obj.optBoolean("isPythonEnabled", defaults.isPythonEnabled),
+            enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
             uiStrings = obj.optString("uiStrings", "{}"),
             updatedAt = System.currentTimeMillis()
         )

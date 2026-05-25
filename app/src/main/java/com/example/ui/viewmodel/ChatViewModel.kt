@@ -150,12 +150,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * User actions: sends a message and starts streaming response using Primary Chat Model
      */
     fun sendMessage(text: String) {
+        sendMessageWithImage(text, null)
+    }
+
+    /**
+     * 发送带有图片的消息。
+     *
+     * @param text 文本内容
+     * @param imagePath 图片本地路径（可选）
+     */
+    fun sendMessageWithImage(text: String, imagePath: String?) {
         val sessionId = _selectedSessionId.value ?: return
-        if (text.isBlank() || isStreaming) return
+        if ((text.isBlank() && imagePath.isNullOrBlank()) || isStreaming) return
 
         viewModelScope.launch {
-            // 1. Insert User Message
-            val userMsg = Message(sessionId = sessionId, role = "user", content = text)
+            // Apply hook to user message
+            val processedText = com.example.hooks.HookManager.dispatchBeforeSendMessage(text)
+            if (processedText == null) {
+                // Hook cancelled the message sending
+                return@launch
+            }
+
+            // 1. Insert User Message (with image if provided)
+            val userMsg = Message(
+                sessionId = sessionId,
+                role = "user",
+                content = processedText,
+                imagePath = imagePath
+            )
             repository.insertMessage(userMsg)
 
             // 2. Fetch configurations
@@ -338,7 +360,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools)
+        ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools, getApplication())
             .collect { chunk ->
                 if (errorReceived) return@collect
                 if (chunk.startsWith("ERROR:")) {
@@ -396,8 +418,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         val finalContent = if (accumulatedText.trim() == "null") "" else accumulatedText
 
+        // Apply hook to assistant response
+        val processedContent = if (finalContent.isNotEmpty()) {
+            com.example.hooks.HookManager.dispatchAfterReceiveResponse(finalContent)
+        } else {
+            finalContent
+        }
+
         // 1. Save assistant text response AND tool calls
-        if (finalContent.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
+        if (processedContent.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
             val toolCallsJson = if (accumulatedToolCalls.isNotEmpty()) {
                 val arr = org.json.JSONArray()
                 accumulatedToolCalls.values.forEach { arr.put(it) }
@@ -408,13 +437,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 Message(
                     sessionId = sessionId,
                     role = "assistant",
-                    content = finalContent,
+                    content = processedContent,
                     toolCallsJson = toolCallsJson
                 )
             )
         }
         
-        val wasOnlyToolCalls = finalContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
+        val wasOnlyToolCalls = processedContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
         // 清理流式状态，但保持 isStreaming=true 直到工具调用处理完毕
         currentStreamingThinking = ""
         currentStreamingBody = ""
@@ -433,7 +462,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 if (serverId != null) {
                     try {
                         val argsJson = org.json.JSONObject(argsStr)
-                        val result = runtimeManager.callTool(serverId, name, argsJson)
+                        val result = runtimeManager.callTool(serverId, name, argsJson, sessionId)
                         
                         repository.insertMessage(
                             Message(
