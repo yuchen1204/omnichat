@@ -36,9 +36,10 @@ android {
   signingConfigs {
     create("release") {
       storeFile = file("${rootDir}/my-upload-key.jks")
-      storePassword = "omnichat123"
+      // CI uses env vars (STORE_PASSWORD / KEY_PASSWORD); local falls back to default
+      storePassword = System.getenv("STORE_PASSWORD") ?: "omnichat123"
       keyAlias = "upload"
-      keyPassword = "omnichat123"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: "omnichat123"
     }
   }
 

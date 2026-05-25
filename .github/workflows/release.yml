@@ -45,6 +45,10 @@ jobs:
         run: |
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
 
+      - name: Create local.properties for CI
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
