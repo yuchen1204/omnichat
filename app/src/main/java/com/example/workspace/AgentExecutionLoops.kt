@@ -850,6 +850,16 @@ class AgentExecutionLoops(
                 appendLine("  </usage>")
                 appendLine("</task-notification>")
             }
+
+            // 附加当前可用 Agent 列表，提示 Orchestrator 复用已有 Agent
+            val availableAgents = lifecycle.runners.keys.filter { it != ORCHESTRATOR_NAME }
+            if (availableAgents.isNotEmpty()) {
+                appendLine()
+                appendLine("当前团队中可用的 Agent（可直接用 assign_task 分配新任务，无需重新创建）：")
+                for (agentName in availableAgents) {
+                    appendLine("- $agentName")
+                }
+            }
         }
 
         runner.injectMessage("system", summaryInput, isIntervention = false, source = "subagent")
@@ -939,6 +949,16 @@ class AgentExecutionLoops(
             appendLine("    <duration_ms>${stats?.durationMs ?: 0}</duration_ms>")
             appendLine("  </usage>")
             appendLine("</task-notification>")
+
+            // 附加当前可用 Agent 列表，提示 Orchestrator 复用已有 Agent
+            val availableAgents = lifecycle.runners.keys.filter { it != ORCHESTRATOR_NAME }
+            if (availableAgents.isNotEmpty()) {
+                appendLine()
+                appendLine("当前团队中可用的 Agent（可直接用 assign_task 分配新任务，无需重新创建）：")
+                for (agentName in availableAgents) {
+                    appendLine("- $agentName")
+                }
+            }
         }
     }
 }

@@ -124,6 +124,24 @@ class OrchestratorTools(
 
         Log.d(TAG, "create_agents tool: ${agentSpecs.size} agent(s), mode=$taskMode")
 
+        // 检查是否已有同名 Agent 存在，防止重复创建
+        val existingTeamState = teamManager.teamState.value
+        if (existingTeamState != null) {
+            val existingNames = existingTeamState.teammates.keys
+            val duplicates = agentSpecs.map { it.name }.filter { it in existingNames }
+            if (duplicates.isNotEmpty()) {
+                return buildString {
+                    appendLine("Error: 以下 Agent 已存在，不要重复创建：${duplicates.joinToString(", ")}")
+                    appendLine()
+                    appendLine("当前已有的 Agent：${existingNames.joinToString(", ")}")
+                    appendLine()
+                    appendLine("请使用 assign_task 为已有 Agent 分配新任务，")
+                    appendLine("或使用 continue_conversation 继续与已有 Agent 对话。")
+                    appendLine("只有在需要全新角色时才调用 create_agents。")
+                }
+            }
+        }
+
         val directive = OrchestratorDirective(agentSpecs, taskMode)
         val originalTask = teamManager.getOrchestratorHistory()
             .lastOrNull { it.role == "user" }?.content ?: ""

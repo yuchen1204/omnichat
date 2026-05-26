@@ -445,6 +445,16 @@ class AgentRunner(
                 }
 
                 // 没有工具调用 — 检测是否为"假完成"（LLM 回复文本但不执行工具）
+                // 跳过明确表示"等待中"的 Agent：其任务就是等待，不是假完成
+                val isWaitingResponse = lastAssistantResponse.let { text ->
+                    text.contains("等待") || text.contains("等待中") ||
+                    text.contains("空闲") || text.contains("waiting") ||
+                    text.contains("idle") || text.contains("⏳")
+                }
+                if (isWaitingResponse) {
+                    Log.d(TAG, "Agent '${context.agentName}' is in waiting state, skipping nudge")
+                    break
+                }
                 consecutiveTextOnlyCount++
                 if (consecutiveTextOnlyCount <= MAX_TEXT_ONLY_RETRIES && !context.isOrchestrator) {
                     Log.w(TAG, "Agent '${context.agentName}' produced text-only response " +

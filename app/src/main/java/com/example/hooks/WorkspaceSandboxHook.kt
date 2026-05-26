@@ -62,8 +62,36 @@ class WorkspaceSandboxHook(val sandboxPath: String) : McpHook {
             if (!file.isAbsolute) return true
 
             val canonical = file.canonicalPath
-            return canonical == normalizedSandbox ||
-                canonical.startsWith("$normalizedSandbox/")
+
+            // 直接匹配
+            if (canonical == normalizedSandbox || canonical.startsWith("$normalizedSandbox/")) {
+                return true
+            }
+
+            // MCP 文件系统 rootDir 为 /sdcard，等价于 /storage/emulated/0。
+            // Agent 传入的绝对路径 /Download/... 会被 MCP 解析为 /sdcard/Download/...，
+            // 但 Hook 层拿到的是原始路径，需要尝试两种前缀匹配。
+            val altPrefixes = listOf("/sdcard", "/storage/emulated/0")
+            for (prefix in altPrefixes) {
+                val resolved = prefix + canonical
+                if (resolved == normalizedSandbox || resolved.startsWith("$normalizedSandbox/")) {
+                    return true
+                }
+            }
+            // 反向：sandbox 用 /sdcard/... 而路径用 /storage/emulated/0/...（或反过来）
+            for (prefix in altPrefixes) {
+                val sandboxWithPrefix = if (normalizedSandbox.startsWith(prefix)) {
+                    normalizedSandbox
+                } else {
+                    prefix + normalizedSandbox
+                }
+                if (canonical == sandboxWithPrefix || canonical.startsWith("$sandboxWithPrefix/")) {
+                    return true
+                }
+            }
+
+            Log.w(TAG, "Blocked: '$path' (canonical: '$canonical') is outside sandbox '$normalizedSandbox'")
+            return false
         } catch (e: Exception) {
             Log.w(TAG, "Failed to resolve path: $path", e)
             return false
