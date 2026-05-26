@@ -90,6 +90,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     private val _agentStatuses = MutableStateFlow<Map<String, AgentStatus>>(emptyMap())
     val agentStatuses: StateFlow<Map<String, AgentStatus>> = _agentStatuses.asStateFlow()
 
+    /** Sub-Agent 任务进度（从流式输出中解析 TaskList） */
+    private val _agentTaskProgress = MutableStateFlow<Map<String, AgentTaskProgress>>(emptyMap())
+    val agentTaskProgress: StateFlow<Map<String, AgentTaskProgress>> = _agentTaskProgress.asStateFlow()
+
     /**
      * 已完成会话的 Orchestrator 历史消息（从 DB 加载）。
      *
@@ -135,6 +139,14 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     /**
+     * 工作区文件操作沙盒路径。
+     *
+     * 用户在提交任务前指定，所有 Agent 的文件操作将被限制在此目录内。
+     */
+    private val _sandboxPath = MutableStateFlow<String?>(null)
+    val sandboxPath: StateFlow<String?> = _sandboxPath.asStateFlow()
+
+    /**
      * 团队状态（来自 TeamManager 的 StateFlow）。
      *
      * 包含所有 Teammate 的运行时状态，用于 UI 展示 Agent 颜色、任务面板等。
@@ -158,6 +170,13 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun clearErrorMessage() {
         _errorMessage.value = null
+    }
+
+    /**
+     * 设置工作区文件操作沙盒路径。
+     */
+    fun setSandboxPath(path: String?) {
+        _sandboxPath.value = path?.trim()?.ifEmpty { null }
     }
 
     /**
@@ -187,9 +206,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 _agentTabs.value = emptyList()
                 _agentStreamBuffers.value = emptyMap()
                 _agentStatuses.value = emptyMap()
+                _agentTaskProgress.value = emptyMap()
                 _completedOrchestratorMessages.value = emptyList()
                 _teamState.value = null
                 _teamTasks.value = emptyList()
+                _sandboxPath.value = null
                 newId
             } else {
                 _errorMessage.value = "创建工作区失败，请重试"
@@ -255,7 +276,9 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             _agentTabs.value = emptyList()
             _agentStreamBuffers.value = emptyMap()
             _agentStatuses.value = emptyMap()
+            _agentTaskProgress.value = emptyMap()
             _completedOrchestratorMessages.value = emptyList()
+            _sandboxPath.value = null
 
             val session = repository.getWorkspaceSessionById(id)
             if (session != null) {
@@ -304,6 +327,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     _agentTabs.value = emptyList()
                     _agentStreamBuffers.value = emptyMap()
                     _agentStatuses.value = emptyMap()
+                    _agentTaskProgress.value = emptyMap()
                     _completedOrchestratorMessages.value = emptyList()
                     _teamState.value = null
                     _teamTasks.value = emptyList()
@@ -323,7 +347,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * 需求 4.1、4.5、5.4、5.5、7.2、7.4、7.5、9.1、9.2、9.5、10.6
      */
-    fun submitTask(task: String, orchestratorModelConfigId: Long, orchestratorOverrideModelId: String? = null, imagePath: String? = null) {
+    fun submitTask(task: String, orchestratorModelConfigId: Long, orchestratorOverrideModelId: String? = null, imagePath: String? = null, sandboxPath: String? = null) {
         val currentSession = _selectedWorkspaceSession.value ?: return
         val wsId = currentSession.id
         if (!currentSession.isActive) return
@@ -343,6 +367,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 // 3. 重置状态
                 _agentStreamBuffers.value = emptyMap()
                 _agentStatuses.value = emptyMap()
+                _agentTaskProgress.value = emptyMap()
                 _agentTabs.value = emptyList()
 
                 // 4. 清理旧 TeamManager（先捕获引用，避免 deleteTeam 完成前被置 null 的竞争）
@@ -382,7 +407,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                teamManager?.createTeam("workspace_$wsId", orchestratorConfig, orchestratorOverrideModelId, presets)
+                teamManager?.createTeam("workspace_$wsId", orchestratorConfig, orchestratorOverrideModelId, presets, sandboxPath)
 
                 // 启动前台服务，防止应用进入后台后被杀死
                 WorkspaceForegroundService.start(
@@ -575,8 +600,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 appendLine("【任务列表】")
                 for (task in tasks.sortedBy { it.id }) {
                     val owner = task.owner ?: "未认领"
+                    val created = dateFormat.format(Date(task.createdAt))
+                    val updated = dateFormat.format(Date(task.updatedAt))
                     appendLine("  #${task.id} [${task.status}] ${task.subject}")
-                    appendLine("    认领者: $owner")
+                    appendLine("    认领者: $owner | 创建: $created | 更新: $updated")
                     if (task.description.isNotBlank()) {
                         appendLine("    描述: ${task.description.take(200)}")
                     }
@@ -619,10 +646,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     val roleLabel = if (instance.isOrchestrator) "Orchestrator" else "Sub-Agent"
                     val status = state?.teammates?.get(instance.agentName)?.status
                     val statusTag = if (status != null) "  状态: $status" else ""
+                    val createdTag = "  创建时间: ${dateFormat.format(Date(instance.createdAt))}"
 
                     appendLine()
                     appendLine("═══════════════════════════════════════════════════════════════")
                     appendLine("  $roleLabel: ${instance.agentName} (${allMessages.size} 条消息)")
+                    appendLine(createdTag)
                     if (statusTag.isNotEmpty()) appendLine(statusTag)
                     appendLine("═══════════════════════════════════════════════════════════════")
                     appendLine()
@@ -658,9 +687,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         // Orchestrator
         val orchestratorHistory = teamManager?.getAgentHistory(ORCHESTRATOR_NAME)
         if (!orchestratorHistory.isNullOrEmpty()) {
+            val orchActivity = state?.teammates?.get(ORCHESTRATOR_NAME)?.lastActivity
+            val orchTimeTag = if (orchActivity != null) "  最后活动: ${dateFormat.format(Date(orchActivity))}" else ""
             appendLine()
             appendLine("═══════════════════════════════════════════════════════════════")
             appendLine("  Orchestrator 对话历史 (${orchestratorHistory.size} 条消息)")
+            if (orchTimeTag.isNotEmpty()) appendLine(orchTimeTag)
             appendLine("═══════════════════════════════════════════════════════════════")
             appendLine()
             for ((index, msg) in orchestratorHistory.withIndex()) {
@@ -678,7 +710,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             appendLine()
             appendLine("═══════════════════════════════════════════════════════════════")
             appendLine("  Sub-Agent: $name (${history.size} 条消息)")
-            appendLine("  状态: ${teammate.status}")
+            appendLine("  状态: ${teammate.status} | 最后活动: ${dateFormat.format(Date(teammate.lastActivity))}")
             appendLine("═══════════════════════════════════════════════════════════════")
             appendLine()
             for ((index, msg) in history.withIndex()) {
@@ -766,6 +798,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             // 重置流式缓冲与状态
             _agentStreamBuffers.value = emptyMap()
             _agentStatuses.value = emptyMap()
+            _agentTaskProgress.value = emptyMap()
             _completedOrchestratorMessages.value = emptyList()
             _teamState.value = null
             _teamTasks.value = emptyList()
@@ -1057,6 +1090,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             _completedOrchestratorMessages.value = emptyList()
             _agentTabs.value = emptyList()
             _agentStreamBuffers.value = emptyMap()
+            _agentTaskProgress.value = emptyMap()
             _agentStatuses.value = emptyMap()
             return
         }
@@ -1094,7 +1128,55 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 清空流式缓冲，所有 Agent 状态为 COMPLETED
         _agentStreamBuffers.value = emptyMap()
+        _agentTaskProgress.value = emptyMap()
         _agentStatuses.value = agentInstances.associate { it.agentName to AgentStatus.COMPLETED }
+    }
+
+    // ── TaskList 解析 ──────────────────────────────────────────────────────
+
+    /**
+     * 从 Sub-Agent 的流式输出中解析 TaskList 进度。
+     *
+     * 支持两种格式：
+     * - `- [ ] 描述` / `- [x] 描述`（Markdown checkbox）
+     * - `✅ 步骤 N 完成：描述`（完成标记）
+     *
+     * @param agentName Agent 名称
+     * @param streamText 当前累积的流式文本
+     */
+    private fun parseAndUpdateTaskProgress(agentName: String, streamText: String) {
+        // 解析 Markdown checkbox 格式
+        val checkboxPattern = Regex("""- \[([ x])] (.+)""")
+        val steps = checkboxPattern.findAll(streamText).map { match ->
+            AgentTaskStep(
+                description = match.groupValues[2].trim(),
+                isCompleted = match.groupValues[1] == "x"
+            )
+        }.toList()
+
+        if (steps.isEmpty()) return
+
+        // 检查是否有 ✅ 完成标记（补充 checkbox 的 [x]）
+        val completedPattern = Regex("""✅\s*步骤\s*(\d+)\s*完成""")
+        val completedStepNumbers = completedPattern.findAll(streamText)
+            .map { it.groupValues[1].toIntOrNull() }
+            .filterNotNull()
+            .toSet()
+
+        // 合并：checkbox 标记 + ✅ 标记
+        val mergedSteps = steps.mapIndexed { index, step ->
+            if (!step.isCompleted && (index + 1) in completedStepNumbers) {
+                step.copy(isCompleted = true)
+            } else {
+                step
+            }
+        }
+
+        _agentTaskProgress.update { current ->
+            current.toMutableMap().apply {
+                put(agentName, AgentTaskProgress(agentName = agentName, steps = mergedSteps))
+            }
+        }
     }
 
     // ── TeamManager 工厂 ────────────────────────────────────────────────────
@@ -1141,6 +1223,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             },
             onStreamChunk = { agentName, chunk ->
                 _agentStreamBuffers.update { it.toMutableMap().apply { put(agentName, chunk) } }
+                // 解析 TaskList 进度
+                parseAndUpdateTaskProgress(agentName, chunk)
             },
             onAgentStatusChanged = { agentName, status ->
                 _agentStatuses.update { it.toMutableMap().apply { put(agentName, status) } }
@@ -1281,12 +1365,21 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         super.onCleared()
         AskUserManager.clearAll()
-        // WHY: 改为 GlobalScope.launch(NonCancellable) 异步执行，不阻塞主线程，避免 ANR（BUG-2）。
-        // runBlocking 在主线程最多阻塞 5 秒，deleteTeam() 内部 join 所有协程，低端设备高概率 ANR。
-        kotlinx.coroutines.GlobalScope.launch(NonCancellable) {
+        // WHY: 使用 SupervisedJob 确保异常不会传播到 GlobalScope 根协程。
+        // 原 GlobalScope.launch(NonCancellable) 如果 persistCurrentSessionMessages
+        // 抛出异常，会取消整个 GlobalScope 协程（包括 deleteTeam），导致清理不完整。
+        // SupervisorJob 隔离异常，确保 deleteTeam 即使在持久化失败后也能执行。
+        // 仍然使用 GlobalScope 因为 ViewModel 已销毁，viewModelScope 已取消。
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.SupervisorJob()) {
             try {
                 persistCurrentSessionMessages(teamManager)
-                teamManager?.deleteTeam()
+            } catch (e: Exception) {
+                Log.e("WorkspaceViewModel", "Persist failed in onCleared", e)
+            }
+            try {
+                withContext(NonCancellable) {
+                    teamManager?.deleteTeam()
+                }
             } catch (e: Exception) {
                 Log.e("WorkspaceViewModel", "Cleanup failed in onCleared", e)
             }

@@ -1,7 +1,6 @@
 package com.example.workspace
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
@@ -82,16 +81,21 @@ class TeammateContext(
      * Teammate 的执行循环应定期检查 [isAborted] 以响应中止请求。
      * 一旦设置为 true，teammate 应立即退出整个执行循环。
      */
-    private val _isAborted = MutableStateFlow(false)
+    // WHY: 使用 AtomicBoolean 替代 MutableStateFlow 作为 abort 标志。
+    // MutableStateFlow.value 的写操作在多线程下不是原子的（先读后写），
+    // 而 abort() 同时写 _isAborted 和 _isCurrentTurnAborted，存在撕裂写风险。
+    // AtomicBoolean.compareAndSet 保证原子性和可见性。
+    private val _isAborted = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** 当前是否已被中止（生命周期级别） */
-    val isAborted: Boolean get() = _isAborted.value
+    val isAborted: Boolean get() = _isAborted.get()
 
     /** 中止此 Teammate 的执行（生命周期级别，teammate 将整个退出） */
     fun abort() {
-        _isAborted.value = true
-        // 同时中止当前轮次，确保挂起的 runTurn 也能收到信号
-        _isCurrentTurnAborted.value = true
+        // WHY: 使用 lazySet 而非 compareAndSet：abort 语义是"设为 true"，
+        // 多次调用是幂等的，不需要 CAS 的原子条件判断，lazySet 性能更好且保证最终可见性。
+        _isAborted.lazySet(true)
+        _isCurrentTurnAborted.lazySet(true)
     }
 
     // ─── 当前轮次 Abort（中断当前工作，返回 idle）───
@@ -105,19 +109,20 @@ class TeammateContext(
      *
      * 每轮开始时通过 [resetTurnAbort] 重置。
      */
-    private val _isCurrentTurnAborted = MutableStateFlow(false)
+    // WHY: 与 _isAborted 一致，使用 AtomicBoolean 替代 MutableStateFlow（同上理由）
+    private val _isCurrentTurnAborted = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** 当前轮次是否已被中止 */
-    val isCurrentTurnAborted: Boolean get() = _isCurrentTurnAborted.value
+    val isCurrentTurnAborted: Boolean get() = _isCurrentTurnAborted.get()
 
     /** 中止当前轮次的工作（teammate 将回到 idle 状态，而非退出） */
     fun abortCurrentTurn() {
-        _isCurrentTurnAborted.value = true
+        _isCurrentTurnAborted.lazySet(true)
     }
 
     /** 重置当前轮次的中止标志（每轮 runTurn 开始时调用） */
     fun resetTurnAbort() {
-        _isCurrentTurnAborted.value = false
+        _isCurrentTurnAborted.lazySet(false)
     }
 }
 

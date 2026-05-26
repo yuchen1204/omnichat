@@ -5,6 +5,7 @@ import com.example.data.ModelConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 工作区共享协程作用域
@@ -24,8 +25,19 @@ import kotlinx.coroutines.SupervisorJob
  * `parentScope` 驱动。
  */
 internal object WorkspaceScopes {
-    /** 用于 Hook 分发等 fire-and-forget 任务，永远不取消（生命周期与进程一致） */
+    /** 用于 Hook 分发等 fire-and-forget 任务，生命周期与进程一致 */
     val auxiliary: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * 取消所有辅助协程。
+     *
+     * WHY: 原 auxiliary scope 永远不取消，进程退出时孤儿协程（Hook 分发等）仍在运行，
+     * 可能导致延迟崩溃或资源泄漏。提供显式 cancel 供 Application.onTerminate 或
+     * 进程级清理调用。日常使用中不调用（生命周期与进程一致），仅作为安全出口。
+     */
+    fun cancelAll() {
+        auxiliary.cancel()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -89,6 +101,8 @@ data class TeamState(
     val agentPresets: List<AgentPreset>,
     val teammates: Map<String, TeammateState> = emptyMap(),
     val isCompleted: Boolean = false,
+    /** 工作区文件操作沙盒路径。非空时，所有 Agent 的文件工具调用仅允许在此目录内操作。 */
+    val sandboxPath: String? = null,
 )
 
 /**
@@ -141,6 +155,26 @@ enum class TaskMode {
 }
 
 /**
+ * 模型能力提示，用于自动模型选择。
+ *
+ * 在 create_agents 中通过 modelHint 字段指定，系统根据提示
+ * 自动选择最匹配的模型（基于 FetchedModel 的能力标记）。
+ * 优先级低于显式指定的 modelConfigId/modelId。
+ */
+enum class ModelHint {
+    /** 推理/编程任务，优先选择支持 thinking 的模型 */
+    REASONING,
+    /** 图像理解任务，需要支持视觉输入 */
+    VISION,
+    /** 快速响应，选择轻量模型 */
+    FAST,
+    /** 大上下文窗口需求 */
+    LARGE_CONTEXT,
+    /** 需要工具调用能力 */
+    TOOLS
+}
+
+/**
  * Orchestrator 指令。
  *
  * @property agents 要创建的 Agent 规格列表
@@ -166,6 +200,7 @@ data class AgentSpec(
     val systemPrompt: String,
     val modelConfigId: Long?,
     val modelId: String? = null,
+    val modelHint: ModelHint? = null,
     val dependsOn: List<String> = emptyList(),
 )
 
@@ -194,3 +229,38 @@ val ORCHESTRATOR_ONLY_TOOLS = setOf("create_agents", "assign_task", "continue_co
 
 /** 所有 Agent 共享的协作工具 */
 val COLLABORATION_TOOLS = setOf("peer_message")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sub-Agent TaskList 进度跟踪
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Sub-Agent 任务计划中的单个步骤。
+ *
+ * 由 Sub-Agent 在规划阶段自动生成，格式为 `- [ ] 描述` 或 `- [x] 描述`。
+ *
+ * @property description 步骤描述（如 "创建 index.html"）
+ * @property isCompleted 是否已完成
+ */
+data class AgentTaskStep(
+    val description: String,
+    val isCompleted: Boolean,
+)
+
+/**
+ * Sub-Agent 的任务进度。
+ *
+ * 从 Sub-Agent 的流式输出中解析 TaskList 格式，实时更新进度。
+ *
+ * @property agentName Agent 名称
+ * @property steps 任务步骤列表
+ */
+data class AgentTaskProgress(
+    val agentName: String,
+    val steps: List<AgentTaskStep>,
+) {
+    val completedCount: Int get() = steps.count { it.isCompleted }
+    val totalCount: Int get() = steps.size
+    val isAllCompleted: Boolean get() = steps.isNotEmpty() && steps.all { it.isCompleted }
+    val progressText: String get() = "$completedCount/$totalCount"
+}

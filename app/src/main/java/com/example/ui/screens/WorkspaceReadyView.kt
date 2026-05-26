@@ -57,7 +57,7 @@ fun WorkspaceReadyView(
     sessionTitle: String,
     modelConfigs: List<ModelConfig>,
     fetchedModels: List<com.example.data.FetchedModel>,
-    onSubmit: (String, Long, String?, String?) -> Unit,
+    onSubmit: (String, Long, String?, String?, String?) -> Unit,
 ) {
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
@@ -123,6 +123,15 @@ fun WorkspaceReadyView(
 
     var showToolbar by remember { mutableStateOf(false) }
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
+    // 沙盒路径状态
+    var sandboxPath by remember { mutableStateOf("") }
+    var showSandboxInput by remember { mutableStateOf(false) }
+    val presetPaths = listOf(
+        "/sdcard/OmniChat/workspace",
+        "/sdcard/Download",
+        "/sdcard/Documents",
+    )
 
     LaunchedEffect(modelConfigs) {
         if (selectedConfigId == null && modelConfigs.isNotEmpty()) {
@@ -412,6 +421,123 @@ fun WorkspaceReadyView(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 沙盒路径选择
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = uiText("workspace.sandbox.label", "工作目录（沙盒）"),
+                                fontSize = (12 * fs).sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (sandboxPath.isBlank()) uiText("workspace.sandbox.unset", "未设置（不限制）")
+                                       else sandboxPath,
+                                fontSize = (11 * fs).sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { showSandboxInput = !showSandboxInput },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (showSandboxInput) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // 展开的沙盒输入区域
+                        AnimatedVisibility(
+                            visible = showSandboxInput,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = sandboxPath,
+                                    onValueChange = { sandboxPath = it },
+                                    placeholder = {
+                                        Text(
+                                            uiText("workspace.sandbox.placeholder", "例如: /sdcard/OmniChat/workspace"),
+                                            fontSize = (12 * fs).sp
+                                        )
+                                    },
+                                    singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(
+                                        fontSize = (12 * fs).sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    trailingIcon = {
+                                        if (sandboxPath.isNotBlank()) {
+                                            IconButton(
+                                                onClick = { sandboxPath = "" },
+                                                modifier = Modifier.size(20.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    contentDescription = uiText("workspace.sandbox.clear", "清除"),
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                // 快捷路径 Chips
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    for (preset in presetPaths) {
+                                        val isSelected = sandboxPath == preset
+                                        val chipLabel = preset.substringAfterLast("/")
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                sandboxPath = if (isSelected) "" else preset
+                                            },
+                                            label = {
+                                                Text(
+                                                    chipLabel,
+                                                    fontSize = (11 * fs).sp
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(16.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -528,7 +654,7 @@ fun WorkspaceReadyView(
                             val toSend = taskText.trim()
                             val hasImage = selectedImagePath != null || selectedImageUri != null
                             if ((toSend.isNotBlank() || hasImage) && selectedConfigId != null) {
-                                onSubmit(toSend, selectedConfigId!!, selectedModelId, selectedImagePath)
+                                onSubmit(toSend, selectedConfigId!!, selectedModelId, selectedImagePath, sandboxPath.ifBlank { null })
                                 taskText = ""
                                 selectedImageUri = null
                                 selectedImagePath = null
@@ -562,7 +688,7 @@ fun WorkspaceReadyView(
                                 val toSend = taskText.trim()
                                 val hasImage = selectedImagePath != null || selectedImageUri != null
                                 if ((toSend.isNotBlank() || hasImage) && selectedConfigId != null) {
-                                    onSubmit(toSend, selectedConfigId!!, selectedModelId, selectedImagePath)
+                                    onSubmit(toSend, selectedConfigId!!, selectedModelId, selectedImagePath, sandboxPath.ifBlank { null })
                                     taskText = ""
                                     selectedImageUri = null
                                     selectedImagePath = null

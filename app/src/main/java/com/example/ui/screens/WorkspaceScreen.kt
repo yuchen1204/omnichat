@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.WorkspaceViewModel
 import com.example.workspace.AgentStatus
+import com.example.workspace.AgentTaskProgress
 import com.example.workspace.ORCHESTRATOR_NAME
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,6 +42,7 @@ fun WorkspaceScreen(
     val agentTabs by workspaceViewModel.agentTabs.collectAsStateWithLifecycle()
     val agentStreamBuffers by workspaceViewModel.agentStreamBuffers.collectAsStateWithLifecycle()
     val agentStatuses by workspaceViewModel.agentStatuses.collectAsStateWithLifecycle()
+    val agentTaskProgress by workspaceViewModel.agentTaskProgress.collectAsStateWithLifecycle()
     val modelConfigs by workspaceViewModel.modelConfigs.collectAsStateWithLifecycle()
     val fetchedModels by workspaceViewModel.fetchedModels.collectAsStateWithLifecycle()
     val teamState by workspaceViewModel.teamState.collectAsStateWithLifecycle()
@@ -103,7 +105,9 @@ fun WorkspaceScreen(
             sessionTitle = session.title,
             modelConfigs = modelConfigs,
             fetchedModels = fetchedModels,
-            onSubmit = { taskText, configId, modelId, imagePath -> workspaceViewModel.submitTask(taskText, configId, modelId, imagePath) }
+            onSubmit = { taskText, configId, modelId, imagePath, sandboxPath ->
+                workspaceViewModel.submitTask(taskText, configId, modelId, imagePath, sandboxPath)
+            }
         )
         return
     }
@@ -157,6 +161,7 @@ fun WorkspaceScreen(
                     selectedTabIndex = selectedTabIndex,
                     teamState = teamState,
                     agentStatuses = agentStatuses,
+                    agentTaskProgress = agentTaskProgress,
                     onTabSelected = { selectedTabIndex = it }
                 )
             }

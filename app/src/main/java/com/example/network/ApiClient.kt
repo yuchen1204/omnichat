@@ -441,6 +441,7 @@ object ApiClient {
         var success = false
 
         while (retryCount <= maxRetries && !success) {
+            var response: okhttp3.Response? = null
             try {
                 if (retryCount > 0) {
                     emit("INFO: 正在尝试第 $retryCount 次重连...")
@@ -448,11 +449,10 @@ object ApiClient {
                     emit("RETRY_RESET:") // 通知 UI 重置当前累积状态
                 }
 
-                val response = client.newCall(requestBuilder.build()).execute()
+                response = client.newCall(requestBuilder.build()).execute()
                 if (!response.isSuccessful) {
                     val errorMsg = response.body?.string() ?: "Unknown API response"
                     emit("ERROR: HTTP error code ${response.code} Details: $errorMsg")
-                    response.close()
                     return@flow
                 }
 
@@ -495,15 +495,17 @@ object ApiClient {
                         }
                     }
                 }
-                response.close()
             } catch (e: IOException) {
                 retryCount++
                 if (retryCount > maxRetries) {
                     emit("ERROR: API stream read connection error - ${e.localizedMessage}")
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 emit("ERROR: Streaming failure - ${e.localizedMessage}")
                 break
+            } finally {
+                response?.close()
             }
         }
     }.flowOn(Dispatchers.IO)

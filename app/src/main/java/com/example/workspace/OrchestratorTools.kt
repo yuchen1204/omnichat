@@ -34,6 +34,10 @@ class OrchestratorTools(
 ) {
     companion object {
         private const val TAG = "OrchestratorTools"
+
+        private val CODE_BLOCK_PATTERN = """```(?:json)?\s*\n?(.*?)\n?\s*```""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        private val INTENT_PATTERN = """(?:创建|创建以下|spawn|create)\s*(?:以下)?\s*(?:Agent|agent|子Agent|Sub-Agent)""".toRegex(RegexOption.IGNORE_CASE)
+        private val AGENT_PATTERN = """[-*\d.]\s*['"]?([\p{L}_][\p{L}\p{N}_]{0,30})['"]?\s*[:—\-]\s*(.+?)$""".toRegex(RegexOption.MULTILINE)
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -191,18 +195,32 @@ class OrchestratorTools(
         }
 
         // 检查任务描述是否包含其他 Agent 的名字（可能导致混乱）
-        // BUG-13：原实现 task.contains(name, ignoreCase = true) 在短名称（如 "a"）或与英文单词
-        // 重叠的子串场景下产生大量假阳性，连带把合法的任务也判定为冲突。
-        // 改为整词匹配 + 仅当 Agent 名包含字母且长度 >= 3 时才启用此校验，避免误伤。
+        // WHY: 中文名无 word boundary（\b 对 CJK 无效），contains() 对短中文名
+        // 产生大量假阳性（如 Agent 名"数"匹配"分析数据"）。改用引号/括号包围匹配：
+        // 中文名只有在被引号（'"「」）包围时才算引用该 Agent，避免中文子串误伤。
         val teamState = teamManager.teamState.value
         if (teamState != null) {
             val otherAgentNames = teamState.teammates.keys
                 .filter { it != to && it != ORCHESTRATOR_NAME && it.length >= 3 }
             for (otherName in otherAgentNames) {
-                // 用 \b 整词边界匹配，避免 "researcher" 命中 "research"
-                val pattern = "\\b${java.util.regex.Pattern.quote(otherName)}\\b".toRegex(RegexOption.IGNORE_CASE)
-                if (pattern.containsMatchIn(task)) {
-                    return "Error: 任务描述中包含其他 Agent '$otherName' 的名字，这可能导致 '$to' 混淆。请确保任务只描述 '$to' 需要完成的工作，不要包含其他 Agent 的职责。"
+                val isEnglishName = otherName.all { it.isLetterOrDigit() && it.code < 128 }
+                val hasMatch = if (isEnglishName) {
+                    // 英文名：使用 \b 整词匹配
+                    val pattern = "\\b${java.util.regex.Pattern.quote(otherName)}\\b".toRegex(RegexOption.IGNORE_CASE)
+                    pattern.containsMatchIn(task)
+                } else {
+                    // 中文名：要求被引号/括号包围才算引用该 Agent，
+                    // 避免中文子串误伤（如"数"匹配"分析数据"）
+                    val quotedPattern = """['"「『(【]${java.util.regex.Pattern.quote(otherName)}['"」』)】]""".toRegex()
+                    quotedPattern.containsMatchIn(task)
+                }
+                
+                if (hasMatch) {
+                    // WHY: 降级为警告而非阻断。Orchestrator 经常需要在任务描述中引用其他 Agent
+                    // 的名字来描述协作流程（如"等 CodeWriter 完成后开始审查"），阻断会导致
+                    // Orchestrator 反复改写任务描述浪费工具调用。改为警告，让任务通过但提示注意。
+                    Log.w(TAG, "Task for '$to' mentions other agent '$otherName', allowing anyway")
+                    // 不再 return Error，允许任务继续分配
                 }
             }
         }
@@ -264,12 +282,22 @@ class OrchestratorTools(
             return "Error: 'to' 和 'message' 参数必填"
         }
 
-        return teamManager.sendPeerMessage(
+        val result = teamManager.sendPeerMessage(
             from = senderName,
             to = to,
             message = message,
             summary = summary,
         )
+
+        // WHY: 当 peer_message 失败时（目标 Agent 不存在、名称错误等），给出明确的
+        // 后续行动指引，避免 Agent 收到错误后不知所措而卡住（Bug #Reviewer卡住）。
+        // 常见原因：generateUniqueName 给 Agent 加了数字后缀（如 CodeWriter2），
+        // 但发送方 LLM 不知道实际名称变了。指引 Agent 把问题上报给 Orchestrator。
+        if (result.startsWith("Error:")) {
+            return "$result\n\n提示：请使用上方列出的正确 Agent 名称重试。如果不需要传递信息给其他 Agent，请在你的任务结果中直接描述发现的问题，Orchestrator 会负责协调后续工作。"
+        }
+
+        return result
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -294,6 +322,7 @@ class OrchestratorTools(
                     modelConfigId = agentObj.optLong("modelConfigId", -1)
                         .let { if (it == -1L) null else it },
                     modelId = agentObj.optString("modelId").takeIf { it.isNotEmpty() },
+                    modelHint = parseModelHint(agentObj.optString("modelHint")),
                     dependsOn = agentObj.optJSONArray("dependsOn")
                         ?.let { arr ->
                             (0 until arr.length()).mapNotNull {
@@ -332,8 +361,7 @@ class OrchestratorTools(
      * 从 markdown 代码块中提取 JSON 字符串。
      */
     private fun extractJsonFromCodeBlock(text: String): String? {
-        val codeBlockPattern = """```(?:json)?\s*\n?(.*?)\n?\s*```""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val match = codeBlockPattern.find(text) ?: return null
+        val match = CODE_BLOCK_PATTERN.find(text) ?: return null
         val blockContent = match.groupValues[1].trim()
         return if (blockContent.contains("create_agents")) blockContent else null
     }
@@ -342,11 +370,14 @@ class OrchestratorTools(
      * 从自然语言中提取 Agent 规格。
      */
     private fun extractAgentsFromNaturalLanguage(text: String): OrchestratorDirective? {
-        val intentPattern = """(?:创建|创建以下|spawn|create)\s*(?:以下)?\s*(?:Agent|agent|子Agent|Sub-Agent)""".toRegex(RegexOption.IGNORE_CASE)
-        if (!intentPattern.containsMatchIn(text)) return null
+        if (!INTENT_PATTERN.containsMatchIn(text)) return null
 
-        val agentPattern = """[-*\d.]\s*['"]?(\w[\w\s]{0,48})['"]?\s*[:—\-（(]\s*(.+?)[）)]?\s*$""".toRegex(RegexOption.MULTILINE)
-        val matches = agentPattern.findAll(text).toList()
+        // WHY: 收紧正则，避免误匹配普通列表项。
+        // 原正则 (\w[\w\s]{0,48}) 会匹配含空格的名称如 "Agent 1"，
+        // 且 [:—\-（(] 分隔符过宽会匹配任何冒号/连字符开头的行。
+        // 改为：名称限制为驼峰/下划线格式 ([A-Za-z_]\w{0,30})，
+        // 分隔符仅限 : — - 三种，$ 确保行尾匹配。
+        val matches = AGENT_PATTERN.findAll(text).toList()
 
         if (matches.isEmpty()) return null
 
@@ -399,6 +430,7 @@ class OrchestratorTools(
                         modelConfigId = agentObj.optLong("modelConfigId", -1)
                             .let { if (it == -1L) null else it },
                         modelId = agentObj.optString("modelId").takeIf { it.isNotEmpty() },
+                        modelHint = parseModelHint(agentObj.optString("modelHint")),
                         dependsOn = agentObj.optJSONArray("dependsOn")
                             ?.let { arr ->
                                 (0 until arr.length()).mapNotNull {
@@ -485,6 +517,21 @@ class OrchestratorTools(
     }
 
     data class TaskInfo(val task: String, val context: String)
+
+    /**
+     * 解析 modelHint 字符串为枚举值。
+     * 支持 kebab-case (large-context) 和 SCREAMING_SNAKE_CASE (LARGE_CONTEXT)。
+     */
+    private fun parseModelHint(hintStr: String): ModelHint? {
+        if (hintStr.isBlank()) return null
+        val normalized = hintStr.trim().uppercase().replace("-", "_")
+        return try {
+            ModelHint.valueOf(normalized)
+        } catch (_: IllegalArgumentException) {
+            Log.w(TAG, "Unknown modelHint: '$hintStr'")
+            null
+        }
+    }
 
     /**
      * 从字符串中提取完整的 JSON 对象。

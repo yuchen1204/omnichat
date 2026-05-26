@@ -33,28 +33,81 @@ internal const val DEFAULT_TEAMMATE_PROMPT = """
 - **角色说明**：你的专业角色定位（如有）
 - **完成标准**：判断任务完成的标准
 
+## 必须使用工具执行操作
+
+当任务要求你创建文件、读取文件、执行命令等操作时，
+你必须立即调用相应的工具完成。不要回复"我马上创建"、"接下来我会..."之类的文本
+而不实际调用工具。每次回复中如果涉及操作，必须包含至少一个 tool_call。
+如果你说"我要做 X"，那 X 必须在同一个回复中通过工具调用完成。
+
+## 任务分解与进度跟踪
+
+收到任务后，你必须先制定执行计划，再开始执行：
+
+1. **规划阶段**：分析任务要求，将任务拆解为具体步骤，以结构化格式输出：
+   任务计划：
+   - [ ] 步骤 1：创建 index.html（主页面结构）
+   - [ ] 步骤 2：创建 style.css（样式文件）
+   - [ ] 步骤 3：创建 script.js（游戏逻辑）
+   - [ ] 步骤 4：验证所有文件已创建且引用正确
+
+2. **执行阶段**：每完成一步，用工具调用标记完成：
+   ✅ 步骤 1 完成：index.html 已创建（4236 字节）
+
+3. **完成标准**：所有步骤标记为 ✅ 后，才能报告任务完成。
+   如果某个步骤失败，说明失败原因，不要跳过。
+
+⚠️ 不要跳过规划阶段：即使任务看起来简单，也必须先列出步骤再执行。
+这能帮助你不会遗漏任何要求。
+
+## 多文件创建流程
+
+如果任务要求创建多个文件（如 HTML + CSS + JS），
+你必须在一个 turn 内依次创建所有文件。不要只创建第一个文件就停止。
+工作流程：
+1. 创建第一个文件（调用 write_file）
+2. 工具返回成功后，立即创建第二个文件（再次调用 write_file）
+3. 重复直到所有文件创建完成
+4. 最后用 list_directory 确认所有文件已存在
+
 ## 关键行为准则
 
-**⚠️ 完成前必须自查**：在报告"任务完成"之前，你必须逐项检查任务描述中的每一个要求是否都已满足。
-- 如果任务要求创建 3 个文件，你必须确认 3 个文件都已创建
-- 如果任务要求修改多个位置，你必须确认所有位置都已修改
-- 不要只做了任务的一部分就报告完成
+⚠️ 完成前必须逐项验证：在报告"任务完成"之前，你必须：
+1. 逐项检查任务描述中的每一个要求是否都已满足
+2. 如果任务要求创建文件，用 read_file 或 list_directory 确认文件确实存在且内容正确
+3. 如果任务要求修改多个位置，确认所有位置都已修改
+4. 不要只做了任务的一部分就报告完成
+5. 不要仅凭自己的记忆判断完成状态，必须通过工具调用验证
 
-**🚫 只做自己的任务**：
+🚫 只做自己的任务：
 - 你只负责执行分配给你的任务，不要执行其他 Agent 的任务
 - 如果任务描述中提到了其他 Agent 的名字或职责（如 "Agent B 负责..."），那是其他 Agent 的工作，不是你的
 - 不要因为看到任务背景中提到了多个子任务就试图完成所有子任务
 - 只做「你的任务」部分明确要求的内容
 
-**不要越权**：严格按照任务描述执行，不要做任务之外的事。
+不要越权：严格按照任务描述执行，不要做任务之外的事。
 
-**结果要自包含**：汇报结果时，把关键数据直接写在回复里，不要只说"已生成报告文件，请查看"。
+结果要自包含：汇报结果时，把关键数据直接写在回复里，不要只说"已生成报告文件，请查看"。
 
 ## Sub-Agent 间协作（peer_message 工具）
 
 你可以使用 peer_message 工具与其他 Sub-Agent 直接通信：
 - 点对点：peer_message(to: "researcher", message: "请把分析结果发给我")
 - 广播：peer_message(to: "*", message: "我已完成数据库迁移，请更新相关代码")
+
+⚠️ 使用正确的 Agent 名称：发送 peer_message 时，to 参数必须使用
+任务上下文中明确给出的 Agent 名称（如 "CodeWriter"），不要自行猜测或使用
+简称（如 "coder"）。如果名称不存在，工具会返回错误，错误信息中会列出
+当前可用的 Agent 名称，请使用正确的名称重试。
+
+⚠️ peer_message 失败时的处理：如果 peer_message 返回 Error（如目标 Agent 不存在），
+不要卡在那里反复重试。正确做法是：
+1. 在你的任务结果中直接描述你发现的问题或需要传递的信息
+2. 完成你的任务并正常汇报结果
+3. Orchestrator 会根据你的结果决定后续协调工作
+
+任务完成后必须停止：完成任务并汇报结果后，立即停止，不要继续生成额外内容，
+不要等待其他 Agent 的响应，不要尝试做超出任务范围的事情。
 
 ## 文件系统环境
 本设备为 Android 系统。文件系统工具的根目录为 "/"，对应设备存储根路径。
@@ -95,6 +148,8 @@ class AgentLifecycle(
     companion object {
         private const val TAG = "AgentLifecycle"
     }
+
+    private val modelSelector = ModelSelector(repository)
 
     // ─── 共享状态（由 TeamManager 持有，通过 init 注入）───
 
@@ -149,13 +204,17 @@ class AgentLifecycle(
         systemPrompt: String = "",
         modelConfigId: Long? = null,
         overrideModelId: String? = null,
+        modelHint: ModelHint? = null,
         existingNames: Set<String>,
         parentScope: CoroutineScope,
         createRunner: suspend (AgentContext, Boolean) -> AgentRunner,
         executeLoop: suspend (AgentRunner, TeammateIdentity) -> Unit,
     ): TeammateIdentity {
-        // 检查 Sub-Agent 数量上限
-        val subAgentCount = runners.count { it.key != ORCHESTRATOR_NAME }
+        // WHY: 使用 size - containsKey 替代 count { predicate }（Bug #27）。
+        // ConcurrentHashMap.count 需要遍历整个 map，在遍历期间其他线程可能修改 map，
+        // 导致计数略微不准确。size 和 containsKey 都是 O(1) 且对 ConcurrentHashMap
+        // 是原子操作，结果更可靠，性能也更好。
+        val subAgentCount = runners.size - if (runners.containsKey(ORCHESTRATOR_NAME)) 1 else 0
         if (subAgentCount >= config.maxSubAgents) {
             val errorMessage = "已达到子 Agent 上限（${config.maxSubAgents}个），无法继续创建"
             Log.w(TAG, errorMessage)
@@ -174,15 +233,19 @@ class AgentLifecycle(
         ).take(config.maxSystemPromptLength)
 
         // 确定模型配置
-        val finalModelConfigId = presetMatch?.modelConfigId ?: modelConfigId
-        val modelConfig = if (finalModelConfigId != null) {
-            repository.getConfigById(finalModelConfigId)
-        } else null
-        // WHY: 显式获取 Orchestrator runner 引用，确保 fallback 行为可控。
-        // 早期实现使用 takeIf+silent fallback 到 "default"，掩盖了 Orchestrator 已被销毁的真实错误。
         val orchestratorRunner = runners[ORCHESTRATOR_NAME]
             ?: error("无法生成 Sub-Agent '$uniqueName'：Orchestrator runner 不存在（团队可能已被销毁）")
-        val actualModelConfig = modelConfig ?: orchestratorRunner.getModelConfig()
+        val orchestratorConfig = orchestratorRunner.getModelConfig()
+        val selection = modelSelector.resolve(
+            presetModelConfigId = presetMatch?.modelConfigId,
+            explicitConfigId = modelConfigId,
+            explicitModelId = overrideModelId,
+            modelHint = modelHint,
+            orchestratorConfig = orchestratorConfig
+        )
+        val actualModelConfig = selection.modelConfigId?.let { repository.getConfigById(it) }
+            ?: orchestratorConfig
+        val actualOverrideModelId = selection.modelId
         val teamName = orchestratorRunner.getTeamName().ifEmpty { "default" }
         val identity = TeammateIdentity(
             agentId = "${uniqueName}@${teamName}",
@@ -193,13 +256,15 @@ class AgentLifecycle(
         )
 
         // 创建 AgentContext
+        // WHY: 显式传入 ArrayList()，避免 data class 默认值在 copy() 时共享同一引用
         val context = AgentContext(
             agentName = uniqueName,
             isOrchestrator = false,
             systemPrompt = finalSystemPrompt.ifEmpty { DEFAULT_TEAMMATE_PROMPT },
             modelConfig = actualModelConfig,
-            overrideModelId = overrideModelId,
+            overrideModelId = actualOverrideModelId,
             teamName = teamName,
+            messages = ArrayList(),
         )
 
         // 创建 AgentRunner（子 Agent 禁用编排工具）
@@ -211,11 +276,14 @@ class AgentLifecycle(
             parentScope.coroutineContext + SupervisorJob() + TeammateContext(identity)
         )
         teammateScopes[uniqueName] = teammateScope
+        
+        // 显式创建收件箱并清除“已移除”标记，确保同名 Agent 被重新创建时 Channel 正常
+        messageBus.explicitCreateInbox(uniqueName)
 
         // 注册完成 Deferred
         agentCompletionDeferreds[uniqueName] = CompletableDeferred()
 
-        Log.d(TAG, "Spawned teammate '$uniqueName' with model ${actualModelConfig.name}")
+        Log.d(TAG, "Spawned teammate '$uniqueName' with model ${actualModelConfig.name}${if (actualOverrideModelId != null) "/$actualOverrideModelId" else ""} (${selection.reason})")
 
         // 触发 Teammate 创建 Hook
         WorkspaceScopes.auxiliary.launch {
@@ -256,11 +324,20 @@ class AgentLifecycle(
         Log.d(TAG, "Killing teammate '$agentName'")
 
         // 取消协程作用域
-        teammateScopes[agentName]?.cancel()
+        teammateScopes[agentName]?.let {
+            it.coroutineContext[TeammateContext]?.abort()
+            it.cancel()
+        }
 
-        // 等待 Job 完成，确保 finally 块执行完毕
+        // WHY: 添加 5 秒超时，防止 job.join() 永久阻塞。
+        // 场景：Agent 的 runTurn 卡在 OkHttp 阻塞调用时，scope.cancel() 无法中断
+        // 底层网络 I/O，导致 join() 永远等不到协程结束。超时后强制清理资源。
         try {
-            teammateJobs[agentName]?.join()
+            kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+                teammateJobs[agentName]?.join()
+            } ?: run {
+                Log.w(TAG, "Timeout waiting for teammate '$agentName' job to complete, forcing cleanup")
+            }
         } catch (_: Exception) { }
 
         // 触发 Teammate 销毁 Hook

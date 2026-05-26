@@ -336,6 +336,15 @@ interface TeamTaskDao {
     suspend fun getTasks(teamName: String): List<TeamTask>
 
     /**
+     * 获取指定团队已完成的任务 ID 列表，用于快速检查依赖。
+     *
+     * @param teamName 团队名称
+     * @return 已完成任务的 ID 列表
+     */
+    @Query("SELECT id FROM team_tasks WHERE teamName = :teamName AND status = 'COMPLETED'")
+    suspend fun getCompletedTaskIds(teamName: String): List<Long>
+
+    /**
      * 查找可认领的任务（带 Agent 匹配）。
      *
      * 查找状态为 PENDING 且无认领者的第一个任务。
@@ -412,6 +421,74 @@ interface TeamTaskDao {
      */
     @Query("UPDATE team_tasks SET owner = :agentName, status = 'IN_PROGRESS', updatedAt = :now WHERE id = :taskId AND owner IS NULL")
     suspend fun claimTask(taskId: Long, agentName: String, now: Long = System.currentTimeMillis()): Int
+
+    /**
+     * 原子查询并认领下一个可执行任务（单条 SQL，消除查询-认领竞态窗口）。
+     *
+     * 先通过子查询找到满足条件的最小 id 任务，再用 WHERE id = ... AND owner IS NULL
+     * 原子更新。高并发下多个 Agent 同时调用时，只有一个能成功（其余返回 0）。
+     *
+     * 注意：blockedBy 依赖检查仍在应用层完成（此处无法在单条 UPDATE 中高效实现），
+     * 调用方需在认领成功后验证 blockedBy 是否已全部完成，若未完成则释放任务。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     * @param now 更新时间戳
+     * @return 受影响的行数（0 表示无可认领任务或被抢占，1 表示成功）
+     */
+    @Query("""
+        UPDATE team_tasks 
+        SET owner = :agentName, status = 'IN_PROGRESS', updatedAt = :now
+        WHERE id = (
+            SELECT id FROM team_tasks
+            WHERE teamName = :teamName
+              AND status = 'PENDING'
+              AND owner IS NULL
+              AND (intendedAgent IS NULL OR intendedAgent = :agentName)
+            ORDER BY
+                CASE WHEN intendedAgent = :agentName THEN 0 ELSE 1 END,
+                id ASC
+            LIMIT 1
+        )
+        AND owner IS NULL
+    """)
+    suspend fun claimNextAvailableTask(teamName: String, agentName: String, now: Long = System.currentTimeMillis()): Int
+
+    /**
+     * 获取指定 Agent 当前 IN_PROGRESS 的任务。
+     *
+     * 用于 [claimNextAvailableTask] 认领成功后取回完整任务实体。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     * @return 任务实体，若不存在则返回 null
+     */
+    @Query("SELECT * FROM team_tasks WHERE teamName = :teamName AND owner = :agentName AND status = 'IN_PROGRESS' ORDER BY id ASC LIMIT 1")
+    suspend fun getInProgressTaskByOwner(teamName: String, agentName: String): TeamTask?
+
+    /**
+     * 释放任务（重置为 PENDING 状态，清除 owner）。
+     *
+     * 当认领后发现 blockedBy 依赖未满足时调用，将任务归还给任务池。
+     *
+     * @param taskId 任务 ID
+     * @param now 更新时间戳
+     */
+    @Query("UPDATE team_tasks SET owner = NULL, status = 'PENDING', updatedAt = :now WHERE id = :taskId")
+    suspend fun releaseTask(taskId: Long, now: Long = System.currentTimeMillis())
+
+    /**
+     * 释放孤儿任务（按 owner + status 匹配，无需 taskId）。
+     *
+     * 当 [claimNextAvailableTask] 成功但 [getInProgressTaskByOwner] 返回 null 时调用，
+     * 将该 Agent 名下所有 IN_PROGRESS 任务重置为 PENDING，防止孤儿任务永久卡住（Bug #15）。
+     *
+     * @param teamName 团队名称
+     * @param agentName 认领者 Agent 名称
+     * @param now 更新时间戳
+     */
+    @Query("UPDATE team_tasks SET owner = NULL, status = 'PENDING', updatedAt = :now WHERE teamName = :teamName AND owner = :agentName AND status = 'IN_PROGRESS'")
+    suspend fun releaseOrphanTask(teamName: String, agentName: String, now: Long = System.currentTimeMillis())
 
     /**
      * 删除指定团队的所有任务。

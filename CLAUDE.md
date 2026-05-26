@@ -28,15 +28,19 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 ./gradlew generateUiTextKeys
 ```
 
-**Before first run:** Create `.env` in project root with `GEMINI_API_KEY=your_key` (see `.env.example`).
+**Before first run:** API keys are configured per-provider in the app UI (模型配置 tab).
+
+**CI:** `.github/workflows/release.yml` builds release APKs on tag push (`Release-V*.*`). No CI for PRs or unit tests.
+
+**Windows:** Use `gradlew.bat` (same flags). PowerShell uses `;` not `&&` for chaining.
 
 ## Architecture
 
-MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with two top-level views: `"chat"` and `"settings"` (toggled via `mutableStateOf`).
+MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with three top-level views: `"chat"`, `"workspace"`, and `"settings"` (toggled via `mutableStateOf`). The `"settings"` view contains a **TabRow with 5 sub-tabs**: 模型配置, MCP工具, 长效记忆, Agent 预设, 数据管理.
 
 ```
-Compose UI (Screens) → ViewModels → AppRepository → Room Database
-                                    ↘ ApiClient (OkHttp + SSE)
+Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 entities, v28)
+                                    ↘ ApiClient (OkHttp + SSE, vision support)
                                     ↘ McpRuntimeManager (Node.js / Python / remote_http via JNI)
 ```
 
@@ -46,7 +50,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **Chinese UI strings** are hardcoded in Compose (not `strings.xml`). AI-adjustable strings use the `uiText("namespace.key", "默认中文")` pattern with auto-generated `ui_text_keys.json`
-- **Room database** version 19 with 18 sequential migrations. Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`
+- **Room database** version 28 with 24 sequential migrations (v4→v28). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`
 - **Node.js can start only once per process** (nodejs-mobile limitation) — merge multiple servers into one entry script
 - **Native runtimes are optional**; app degrades gracefully without them
 
@@ -62,7 +66,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database
 | `com.example.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
 | `com.example.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
 | `com.example.ui.theme` | Material 3 theming with DB-driven dynamic color |
-| `com.example.workspace` | Workspace feature (new) |
+| `com.example.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentLifecycle`, `AgentExecutionLoops`, `OrchestratorTools`, `TaskManager`, `MessageBus`, `ModelSelector`, `WorkspaceModels` |
 
 ## Native Code (MCP Runtime)
 
@@ -78,18 +82,24 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database
 - **Add Room entity**: Define in `Entities.kt`, add DAO in `Daos.kt`, update `AppDatabase` with new version + migration, expose in `AppRepository`
 - **Add screen/tab**: Add composable in `ui/screens/`, wire into `MainScreen.kt` — either as top-level view or sub-tab inside `SettingsView`
 - **Add MCP server support**: Add runtime config in `McpRuntimeManager`, bridge class following `NodeJsBridge`/`PythonBridge` patterns
-- **Add/modify built-in MCP tools**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`)
+- **Add/modify built-in MCP tools**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`). Tools are grouped (core, memory, ui_appearance, ui_text, files, documents, efficiency); `UISettings.enabledMcpGroups` controls active groups
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, use `LocalUiStrings.current` in Compose screens
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; MCP tools in `BuiltinToolHandler` update it
+- **Modify workspace multi-agent logic**: Edit `TeamManager.kt` (facade), `AgentRunner.kt` (per-agent LLM loop), `OrchestratorTools.kt` (tool routing), `TaskManager.kt` (task queue), `AgentLifecycle.kt` (spawn/destroy)
+- **Modify workspace UI**: Edit `WorkspaceScreen.kt` for main layout, `WorkspaceToolbar.kt` for top bar, `AgentTabBar.kt` for agent switching, `AgentMessageArea.kt` for message display, `TeamTaskPanel.kt` for task status, `InterventionInput.kt` for user input to agents
 
 ## Conventions
 
 - **CompositionLocals**: `MyApplicationTheme` provides `LocalUISettings`, `LocalCustomColors`, `LocalSidebarColors`, `LocalUiStrings`, `LocalChatFontScale`
 - **OpenAI-compatible API**: endpoint auto-correction strips `/chat/completions`, adds `/v1` for OpenAI
 - **Memory system**: Dual-layer — session summaries (15-min rolling) + cross-session memory facts injected via `[CROSS_SESSION_MEMORY]` placeholder. LLM outputs structured JSON `{"ops": [...]}` with ADD/UPDATE/REINFORCE/DELETE; pinned memories protected client-side
-- **API keys**: Managed via Secrets Gradle Plugin from `.env` file, never hardcoded
+- **API keys**: Configured per-provider in the app UI (ModelConfig entity), never hardcoded
 - **Custom HTTP headers**: `ModelConfig.customHeaders` is a JSON object string sent with every API request
 - **Streaming internals**: SSE chunk prefixes `ERROR:`, `INFO:`, `TOOL_CALL_DELTA:`, `RETRY_RESET:` have special handling in `ChatViewModel`. UI updates throttled to 50ms intervals
 - **No minification** (`isMinifyEnabled = false`)
+- **Vision support**: `Message.imagePath` and `WorkspaceMessage.imagePath` store local image paths. `ApiClient.imageToBase64DataUrl()` auto-compresses and converts to base64
+- **Storage permissions**: Android 11+ needs `MANAGE_EXTERNAL_STORAGE` (settings page); required for MCP script deployment
+- **Thinking/reasoning support**: `reasoning_effort` (low/medium/high/xhigh) with `budget_tokens`
 - **MCP protocol versions**: Remote HTTP supports both old SSE (2024-11-05) and new Streamable HTTP (2025-03-26)
+- **Workspace (multi-agent)**: Orchestrator pattern — `TeamManager` manages teammates via `TeammateContext` coroutine elements, `AgentLifecycle` handles creation/destruction, `AgentExecutionLoops` implements the core LLM loop per agent, `OrchestratorTools` intercepts orchestrator tools (`create_agents`, `assign_task`, `continue_conversation`, `peer_message`), `TaskManager` handles task CRUD with auto-claim and blocking, `MessageBus` provides inter-agent communication, `ModelSelector` resolves model config per agent. See `workspace/` package and tests in `app/src/test/java/com/example/workspace/`

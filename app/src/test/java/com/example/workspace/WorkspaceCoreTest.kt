@@ -185,7 +185,8 @@ class WorkspaceCoreTest {
             agentName = "TestAgent",
             isOrchestrator = false,
             systemPrompt = systemPromptTemplate,
-            modelConfig = config
+            modelConfig = config,
+            messages = ArrayList(),
         )
 
         // 1. 验证占位符替换（带记忆文本）

@@ -20,6 +20,7 @@ import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.AgentTabState
 import com.example.workspace.AgentStatus
+import com.example.workspace.AgentTaskProgress
 import com.example.workspace.TeamState
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -43,6 +44,7 @@ fun AgentTabBar(
     selectedTabIndex: Int,
     teamState: TeamState?,
     agentStatuses: Map<String, AgentStatus>,
+    agentTaskProgress: Map<String, AgentTaskProgress> = emptyMap(),
     onTabSelected: (Int) -> Unit,
 ) {
     val uiSettings = LocalUISettings.current
@@ -97,6 +99,28 @@ fun AgentTabBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.widthIn(max = 140.dp)
                         )
+
+                        // TaskList 进度指示器
+                        val progress = agentTaskProgress[tab.agentName]
+                        if (progress != null && progress.totalCount > 0 && !tab.isOrchestrator) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            if (progress.isAllCompleted) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "任务完成",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = progress.progressText,
+                                    fontSize = (10 * fs).sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.width(6.dp))
 
                         // 状态指示：未选中且 busy 时显示一个跳动小点提示后台仍在工作

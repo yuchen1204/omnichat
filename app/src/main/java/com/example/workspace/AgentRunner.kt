@@ -6,9 +6,11 @@ import com.example.data.ModelConfig
 import com.example.mcp.McpRuntimeManager
 import com.example.network.ApiClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.flow.takeWhile
 import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
@@ -47,6 +49,7 @@ class AgentRunner(
     private val crossSessionMemory: String = "",
     private val availableModels: String = "",
     private val disallowedTools: Set<String> = emptySet(),
+    private val sandboxPath: String? = null,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
     private val onToolCall: suspend (agentName: String, toolName: String, args: JSONObject, callId: String) -> String,
 ) {
@@ -61,6 +64,16 @@ class AgentRunner(
 
         /** Tool Call 循环最大迭代次数，防止无限循环 */
         private const val MAX_TOOL_CALL_ITERATIONS = 50
+
+        /**
+         * 连续纯文本响应（无 tool call）的最大重试次数。
+         *
+         * WHY: Sub-Agent 的 LLM 有时会回复"我马上创建文件"之类的文本但不实际调用工具，
+         * runTurn 立即 break 导致 Agent 报告"成功"却未执行任何操作。
+         * 检测到连续 N 次纯文本响应后，注入系统提示强制 Agent 调用工具或明确拒绝，
+         * 超过次数后结束本轮避免死循环。
+         */
+        private const val MAX_TEXT_ONLY_RETRIES = 3
 
         /**
          * Orchestrator 禁用的内置工具黑名单。
@@ -102,6 +115,18 @@ class AgentRunner(
 
     /** Agent 使用统计 */
     private val usageStats = AgentUsageStats()
+
+    /**
+     * 工具列表缓存（Bug #12）。
+     *
+     * getFilteredTools() 在 runTurn 的 do-while 循环中每次迭代都被调用，但单次
+     * runTurn 期间 MCP 工具集不会变化。通过缓存 allTools StateFlow 的 hashCode
+     * 来检测工具集是否变更，命中时直接返回缓存，避免重复的格式转换和过滤遍历。
+     *
+     * 线程安全：仅在 runTurn 协程内读写，无需额外同步。
+     */
+    private var cachedTools: JSONArray? = null
+    private var cachedToolsVersion: Long = -1
 
     /**
      * Usage stats 写入锁。
@@ -164,19 +189,23 @@ class AgentRunner(
         }
 
         // 上下文压缩检查
-        if (shouldCompact()) {
-            compactContext()
-        }
+        compactContextIfNeeded()
 
-        isStreaming = true
-        synchronized(usageStatsLock) {
-            usageStats.startTimeMs = System.currentTimeMillis()
-        }
-
+        // WHY: isStreaming 必须在 try 块内设置，确保任何异常（如 compactContext 抛出）
+        // 都能通过 finally 将其重置为 false，防止 Agent 永久卡在"流式输出"状态（Bug #23）。
         var lastAssistantResponse = ""
         try {
+            isStreaming = true
+            synchronized(usageStatsLock) {
+                usageStats.startTimeMs = System.currentTimeMillis()
+            }
             var iterationCount = 0
+            var consecutiveTextOnlyCount = 0
             do {
+                if (kotlin.coroutines.coroutineContext[TeammateContext]?.isCurrentTurnAborted == true) {
+                    break
+                }
+                
                 iterationCount++
                 if (iterationCount > MAX_TOOL_CALL_ITERATIONS) {
                     Log.w(TAG, "Agent '${context.agentName}' reached max tool call iterations ($MAX_TOOL_CALL_ITERATIONS)")
@@ -200,15 +229,25 @@ class AgentRunner(
                 // 获取过滤后的工具列表
                 val tools = getFilteredTools()
 
-                // 构建系统提示（替换 [CROSS_SESSION_MEMORY]、[MCP_TOOLS] 和 [AVAILABLE_MODELS]）
-                val systemPrompt = context.buildSystemPrompt(tools.toString(), crossSessionMemory, availableModels)
+                // 构建系统提示（替换 [CROSS_SESSION_MEMORY]、[MCP_TOOLS]、[AVAILABLE_MODELS] 和 [SANDBOX_PATH]）
+                val systemPrompt = context.buildSystemPrompt(tools.toString(), crossSessionMemory, availableModels, sandboxPath)
 
                 // 累积的文本响应
                 var accumulatedText = ""
                 var lastCallbackTime = 0L
                 val accumulatedToolCalls = mutableMapOf<Int, JSONObject>()
 
-                // 执行流式 API 调用
+                // WHY: 在外部协程上下文中提前捕获 TeammateContext，避免在 Flow.transform
+                // lambda 内通过 kotlin.coroutines.coroutineContext 获取——后者返回的是 Flow
+                // 内部协程的上下文，若 Flow 切到 Dispatchers.IO 等 Dispatcher，则
+                // TeammateContext 元素会丢失，导致 isCurrentTurnAborted 检查永远返回 null。
+                val capturedTeammateCtx = kotlin.coroutines.coroutineContext[TeammateContext]
+
+                // WHY: 使用 transform 替代 takeWhile + collect 分离模式。
+                // takeWhile 在条件为 false 时直接完成 Flow 但不抛异常，导致协程取消信号
+                // (CancellationException) 被 takeWhile 吞掉，collect 内的代码继续运行直到
+                // 下一个 emit 点。改用 transform + return@transform 后，isCurrentTurnAborted
+                // 检查在每次 emit 前执行，且不会干扰 Flow 的正常取消传播。
                 ApiClient.executeStreamingChat(
                     config = context.modelConfig.let { 
                         if (context.overrideModelId != null) it.copy(selectedModelId = context.overrideModelId) 
@@ -217,7 +256,12 @@ class AgentRunner(
                     systemPrompt = systemPrompt,
                     history = history,
                     tools = tools
-                ).collect { chunk ->
+                ).transform { chunk ->
+                    if (capturedTeammateCtx?.isCurrentTurnAborted == true) {
+                        return@transform
+                    }
+                    emit(chunk)
+                }.collect { chunk ->
                     when {
                         chunk.startsWith("ERROR:") -> {
                             // 错误消息，直接推送
@@ -266,7 +310,10 @@ class AgentRunner(
                         }
                         else -> {
                             // 普通内容，累积并节流推送
-                            if (chunk != "null") {
+                            // WHY: 同时过滤空字符串和字符串字面量 "null"。
+                            // 部分 SSE 实现在流结束时会发送字符串 "null" 作为终止标记，
+                            // 不应将其追加到累积文本中（Bug #21）。
+                            if (chunk.isNotEmpty() && chunk != "null") {
                                 accumulatedText += chunk
                                 val now = System.currentTimeMillis()
                                 // 节流回调，每 50ms 更新一次（需求 7.2）
@@ -321,7 +368,29 @@ class AgentRunner(
                         val callId = toolCall.optString("id")
 
                         try {
-                            val argsJson = JSONObject(argsStr)
+                            // WHY: 将 JSON 解析错误与工具执行错误分开处理（Bug #25）。
+                            // JSONObject(argsStr) 抛出 JSONException 时，原实现将其归类为
+                            // "Tool call failed"，日志不明确且会写入一条误导性的 tool 结果。
+                            // 分离后：解析失败直接跳过该工具调用并记录清晰的错误日志。
+                            val argsJson = try {
+                                JSONObject(argsStr)
+                            } catch (e: org.json.JSONException) {
+                                Log.e(TAG, "Invalid JSON arguments for tool '$toolName' (callId=$callId): $argsStr", e)
+                                messagesLock.writeLock().lock()
+                                try {
+                                    context.messages.add(
+                                        AgentMessage(
+                                            role = "tool",
+                                            content = "Error: invalid arguments JSON for '$toolName': ${e.message}",
+                                            toolCallId = callId
+                                        )
+                                    )
+                                } finally {
+                                    messagesLock.writeLock().unlock()
+                                }
+                                hasToolResults = true
+                                continue
+                            }
 
                             // 通过回调执行工具调用
                             val toolResult = onToolCall(
@@ -375,7 +444,25 @@ class AgentRunner(
                     }
                 }
 
-                // 没有工具调用，结束循环
+                // 没有工具调用 — 检测是否为"假完成"（LLM 回复文本但不执行工具）
+                consecutiveTextOnlyCount++
+                if (consecutiveTextOnlyCount <= MAX_TEXT_ONLY_RETRIES && !context.isOrchestrator) {
+                    Log.w(TAG, "Agent '${context.agentName}' produced text-only response " +
+                        "($consecutiveTextOnlyCount/$MAX_TEXT_ONLY_RETRIES), injecting retry nudge")
+                    messagesLock.writeLock().lock()
+                    try {
+                        context.messages.add(
+                            AgentMessage(
+                                role = "system",
+                                content = "你的上一条回复没有调用任何工具。如果你需要执行操作（如创建文件、读取文件等），请立即调用相应的工具完成任务。" +
+                                    "如果确实无法继续，请明确说明原因。不要回复'我马上执行'之类的文本而不实际调用工具。"
+                            )
+                        )
+                    } finally {
+                        messagesLock.writeLock().unlock()
+                    }
+                    continue
+                }
                 break
             } while (true)
 
@@ -447,20 +534,28 @@ class AgentRunner(
             imagePath = imagePath
         )
 
-        synchronized(interventionLock) {
-            if (isStreaming && isIntervention) {
-                // 正在流式输出时，干预消息加入队列
-                interventionQueue.addLast(message)
-                Log.d(TAG, "Queued intervention message for ${context.agentName}")
-            } else {
-                // BUG-6：使用写锁保护直接写入，消除 TOCTOU 竞态
-                messagesLock.writeLock().lock()
-                try {
-                    context.messages.add(message)
-                } finally {
-                    messagesLock.writeLock().unlock()
+        // WHY: 缩小 interventionLock 的范围到仅干预路径。
+        // 原实现用 synchronized(interventionLock) 包裹整个 if-else，包括非干预的
+        // messagesLock 写入路径。这造成非干预消息的 injectMessage 被不必要地串行化，
+        // 与 runTurn 中 messagesLock 的并发读写产生不必要的竞争。
+        // 分离后：干预路径用 interventionLock 保护 isStreaming check-then-act；
+        // 非干预路径直接用 messagesLock 写入，与 runTurn 一致。
+        if (isStreaming && isIntervention) {
+            synchronized(interventionLock) {
+                // Double-check：synchronized 进入后 isStreaming 可能已变回 false
+                if (isStreaming) {
+                    interventionQueue.addLast(message)
+                    Log.d(TAG, "Queued intervention message for ${context.agentName}")
+                    return
                 }
             }
+        }
+
+        messagesLock.writeLock().lock()
+        try {
+            context.messages.add(message)
+        } finally {
+            messagesLock.writeLock().unlock()
         }
     }
 
@@ -498,92 +593,115 @@ class AgentRunner(
     }
 
     /**
-     * 判断是否需要上下文压缩。
-     *
-     * BUG-8：在 messagesLock 读锁内读取，避免与并发 injectMessage 的写入冲突。
-     */
-    private fun shouldCompact(): Boolean {
-        messagesLock.readLock().lock()
-        return try {
-            val totalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
-            totalChars > MAX_CONTEXT_CHARS
-        } finally {
-            messagesLock.readLock().unlock()
-        }
-    }
-
-    /**
-     * 压缩上下文。
+     * 如果上下文过长，则进行压缩。
      *
      * 保留最近 [KEEP_RECENT_MESSAGES] 条消息，将更早的消息压缩为摘要。
      * 确保 tool/tool_call 消息的配对关系不被破坏。
      *
-     * BUG-8/9：整体在 messagesLock 写锁下进行 read-modify-write，确保读取的快照与
-     * 写入的列表内容一致，避免在并发 injectMessage 介入时产生不一致的 summary。
+     * 整体使用 messagesLock 保护读写操作，避免 TOCTOU 竞态。
      */
-    private fun compactContext() {
-        messagesLock.writeLock().lock()
+    private fun compactContextIfNeeded() {
+        val oldMessages: List<AgentMessage>
+        val recentMessages: List<AgentMessage>
+
+        messagesLock.readLock().lock()
         try {
-            if (context.messages.size <= KEEP_RECENT_MESSAGES) return
+            val totalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
+            if (totalChars <= MAX_CONTEXT_CHARS || context.messages.size <= KEEP_RECENT_MESSAGES) return
 
-            val recentMessages = context.messages.takeLast(KEEP_RECENT_MESSAGES)
-            val oldMessages = context.messages.dropLast(KEEP_RECENT_MESSAGES)
-            val oldCount = oldMessages.size
+            val size = context.messages.size
+            val oldSize = size - KEEP_RECENT_MESSAGES
 
-            // 找到安全的切割点：确保不切断 tool call 配对
-            // 策略：从 oldMessages 末尾往前找，找到最后一个完整的 tool call 块的结束位置
-            val safeDropIndex = findSafeCutIndex(oldMessages, recentMessages)
+            // 避免 toList() followed by takeLast and dropLast 的多次拷贝和内存分配
+            val oldList = ArrayList<AgentMessage>(oldSize)
+            val recentList = ArrayList<AgentMessage>(KEEP_RECENT_MESSAGES)
+            for (i in 0 until oldSize) {
+                oldList.add(context.messages[i])
+            }
+            for (i in oldSize until size) {
+                recentList.add(context.messages[i])
+            }
+            oldMessages = oldList
+            recentMessages = recentList
+        } finally {
+            messagesLock.readLock().unlock()
+        }
 
-            val toCompress = oldMessages.take(safeDropIndex)
-            val kept = oldMessages.drop(safeDropIndex) + recentMessages
+        // 2. 锁外计算摘要（耗时的 O(n) 操作）
+        val oldCount = oldMessages.size
+        val safeDropIndex = findSafeCutIndex(oldMessages, recentMessages)
 
-            val summary = buildString {
-                appendLine("（以上对话已压缩，共 $oldCount 条消息。以下是早期关键信息摘要）")
-                // 提取关键消息作为上下文摘要
-                var userMessageCount = 0
-                var assistantMessageCount = 0
-                val maxUserMessages = 2
-                val maxAssistantMessages = 2
-                var maxToolResults = 3  // 修复：改为 var 以便递减
+        val toCompress = oldMessages.take(safeDropIndex)
+        val kept = oldMessages.drop(safeDropIndex) + recentMessages
 
-                for (msg in toCompress) {
-                    when (msg.role) {
-                        "system" -> {
-                            appendLine("[系统] ${msg.content.take(200)}")
+        val summary = buildString {
+            appendLine("（以上对话已压缩，共 $oldCount 条消息。以下是早期关键信息摘要）")
+            var userMessageCount = 0
+            var assistantMessageCount = 0
+            val maxUserMessages = 2
+            val maxAssistantMessages = 2
+            var maxToolResults = 3
+
+            for (msg in toCompress) {
+                when (msg.role) {
+                    "system" -> {
+                        appendLine("[系统] ${msg.content.take(200)}")
+                    }
+                    "user" -> {
+                        if (userMessageCount < maxUserMessages) {
+                            appendLine("[用户] ${msg.content.take(300)}")
+                            userMessageCount++
                         }
-                        "user" -> {
-                            if (userMessageCount < maxUserMessages) {
-                                appendLine("[用户] ${msg.content.take(300)}")
-                                userMessageCount++
-                            }
+                    }
+                    "assistant" -> {
+                        if (msg.content.isNotBlank() && assistantMessageCount < maxAssistantMessages) {
+                            appendLine("[助手] ${msg.content.take(300)}")
+                            assistantMessageCount++
                         }
-                        "assistant" -> {
-                            if (msg.content.isNotBlank() && assistantMessageCount < maxAssistantMessages) {
-                                appendLine("[助手] ${msg.content.take(300)}")
-                                assistantMessageCount++
-                            }
-                        }
-                        "tool" -> {
-                            // 只保留简短的工具结果摘要，避免摘要过大
-                            if (maxToolResults > 0 && msg.content.length < 100) {
-                                appendLine("[工具结果] ${msg.content.take(100)}")
-                                maxToolResults--
-                            }
+                    }
+                    "tool" -> {
+                        if (maxToolResults > 0) {
+                            val contentPreview = if (msg.content.length > 100) msg.content.take(100) + "..." else msg.content
+                            appendLine("[工具结果] $contentPreview")
+                            maxToolResults--
                         }
                     }
                 }
             }
+        }
 
-            // BUG-5：原子替换消息列表
-            val newMessages = mutableListOf(AgentMessage(role = "system", content = summary))
-            newMessages.addAll(kept)
+        val newMessages = mutableListOf(AgentMessage(role = "system", content = summary))
+        newMessages.addAll(kept)
+
+        var currentChars = newMessages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
+        if (currentChars > MAX_CONTEXT_CHARS) {
+            var truncated = false
+            for (i in newMessages.indices.reversed()) {
+                val msg = newMessages[i]
+                if (msg.role == "tool" && msg.content.length > 2000) {
+                    val oldLen = msg.content.length
+                    val truncatedContent = msg.content.take(1000) + "\n\n...[输出过长已由系统截断]...\n\n" + msg.content.takeLast(500)
+                    newMessages[i] = msg.copy(content = truncatedContent)
+                    truncated = true
+                    currentChars -= (oldLen - truncatedContent.length)
+                    if (currentChars <= MAX_CONTEXT_CHARS) break
+                }
+            }
+            if (!truncated) {
+                Log.w(TAG, "Cannot compact further for ${context.agentName}: all tool messages already under 2000 chars but total still exceeds ${MAX_CONTEXT_CHARS}")
+            }
+        }
+
+        // 3. 写锁内原子替换，持锁时间极短（仅 clear + addAll）
+        messagesLock.writeLock().lock()
+        try {
             context.messages.clear()
             context.messages.addAll(newMessages)
-
-            Log.d(TAG, "Compacted context for ${context.agentName}: $oldCount -> ${context.messages.size} messages")
         } finally {
             messagesLock.writeLock().unlock()
         }
+
+        Log.d(TAG, "Compacted context for ${context.agentName}: $oldCount -> ${newMessages.size} messages")
     }
 
     /**
@@ -604,55 +722,27 @@ class AgentRunner(
         oldMessages: List<AgentMessage>,
         recentMessages: List<AgentMessage>
     ): Int {
-        // 默认切割点：保留所有 oldMessages
         var safeIndex = oldMessages.size
-        
-        // 情况 1：recentMessages 的第一条是 tool 消息
-        // 需要确保其对应的 assistant 消息在 kept 中
-        val recentFirst = recentMessages.firstOrNull()
-        if (recentFirst?.role == "tool" && recentFirst.toolCallId != null) {
-            val toolCallId = recentFirst.toolCallId
-            // 在 oldMessages 中找到包含此 toolCallId 的 assistant 消息
-            val assistantIndex = oldMessages.indexOfLast { msg ->
-                msg.role == "assistant" && msg.toolCallsJson?.contains(toolCallId) == true
-            }
-            if (assistantIndex >= 0) {
-                // 切割点应该在 assistant 消息之前
-                safeIndex = assistantIndex
-            }
-        }
-        
-        // 情况 2：从 safeIndex 往后扫描，确保没有孤立的 tool 消息
-        // 如果有 tool 消息但没有对应的 assistant 消息，需要继续往前调整
-        // WHY: 添加 previousSafeIndex 守卫，防止 safeIndex 不变时死循环。
-        // 当 orphanTool 的 assistant 恰好在 safeIndex 位置时，safeIndex 不变导致无限循环。
         var previousSafeIndex: Int
         do {
             previousSafeIndex = safeIndex
-            val sliceToCheck = oldMessages.subList(safeIndex, oldMessages.size)
-            val orphanToolIndex = findOrphanToolMessage(sliceToCheck)
-            if (orphanToolIndex == -1) break
+            // 将 safeIndex 之后的旧消息和所有最近消息合并，作为一个完整的“保留列表”检查
+            val kept = oldMessages.subList(safeIndex, oldMessages.size) + recentMessages
+            val orphanToolIndex = findOrphanToolMessage(kept)
             
-            // 找到孤立的 tool 消息，需要往前找到对应的 assistant
-            val orphanTool = sliceToCheck[orphanToolIndex]
-            if (orphanTool.toolCallId != null) {
-                val assistantIndex = oldMessages.subList(0, safeIndex + orphanToolIndex)
-                    .indexOfLast { msg ->
+            if (orphanToolIndex != -1) {
+                val orphanTool = kept[orphanToolIndex]
+                if (orphanTool.toolCallId != null) {
+                    val assistantIndex = oldMessages.subList(0, safeIndex).indexOfLast { msg ->
                         msg.role == "assistant" && msg.toolCallsJson?.contains(orphanTool.toolCallId!!) == true
                     }
-                if (assistantIndex >= 0) {
-                    safeIndex = assistantIndex
-                } else {
-                    // 找不到对应的 assistant，跳过这个 tool 消息
-                    safeIndex = safeIndex + orphanToolIndex
-                    break
+                    if (assistantIndex >= 0) {
+                        safeIndex = assistantIndex
+                    }
                 }
-            } else {
-                break
             }
         } while (safeIndex != previousSafeIndex && safeIndex > 0)
         
-        // 确保 safeIndex 不为负数
         return maxOf(0, safeIndex)
     }
 
@@ -755,9 +845,16 @@ class AgentRunner(
      * - 外部 MCP 工具（包括 remote_http）：全部对 Orchestrator 开放，不做额外过滤
      * - 编排工具（create_agents / assign_task / continue_conversation）单独追加
      *
+     * 结果在单次 runTurn 内缓存：工具集的 hashCode 未变化时直接返回缓存，
+     * 避免 do-while 循环中重复的格式转换和过滤遍历（Bug #12）。
+     *
      * @return 过滤后的 OpenAI 格式工具数组
      */
     fun getFilteredTools(): JSONArray {
+        // 缓存命中检查：工具集未变化时直接返回缓存
+        val currentVersion = mcpRuntimeManager.toolsVersion
+        cachedTools?.let { if (cachedToolsVersion == currentVersion) return it }
+
         val allTools = mcpRuntimeManager.getAllToolsAsOpenAiFormat()
         // 获取内置工具的 serverId（-1L），用于区分内置工具和外部工具
         val builtinServerId = -1L
@@ -801,6 +898,8 @@ class AgentRunner(
             filtered.put(PEER_MESSAGE_TOOL)
         }
 
+        cachedTools = filtered
+        cachedToolsVersion = currentVersion
         return filtered
     }
 

@@ -60,7 +60,10 @@ data class AgentContext(
     val modelConfig: ModelConfig,
     val overrideModelId: String? = null,
     val teamName: String = "",
-    val messages: MutableList<AgentMessage> = ArrayList()  // BUG-5/6：改为 ArrayList，由 AgentRunner 的 messagesLock 保护
+    // WHY: 移除默认值 ArrayList()，强制调用方显式传入。data class 的默认值会在
+    // copy() 时共享同一引用，导致两个 AgentContext 意外共享同一个 messages 列表。
+    // 调用方必须传入独立的 ArrayList，由 AgentRunner.messagesLock 保护。
+    val messages: MutableList<AgentMessage>
 )
 
 /**
@@ -78,11 +81,25 @@ fun AgentContext.buildSystemPrompt(
     mcpToolsJson: String = "[]",
     crossSessionMemory: String = "",
     availableModels: String = "",
+    sandboxPath: String? = null,
 ): String {
+    val sandboxSection = if (!sandboxPath.isNullOrBlank()) {
+        """
+
+## 文件操作沙盒限制（强制）
+
+用户授权的工作目录为：$sandboxPath
+- 所有文件操作（读取、写入、创建、删除、搜索等）必须限制在该目录及其子目录内
+- 禁止访问该目录之外的任何路径（包括 /sdcard、/Download、/Documents 等）
+- 在分配任务给 Sub-Agent 时，必须明确告知沙盒路径，所有文件路径必须以该目录为根
+- 如果任务需要访问沙盒之外的文件，告知用户无法执行并说明原因"""
+    } else ""
+
     return systemPrompt
         .replace("[CROSS_SESSION_MEMORY]", crossSessionMemory)
         .replace("[MCP_TOOLS]", mcpToolsJson)
         .replace("[AVAILABLE_MODELS]", availableModels)
+        .replace("[SANDBOX_PATH]", sandboxSection)
 }
 
 /**
@@ -120,7 +137,11 @@ const val ORCHESTRATOR_SYSTEM_PROMPT = """
 - **关键**：上游结果会自动注入下游 Agent 的上下文，下游 role 中说明如何使用上游产出
 
 ## 可用模型
-如果你需要为某个 Sub-Agent 指定不同于主控 Agent 的大语言模型，请在 `create_agents` 的 `modelConfigId`（填 Provider ID）和 `modelId`（填具体模型标识）字段中指定。当前系统全局支持的模型列表如下：
+为 Sub-Agent 选择模型有两种方式：
+1. **快捷方式（推荐）**：在 `create_agents` 中使用 `modelHint` 字段，系统根据任务类型自动选择最合适的模型。可选值：`reasoning`（推理/编程）、`vision`（图像理解）、`fast`（快速响应）、`large-context`（长文档）、`tools`（工具调用）。
+2. **精确指定**：在 `create_agents` 中通过 `modelConfigId`（填 Provider ID）和 `modelId`（填具体模型标识）显式指定。优先级高于 modelHint。
+
+当前系统全局支持的模型列表如下：
 [AVAILABLE_MODELS]
 
 ## create_agents 字段规范
@@ -170,6 +191,16 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 完成标准：1) 三个文件都已创建 2) HTML 引用了 CSS 和 JS 3) 文件内容符合描述
 ```
 
+✅ 正确格式（包含完成标准的多文件任务）：
+```
+在 /Download/sicbo-web/ 目录下创建一个骰宝网页游戏，包含以下文件：
+1. index.html - 主页面，包含骰子展示区、下注区、历史记录
+2. style.css - 深色主题样式，骰子动画
+3. script.js - 游戏逻辑（掷骰、大小判定、余额管理）
+完成标准：1) 三个文件都已创建 2) HTML 引用了 CSS 和 JS 3) 游戏可正常运行
+注意：请依次创建所有文件，不要只创建第一个就停止。
+```
+
 ❌ 错误格式：
 ```
 扫描下载目录（太模糊，没有路径）
@@ -196,6 +227,17 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 - 验证另一个 Agent 刚写的代码 → create_agents（需要独立视角）
 - 第一次方案完全错误 → create_agents（避免锚定效应）
 
+## 干预时机
+
+当 Sub-Agent 执行时间过长或表现异常时，你应当适时干预：
+- **继续等待**：Agent 正在流式输出、工具返回结果正常、只是任务本身耗时较长
+- **追问进度**：Agent 超过 1 分钟没有新消息，用 continue_conversation 询问进度
+- **接管执行**：Agent 反复说"我马上执行"但不调用工具（超过 2 次），
+  或 Agent 报告完成但文件不存在，考虑自己直接执行或创建新 Agent
+- **不要无限轮询**：不要反复调用 list_directory 等待文件出现。
+  如果 Agent 报告完成但文件不存在，直接用 continue_conversation 追问，
+  而不是自己轮询检查
+
 ## 重要规则
 
 - 必须使用 create_agents、assign_task、continue_conversation 工具，不要手动输出 JSON
@@ -207,14 +249,22 @@ assign_task 的 task 字段是 Agent 收到的完整任务 prompt，必须自包
 - 涉及文件操作时，提示 Agent：文件系统根目录为 "/"，下载目录为 "/Download"
 - **不要催促正在执行的 Agent**：如果工具返回 "Warning: Agent 正在执行任务中"，说明该 Agent 还在工作，请等待其 <task-notification> 到达后再操作它
 - **每个任务只分配给一个 Agent**：不要把同一个任务分配给多个 Agent，也不要让一个 Agent 去执行另一个 Agent 的任务。每个 Agent 有自己的职责，互不干扰
+[SANDBOX_PATH]
 
 ## 结果完整性验证（核心铁律）
 
 收到 Sub-Agent 的 <task-notification> 后，你必须验证结果是否完整：
 - 检查 Sub-Agent 的输出是否完成了任务中要求的所有事项
-- 如果任务要求创建多个文件/组件，确认全部已创建
-- 如果结果明显不完整（例如要求创建3个文件但只提到了1个），使用 continue_conversation 追问或创建新的 Agent 补完
-- 不要因为 Agent 报告 "completed" 就盲目相信任务已完成
+- 如果任务要求创建多个文件/组件，用 list_directory 验证文件是否真的存在
+- 如果结果明显不完整（例如要求创建3个文件但只提到了1个），
+  使用 continue_conversation 追问或创建新的 Agent 补完
+- **不要因为 Agent 报告 "completed" 就盲目相信任务已完成**
+- **验证方法**：调用 list_directory 检查目录内容，调用 read_file 检查文件前几行，
+  确认输出与预期一致
+
+**常见陷阱**：Sub-Agent 说"我马上创建文件"但实际没有调用工具。
+如果你在结果中看到"接下来我会..."、"现在开始创建..."之类的文本
+但没有看到文件创建成功的证据，说明任务未完成，必须追问。
 
 ## 禁止甩锅式委派（核心铁律）
 
@@ -281,11 +331,18 @@ val CREATE_AGENTS_TOOL = JSONObject().apply {
                             })
                             put("modelConfigId", JSONObject().apply {
                                 put("type", "integer")
-                                put("description", "如果要为本 Agent 指定特定的模型，请填写该模型所属的 Provider ID（参考 [AVAILABLE_MODELS] 中的 modelConfigId）。")
+                                put("description", "如果要为本 Agent 精确指定模型，请填写该模型所属的 Provider ID（参考 [AVAILABLE_MODELS] 中的 modelConfigId）。优先级高于 modelHint。")
                             })
                             put("modelId", JSONObject().apply {
                                 put("type", "string")
-                                put("description", "如果要为本 Agent 指定特定的模型，请填写该模型的标识（参考 [AVAILABLE_MODELS] 中的具体名称，例如 'gpt-4o'）。必须与 modelConfigId 配合使用。")
+                                put("description", "如果要为本 Agent 精确指定模型，请填写该模型的标识（参考 [AVAILABLE_MODELS] 中的具体名称，例如 'gpt-4o'）。必须与 modelConfigId 配合使用。")
+                            })
+                            put("modelHint", JSONObject().apply {
+                                put("type", "string")
+                                put("enum", JSONArray().apply {
+                                    put("reasoning").put("vision").put("fast").put("large-context").put("tools")
+                                })
+                                put("description", "模型能力提示（推荐）。系统根据任务类型自动选择最合适的模型：reasoning=推理/编程任务（选择支持 thinking 的模型）；vision=图像理解（选择支持视觉的模型）；fast=快速响应（选择轻量模型）；large-context=长文档处理（选择最大上下文窗口）；tools=工具调用（选择支持 tool use 的模型）。无需手动指定 modelConfigId/modelId。")
                             })
                         })
                         put("required", JSONArray().put("name").put("role"))

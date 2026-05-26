@@ -457,13 +457,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val name = function.optString("name")
                 val argsStr = function.optString("arguments")
                 val callId = toolCall.optString("id")
-                
+
                 val serverId = runtimeManager.findServerIdForTool(name)
                 if (serverId != null) {
                     try {
                         val argsJson = org.json.JSONObject(argsStr)
                         val result = runtimeManager.callTool(serverId, name, argsJson, sessionId)
-                        
+
                         repository.insertMessage(
                             Message(
                                 sessionId = sessionId,

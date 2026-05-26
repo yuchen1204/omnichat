@@ -206,6 +206,8 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        runtimeManager.stopAll()
+        // DO NOT call runtimeManager.stopAll() here! McpRuntimeManager is a singleton 
+        // shared across the application. If its scope is cancelled, MCP tools will permanently 
+        // break until app restart.
     }
 }

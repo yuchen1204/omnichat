@@ -1179,8 +1179,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
         }
         .stateIn(scope, SharingStarted.Eagerly, builtinTools.filter { builtinToolGroups[it.name] == "core" || builtinToolGroups[it.name] in listOf("ui_appearance", "efficiency", "memory") })
 
+    private val _toolsVersion = AtomicLong(0)
+    val toolsVersion: Long get() = _toolsVersion.get()
+
     val allTools: StateFlow<List<McpTool>> = combine(serverStates, enabledBuiltinTools) { states, builtins ->
         val otherTools = states.filter { it.key != BUILTIN_SERVER_ID }.values.flatMap { it.tools }
+        _toolsVersion.incrementAndGet()
         builtins + otherTools
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -1437,7 +1441,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     fun stopAll() {
         channels.keys.toList().forEach { stopServer(it) }
-        scope.cancel()
     }
 
     /**
