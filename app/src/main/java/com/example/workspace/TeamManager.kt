@@ -77,7 +77,7 @@ class TeamManager(
 
     private val lifecycle = AgentLifecycle(repository, messageBus, taskManager, config, agentRegistry, taskRegistry, onError)
     private val executionLoops = AgentExecutionLoops(messageBus, taskManager, lifecycle, mcpRuntimeManager, onAgentStatusChanged, onError)
-    private val orchestratorTools = OrchestratorTools(this, repository, messageBus, mcpRuntimeManager, onAgentStatusChanged)
+    private val orchestratorTools = OrchestratorTools(this, repository, messageBus, mcpRuntimeManager, agentRegistry, onAgentStatusChanged)
 
     // ─── 团队状态（StateFlow 驱动 UI）───
 

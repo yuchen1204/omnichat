@@ -30,6 +30,8 @@ class OrchestratorTools(
     private val repository: AppRepository,
     private val messageBus: MessageBus,
     private val mcpRuntimeManager: com.example.mcp.McpRuntimeManager,
+    // WHY: 支持 create_agents 中 type 字段，通过注册中心查找预定义 Agent 的 systemPrompt 和 modelHint
+    private val agentRegistry: AgentRegistry,
     private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
 ) {
     companion object {
@@ -243,23 +245,11 @@ class OrchestratorTools(
             }
         }
 
-        // 检查 Agent 是否正在忙碌（执行任务中）
-        val teammateState = teamState?.teammates?.get(to)
-        if (teammateState != null && teammateState.status == AgentStatus.STREAMING) {
-            Log.w(TAG, "assign_task to busy agent '$to', task will be queued")
-            // 仍然发送任务，但返回警告
-            messageBus.send(
-                to,
-                TeamMessage.TaskAssignment(
-                    from = ORCHESTRATOR_NAME,
-                    taskId = "",
-                    subject = task,
-                    description = context,
-                )
-            )
-            return "Warning: Agent '$to' 正在执行任务中，新任务已加入队列，但可能不会立即被处理。建议等待其完成（收到 <task-notification>）后再分配新任务。"
-        }
-
+        // BUG-026 修复：移除状态检查，直接发送任务。
+        // 原实现检查 Agent 是否正在忙碌（STREAMING 状态），但状态检查和消息发送之间
+        // 存在时间窗口，Agent 可能在检查后立即变为空闲。
+        // 修复：直接发送任务，让 Agent 自己处理并发。MessageBus 的队列机制会确保
+        // 任务被正确投递，Agent 的执行循环会按顺序处理收到的任务。
         messageBus.send(
             to,
             TeamMessage.TaskAssignment(
@@ -332,22 +322,38 @@ class OrchestratorTools(
             val name = agentObj.optString("name")
             if (name.isEmpty()) continue
 
+            // WHY: 解析 type 字段，通过 AgentRegistry 查找预定义 Agent 的 systemPrompt 和 modelHint，
+            // 实现"类型化 Agent"——Orchestrator 只需指定 type 即可复用注册中心的完整配置
+            val type = agentObj.optString("type", "")
+            val agentDef = if (type.isNotEmpty()) agentRegistry.get(type) else null
+
+            // WHY: 解析 spawnMode 字段，支持 SPAWN（全新上下文）和 FORK（继承父级历史）两种模式
+            val spawnModeStr = agentObj.optString("spawnMode", "spawn")
+            val spawnMode = runCatching { SpawnMode.valueOf(spawnModeStr.uppercase()) }.getOrNull() ?: SpawnMode.SPAWN
+
+            val deps = agentObj.optJSONArray("dependsOn")
+                ?.let { arr ->
+                    (0 until arr.length()).mapNotNull {
+                        arr.optString(it).takeIf { s -> s.isNotEmpty() }
+                    }
+                }
+                ?: emptyList()
+
             agentSpecs.add(
                 AgentSpec(
                     name = name,
                     role = agentObj.optString("role", ""),
-                    systemPrompt = agentObj.optString("systemPrompt", ""),
+                    // type 存在时优先使用注册中心的 systemPrompt，否则用 JSON 中的值
+                    systemPrompt = agentDef?.systemPrompt?.takeIf { it.isNotEmpty() }
+                        ?: agentObj.optString("systemPrompt", ""),
                     modelConfigId = agentObj.optLong("modelConfigId", -1)
                         .let { if (it == -1L) null else it },
                     modelId = agentObj.optString("modelId").takeIf { it.isNotEmpty() },
-                    modelHint = parseModelHint(agentObj.optString("modelHint")),
-                    dependsOn = agentObj.optJSONArray("dependsOn")
-                        ?.let { arr ->
-                            (0 until arr.length()).mapNotNull {
-                                arr.optString(it).takeIf { s -> s.isNotEmpty() }
-                            }
-                        }
-                        ?: emptyList(),
+                    // type 存在时优先使用注册中心的 modelHint，否则解析 JSON 中的值
+                    modelHint = agentDef?.modelHint
+                        ?: parseModelHint(agentObj.optString("modelHint")),
+                    dependsOn = deps,
+                    spawnMode = spawnMode,
                 )
             )
         }
@@ -408,7 +414,8 @@ class OrchestratorTools(
                 systemPrompt = "执行任务: $role",
                 modelConfigId = null,
                 modelId = null,
-                dependsOn = emptyList()
+                dependsOn = emptyList(),
+                spawnMode = SpawnMode.SPAWN,
             )
         }.filter { it.name.isNotEmpty() }
 
@@ -440,15 +447,24 @@ class OrchestratorTools(
                 val name = agentObj.optString("name")
                 if (name.isEmpty()) continue
 
+                // WHY: 与 parseAgentSpecs 保持一致，支持 type 和 spawnMode 字段
+                val type = agentObj.optString("type", "")
+                val agentDef = if (type.isNotEmpty()) agentRegistry.get(type) else null
+
+                val spawnModeStr = agentObj.optString("spawnMode", "spawn")
+                val spawnMode = runCatching { SpawnMode.valueOf(spawnModeStr.uppercase()) }.getOrNull() ?: SpawnMode.SPAWN
+
                 agents.add(
                     AgentSpec(
                         name = name,
                         role = agentObj.optString("role"),
-                        systemPrompt = agentObj.optString("systemPrompt", ""),
+                        systemPrompt = agentDef?.systemPrompt?.takeIf { it.isNotEmpty() }
+                            ?: agentObj.optString("systemPrompt", ""),
                         modelConfigId = agentObj.optLong("modelConfigId", -1)
                             .let { if (it == -1L) null else it },
                         modelId = agentObj.optString("modelId").takeIf { it.isNotEmpty() },
-                        modelHint = parseModelHint(agentObj.optString("modelHint")),
+                        modelHint = agentDef?.modelHint
+                            ?: parseModelHint(agentObj.optString("modelHint")),
                         dependsOn = agentObj.optJSONArray("dependsOn")
                             ?.let { arr ->
                                 (0 until arr.length()).mapNotNull {
@@ -456,6 +472,7 @@ class OrchestratorTools(
                                 }
                             }
                             ?: emptyList(),
+                        spawnMode = spawnMode,
                     )
                 )
             }

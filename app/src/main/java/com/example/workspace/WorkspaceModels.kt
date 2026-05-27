@@ -134,8 +134,10 @@ data class TeammateState(
 sealed class WaitResult {
     /** 收到关闭请求 */
     data class ShutdownRequest(val request: TeamMessage.ShutdownRequest) : WaitResult()
-    /** 收到新消息 */
+    /** 收到新消息（来自 Orchestrator 的任务分配） */
     data class NewMessage(val message: String, val from: String) : WaitResult()
+    /** 收到其他 Sub-Agent 的协作消息 */
+    data class PeerMessage(val message: String, val from: String) : WaitResult()
     /** 认领了新任务 */
     data class TaskClaimed(val taskDescription: String) : WaitResult()
     /** 已中止 */
@@ -152,6 +154,16 @@ sealed class WaitResult {
 enum class TaskMode {
     DIRECT,
     CLAIM
+}
+
+/**
+ * Agent 生成模式。
+ * SPAWN: 全新上下文（默认）
+ * FORK: 继承父级的对话历史和系统提示
+ */
+enum class SpawnMode {
+    SPAWN,
+    FORK
 }
 
 /**
@@ -202,6 +214,8 @@ data class AgentSpec(
     val modelId: String? = null,
     val modelHint: ModelHint? = null,
     val dependsOn: List<String> = emptyList(),
+    // WHY: 支持 FORK 模式，允许新 Agent 继承父级上下文，减少重复提示词传递
+    val spawnMode: SpawnMode = SpawnMode.SPAWN,
 )
 
 // ═══════════════════════════════════════════════════════════════════════════════
