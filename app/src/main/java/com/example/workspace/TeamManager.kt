@@ -139,6 +139,10 @@ class TeamManager(
 
         Log.d(TAG, "Creating team: $teamName")
 
+        // WHY: 确保 AgentRegistry 已加载最新定义，Orchestrator 调用 create_agents 时能查到 Agent 预设
+        agentRegistry.loadAll()
+        agentRegistry.loadFromPresets(agentPresets)
+
         lifecycle.crossSessionMemoryText = lifecycle.loadCrossSessionMemory()
 
         val orchestratorIdentity = TeammateIdentity(
@@ -460,6 +464,8 @@ class TeamManager(
             }
             sandboxHook = null
 
+            // WHY: 清空任务注册中心，避免残留任务状态影响下次创建
+            taskRegistry.clear()
             isCompleted.set(false)
             cachedAvailableModelsStr = ""
             _teamState.value = null
@@ -508,6 +514,9 @@ class TeamManager(
      * 检测完成标记。
      */
     fun isCompletionMarker(text: String): Boolean = executionLoops.isCompletionMarker(text)
+
+    /** 获取 TaskRegistry 供 UI 观察任务状态 */
+    fun getTaskRegistry(): TaskRegistry = taskRegistry
 
     // ═══════════════════════════════════════════════════════════════════════════════
     // 内部方法（供子模块调用）
