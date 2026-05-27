@@ -207,6 +207,10 @@ class AgentLifecycle(
         modelConfigId: Long? = null,
         overrideModelId: String? = null,
         modelHint: ModelHint? = null,
+        // WHY: 支持 FORK 模式，允许新 Agent 继承父级的对话历史和系统提示，减少重复提示词传递
+        spawnMode: SpawnMode = SpawnMode.SPAWN,
+        // WHY: FORK 模式下必须提供父级 AgentRunner，用于获取历史和系统提示
+        parentRunner: AgentRunner? = null,
         existingNames: Set<String>,
         parentScope: CoroutineScope,
         createRunner: suspend (AgentContext, Boolean) -> AgentRunner,
@@ -264,17 +268,33 @@ class AgentLifecycle(
             parentSessionId = "leader",
         )
 
-        // 创建 AgentContext
-        // WHY: 显式传入 ArrayList()，避免 data class 默认值在 copy() 时共享同一引用
-        val context = AgentContext(
-            agentName = uniqueName,
-            isOrchestrator = false,
-            systemPrompt = finalSystemPrompt.ifEmpty { DEFAULT_TEAMMATE_PROMPT },
-            modelConfig = actualModelConfig,
-            overrideModelId = actualOverrideModelId,
-            teamName = teamName,
-            messages = ArrayList(),
-        )
+        // 创建 AgentContext（根据 spawnMode 决定是否继承父级上下文）
+        // WHY: FORK 模式复用父级对话历史和系统提示，SPAWN 模式使用全新上下文
+        val context = when (spawnMode) {
+            SpawnMode.FORK -> {
+                requireNotNull(parentRunner) { "Fork mode requires parentRunner" }
+                AgentContext(
+                    agentName = uniqueName,
+                    isOrchestrator = false,
+                    systemPrompt = parentRunner.getSystemPrompt(),
+                    modelConfig = actualModelConfig,
+                    overrideModelId = actualOverrideModelId,
+                    teamName = teamName,
+                    messages = ArrayList(parentRunner.getHistory()),
+                )
+            }
+            SpawnMode.SPAWN -> {
+                AgentContext(
+                    agentName = uniqueName,
+                    isOrchestrator = false,
+                    systemPrompt = finalSystemPrompt.ifEmpty { DEFAULT_TEAMMATE_PROMPT },
+                    modelConfig = actualModelConfig,
+                    overrideModelId = actualOverrideModelId,
+                    teamName = teamName,
+                    messages = ArrayList(),
+                )
+            }
+        }
 
         // 创建 AgentRunner（子 Agent 禁用编排工具）
         val runner = createRunner(context, true)
@@ -492,4 +512,49 @@ class AgentLifecycle(
     // ═══════════════════════════════════════════════════════════════════════════════
     // 默认 Teammate 系统提示已迁移到顶层 const DEFAULT_TEAMMATE_PROMPT
     // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 从 Room DB 恢复 Agent 上下文。
+     *
+     * 用于工作区恢复场景：从持久化的 WorkspaceMessage 中重建 Agent 的对话历史。
+     *
+     * @param agentName Agent 名称
+     * @param sessionId 工作区会话 ID
+     * @param systemPrompt 系统提示（可选，为空时使用默认提示）
+     * @return 恢复的 AgentContext，若无消息则返回 null
+     */
+    suspend fun restoreAgentContext(
+        agentName: String,
+        sessionId: Long,
+        systemPrompt: String = "",
+    ): AgentContext? {
+        // WHY: 通过 DAO 查询该 Agent 在指定会话中的所有消息，按时间戳升序排列
+        val messages = repository.getWorkspaceMessagesForAgent(sessionId, agentName)
+        if (messages.isEmpty()) return null
+
+        val orchestratorRunner = runners[ORCHESTRATOR_NAME]
+        val teamName = orchestratorRunner?.getTeamName() ?: "default"
+
+        return AgentContext(
+            agentName = agentName,
+            isOrchestrator = false,
+            systemPrompt = systemPrompt.ifEmpty { DEFAULT_TEAMMATE_PROMPT },
+            modelConfig = orchestratorRunner?.getModelConfig()
+                ?: error("No orchestrator config available"),
+            teamName = teamName,
+            // WHY: 将持久化的 WorkspaceMessage 转换为内存中的 AgentMessage 列表
+            // WorkspaceMessage 无 source 字段，默认为空字符串
+            messages = ArrayList(messages.map { msg ->
+                AgentMessage(
+                    role = msg.role,
+                    content = msg.content,
+                    toolCallId = msg.toolCallId,
+                    toolCallsJson = msg.toolCallsJson,
+                    isIntervention = msg.isIntervention,
+                    imagePath = msg.imagePath,
+                    timestamp = msg.timestamp,
+                )
+            }),
+        )
+    }
 }

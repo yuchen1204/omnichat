@@ -303,6 +303,17 @@ interface WorkspaceMessageDao {
 
     @Query("DELETE FROM workspace_messages WHERE agentInstanceId = :agentInstanceId")
     suspend fun deleteByAgentInstance(agentInstanceId: Long)
+
+    // WHY: 通过 Agent 名称查询消息（用于 transcript 恢复场景）。
+    // agent_instances.agentName 是 String，workspace_messages.agentInstanceId 是 Long，
+    // 需要 JOIN 两个表来按名称查找消息。
+    @Query("""
+        SELECT wm.* FROM workspace_messages wm
+        INNER JOIN agent_instances ai ON wm.agentInstanceId = ai.id
+        WHERE wm.workspaceSessionId = :sessionId AND ai.agentName = :agentName
+        ORDER BY wm.timestamp ASC
+    """)
+    suspend fun getMessagesForAgent(sessionId: Long, agentName: String): List<WorkspaceMessage>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

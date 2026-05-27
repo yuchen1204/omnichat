@@ -117,12 +117,13 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun updateWorkspaceSessionStatus(id: Long, isActive: Boolean, lastActiveAt: Long) = 
         workspaceSessionDao.updateStatus(id, isActive, lastActiveAt)
     suspend fun deleteWorkspaceSession(id: Long) {
-        // 级联删除：先删除关联的消息和实例
-        workspaceMessageDao.deleteByWorkspaceSession(id)
-        agentInstanceDao.deleteByWorkspaceSession(id)
-        // 清理关联的团队任务，防止数据库膨胀（BUG-8）
-        teamTaskDao.deleteAllForTeam("workspace_$id")
-        workspaceSessionDao.deleteById(id)
+        // 级联删除：使用事务保证原子性（BUG-003）
+        db.withTransaction {
+            workspaceMessageDao.deleteByWorkspaceSession(id)
+            agentInstanceDao.deleteByWorkspaceSession(id)
+            teamTaskDao.deleteAllForTeam("workspace_$id")
+            workspaceSessionDao.deleteById(id)
+        }
     }
 
     // Agent Instances
@@ -138,6 +139,10 @@ class AppRepository(private val db: AppDatabase) {
         workspaceMessageDao.getMessagesByAgent(agentId)
     suspend fun insertWorkspaceMessage(message: WorkspaceMessage): Long = workspaceMessageDao.insertMessage(message)
     suspend fun deleteWorkspaceMessagesBySession(wsId: Long) = workspaceMessageDao.deleteByWorkspaceSession(wsId)
+
+    // WHY: 通过 Agent 名称查询消息（transcript 恢复用），JOIN agent_instances 解析名称到 ID
+    suspend fun getWorkspaceMessagesForAgent(sessionId: Long, agentName: String): List<WorkspaceMessage> =
+        workspaceMessageDao.getMessagesForAgent(sessionId, agentName)
 
     /**
      * 原子地替换工作区的所有消息（先删除旧消息，再插入新消息）。
@@ -188,9 +193,12 @@ class AppRepository(private val db: AppDatabase) {
 
     /**
      * 查找可认领的任务（带 Agent 匹配）。
+     *
+     * 使用 findClaimableTasks（plural）获取候选列表，在应用层过滤 blockedBy。
+     * 不再使用已废弃的 findClaimableTask（依赖 SQL 中 `blockedBy = ''` 检查）。
      */
-    suspend fun findClaimableTeamTask(teamName: String, agentName: String): TeamTask? = 
-        teamTaskDao.findClaimableTask(teamName, agentName)
+    suspend fun findClaimableTeamTask(teamName: String, agentName: String): TeamTask? =
+        teamTaskDao.findClaimableTasks(teamName, agentName).firstOrNull()
 
     /**
      * 插入新任务。
