@@ -18,7 +18,7 @@ class BigramTokenizeTest {
                     buffer.clear()
                 }
                 tokens.add(ch.toString())
-            } else if (ch.isWhitespace() || ch in "，。！？、；：""''（）【】《》,.!?;:\"'()[]<>") {
+            } else if (ch.isWhitespace() || ch in "，。！？、；：\u201c\u201d\u2018\u2019（）【】《》,.!?;:\"'()[]<>") {
                 if (buffer.isNotEmpty()) {
                     tokens.add(buffer.toString().lowercase())
                     buffer.clear()
@@ -31,10 +31,17 @@ class BigramTokenizeTest {
             tokens.add(buffer.toString().lowercase())
         }
 
-        // Add character bigrams for CJK characters
-        val cjkChars = text.filter { it in cjkRange }
-        for (i in 0 until cjkChars.length - 1) {
-            tokens.add("${cjkChars[i]}${cjkChars[i + 1]}")
+        // 中文字符 bigram（仅对原文中相邻的 CJK 字符生成）
+        var prevCjk: Char? = null
+        for (ch in text) {
+            if (ch in cjkRange) {
+                if (prevCjk != null) {
+                    tokens.add("$prevCjk$ch")
+                }
+                prevCjk = ch
+            } else {
+                prevCjk = null
+            }
         }
 
         return tokens
@@ -63,6 +70,25 @@ class BigramTokenizeTest {
         assertTrue("kotlin" in tokens)
         assertTrue("用户" in tokens)
         assertTrue("使用" in tokens)
+    }
+
+    @Test
+    fun `cjk characters separated by non-cjk do not produce false bigrams`() {
+        // "户" and "编" are separated by "Kotlin" — must NOT produce "户编"
+        val tokens = bigramTokenize("用户Kotlin编程")
+        assertTrue("用户" in tokens)
+        assertTrue("编程" in tokens)
+        assertTrue("kotlin" in tokens)
+        assertFalse("户编 should not be a bigram across non-CJK boundary", "户编" in tokens)
+        assertFalse("用K should not be a bigram", "用编" in tokens)
+    }
+
+    @Test
+    fun `adjacent cjk still produces bigrams`() {
+        val tokens = bigramTokenize("用户编程")
+        assertTrue("用户" in tokens)
+        assertTrue("户编" in tokens)
+        assertTrue("编程" in tokens)
     }
 
     @Test

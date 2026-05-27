@@ -1908,7 +1908,7 @@ object BuiltinToolHandler {
                     buffer.clear()
                 }
                 tokens.add(ch.toString())
-            } else if (ch.isWhitespace() || ch in "，。！？、；：""''（）【】《》,.!?;:\"'()[]<>") {
+            } else if (ch.isWhitespace() || ch in "，。！？、；：\u201c\u201d\u2018\u2019（）【】《》,.!?;:\"'()[]<>") {
                 if (buffer.isNotEmpty()) {
                     tokens.add(buffer.toString().lowercase())
                     buffer.clear()
@@ -1921,10 +1921,20 @@ object BuiltinToolHandler {
             tokens.add(buffer.toString().lowercase())
         }
 
-        // 中文字符 bigram
-        val cjkChars = text.filter { it in cjkRange }
-        for (i in 0 until cjkChars.length - 1) {
-            tokens.add("${cjkChars[i]}${cjkChars[i + 1]}")
+        // 中文字符 bigram（仅对原文中相邻的 CJK 字符生成）
+        // WHY: 原实现用 text.filter 提取所有 CJK 字符再拼接生成 bigram，
+        // 导致 "用户Kotlin编程" 产生虚假 bigram "户编"（"户"和"编"被 "Kotlin" 隔开）。
+        // 改为遍历原文，只对连续的 CJK 字符生成 bigram。
+        var prevCjk: Char? = null
+        for (ch in text) {
+            if (ch in cjkRange) {
+                if (prevCjk != null) {
+                    tokens.add("$prevCjk$ch")
+                }
+                prevCjk = ch
+            } else {
+                prevCjk = null
+            }
         }
 
         return tokens
