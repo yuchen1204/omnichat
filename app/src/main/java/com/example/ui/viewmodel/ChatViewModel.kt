@@ -698,7 +698,7 @@ Rules:
             if (daysSince <= 0) continue
             val newConfidence = maxOf(1, memory.confidence - daysSince)
             if (newConfidence != memory.confidence) {
-                repository.updateMemory(memory.copy(confidence = newConfidence))
+                repository.updateMemory(memory.copy(confidence = newConfidence, lastReinforcedAt = now))
             }
         }
     }
