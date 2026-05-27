@@ -1,6 +1,18 @@
 package com.example.workspace
 
 /**
+ * Agent execution mode.
+ *
+ * Controls tool filtering strategy for this agent.
+ */
+enum class AgentMode {
+    /** Normal mode: filter by allowedTools/disallowedTools */
+    NORMAL,
+    /** Coordinator mode: only orchestration tools available */
+    COORDINATOR
+}
+
+/**
  * Agent definition.
  *
  * Describes the static configuration of an Agent, including name, system prompt, tool permissions, etc.
@@ -25,7 +37,9 @@ data class AgentDefinition(
     val disallowedTools: List<String>? = null,
     val isOrchestrator: Boolean = false,
     val maxToolIterations: Int = 50,
-    val description: String = ""
+    val description: String = "",
+    // 模式字段决定工具过滤策略；默认 NORMAL 保持向后兼容
+    val mode: AgentMode = AgentMode.NORMAL
 ) {
     /**
      * Filter tool list.
