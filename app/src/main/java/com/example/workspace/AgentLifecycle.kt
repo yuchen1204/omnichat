@@ -111,9 +111,7 @@ internal const val DEFAULT_TEAMMATE_PROMPT = """
 
 ## 文件系统环境
 本设备为 Android 系统。文件系统工具的根目录为 "/"，对应设备存储根路径。
-- 下载目录: /Download
-- 文档目录: /Documents
-- 图片目录: /Pictures
+[SANDBOX_PATH]
 
 可用工具：
 [MCP_TOOLS]
@@ -143,6 +141,10 @@ class AgentLifecycle(
     private val messageBus: MessageBus,
     private val taskManager: TaskManager,
     private val config: WorkspaceConfig,
+    // WHY: AgentRegistry 提供 AgentDefinition 查找，替代 spawnTeammate 中的 preset 直接查询
+    private val agentRegistry: AgentRegistry,
+    // WHY: TaskRegistry 管理 AgentTask 生命周期，cleanupAll 时统一终止和清理
+    private val taskRegistry: TaskRegistry,
     private val onError: (message: String) -> Unit,
 ) {
     companion object {
@@ -226,18 +228,25 @@ class AgentLifecycle(
         val uniqueName = generateUniqueName(name, existingNames)
             .take(config.maxAgentNameLength)
 
-        // 优先匹配 AgentPreset
-        val presetMatch = repository.getAllAgentPresets().find { it.name == uniqueName }
+        // WHY: 优先从 AgentRegistry 查找 AgentDefinition（JSON 文件 + Room 预设），
+        // 其次使用显式传入的 systemPrompt，最后回退到默认提示。
+        // 替代原来的直接 repository.getAllAgentPresets() 查询，统一由注册中心管理。
+        val agentDef = agentRegistry.get(uniqueName)
         val finalSystemPrompt = (
-            presetMatch?.systemPrompt?.takeIf { it.isNotEmpty() } ?: systemPrompt
+            agentDef?.systemPrompt?.takeIf { it.isNotEmpty() }
+                ?: systemPrompt.takeIf { it.isNotEmpty() }
+                ?: ""
         ).take(config.maxSystemPromptLength)
 
         // 确定模型配置
+        // WHY: AgentDefinition 不含 modelConfigId，仍需从 Room preset 查找模型配置 ID
+        val presetModelConfigId = repository.getAllAgentPresets()
+            .find { it.name == uniqueName }?.modelConfigId
         val orchestratorRunner = runners[ORCHESTRATOR_NAME]
             ?: error("无法生成 Sub-Agent '$uniqueName'：Orchestrator runner 不存在（团队可能已被销毁）")
         val orchestratorConfig = orchestratorRunner.getModelConfig()
         val selection = modelSelector.resolve(
-            presetModelConfigId = presetMatch?.modelConfigId,
+            presetModelConfigId = presetModelConfigId,
             explicitConfigId = modelConfigId,
             explicitModelId = overrideModelId,
             modelHint = modelHint,
@@ -374,20 +383,49 @@ class AgentLifecycle(
      * 清理所有资源。
      *
      * 先取消所有协程作用域，再清理映射和 runner。
+     *
+     * BUG-025 修复：ConcurrentHashMap 的 forEach 是弱一致性的，
+     * 在遍历过程中如果其他线程修改了 map，可能不会反映在遍历中。
+     * 修复：先复制 keys/values 到独立列表，再遍历复制的列表。
      */
     internal suspend fun cleanupAll() {
-        // WHY: 先取消所有 scope，再 join 所有 job，确保协程正常退出（Fix #4）
-        teammateScopes.values.forEach { it.cancel() }
-        teammateJobs.forEach { (_, job) ->
+        // WHY: 先通过 TaskRegistry 终止所有注册的 AgentTask，确保任务级资源被释放
+        taskRegistry.killAll()
+
+        // WHY: 先复制 keys 到独立列表，再遍历取消。
+        // ConcurrentHashMap.forEach 是弱一致性的，遍历期间其他线程的修改可能不会被看到。
+        val scopeKeys = teammateScopes.keys.toList()
+        for (key in scopeKeys) {
+            teammateScopes[key]?.cancel()
+        }
+        
+        // 复制 jobs 到独立列表再 join
+        val jobEntries = teammateJobs.entries.toList()
+        for ((_, job) in jobEntries) {
             try { job.join() } catch (_: Exception) {}
         }
+        
         teammateScopes.clear()
         teammateJobs.clear()
-        runners.values.forEach { it.dispose() }
+        
+        // 复制 runners 到独立列表再 dispose
+        val runnerEntries = runners.entries.toList()
+        for ((_, runner) in runnerEntries) {
+            runner.dispose()
+        }
         runners.clear()
+        
         messageBus.clear()
-        agentCompletionDeferreds.values.forEach { it.complete(Unit) }
+        
+        // 复制 deferreds 到独立列表再 complete
+        val deferredEntries = agentCompletionDeferreds.entries.toList()
+        for ((_, deferred) in deferredEntries) {
+            deferred.complete(Unit)
+        }
         agentCompletionDeferreds.clear()
+        
+        // WHY: 清理 TaskRegistry 注册信息，在所有协程取消和 runner dispose 之后
+        taskRegistry.clear()
         colorIndex.set(0)
         crossSessionMemoryText = ""
     }

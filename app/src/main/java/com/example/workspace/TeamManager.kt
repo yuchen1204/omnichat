@@ -45,6 +45,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @property taskManager 任务管理器
  * @property parentScope 父协程作用域
  * @property config 工作区配置
+ * @property agentRegistry Agent 定义注册中心
+ * @property taskRegistry 任务注册中心
  * @property onAgentCreated Agent 创建回调
  * @property onStreamChunk 流式 chunk 回调
  * @property onAgentStatusChanged Agent 状态变更回调
@@ -58,6 +60,9 @@ class TeamManager(
     private val taskManager: TaskManager,
     private val parentScope: CoroutineScope,
     private val config: WorkspaceConfig = WorkspaceConfig(),
+    // WHY: 由 WorkspaceViewModel 创建并传入，统一管理 Agent 定义和任务生命周期
+    private val agentRegistry: AgentRegistry,
+    private val taskRegistry: TaskRegistry,
     private val onAgentCreated: (agentName: String, isOrchestrator: Boolean) -> Unit,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
     private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
@@ -70,7 +75,7 @@ class TeamManager(
 
     // ─── 子模块 ───
 
-    private val lifecycle = AgentLifecycle(repository, messageBus, taskManager, config, onError)
+    private val lifecycle = AgentLifecycle(repository, messageBus, taskManager, config, agentRegistry, taskRegistry, onError)
     private val executionLoops = AgentExecutionLoops(messageBus, taskManager, lifecycle, mcpRuntimeManager, onAgentStatusChanged, onError)
     private val orchestratorTools = OrchestratorTools(this, repository, messageBus, mcpRuntimeManager, onAgentStatusChanged)
 
@@ -784,7 +789,8 @@ class TeamManager(
                     if (result.isNotBlank()) {
                         val dependents = allOriginalAgents.filter { spec -> specName in spec.dependsOn }
                         for (dep in dependents) {
-                            val depActualName = specToActualName[dep.name]
+                            // BUG-013: 使用全局 map 查找下游 Agent，避免跨批次时 batch-local map 找不到
+                            val depActualName = globalSpecToActual[dep.name]
                             if (depActualName == null) continue
                             messageBus.send(
                                 depActualName,

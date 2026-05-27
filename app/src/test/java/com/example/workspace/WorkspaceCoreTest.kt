@@ -66,6 +66,8 @@ class WorkspaceCoreTest {
             messageBus = messageBus,
             taskManager = taskManager,
             parentScope = kotlinx.coroutines.MainScope(),
+            agentRegistry = AgentRegistry(context),
+            taskRegistry = TaskRegistry(),
             onAgentCreated = { _, _ -> },
             onStreamChunk = { _, _ -> },
             onAgentStatusChanged = { _, _ -> },

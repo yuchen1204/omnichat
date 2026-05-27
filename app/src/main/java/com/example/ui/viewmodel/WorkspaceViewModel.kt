@@ -36,6 +36,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     val repository = AppRepository(database)
     private val messageBus = MessageBus()
     private val taskManager = TaskManager(repository.teamTaskDao)
+    // WHY: AgentRegistry 和 TaskRegistry 由 ViewModel 持有，生命周期与 ViewModel 一致，
+    // 每次 createTeamManager 时传入 TeamManager → AgentLifecycle
+    private val agentRegistry = AgentRegistry(application).apply { loadAll() }
+    private val taskRegistry = TaskRegistry()
     private var teamManager: TeamManager? = null
 
     // WHY: 每次 submitTask/loadSessionHistory 都会启动新的 collect 协程。
@@ -361,8 +365,9 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     ?: allConfigs.firstOrNull()
                     ?: throw IllegalStateException("No model configs available")
 
-                // 2. 获取 presets
+                // 2. 获取 presets 并加载到 AgentRegistry
                 val presets = repository.getAllAgentPresets()
+                agentRegistry.loadFromPresets(presets)
 
                 // 3. 重置状态
                 _agentStreamBuffers.value = emptyMap()
@@ -821,6 +826,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
                 if (orchestratorConfig != null) {
                     val presets = repository.getAllAgentPresets()
+                    agentRegistry.loadFromPresets(presets)
 
                     teamManager = createTeamManager(workspaceSessionId)
 
@@ -1205,6 +1211,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             messageBus = messageBus,
             taskManager = taskManager,
             parentScope = teamScope,
+            agentRegistry = agentRegistry,
+            taskRegistry = taskRegistry,
             onAgentCreated = { agentName, isOrchestrator ->
                 // BUG-10：恢复模式下不覆盖 _agentTabs，避免破坏已从 DB 恢复的 tabs
                 if (!isRestoringSession) {
