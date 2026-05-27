@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -74,6 +75,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isMemorySyncing by mutableStateOf(false)
         private set
 
+    // BUG-016: 使用 Mutex 替代非原子的 boolean 检查，防止并发 triggerMemorySync
+    private val memorySyncMutex = kotlinx.coroutines.sync.Mutex()
+
     // Temporary list of models fetched from endpoints
     var fetchedModels by mutableStateOf<List<FetchedModel>>(emptyList())
         private set
@@ -85,15 +89,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     /** 切换当前使用的 Provider 和模型，持久化到数据库，重启后生效 */
     fun setSessionOverrideModel(provider: ModelConfig, modelId: String) {
         viewModelScope.launch {
-            // 先把所有 provider 的 isDefaultProvider 清掉
-            val allConfigs = repository.getAllConfigs()
-            allConfigs.forEach { config ->
-                if (config.isDefaultProvider) {
-                    repository.updateConfig(config.copy(isDefaultProvider = false))
-                }
-            }
-            // 将选中的 provider 设为默认，并更新 selectedModelId
-            repository.updateConfig(provider.copy(isDefaultProvider = true, selectedModelId = modelId))
+            // BUG-017: 使用 DAO 的 @Transaction 方法保证原子性，避免手动迭代的竞态窗口
+            // 先更新 selectedModelId，再切换默认 provider
+            repository.updateConfig(provider.copy(selectedModelId = modelId))
+            repository.setDefaultProvider(provider.id)
         }
     }
 
@@ -323,12 +322,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0) {
         val messageHistory = repository.getMessagesBySession(sessionId)
         val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
-        
+
         isStreaming = true
         currentStreamingThinking = ""
         currentStreamingBody = ""
         isThinkingFinished = true
-        
+
+        // BUG-015: 使用 try/finally 确保 isStreaming 在所有路径（包括异常）上都被重置
+        try {
         var accumulatedText = ""
         var lastUiUpdateTime = 0L
         val accumulatedToolCalls = mutableMapOf<Int, org.json.JSONObject>()
@@ -366,7 +367,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 if (chunk.startsWith("ERROR:")) {
                     accumulatedText += "\n$chunk"
                     updateStreamingStates(accumulatedText)
-                    isStreaming = false
                     errorReceived = true
                 } else if (chunk.startsWith("INFO:")) {
                     accumulatedText += "\n$chunk"
@@ -385,13 +385,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             val existing = accumulatedToolCalls.getOrPut(index) { org.json.JSONObject() }
                             
                             val id = item.optString("id")
-                            if (id.isNotEmpty()) existing.put("id", id)
+                            if (id.isNotEmpty() && id != "null") existing.put("id", id)
                             
                             val function = item.optJSONObject("function")
                             if (function != null) {
                                 val existingFunc = existing.optJSONObject("function") ?: org.json.JSONObject().also { existing.put("function", it) }
                                 val name = function.optString("name")
-                                if (name.isNotEmpty()) existingFunc.put("name", name)
+                                if (name.isNotEmpty() && name != "null") existingFunc.put("name", name)
                                 val args = function.optString("arguments")
                                 if (args.isNotEmpty()) {
                                     val currentArgs = existingFunc.optString("arguments", "")
@@ -455,6 +455,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             for (toolCall in accumulatedToolCalls.values) {
                 val function = toolCall.optJSONObject("function") ?: continue
                 val name = function.optString("name")
+                if (name.isEmpty()) continue
                 val argsStr = function.optString("arguments")
                 val callId = toolCall.optString("id")
 
@@ -495,11 +496,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // 所有处理完毕后才关闭 streaming 状态
-        isStreaming = false
-
         if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {
             triggerMemorySync()
+        }
+        } finally {
+            // BUG-015: 确保 isStreaming 在所有路径上都被重置，防止 UI 永久卡在加载状态
+            isStreaming = false
         }
     }
 
@@ -533,14 +535,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun triggerMemorySync(force: Boolean = false) {
         val sessionId = _selectedSessionId.value ?: return
         viewModelScope.launch {
-            if (isMemorySyncing) return@launch
+            // BUG-016: 使用 Mutex 保证原子性，避免并发调用同时通过 guard 检查
+            if (!memorySyncMutex.tryLock()) return@launch
             isMemorySyncing = true
             try {
-                val defaultProvider = repository.getDefaultProvider()
-                if (defaultProvider == null) {
-                    isMemorySyncing = false
-                    return@launch
-                }
+                val defaultProvider = repository.getDefaultProvider() ?: return@launch
 
                 // 构建副模型配置
                 val memoryConfig = run {
@@ -557,10 +556,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val allMessages = repository.getMessagesBySession(sessionId)
-                if (allMessages.size < 2) {
-                    isMemorySyncing = false
-                    return@launch
-                }
+                if (allMessages.size < 2) return@launch
 
                 // 读取上次摘要记录，判断是否需要运行
                 val prevSummary = repository.getSessionSummary(sessionId)
@@ -572,19 +568,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 // force=true（手动触发）时跳过节流检查
                 val shouldRun = force || timeSinceLast >= MEMORY_INTERVAL_MS || newMsgCount >= NEW_MESSAGES_THRESHOLD
-                if (!shouldRun) {
-                    isMemorySyncing = false
-                    return@launch
-                }
+                if (!shouldRun) return@launch
+
+                // 衰减非 pinned 记忆的置信度
+                applyConfidenceDecay(now)
 
                 // 预检：新消息内容太少（如全是"好的/嗯/谢谢"）则跳过，避免无效 API 调用
                 if (!force) {
                     val newMessages = allMessages.drop(msgCountAtLast)
                     val newCharsTotal = newMessages.sumOf { it.content.length }
-                    if (newCharsTotal < MIN_NEW_CHARS_THRESHOLD) {
-                        isMemorySyncing = false
-                        return@launch
-                    }
+                    if (newCharsTotal < MIN_NEW_CHARS_THRESHOLD) return@launch
                 }
 
                 // ── Step 1：生成本会话的新滚动摘要 ──────────────────────
@@ -617,10 +610,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val newSummaryText = ApiClient.executeCompletion(memoryConfig, summarySystemPrompt, summaryUserQuery)
-                    ?.trim() ?: run {
-                    isMemorySyncing = false
-                    return@launch
-                }
+                    ?.trim() ?: return@launch
 
                 // 持久化新摘要
                 repository.upsertSessionSummary(
@@ -691,6 +681,24 @@ Rules:
                 e.printStackTrace()
             } finally {
                 isMemorySyncing = false
+                memorySyncMutex.unlock()
+            }
+        }
+    }
+
+    /**
+     * 对非 pinned 记忆执行置信度衰减：每过一天 confidence -1，下限为 1。
+     * 在 triggerMemorySync() 的 Step 1 之前调用。
+     */
+    private suspend fun applyConfidenceDecay(now: Long) {
+        val allMemories = repository.getAllMemories()
+        for (memory in allMemories) {
+            if (memory.pinned) continue
+            val daysSince = ((now - memory.lastReinforcedAt) / 86_400_000L).toInt()
+            if (daysSince <= 0) continue
+            val newConfidence = maxOf(1, memory.confidence - daysSince)
+            if (newConfidence != memory.confidence) {
+                repository.updateMemory(memory.copy(confidence = newConfidence))
             }
         }
     }
@@ -739,8 +747,13 @@ Rules:
                         val id = op.optLong("id", -1L)
                         val content = op.optString("content").trim()
                         val existing = existingById[id]
-                        // 拒绝更新 pinned 条目
-                        if (existing != null && !existing.pinned && content.isNotBlank()) {
+                        if (existing == null) {
+                            Log.w("ChatViewModel", "Memory UPDATE ignored: id=$id not found")
+                        } else if (existing.pinned) {
+                            Log.d("ChatViewModel", "Memory UPDATE ignored: id=$id is pinned")
+                        } else if (content.isBlank()) {
+                            Log.w("ChatViewModel", "Memory UPDATE ignored: id=$id has blank content")
+                        } else {
                             repository.updateMemory(
                                 existing.copy(content = content, updatedAt = now, confidence = existing.confidence + 1)
                             )
@@ -751,13 +764,18 @@ Rules:
                         val existing = existingById[id]
                         if (existing != null) {
                             repository.reinforceMemory(id, existing.content, now)
+                        } else {
+                            Log.w("ChatViewModel", "Memory REINFORCE ignored: id=$id not found")
                         }
                     }
                     "DELETE" -> {
                         val id = op.optLong("id", -1L)
                         val existing = existingById[id]
-                        // 拒绝删除 pinned 条目
-                        if (existing != null && !existing.pinned) {
+                        if (existing == null) {
+                            Log.w("ChatViewModel", "Memory DELETE ignored: id=$id not found")
+                        } else if (existing.pinned) {
+                            Log.d("ChatViewModel", "Memory DELETE ignored: id=$id is pinned")
+                        } else {
                             repository.deleteMemoryById(id)
                         }
                     }
