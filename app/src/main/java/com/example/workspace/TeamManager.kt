@@ -277,6 +277,10 @@ class TeamManager(
         modelConfigId: Long? = null,
         overrideModelId: String? = null,
         modelHint: ModelHint? = null,
+        // WHY: 支持 FORK 模式，允许新 Agent 继承父级对话历史
+        spawnMode: SpawnMode = SpawnMode.SPAWN,
+        // WHY: FORK 模式下需要父级 Runner 来获取历史和系统提示
+        parentRunner: AgentRunner? = null,
     ): TeammateIdentity {
         val state = _teamState.value ?: error("无活跃团队")
 
@@ -287,6 +291,9 @@ class TeamManager(
             modelConfigId = modelConfigId,
             overrideModelId = overrideModelId,
             modelHint = modelHint,
+            // WHY: 传递 spawnMode 和 parentRunner 给 AgentLifecycle，支持 FORK 模式
+            spawnMode = spawnMode,
+            parentRunner = parentRunner,
             existingNames = state.teammates.keys,
             parentScope = parentScope,
             createRunner = { ctx, isSub -> createAgentRunner(ctx, isSub) },
@@ -627,6 +634,9 @@ class TeamManager(
                     modelConfigId = spec.modelConfigId,
                     overrideModelId = spec.modelId,
                     modelHint = spec.modelHint,
+                    // WHY: 传递 spawnMode，FORK 模式下传入 Orchestrator 的 Runner 作为父级
+                    spawnMode = spec.spawnMode,
+                    parentRunner = if (spec.spawnMode == SpawnMode.FORK) lifecycle.runners[ORCHESTRATOR_NAME] else null,
                 )
                 subAgentNames.add(identity.agentName)
             } catch (e: Exception) {
@@ -706,6 +716,9 @@ class TeamManager(
                         modelConfigId = spec.modelConfigId,
                         overrideModelId = spec.modelId,
                         modelHint = spec.modelHint,
+                        // WHY: 传递 spawnMode，FORK 模式下传入 Orchestrator 的 Runner 作为父级
+                        spawnMode = spec.spawnMode,
+                        parentRunner = if (spec.spawnMode == SpawnMode.FORK) lifecycle.runners[ORCHESTRATOR_NAME] else null,
                     )
                     spawnedNames.add(identity.agentName)
                     specToActualName[spec.name] = identity.agentName
@@ -1099,4 +1112,42 @@ class TeamManager(
 
     fun parseTaskAssignments(content: String, validAgents: List<String>): Map<String, OrchestratorTools.TaskInfo> =
         orchestratorTools.parseTaskAssignments(content, validAgents)
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 恢复 Agent（从持久化 transcript 恢复执行）
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 从持久化 transcript 恢复 Agent 执行。
+     *
+     * WHY: 工作区恢复时需要重建 Agent 的 Runner 和协程，使其能继续处理新消息。
+     * 使用 lifecycle.restoreAgentContext 从数据库加载历史消息，
+     * 然后创建新的 Runner 并启动执行循环。
+     */
+    suspend fun resumeAgent(agentName: String, sessionId: Long): Boolean {
+        val state = _teamState.value ?: return false
+        // WHY: 只能恢复已注册的 Agent，否则 TeamState 中没有对应的 TeammateState
+        if (agentName !in state.teammates) return false
+
+        val def = agentRegistry.get(agentName)
+        val context = lifecycle.restoreAgentContext(
+            agentName = agentName,
+            sessionId = sessionId,
+            systemPrompt = def?.systemPrompt ?: "",
+        ) ?: return false
+
+        // WHY: 创建新 Runner 并注册到 lifecycle，使 Orchestrator 能通过 runners 访问
+        val runner = createAgentRunner(context, isSubAgent = true)
+        lifecycle.runners[agentName] = runner
+
+        val identity = state.teammates[agentName]?.identity ?: return false
+        val scope = lifecycle.teammateScopes[agentName] ?: return false
+
+        // WHY: 在已有的 teammateScope 中启动执行循环，保持协程父子关系
+        val job = scope.launch {
+            executionLoops.runTeammateLoop(runner, identity)
+        }
+        lifecycle.teammateJobs[agentName] = job
+        return true
+    }
 }
