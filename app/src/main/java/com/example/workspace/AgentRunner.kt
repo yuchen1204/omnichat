@@ -52,6 +52,10 @@ class AgentRunner(
     private val sandboxPath: String? = null,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
     private val onToolCall: suspend (agentName: String, toolName: String, args: JSONObject, callId: String) -> String,
+    // 进度摘要回调：每 5 次工具调用后通知外部（如 UI 或日志）
+    private val onProgressSummary: ((agentName: String, summary: String) -> Unit)? = null,
+    // 消息持久化回调：每条消息写入内存后同步到 Room DB
+    private val persistMessage: ((AgentMessage) -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "AgentRunner"
@@ -166,6 +170,9 @@ class AgentRunner(
      * 流式输出结束后依次处理队列中的干预消息。
      */
     private val interventionQueue = ConcurrentLinkedDeque<AgentMessage>()
+
+    // 进度摘要生成器：每 5 次工具调用自动生成摘要，供 onProgressSummary 回调使用
+    private val progressSummarizer = AgentProgressSummarizer(context.agentName) { getHistory() }
 
     // 接入 ToolOrchestrator：只读工具并行、写入工具串行
     private val toolOrchestrator = ToolOrchestrator(onToolCall)
@@ -366,6 +373,8 @@ class AgentRunner(
                                 toolCallsJson = toolCallsJson
                             )
                         )
+                        // 持久化 assistant 消息到 Room DB（写锁内，保证顺序一致）
+                        persistMessage?.invoke(context.messages.last())
                     } finally {
                         messagesLock.writeLock().unlock()
                     }
@@ -424,6 +433,8 @@ class AgentRunner(
                                         toolCallId = result.callId
                                     )
                                 )
+                                // 持久化 tool 结果消息到 Room DB（写锁内，保证顺序一致）
+                                persistMessage?.invoke(context.messages.last())
                             } finally {
                                 messagesLock.writeLock().unlock()
                             }
@@ -434,6 +445,12 @@ class AgentRunner(
                             } else {
                                 consecutiveToolFailureCount = 0
                             }
+                        }
+
+                        // 检查是否需要生成进度摘要（每 5 次工具调用触发一次）
+                        val progressSummary = progressSummarizer.onToolCallCompleted()
+                        if (progressSummary != null) {
+                            onProgressSummary?.invoke(context.agentName, progressSummary)
                         }
 
                         // BUG-022 修复：跟踪连续工具调用失败，防止无限循环
@@ -999,6 +1016,9 @@ class AgentRunner(
      * @return Agent 名称
      */
     fun getAgentName(): String = context.agentName
+
+    // 暴露系统提示，供外部（如 WorkspaceViewModel 保存快照）使用
+    fun getSystemPrompt(): String = context.systemPrompt
 
     /**
      * 检查是否为 Orchestrator。
