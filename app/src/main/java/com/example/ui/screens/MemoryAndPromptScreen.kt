@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -186,8 +187,19 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("memory_item_${memory.id}"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (memory.pinned)
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                            ),
+                            border = BorderStroke(
+                                0.5.dp,
+                                if (memory.pinned)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                else
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                            ),
                             shape = RoundedCornerShape(10.dp * spacingMultiplier)
                         ) {
                             Row(
@@ -198,7 +210,10 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(RoundedCornerShape(3.dp))
-                                        .background(MaterialTheme.colorScheme.primary)
+                                        .background(
+                                            if (memory.pinned) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        )
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
@@ -209,13 +224,32 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 IconButton(
+                                    onClick = { viewModel.togglePinMemory(memory) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (memory.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                                        contentDescription = if (memory.pinned)
+                                            uiText("memory.unpin", "取消锁定")
+                                        else
+                                            uiText("memory.pin", "锁定"),
+                                        tint = if (memory.pinned)
+                                            MaterialTheme.colorScheme.primary
+                                        else
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                IconButton(
                                     onClick = { viewModel.deleteMemoryItem(memory.id) },
                                     modifier = Modifier.size(28.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = uiText("memory.63e4284a", "删除"),
-                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                        tint = MaterialTheme.colorScheme.error.copy(
+                                            alpha = if (memory.pinned) 0.3f else 0.7f
+                                        ),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
