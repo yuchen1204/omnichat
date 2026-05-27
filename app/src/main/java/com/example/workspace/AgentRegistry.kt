@@ -12,6 +12,8 @@ class AgentRegistry(private val context: Context) {
     fun loadAll() {
         loadFromAssets()
         loadFromExternalStorage()
+        // 注册内置类型，优先级最低——文件预设和 DB 预设通过 putIfAbsent 覆盖
+        registerBuiltinTypes()
     }
 
     fun loadFromPresets(presets: List<AgentPreset>) {
@@ -71,6 +73,54 @@ class AgentRegistry(private val context: Context) {
                 }
             }
         } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Register built-in agent types.
+     *
+     * These are the lowest priority definitions — file-based presets and DB presets
+     * override them via putIfAbsent.
+     */
+    private fun registerBuiltinTypes() {
+        val builtinTypes = listOf(
+            AgentDefinition(
+                name = "general",
+                displayName = "通用 Agent",
+                systemPrompt = "",
+                mode = AgentMode.NORMAL,
+                description = "Multi-step research and implementation, all tools available"
+            ),
+            AgentDefinition(
+                name = "explorer",
+                displayName = "探索者",
+                systemPrompt = "",
+                modelHint = ModelHint.FAST,
+                allowedTools = listOf("read_file", "list_directory", "search_files", "get_file_info", "search_memory", "get_current_time"),
+                mode = AgentMode.NORMAL,
+                maxToolIterations = 30,
+                description = "Fast read-only search and analysis"
+            ),
+            AgentDefinition(
+                name = "verifier",
+                displayName = "验证者",
+                systemPrompt = "",
+                modelHint = ModelHint.REASONING,
+                allowedTools = listOf("read_file", "list_directory", "search_files", "get_file_info", "search_memory", "get_current_time", "execute_command"),
+                mode = AgentMode.NORMAL,
+                maxToolIterations = 30,
+                description = "Implementation verification, read-only + bash"
+            ),
+            AgentDefinition(
+                name = "coordinator",
+                displayName = "协调者",
+                systemPrompt = "",
+                mode = AgentMode.COORDINATOR,
+                description = "Pure orchestration mode, only dispatch tools"
+            )
+        )
+        for (def in builtinTypes) {
+            definitions.putIfAbsent(def.name, def)
         }
     }
 
