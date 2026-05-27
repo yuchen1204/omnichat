@@ -17,12 +17,22 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 class Converters {
     @TypeConverter
     fun fromStringList(value: List<String>): String {
-        return if (value.isEmpty()) "" else value.joinToString(",")
+        if (value.isEmpty()) return ""
+        return org.json.JSONArray(value).toString()
     }
 
     @TypeConverter
     fun toStringList(value: String): List<String> {
-        return if (value.isEmpty()) emptyList() else value.split(",")
+        if (value.isEmpty()) return emptyList()
+        // 兼容旧格式：如果非 JSON 数组格式（不含 '['），按逗号分隔解析
+        if (!value.startsWith("[")) return value.split(",")
+        return try {
+            val arr = org.json.JSONArray(value)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (e: Exception) {
+            // JSON 解析失败，回退到逗号分隔
+            value.split(",")
+        }
     }
 }
 
@@ -47,7 +57,7 @@ class Converters {
         TeamTask::class,
         McpFilePermission::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -456,6 +466,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v28→v29：memory_items 增加 lastReinforcedAt 字段，用于置信度衰减计算 */
+        private val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE memory_items ADD COLUMN lastReinforcedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE memory_items SET lastReinforcedAt = updatedAt WHERE lastReinforcedAt = 0")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -487,7 +505,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_24_25,
                         MIGRATION_25_26,
                         MIGRATION_26_27,
-                        MIGRATION_27_28
+                        MIGRATION_27_28,
+                        MIGRATION_28_29
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。

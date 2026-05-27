@@ -91,8 +91,8 @@ interface MemoryItemDao {
     @Update
     suspend fun updateMemory(memory: MemoryItem)
 
-    /** 强化一条记忆：confidence+1，更新 updatedAt，内容可选更新 */
-    @Query("UPDATE memory_items SET confidence = confidence + 1, updatedAt = :now, content = :content WHERE id = :id")
+    /** 强化一条记忆：confidence+1，更新 updatedAt 和 lastReinforcedAt，内容可选更新 */
+    @Query("UPDATE memory_items SET confidence = confidence + 1, updatedAt = :now, lastReinforcedAt = :now, content = :content WHERE id = :id")
     suspend fun reinforceMemory(id: Long, content: String, now: Long)
 
     /** 切换 pinned 状态 */
