@@ -488,19 +488,18 @@ object BuiltinToolHandler {
                 val repository = AppRepository(db)
                 val allMemories = repository.getAllMemories()
 
-                // 将 query 拆分为多个关键词（空格/逗号分隔），全部转小写
-                val keywords = query.lowercase()
-                    .split(Regex("[\\s,，]+"))
-                    .filter { it.isNotBlank() }
+                val queryTokens = bigramTokenize(query)
 
-                // 对每条记忆计算匹配分：命中的关键词数量 × confidence 加权
-                data class ScoredMemory(val memory: com.example.data.MemoryItem, val score: Int)
+                data class ScoredMemory(val memory: com.example.data.MemoryItem, val score: Double)
 
                 val scored = allMemories
                     .mapNotNull { mem ->
-                        val lower = mem.content.lowercase()
-                        val hitCount = keywords.count { kw -> lower.contains(kw) }
-                        if (hitCount > 0) ScoredMemory(mem, hitCount * mem.confidence) else null
+                        val memTokens = bigramTokenize(mem.content)
+                        val intersection = queryTokens.intersect(memTokens).size
+                        val union = queryTokens.union(memTokens).size
+                        if (union == 0 || intersection == 0) return@mapNotNull null
+                        val jaccard = intersection.toDouble() / union.toDouble()
+                        ScoredMemory(mem, jaccard * mem.confidence)
                     }
                     .sortedByDescending { it.score }
                     .take(limit)
@@ -515,7 +514,7 @@ object BuiltinToolHandler {
                     } else {
                         scored.forEachIndexed { i, sm ->
                             val pinnedTag = if (sm.memory.pinned) " [已锁定]" else ""
-                            appendLine("${i + 1}. [id=${sm.memory.id}, 置信度=${sm.memory.confidence}$pinnedTag]")
+                            appendLine("${i + 1}. [id=${sm.memory.id}, 置信度=${sm.memory.confidence}, 相关度=${String.format("%.2f", sm.score)}$pinnedTag]")
                             appendLine("   ${sm.memory.content}")
                         }
                     }
@@ -1891,5 +1890,43 @@ object BuiltinToolHandler {
                 })
             })
         }
+    }
+
+    /**
+     * 将文本拆分为 token 集合：中文字符 + 中文字符 bigram + 英文/数字整词。
+     * 用于 search_memory 的中文友好匹配。
+     */
+    private fun bigramTokenize(text: String): Set<String> {
+        val tokens = mutableSetOf<String>()
+        val cjkRange = '一'..'鿿'
+        val buffer = StringBuilder()
+
+        for (ch in text) {
+            if (ch in cjkRange) {
+                if (buffer.isNotEmpty()) {
+                    tokens.add(buffer.toString().lowercase())
+                    buffer.clear()
+                }
+                tokens.add(ch.toString())
+            } else if (ch.isWhitespace() || ch in "，。！？、；：""''（）【】《》,.!?;:\"'()[]<>") {
+                if (buffer.isNotEmpty()) {
+                    tokens.add(buffer.toString().lowercase())
+                    buffer.clear()
+                }
+            } else {
+                buffer.append(ch)
+            }
+        }
+        if (buffer.isNotEmpty()) {
+            tokens.add(buffer.toString().lowercase())
+        }
+
+        // 中文字符 bigram
+        val cjkChars = text.filter { it in cjkRange }
+        for (i in 0 until cjkChars.length - 1) {
+            tokens.add("${cjkChars[i]}${cjkChars[i + 1]}")
+        }
+
+        return tokens
     }
 }
