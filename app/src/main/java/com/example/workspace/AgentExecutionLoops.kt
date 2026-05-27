@@ -202,6 +202,11 @@ class AgentExecutionLoops(
                     is WaitResult.TaskClaimed -> {
                         executeTask(runner, identity, waitResult.taskDescription)
                     }
+                    is WaitResult.PeerMessage -> {
+                        // WHY: Peer 消息不走 executeTask，避免被当作任务执行。
+                        // 直接注入上下文并运行一轮对话，不包任务标记、不发 ResultReport。
+                        handlePeerMessage(runner, identity, waitResult.message, waitResult.from)
+                    }
                     is WaitResult.Aborted -> {
                         // 释放可能已认领的任务
                         taskManager.failTask(identity.teamName, identity.agentName)
@@ -342,6 +347,9 @@ class AgentExecutionLoops(
 
             val messageOffset = runner.getHistory().size
             onAgentStatusChanged(identity.agentName, AgentStatus.STREAMING)
+            // WHY: 注入任务分界标记，防止 LLM 看到旧任务的 task list（带未完成复选框）后重做旧任务。
+            // 新任务到达时，旧任务的上下文仍在消息历史中，LLM 会把旧任务的 "- [ ]" 当作待办事项。
+            runner.injectSystemMessage("═══ 新任务开始 ═══\n以下是全新的任务指令。请忽略之前所有任务计划和待办事项，专注于执行以下新任务。")
             runner.runTurn(taskPrompt, source = "orchestrator")
 
             // runTurn 正常返回即视为任务执行完毕
@@ -372,10 +380,36 @@ class AgentExecutionLoops(
                         messageOffset.coerceIn(0, history.size)
                     }
                     val taskMessages = history.subList(safeOffset, history.size)
+                    // BUG-024 修复：使用更灵活的错误检测，支持多种错误格式
+                    // 原实现只检查特定前缀（如 "ERROR:"），可能遗漏其他格式的错误
                     hasError = taskMessages.any { msg ->
-                        (msg.role == "assistant" && msg.content.startsWith("ERROR:")) ||
-                            (msg.role == "tool" && msg.content.startsWith("Error:")) ||
-                            (msg.role == "system" && (msg.content.contains("执行出错") || msg.content.contains("执行失败")))
+                        val content = msg.content
+                        when (msg.role) {
+                            "assistant" -> {
+                                content.startsWith("ERROR:", ignoreCase = true) ||
+                                    content.startsWith("error:", ignoreCase = true) ||
+                                    content.contains("执行出错") ||
+                                    content.contains("执行失败") ||
+                                    content.contains("任务失败") ||
+                                    content.contains("操作失败")
+                            }
+                            "tool" -> {
+                                content.startsWith("Error:", ignoreCase = true) ||
+                                    content.startsWith("error:", ignoreCase = true) ||
+                                    content.startsWith("FAILED:", ignoreCase = true) ||
+                                    content.contains("失败") ||
+                                    content.contains("failed")
+                            }
+                            "system" -> {
+                                content.contains("执行出错") ||
+                                    content.contains("执行失败") ||
+                                    content.contains("任务失败") ||
+                                    content.contains("操作失败") ||
+                                    content.contains("出错") ||
+                                    content.contains("错误")
+                            }
+                            else -> false
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to collect result for ${identity.agentName}", e)
@@ -423,6 +457,35 @@ class AgentExecutionLoops(
             onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
             // 3. 发送 IdleNotification（Orchestrator 知道 Agent 可接收新任务）
             sendIdleSafely(identity, idleReason)
+        }
+    }
+
+    /**
+     * 处理来自其他 Sub-Agent 的协作消息（peer_message）。
+     *
+     * 与 [executeTask] 的关键区别：
+     * - 不包 "═══ 新任务开始 ═══" 标记（不是任务，是协作消息）
+     * - 不发 ResultReport 给 Orchestrator（避免混淆 Orchestrator 的任务跟踪）
+     * - 不操作 TaskManager（不标记 complete/fail）
+     * - Agent 回复通过 peer_message 直接返回给发送方，而非经 Orchestrator 中转
+     */
+    private suspend fun handlePeerMessage(
+        runner: AgentRunner,
+        identity: TeammateIdentity,
+        message: String,
+        from: String,
+    ) {
+        try {
+            onAgentStatusChanged(identity.agentName, AgentStatus.STREAMING)
+            // WHY: 注入来源标记，让 Agent 知道这是来自其他 Agent 的协作消息
+            val taggedMessage = "[来自 $from 的协作消息]\n$message"
+            runner.runTurn(taggedMessage, source = "peer")
+        } catch (e: Exception) {
+            Log.e(TAG, "Peer message handling failed for ${identity.agentName}: ${e.message}", e)
+        } finally {
+            onAgentStatusChanged(identity.agentName, AgentStatus.IDLE)
+            // 只发 IdleNotification（通知 Orchestrator Agent 空闲），不发 ResultReport
+            sendIdleSafely(identity, IdleReason.AVAILABLE)
         }
     }
 
@@ -911,7 +974,7 @@ class AgentExecutionLoops(
     private fun convertToWaitResult(msg: TeamMessage): WaitResult {
         return when (msg) {
             is TeamMessage.ShutdownRequest -> WaitResult.ShutdownRequest(msg)
-            is TeamMessage.Text -> WaitResult.NewMessage(msg.content, msg.from)
+            is TeamMessage.Text -> WaitResult.PeerMessage(msg.content, msg.from)
             is TeamMessage.TaskAssignment -> WaitResult.NewMessage(
                 "任务: ${msg.subject}\n${msg.description}", msg.from
             )
@@ -959,6 +1022,117 @@ class AgentExecutionLoops(
                     appendLine("- $agentName")
                 }
             }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AgentTask 实现
+//
+// 将 runOrchestratorLoop / runTeammateLoop 封装为 AgentTask，供 TaskRegistry 统一管理。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Orchestrator task implementation.
+ *
+ * Wraps runOrchestratorLoop as an AgentTask.
+ */
+class OrchestratorTask(
+    override val taskName: String,
+    private val runner: AgentRunner,
+    private val executionLoops: AgentExecutionLoops,
+    private val initialTask: String,
+    private val imagePath: String? = null,
+    private val isCompleted: java.util.concurrent.atomic.AtomicBoolean,
+    private val onWorkspaceComplete: suspend (AgentRunner) -> Unit,
+) : AgentTask {
+    override val taskId = ORCHESTRATOR_NAME
+    override val taskType = TaskType.ORCHESTRATOR
+
+    @Volatile
+    override var status: TaskStatus = TaskStatus.CREATED
+        private set
+
+    private val statusListeners = mutableListOf<(TaskStatus) -> Unit>()
+
+    override suspend fun execute() {
+        updateStatus(TaskStatus.RUNNING)
+        try {
+            executionLoops.runOrchestratorLoop(runner, initialTask, imagePath, isCompleted, onWorkspaceComplete)
+            updateStatus(TaskStatus.COMPLETED)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            updateStatus(TaskStatus.CANCELLED)
+            throw e
+        } catch (e: Exception) {
+            updateStatus(TaskStatus.FAILED)
+            throw e
+        }
+    }
+
+    override fun kill() {
+        updateStatus(TaskStatus.CANCELLED)
+    }
+
+    override fun onStatusChange(listener: (TaskStatus) -> Unit) {
+        statusListeners.add(listener)
+    }
+
+    private fun updateStatus(newStatus: TaskStatus) {
+        val oldStatus = status
+        status = newStatus
+        if (oldStatus != newStatus) {
+            statusListeners.forEach { it(newStatus) }
+        }
+    }
+}
+
+/**
+ * Teammate task implementation.
+ *
+ * Wraps runTeammateLoop as an AgentTask.
+ */
+class TeammateTask(
+    override val taskName: String,
+    private val runner: AgentRunner,
+    private val identity: TeammateIdentity,
+    private val executionLoops: AgentExecutionLoops,
+) : AgentTask {
+    override val taskId = identity.agentName
+    override val taskType = TaskType.TEAMMATE
+
+    @Volatile
+    override var status: TaskStatus = TaskStatus.CREATED
+        private set
+
+    private val statusListeners = mutableListOf<(TaskStatus) -> Unit>()
+
+    override suspend fun execute() {
+        updateStatus(TaskStatus.RUNNING)
+        try {
+            executionLoops.runTeammateLoop(runner, identity)
+            updateStatus(TaskStatus.COMPLETED)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            updateStatus(TaskStatus.CANCELLED)
+            throw e
+        } catch (e: Exception) {
+            updateStatus(TaskStatus.FAILED)
+            throw e
+        }
+    }
+
+    override fun kill() {
+        updateStatus(TaskStatus.CANCELLED)
+    }
+
+    override fun onStatusChange(listener: (TaskStatus) -> Unit) {
+        statusListeners.add(listener)
+    }
+
+    private fun updateStatus(newStatus: TaskStatus) {
+        val oldStatus = status
+        status = newStatus
+        if (oldStatus != newStatus) {
+            statusListeners.forEach { it(newStatus) }
         }
     }
 }
