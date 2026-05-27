@@ -1068,6 +1068,57 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 put("properties", JSONObject())
             }
         ),
+        // ── Scratchpad 跨 Agent 共享工具 ──────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "scratchpad_write",
+            description = "Write content to the shared scratchpad. The scratchpad is a shared key-value store for cross-agent collaboration within the current workspace. Each agent can write notes, intermediate results, or coordination data that other agents can read.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("key", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "A unique key for this entry, e.g. \"design_spec\" or \"api_response\". Only alphanumeric characters and underscores are allowed; other characters are replaced with underscores.")
+                    })
+                    put("content", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The text content to store.")
+                    })
+                })
+                put("required", JSONArray().apply { put("key"); put("content") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "scratchpad_read",
+            description = "Read content from the shared scratchpad written by a specific agent. Use scratchpad_list first to discover available entries.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject().apply {
+                    put("agentName", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The name of the agent whose scratchpad entry to read.")
+                    })
+                    put("key", JSONObject().apply {
+                        put("type", "string")
+                        put("description", "The key of the entry to read.")
+                    })
+                })
+                put("required", JSONArray().apply { put("agentName"); put("key") })
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "scratchpad_list",
+            description = "List all entries in the shared scratchpad. Returns each entry's agent name, key, content preview, and last modified time. Use this to discover what data other agents have shared.",
+            inputSchema = JSONObject().apply {
+                put("type", "object")
+                put("properties", JSONObject())
+            }
+        ),
         // ── 运行时工具组管理 ──────────────────────────────────────────────
         McpTool(
             serverId = BUILTIN_SERVER_ID,
@@ -1087,19 +1138,26 @@ class McpRuntimeManager private constructor(private val context: Context) {
             inputSchema = JSONObject().apply {
                 put("type", "object")
                 put("properties", JSONObject().apply {
-                    put("enable", JSONArray().apply {
-                        put("ui_text"); put("files"); put("documents"); put("efficiency"); put("memory")
-                    }.let { 
-                        JSONObject().apply {
-                            put("type", "array")
-                            put("items", JSONObject().apply { put("type", "string") })
-                            put("description", "List of group names to enable.")
-                        }
+                    // BUG-010: 使用 enum 约束有效组名，避免无效值写入数据库
+                    put("enable", JSONObject().apply {
+                        put("type", "array")
+                        put("items", JSONObject().apply {
+                            put("type", "string")
+                            put("enum", JSONArray().apply {
+                                put("ui_text"); put("ui_appearance"); put("files"); put("documents"); put("efficiency"); put("memory")
+                            })
+                        })
+                        put("description", "List of group names to enable. Valid: ui_text, ui_appearance, files, documents, efficiency, memory. Note: 'core' cannot be disabled.")
                     })
                     put("disable", JSONObject().apply {
                         put("type", "array")
-                        put("items", JSONObject().apply { put("type", "string") })
-                        put("description", "List of group names to disable.")
+                        put("items", JSONObject().apply {
+                            put("type", "string")
+                            put("enum", JSONArray().apply {
+                                put("ui_text"); put("ui_appearance"); put("files"); put("documents"); put("efficiency"); put("memory")
+                            })
+                        })
+                        put("description", "List of group names to disable. Note: 'core' cannot be disabled.")
                     })
                 })
             }
@@ -1136,6 +1194,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "create_timer" to "efficiency",
         "cancel_timer" to "efficiency",
         "list_timers" to "efficiency",
+        "scratchpad_write" to "core",
+        "scratchpad_read" to "core",
+        "scratchpad_list" to "core",
         "list_mcp_tool_groups" to "core",
         "configure_mcp_tool_groups" to "core"
     )
@@ -1696,25 +1757,28 @@ class McpRuntimeManager private constructor(private val context: Context) {
             // 1. 设置环境变量
             // 2. 将 MCP server 脚本路径加入 sys.path
             // 3. 启动 MCP server，监听指定端口
+            // BUG-009: 转义路径中的特殊字符，防止 Python 代码注入
+            fun escapePy(s: String) = s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
             val envSetup = env.entries.joinToString("\n") { (k, v) ->
-                "import os; os.environ['${k.replace("'", "\\'")}'] = '${v.replace("'", "\\'")}'"
+                "import os; os.environ['${escapePy(k)}'] = '${escapePy(v)}'"
             }
             val scriptPath = server.command
-            val argsStr = args.joinToString(", ") { "'${it.replace("'", "\\'")}'" }
+            val escapedScriptPath = escapePy(scriptPath)
+            val argsStr = args.joinToString(", ") { "'${escapePy(it)}'" }
 
             val pythonCode = """
 import sys
 import os
 $envSetup
 os.environ['MCP_SOCKET_PORT'] = '$port'
-sys.argv = ['$scriptPath'${if (args.isNotEmpty()) ", $argsStr" else ""}]
+sys.argv = ['$escapedScriptPath'${if (args.isNotEmpty()) ", $argsStr" else ""}]
 # 将脚本目录加入 sys.path
 import os.path
-script_dir = os.path.dirname(os.path.abspath('$scriptPath'))
+script_dir = os.path.dirname(os.path.abspath('$escapedScriptPath'))
 if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 # 执行 MCP server 脚本
-exec(open('$scriptPath').read())
+exec(open('$escapedScriptPath').read())
 """.trimIndent()
 
             val result = PythonBridge.runCode(pythonCode)
@@ -1732,8 +1796,8 @@ exec(open('$scriptPath').read())
         pythonThread.isDaemon = true
         pythonThread.start()
 
-        // 等待 Python server 启动
-        delay(1500)
+        // BUG-009: 缩短初始等待，后续由重试循环处理连接（30次×500ms 足够覆盖慢速设备）
+        delay(300)
 
         // 连接到 Python server 的 socket
         try {

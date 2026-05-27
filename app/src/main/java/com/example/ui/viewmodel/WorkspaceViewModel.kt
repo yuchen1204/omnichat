@@ -430,6 +430,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 // WHY: 异常时清理 teamManager，避免协程在后台继续运行消耗资源。
                 teamManager?.deleteTeam()
                 teamManager = null
+                com.example.mcp.BuiltinToolHandler.teamManager = null
                 // 停止前台服务
                 WorkspaceForegroundService.stop(getApplication())
                 _errorMessage.value = "启动工作区执行失败，请重试"
@@ -1336,6 +1337,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                         val completedManager = managerRef
                         if (teamManager === completedManager) {
                             teamManager = null
+                            // WHY: 清除 BuiltinToolHandler 的 TeamManager 引用，避免悬空引用
+                            com.example.mcp.BuiltinToolHandler.teamManager = null
                         }
                         completedManager?.deleteTeam()
                     } catch (e: Exception) {
@@ -1360,6 +1363,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             }
         )
         managerRef = manager
+        // WHY: 设置 BuiltinToolHandler 引用，供 scratchpad MCP 工具访问 TeamManager
+        com.example.mcp.BuiltinToolHandler.teamManager = manager
         return manager
     }
 
@@ -1373,6 +1378,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         super.onCleared()
         AskUserManager.clearAll()
+        // WHY: 清除 BuiltinToolHandler 的 TeamManager 引用，避免 ViewModel 销毁后悬空引用
+        com.example.mcp.BuiltinToolHandler.teamManager = null
         // WHY: 使用 SupervisedJob 确保异常不会传播到 GlobalScope 根协程。
         // 原 GlobalScope.launch(NonCancellable) 如果 persistCurrentSessionMessages
         // 抛出异常，会取消整个 GlobalScope 协程（包括 deleteTeam），导致清理不完整。

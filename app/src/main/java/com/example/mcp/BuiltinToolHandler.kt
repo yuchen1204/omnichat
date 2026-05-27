@@ -23,6 +23,10 @@ import java.util.UUID
 
 object BuiltinToolHandler {
 
+    // WHY: 由 WorkspaceViewModel 在创建/清理 TeamManager 时设置，供 scratchpad 工具访问
+    @Volatile
+    var teamManager: com.example.workspace.TeamManager? = null
+
     suspend fun handleBuiltinTool(context: Context, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject {
         return when (toolName) {
             "get_ui_capabilities" -> {
@@ -1058,6 +1062,53 @@ object BuiltinToolHandler {
                             appendLine("   标签：${t.label}")
                             appendLine("   内容：${t.message}")
                             appendLine("   剩余：$humanRemaining")
+                        }
+                    }
+                    successResponse(text.trimEnd())
+                }
+            }
+            // ── Scratchpad 跨 Agent 共享工具 ──────────────────────────────
+            "scratchpad_write" -> {
+                val sp = teamManager?.getScratchpad()
+                    ?: return errorResponse("Scratchpad 不可用：当前没有活跃的工作区团队。")
+                val key = arguments.optString("key").trim()
+                val content = arguments.optString("content")
+                if (key.isBlank()) return errorResponse("参数 'key' 不能为空。")
+                // WHY: 使用当前 Agent 名称作为命名空间，避免覆盖其他 Agent 的数据
+                val agentName = arguments.optString("_agentName", "unknown").ifBlank { "unknown" }
+                sp.write(agentName, key, content)
+                successResponse("已写入 Scratchpad：agent=$agentName, key=$key, 大小=${content.length} 字符")
+            }
+            "scratchpad_read" -> {
+                val sp = teamManager?.getScratchpad()
+                    ?: return errorResponse("Scratchpad 不可用：当前没有活跃的工作区团队。")
+                val agentName = arguments.optString("agentName").trim()
+                val key = arguments.optString("key").trim()
+                if (agentName.isBlank()) return errorResponse("参数 'agentName' 不能为空。")
+                if (key.isBlank()) return errorResponse("参数 'key' 不能为空。")
+                val content = sp.read(agentName, key)
+                if (content == null) {
+                    errorResponse("未找到 Scratchpad 条目：agent=$agentName, key=$key")
+                } else {
+                    successResponse(content)
+                }
+            }
+            "scratchpad_list" -> {
+                val sp = teamManager?.getScratchpad()
+                    ?: return errorResponse("Scratchpad 不可用：当前没有活跃的工作区团队。")
+                val entries = sp.list()
+                if (entries.isEmpty()) {
+                    successResponse("Scratchpad 当前为空。")
+                } else {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                    val text = buildString {
+                        appendLine("Scratchpad 条目（共 ${entries.size} 个）：")
+                        appendLine()
+                        entries.forEach { entry ->
+                            val preview = entry.content.take(100).replace("\n", " ")
+                            appendLine("• [${entry.agentName}] ${entry.key}")
+                            appendLine("  最后修改: ${sdf.format(java.util.Date(entry.lastModified))}")
+                            appendLine("  预览: $preview${if (entry.content.length > 100) "..." else ""}")
                         }
                     }
                     successResponse(text.trimEnd())

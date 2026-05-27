@@ -94,6 +94,9 @@ class TeamManager(
     // ─── 沙盒 Hook 引用（用于注销）───
     private var sandboxHook: WorkspaceSandboxHook? = null
 
+    // ─── 共享 Scratchpad（跨 Agent 文件共享）───
+    private var scratchpad: Scratchpad? = null
+
     @Volatile private var cachedAvailableModelsStr: String = ""
 
     private val createTeamMutex = kotlinx.coroutines.sync.Mutex()
@@ -195,6 +198,14 @@ class TeamManager(
             sandboxHook = hook
             Log.d(TAG, "Registered workspace sandbox hook for: $sandboxPath")
         }
+
+        // 创建共享 Scratchpad，供跨 Agent 文件共享
+        val scratchpadDir = java.io.File(
+            android.os.Environment.getExternalStorageDirectory(),
+            "OmniChat/workspace/${teamName}/scratchpad"
+        )
+        scratchpad = Scratchpad(scratchpadDir)
+        Log.d(TAG, "Created scratchpad at: ${scratchpadDir.absolutePath}")
 
         onAgentCreated(ORCHESTRATOR_NAME, true)
         Log.d(TAG, "Team '$teamName' created with Orchestrator")
@@ -464,6 +475,10 @@ class TeamManager(
             }
             sandboxHook = null
 
+            // 清空共享 Scratchpad
+            scratchpad?.clearAll()
+            scratchpad = null
+
             // WHY: 清空任务注册中心，避免残留任务状态影响下次创建
             taskRegistry.clear()
             isCompleted.set(false)
@@ -517,6 +532,9 @@ class TeamManager(
 
     /** 获取 TaskRegistry 供 UI 观察任务状态 */
     fun getTaskRegistry(): TaskRegistry = taskRegistry
+
+    /** 获取 Scratchpad 供 MCP 工具访问 */
+    fun getScratchpad(): Scratchpad? = scratchpad
 
     // ═══════════════════════════════════════════════════════════════════════════════
     // 内部方法（供子模块调用）

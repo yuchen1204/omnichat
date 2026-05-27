@@ -355,6 +355,20 @@ class AgentExecutionLoops(
             // runTurn 正常返回即视为任务执行完毕
             taskCompleted = true
 
+            // 任务完成后生成进度摘要，注入 Orchestrator 上下文以便追踪
+            try {
+                val progressSummary = AgentProgressSummarizer(identity.agentName) { runner.getHistory() }
+                    .forceSummarize()
+                if (progressSummary.isNotBlank()) {
+                    messageBus.send(
+                        ORCHESTRATOR_NAME,
+                        TeamMessage.Text(from = "system", content = progressSummary)
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Progress summary injection failed (non-fatal): ${e.message}")
+            }
+
             // 自动验证：检查任务中提到的文件是否真的存在
             val fileVerification = verifyTaskFiles(taskPrompt)
 
