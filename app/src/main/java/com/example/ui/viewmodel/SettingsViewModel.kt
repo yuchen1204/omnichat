@@ -119,6 +119,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     put("pinned", m.pinned)
                     put("createdAt", m.createdAt)
                     put("updatedAt", m.updatedAt)
+                    put("lastReinforcedAt", m.lastReinforcedAt)
                 })
             }
             root.put("memories", arr)
@@ -262,7 +263,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                                 confidence = obj.optInt("confidence", 1),
                                 pinned = obj.optBoolean("pinned", false),
                                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
+                                lastReinforcedAt = obj.optLong("lastReinforcedAt", System.currentTimeMillis())
                             )
                         )
                         importedCount++
