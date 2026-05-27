@@ -76,6 +76,15 @@ class AgentRunner(
         private const val MAX_TEXT_ONLY_RETRIES = 3
 
         /**
+         * BUG-022 修复：连续工具调用失败的最大重试次数。
+         *
+         * 当工具调用持续失败（如网络问题、工具不可用）时，会导致无限循环：
+         * 工具调用失败 -> 添加错误消息 -> LLM 再次尝试 -> 再次失败 -> ...
+         * 检测到连续 N 次工具调用失败后，强制结束本轮对话。
+         */
+        private const val MAX_CONSECUTIVE_TOOL_FAILURES = 5
+
+        /**
          * Orchestrator 禁用的内置工具黑名单。
          *
          * 内置工具（serverId == -1）中，以下破坏性/写操作工具不允许 Orchestrator 直接调用，
@@ -158,6 +167,9 @@ class AgentRunner(
      */
     private val interventionQueue = ConcurrentLinkedDeque<AgentMessage>()
 
+    // 接入 ToolOrchestrator：只读工具并行、写入工具串行
+    private val toolOrchestrator = ToolOrchestrator(onToolCall)
+
     /**
      * 标记当前是否正在流式输出。
      */
@@ -201,6 +213,8 @@ class AgentRunner(
             }
             var iterationCount = 0
             var consecutiveTextOnlyCount = 0
+            // BUG-022 修复：跟踪连续工具调用失败次数，防止无限循环
+            var consecutiveToolFailureCount = 0
             do {
                 if (kotlin.coroutines.coroutineContext[TeammateContext]?.isCurrentTurnAborted == true) {
                     break
@@ -289,14 +303,14 @@ class AgentRunner(
                                     val existing = accumulatedToolCalls.getOrPut(index) { JSONObject() }
 
                                     val id = item.optString("id")
-                                    if (id.isNotEmpty()) existing.put("id", id)
+                                    if (id.isNotEmpty() && id != "null") existing.put("id", id)
 
                                     val function = item.optJSONObject("function")
                                     if (function != null) {
                                         val existingFunc = existing.optJSONObject("function")
                                             ?: JSONObject().also { existing.put("function", it) }
                                         val name = function.optString("name")
-                                        if (name.isNotEmpty()) existingFunc.put("name", name)
+                                        if (name.isNotEmpty() && name != "null") existingFunc.put("name", name)
                                         val args = function.optString("arguments")
                                         if (args.isNotEmpty()) {
                                             val currentArgs = existingFunc.optString("arguments", "")
@@ -357,89 +371,88 @@ class AgentRunner(
                     }
                 }
 
-                // 处理工具调用
+                // 通过 ToolOrchestrator 处理工具调用（只读工具并行、写入工具串行）
                 if (accumulatedToolCalls.isNotEmpty()) {
-                    var hasToolResults = false
-
-                    for (toolCall in accumulatedToolCalls.values) {
-                        val function = toolCall.optJSONObject("function") ?: continue
+                    val toolCalls = accumulatedToolCalls.values.mapNotNull { toolCall ->
+                        val function = toolCall.optJSONObject("function") ?: return@mapNotNull null
                         val toolName = function.optString("name")
+                        if (toolName.isEmpty()) {
+                            Log.w(TAG, "Skipping tool call with empty name: $toolCall")
+                            return@mapNotNull null
+                        }
                         val argsStr = function.optString("arguments")
                         val callId = toolCall.optString("id")
 
-                        try {
-                            // WHY: 将 JSON 解析错误与工具执行错误分开处理（Bug #25）。
-                            // JSONObject(argsStr) 抛出 JSONException 时，原实现将其归类为
-                            // "Tool call failed"，日志不明确且会写入一条误导性的 tool 结果。
-                            // 分离后：解析失败直接跳过该工具调用并记录清晰的错误日志。
-                            val argsJson = try {
-                                JSONObject(argsStr)
-                            } catch (e: org.json.JSONException) {
-                                Log.e(TAG, "Invalid JSON arguments for tool '$toolName' (callId=$callId): $argsStr", e)
-                                messagesLock.writeLock().lock()
-                                try {
-                                    context.messages.add(
-                                        AgentMessage(
-                                            role = "tool",
-                                            content = "Error: invalid arguments JSON for '$toolName': ${e.message}",
-                                            toolCallId = callId
-                                        )
+                        val argsJson = try {
+                            JSONObject(argsStr)
+                        } catch (e: org.json.JSONException) {
+                            Log.e(TAG, "Invalid JSON arguments for tool '$toolName' (callId=$callId): $argsStr", e)
+                            messagesLock.writeLock().lock()
+                            try {
+                                context.messages.add(
+                                    AgentMessage(
+                                        role = "tool",
+                                        content = "Error: invalid arguments JSON for '$toolName': ${e.message}",
+                                        toolCallId = callId
                                     )
-                                } finally {
-                                    messagesLock.writeLock().unlock()
-                                }
-                                hasToolResults = true
-                                continue
+                                )
+                            } finally {
+                                messagesLock.writeLock().unlock()
                             }
+                            return@mapNotNull null
+                        }
 
-                            // 通过回调执行工具调用
-                            val toolResult = onToolCall(
-                                context.agentName,
-                                toolName,
-                                argsJson,
-                                callId
-                            )
+                        ToolCall(name = toolName, args = argsJson, callId = callId)
+                    }
 
-                            // 更新工具调用计数
+                    if (toolCalls.isNotEmpty()) {
+                        // 通过 ToolOrchestrator 批量执行，自动分区只读/写入工具
+                        val results = toolOrchestrator.executeToolCalls(toolCalls, context.agentName)
+
+                        var hasToolError = false
+                        for (result in results) {
                             synchronized(usageStatsLock) {
                                 usageStats.toolUseCount++
                             }
 
-                            // 保存工具结果到上下文
                             messagesLock.writeLock().lock()
                             try {
                                 context.messages.add(
                                     AgentMessage(
                                         role = "tool",
-                                        content = toolResult,
-                                        toolCallId = callId
+                                        content = result.content,
+                                        toolCallId = result.callId
                                     )
                                 )
                             } finally {
                                 messagesLock.writeLock().unlock()
                             }
 
-                            hasToolResults = true
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Tool call failed: $toolName", e)
-                            messagesLock.writeLock().lock()
-                            try {
-                                context.messages.add(
-                                    AgentMessage(
-                                        role = "tool",
-                                        content = "Error: ${e.message}",
-                                        toolCallId = callId
-                                    )
-                                )
-                            } finally {
-                                messagesLock.writeLock().unlock()
+                            if (result.isError) {
+                                hasToolError = true
+                                consecutiveToolFailureCount++
+                            } else {
+                                consecutiveToolFailureCount = 0
                             }
-                            hasToolResults = true
                         }
-                    }
 
-                    // 如果有工具调用结果，继续下一轮对话（tool call 循环）
-                    if (hasToolResults) {
+                        // BUG-022 修复：跟踪连续工具调用失败，防止无限循环
+                        if (consecutiveToolFailureCount >= MAX_CONSECUTIVE_TOOL_FAILURES) {
+                            Log.w(TAG, "Agent '${context.agentName}' reached max consecutive tool failures ($MAX_CONSECUTIVE_TOOL_FAILURES), stopping")
+                            messagesLock.writeLock().lock()
+                            try {
+                                context.messages.add(
+                                    AgentMessage(
+                                        role = "system",
+                                        content = "连续工具调用失败 $MAX_CONSECUTIVE_TOOL_FAILURES 次，强制结束本轮对话。请检查工具是否可用或参数是否正确。"
+                                    )
+                                )
+                            } finally {
+                                messagesLock.writeLock().unlock()
+                            }
+                            break
+                        }
+
                         continue
                     }
                 }
@@ -453,6 +466,17 @@ class AgentRunner(
                 }
                 if (isWaitingResponse) {
                     Log.d(TAG, "Agent '${context.agentName}' is in waiting state, skipping nudge")
+                    break
+                }
+                // 跳过明确表示任务完成的 Agent：文本报告是合理的结束方式
+                val isCompletedResponse = lastAssistantResponse.let { text ->
+                    text.contains("任务完成") || text.contains("任务圆满完成") ||
+                    text.contains("任务已") || text.contains("最终结果") ||
+                    text.contains("已完成") || text.contains("任务报告") ||
+                    text.contains("最终任务") || text.contains("完成标准") && text.contains("已满足")
+                }
+                if (isCompletedResponse) {
+                    Log.d(TAG, "Agent '${context.agentName}' reports task completed, skipping nudge")
                     break
                 }
                 consecutiveTextOnlyCount++
@@ -477,7 +501,15 @@ class AgentRunner(
             } while (true)
 
         } finally {
-            isStreaming = false
+            // BUG-023 修复：将 isStreaming = false 和 processInterventionQueue 原子化。
+            // 原实现在 isStreaming = false 和 processInterventionQueue() 之间存在时间窗口，
+            // 新的干预消息可能在此期间被添加到队列但永远不会被处理。
+            // 修复：在 interventionLock 内设置 isStreaming = false 并立即处理队列。
+            synchronized(interventionLock) {
+                isStreaming = false
+                // 在锁内处理队列，确保不会遗漏任何消息
+                processInterventionQueue()
+            }
 
             // BUG-7：在锁内读取 messages 计算 token；之前的实现绕过 messagesLock，
             // 与并发的 injectMessage / compactContext 存在数据竞争（潜在 ConcurrentModificationException）。
@@ -510,9 +542,6 @@ class AgentRunner(
                 toolUseCount = finalToolUseCount,
                 durationMs = finalDuration,
             )
-
-            // 处理干预消息队列（需求 8.6）
-            processInterventionQueue()
         }
     }
 
@@ -570,6 +599,21 @@ class AgentRunner(
     }
 
     /**
+     * 注入系统消息（非干预，直接写入消息列表）。
+     *
+     * 用于在新任务开始前插入任务分界标记等系统级提示，
+     * 不经过干预队列，立即生效。
+     */
+    fun injectSystemMessage(content: String) {
+        messagesLock.writeLock().lock()
+        try {
+            context.messages.add(AgentMessage(role = "system", content = content))
+        } finally {
+            messagesLock.writeLock().unlock()
+        }
+    }
+
+    /**
      * 获取当前对话历史。
      *
      * 返回当前 Agent 的内存中对话历史列表。
@@ -608,27 +652,35 @@ class AgentRunner(
      * 保留最近 [KEEP_RECENT_MESSAGES] 条消息，将更早的消息压缩为摘要。
      * 确保 tool/tool_call 消息的配对关系不被破坏。
      *
-     * 整体使用 messagesLock 保护读写操作，避免 TOCTOU 竞态。
+     * 使用写锁保护整个压缩过程，避免 TOCTOU 竞态：
+     * - 读锁阶段：检查条件并复制消息
+     * - 写锁阶段：验证消息未被修改后执行替换
+     *
+     * BUG-021 修复：原实现在读锁和写锁之间存在时间窗口，
+     * 其他协程可能在此期间修改消息，导致修改被丢失。
+     * 现在在写锁内验证消息未变化后再执行替换。
      */
     private fun compactContextIfNeeded() {
+        // 1. 读锁内检查条件并复制消息
         val oldMessages: List<AgentMessage>
         val recentMessages: List<AgentMessage>
+        val snapshotSize: Int
+        val snapshotTotalChars: Int
 
         messagesLock.readLock().lock()
         try {
-            val totalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
-            if (totalChars <= MAX_CONTEXT_CHARS || context.messages.size <= KEEP_RECENT_MESSAGES) return
+            snapshotTotalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
+            if (snapshotTotalChars <= MAX_CONTEXT_CHARS || context.messages.size <= KEEP_RECENT_MESSAGES) return
 
-            val size = context.messages.size
-            val oldSize = size - KEEP_RECENT_MESSAGES
+            snapshotSize = context.messages.size
+            val oldSize = snapshotSize - KEEP_RECENT_MESSAGES
 
-            // 避免 toList() followed by takeLast and dropLast 的多次拷贝和内存分配
             val oldList = ArrayList<AgentMessage>(oldSize)
             val recentList = ArrayList<AgentMessage>(KEEP_RECENT_MESSAGES)
             for (i in 0 until oldSize) {
                 oldList.add(context.messages[i])
             }
-            for (i in oldSize until size) {
+            for (i in oldSize until snapshotSize) {
                 recentList.add(context.messages[i])
             }
             oldMessages = oldList
@@ -637,7 +689,7 @@ class AgentRunner(
             messagesLock.readLock().unlock()
         }
 
-        // 2. 锁外计算摘要（耗时的 O(n) 操作）
+        // 2. 锁外计算摘要（耗时的 O(n) 操作，只读取复制的数据）
         val oldCount = oldMessages.size
         val safeDropIndex = findSafeCutIndex(oldMessages, recentMessages)
 
@@ -702,9 +754,25 @@ class AgentRunner(
             }
         }
 
-        // 3. 写锁内原子替换，持锁时间极短（仅 clear + addAll）
+        // 3. 写锁内验证消息未变化后执行替换
         messagesLock.writeLock().lock()
         try {
+            // BUG-021 修复：验证消息列表在我们计算摘要期间未被修改
+            // 如果大小或内容变化，说明有新消息被添加，放弃本次压缩
+            // 下次 runTurn 循环时会重新检查
+            if (context.messages.size != snapshotSize) {
+                Log.d(TAG, "Aborting compaction for ${context.agentName}: messages changed during summary computation " +
+                    "(was $snapshotSize, now ${context.messages.size})")
+                return
+            }
+            
+            // 验证总字符数（快速检查，避免逐条比较）
+            val currentTotalChars = context.messages.sumOf { it.content.length + (it.toolCallsJson?.length ?: 0) }
+            if (currentTotalChars != snapshotTotalChars) {
+                Log.d(TAG, "Aborting compaction for ${context.agentName}: message content changed during summary computation")
+                return
+            }
+            
             context.messages.clear()
             context.messages.addAll(newMessages)
         } finally {
@@ -858,14 +926,19 @@ class AgentRunner(
      * 结果在单次 runTurn 内缓存：工具集的 hashCode 未变化时直接返回缓存，
      * 避免 do-while 循环中重复的格式转换和过滤遍历（Bug #12）。
      *
+     * BUG-029 修复：使用更细粒度的缓存键，包括工具列表的 hashCode，
+     * 以检测工具 schema 变化（如新增参数）。
+     *
      * @return 过滤后的 OpenAI 格式工具数组
      */
     fun getFilteredTools(): JSONArray {
-        // 缓存命中检查：工具集未变化时直接返回缓存
-        val currentVersion = mcpRuntimeManager.toolsVersion
-        cachedTools?.let { if (cachedToolsVersion == currentVersion) return it }
-
+        // BUG-029 修复：使用工具列表的 hashCode 作为缓存键，而不是仅依赖 toolsVersion
+        // 这样可以检测工具 schema 变化（如新增参数）
         val allTools = mcpRuntimeManager.getAllToolsAsOpenAiFormat()
+        val currentHashCode = allTools.toString().hashCode().toLong()
+        
+        cachedTools?.let { if (cachedToolsVersion == currentHashCode) return it }
+
         // 获取内置工具的 serverId（-1L），用于区分内置工具和外部工具
         val builtinServerId = -1L
         val builtinToolNames = mcpRuntimeManager.allTools.value
@@ -909,7 +982,7 @@ class AgentRunner(
         }
 
         cachedTools = filtered
-        cachedToolsVersion = currentVersion
+        cachedToolsVersion = currentHashCode
         return filtered
     }
 
