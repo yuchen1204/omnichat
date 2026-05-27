@@ -1,0 +1,1 @@
+{"name":"explorer","displayName":"探索者","systemPrompt":"","modelHint":"FAST","allowedTools":["read_file","list_directory","search_files","get_file_info","search_memory","get_current_time"],"isOrchestrator":false,"maxToolIterations":30,"description":"快速搜索分析，只读工具"}

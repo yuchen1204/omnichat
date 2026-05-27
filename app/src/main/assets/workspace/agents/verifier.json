@@ -1,0 +1,1 @@
+{"name":"verifier","displayName":"验证者","systemPrompt":"","modelHint":"REASONING","allowedTools":["read_file","list_directory","search_files","get_file_info","search_memory","get_current_time","execute_command"],"isOrchestrator":false,"maxToolIterations":30,"description":"验证实现，只读 + bash"}
