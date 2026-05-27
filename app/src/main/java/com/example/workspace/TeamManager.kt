@@ -989,6 +989,47 @@ class TeamManager(
             onToolCall = { agentName, toolName, args, callId ->
                 orchestratorTools.handleToolCall(agentName, toolName, args, callId)
             },
+            // 进度摘要：每 5 次工具调用后通知 Orchestrator（需 launch 因为 messageBus.send 是 suspend）
+            onProgressSummary = { agentName, summary ->
+                WorkspaceScopes.auxiliary.launch {
+                    try {
+                        messageBus.send(
+                            ORCHESTRATOR_NAME,
+                            TeamMessage.Text(from = "system", content = summary)
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to send progress summary for $agentName", e)
+                    }
+                }
+            },
+            // 消息持久化：每条消息写入内存后同步到 Room DB（fire-and-forget）
+            persistMessage = { message ->
+                WorkspaceScopes.auxiliary.launch {
+                    try {
+                        // teamName 格式为 "workspace_$wsId"，提取 sessionId
+                        val teamName = _teamState.value?.teamName ?: ""
+                        val sessionId = teamName.removePrefix("workspace_").toLongOrNull() ?: 0L
+                        // 通过 sessionId + agentName 查找 AgentInstance 的 DB ID
+                        val instanceId = repository.getAgentInstancesByWorkspaceSession(sessionId)
+                            .firstOrNull { it.agentName == context.agentName }?.id ?: 0L
+                        repository.insertWorkspaceMessage(
+                            com.example.data.WorkspaceMessage(
+                                workspaceSessionId = sessionId,
+                                agentInstanceId = instanceId,
+                                role = message.role,
+                                content = message.content,
+                                toolCallId = message.toolCallId,
+                                toolCallsJson = message.toolCallsJson,
+                                isIntervention = message.isIntervention,
+                                imagePath = message.imagePath,
+                                timestamp = message.timestamp,
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to persist message for ${context.agentName}", e)
+                    }
+                }
+            },
         )
     }
 
