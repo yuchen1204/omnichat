@@ -1,6 +1,5 @@
 package com.example.workspace
 
-import com.example.data.AgentPreset
 import com.example.data.ModelConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -91,18 +90,33 @@ data class TeamCompletionSnapshot(
  *
  * @property teamName 团队名称
  * @property orchestratorConfig Orchestrator 的模型配置
- * @property agentPresets Agent 预设列表
- * @property teammates 团队成员映射（Key: agentName）
+ * @property orchestratorName Orchestrator 名称
+ * @property activeSubAgents 当前活跃的 Sub-Agent 列表
+ * @property isRunning 团队是否正在运行
  * @property isCompleted 工作区是否已完成
+ * @property sandboxPath 工作区文件操作沙盒路径。非空时，所有 Agent 的文件工具调用仅允许在此目录内操作。
  */
 data class TeamState(
     val teamName: String,
     val orchestratorConfig: ModelConfig,
-    val agentPresets: List<AgentPreset>,
-    val teammates: Map<String, TeammateState> = emptyMap(),
+    val orchestratorName: String = ORCHESTRATOR_NAME,
+    val activeSubAgents: List<SubAgentInfo> = emptyList(),
+    val isRunning: Boolean = false,
     val isCompleted: Boolean = false,
-    /** 工作区文件操作沙盒路径。非空时，所有 Agent 的文件工具调用仅允许在此目录内操作。 */
     val sandboxPath: String? = null,
+)
+
+/**
+ * Sub-Agent 简要信息，用于 UI 展示。
+ *
+ * @property name Agent 名称
+ * @property description Agent 角色描述
+ * @property status 当前 Agent 状态
+ */
+data class SubAgentInfo(
+    val name: String,
+    val description: String,
+    val status: AgentStatus,
 )
 
 /**
@@ -120,108 +134,6 @@ data class TeammateState(
     val status: AgentStatus = AgentStatus.IDLE,
     val isOrchestrator: Boolean = false,
     val lastActivity: Long = System.currentTimeMillis(),
-)
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Sub-Agent 等待结果
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Sub-Agent 等待结果。
- *
- * Teammate 执行循环中等待下一条消息时的返回值。
- */
-sealed class WaitResult {
-    /** 收到关闭请求 */
-    data class ShutdownRequest(val request: TeamMessage.ShutdownRequest) : WaitResult()
-    /**
-     * 收到新消息（来自 Orchestrator 的任务分配 / 用户干预 / continue_conversation）。
-     *
-     * @param isFreshTask 是否为全新任务。true 表示需要注入"新任务开始"标记
-     *                    （执行 assign_task 或自动认领时为 true）；false 表示
-     *                    在已有上下文中继续（continue_conversation / 用户干预）。
-     */
-    data class NewMessage(val message: String, val from: String, val isFreshTask: Boolean = true) : WaitResult()
-    /** 收到其他 Sub-Agent 的协作消息 */
-    data class PeerMessage(val message: String, val from: String) : WaitResult()
-    /** 认领了新任务 */
-    data class TaskClaimed(val taskDescription: String) : WaitResult()
-    /** 已中止 */
-    data object Aborted : WaitResult()
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Orchestrator 指令与 Agent 规格
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * 任务分配模式枚举。
- */
-enum class TaskMode {
-    DIRECT,
-    CLAIM
-}
-
-/**
- * Agent 生成模式。
- * SPAWN: 全新上下文（默认）
- * FORK: 继承父级的对话历史和系统提示
- */
-enum class SpawnMode {
-    SPAWN,
-    FORK
-}
-
-/**
- * 模型能力提示，用于自动模型选择。
- *
- * 在 create_agents 中通过 modelHint 字段指定，系统根据提示
- * 自动选择最匹配的模型（基于 FetchedModel 的能力标记）。
- * 优先级低于显式指定的 modelConfigId/modelId。
- */
-enum class ModelHint {
-    /** 推理/编程任务，优先选择支持 thinking 的模型 */
-    REASONING,
-    /** 图像理解任务，需要支持视觉输入 */
-    VISION,
-    /** 快速响应，选择轻量模型 */
-    FAST,
-    /** 大上下文窗口需求 */
-    LARGE_CONTEXT,
-    /** 需要工具调用能力 */
-    TOOLS
-}
-
-/**
- * Orchestrator 指令。
- *
- * @property agents 要创建的 Agent 规格列表
- * @property taskMode 任务分配模式，默认 CLAIM
- */
-data class OrchestratorDirective(
-    val agents: List<AgentSpec>,
-    val taskMode: TaskMode = TaskMode.CLAIM
-)
-
-/**
- * Agent 规格。
- *
- * @property name Agent 名称
- * @property role 角色描述
- * @property systemPrompt 系统提示
- * @property modelConfigId 模型配置 ID（可选）
- * @property dependsOn 依赖的 Agent 名称列表
- */
-data class AgentSpec(
-    val name: String,
-    val role: String,
-    val systemPrompt: String,
-    val modelConfigId: Long?,
-    val modelId: String? = null,
-    val modelHint: ModelHint? = null,
-    val dependsOn: List<String> = emptyList(),
-    // WHY: 支持 FORK 模式，允许新 Agent 继承父级上下文，减少重复提示词传递
-    val spawnMode: SpawnMode = SpawnMode.SPAWN,
 )
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -243,44 +155,3 @@ val AGENT_COLORS = listOf(
     "#FF6D00", "#AA00FF", "#00BFA5", "#D50000",
     "#6200EA", "#0091EA"
 )
-
-/** Orchestrator 专属工具名称集合，子 Agent 不可调用 */
-val ORCHESTRATOR_ONLY_TOOLS = setOf("create_agents", "assign_task", "continue_conversation")
-
-/** 所有 Agent 共享的协作工具 */
-val COLLABORATION_TOOLS = setOf("peer_message")
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Sub-Agent TaskList 进度跟踪
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Sub-Agent 任务计划中的单个步骤。
- *
- * 由 Sub-Agent 在规划阶段自动生成，格式为 `- [ ] 描述` 或 `- [x] 描述`。
- *
- * @property description 步骤描述（如 "创建 index.html"）
- * @property isCompleted 是否已完成
- */
-data class AgentTaskStep(
-    val description: String,
-    val isCompleted: Boolean,
-)
-
-/**
- * Sub-Agent 的任务进度。
- *
- * 从 Sub-Agent 的流式输出中解析 TaskList 格式，实时更新进度。
- *
- * @property agentName Agent 名称
- * @property steps 任务步骤列表
- */
-data class AgentTaskProgress(
-    val agentName: String,
-    val steps: List<AgentTaskStep>,
-) {
-    val completedCount: Int get() = steps.count { it.isCompleted }
-    val totalCount: Int get() = steps.size
-    val isAllCompleted: Boolean get() = steps.isNotEmpty() && steps.all { it.isCompleted }
-    val progressText: String get() = "$completedCount/$totalCount"
-}
