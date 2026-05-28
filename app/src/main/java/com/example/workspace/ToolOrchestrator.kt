@@ -148,11 +148,19 @@ class ToolOrchestrator(
 
     /**
      * 执行单个工具调用，捕获异常并转换为错误结果。
+     *
+     * FIX (Bug #5): 必须显式重新抛出 [kotlinx.coroutines.CancellationException]，
+     * 否则协程取消信号会被吞掉转为普通错误结果，runTurn 会继续循环，
+     * killTeammate 的 5 秒 join 超时只能强制终止，
+     * 无法让 Agent 在工具调用层面响应取消。
      */
     private suspend fun executeSingle(call: ToolCall, agentName: String): ToolResult {
         return try {
             val content = onToolCall(agentName, call.name, call.args, call.callId)
             ToolResult(callId = call.callId, content = content)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 取消信号必须传播，不能转换为普通错误
+            throw e
         } catch (e: Exception) {
             // 捕获工具执行异常，转换为错误结果而非崩溃整个批次
             Log.e(TAG, "Tool '${call.name}' (callId=${call.callId}) failed: ${e.message}", e)

@@ -75,18 +75,19 @@ class AgentExecutionLoops(
         var completionTriggered = false
 
         while (!isCompleted.get() && coroutineContext.isActive) {
-            // WHY: 只在 currentInput 来自 Sub-Agent 结果（source=="subagent"）时才注入
-            // 收件箱里的额外 ResultReport，避免在 Orchestrator 刚分配完任务、Sub-Agent
-            // 还在执行时就把已有的结果注入上下文触发重复调度（Bug #MainAgent重复检查）。
-            // 原实现每轮循环开始都调用 collectPendingResults()，导致 Orchestrator 在
-            // assign_task 返回后的下一轮循环立即拿到 Sub-Agent 的结果并再次 runTurn，
-            // 而不是等待 waitForOrchestratorInput 收到 ResultReport 后才继续。
-            if (currentInput.second == "subagent") {
-                val pendingResults = collectPendingResults()
-                if (pendingResults.isNotEmpty()) {
-                    Log.d(TAG, "Collected ${pendingResults.size} agent result(s), injecting into context")
-                    summarizeAndInject(runner, pendingResults)
-                }
+            // FIX (Bug #14): 总是 drain 收件箱里所有待处理的 ResultReport，避免
+            // 多个 Sub-Agent 同时完成时其它 ResultReport 被卡在收件箱里直到
+            // 下一次"subagent"来源的 wake-up 才被注入。
+            //
+            // 原实现仅当 currentInput.second == "subagent" 时才调用，理由是避免
+            // 在 assign_task 返回后立即注入旧结果触发重复调度。但 assign_task
+            // 刚返回时 Sub-Agent 还在执行，pendingResults 必然为空，所以即使每轮
+            // 都 collect 也不会引入旧的"假结果"。这样能保证用户消息或系统提醒到达
+            // 后，Orchestrator 也能立刻看到所有已完成的子任务结果。
+            val pendingResults = collectPendingResults()
+            if (pendingResults.isNotEmpty()) {
+                Log.d(TAG, "Collected ${pendingResults.size} agent result(s), injecting into context")
+                summarizeAndInject(runner, pendingResults)
             }
 
             onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.STREAMING)
@@ -103,24 +104,26 @@ class AgentExecutionLoops(
 
             // 检测完成标记
             if (lastAssistant != null && isCompletionMarker(lastAssistant.content)) {
-                Log.d(TAG, "Orchestrator output completion marker")
-                completionTriggered = true
-                onWorkspaceComplete(runner)
-
-                // 完成后等待用户反馈，而不是立即退出
+                Log.d(TAG, "Orchestrator output completion marker, awaiting user feedback")
+                // 完成后先等待用户反馈，再决定是否真正结束
                 // 如果用户发现问题，可以继续调度 Sub-Agent 修改
                 onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.IDLE)
                 val feedbackInput = waitForUserFeedback(isCompleted)
 
                 if (feedbackInput.isBlank()) {
-                    // 用户没有反馈（超时或确认完成），退出循环
+                    // 用户没有反馈（超时或确认完成），真正结束
+                    // FIX (workflow): triggerWorkspaceComplete 必须放在用户反馈窗口之后。
+                    // 原实现先 trigger（cancel 所有 sub-agent + isCompleted=true）再等反馈，
+                    // 用户即使提供反馈也无法继续——sub-agent 已被销毁、isCompleted=true 让
+                    // while 循环立即退出。现在反过来：先等反馈，没反馈才 trigger 销毁。
                     Log.d(TAG, "No feedback received, workspace truly completed")
+                    completionTriggered = true
+                    onWorkspaceComplete(runner)
                     break
                 }
 
-                // 用户提供了反馈，继续执行
+                // 用户提供了反馈，继续调度（sub-agent 可能仍存活，可继续工作）
                 Log.d(TAG, "Received user feedback after completion, continuing...")
-                completionTriggered = false
                 currentInput = Triple(feedbackInput, "", null)
                 continue
             }
@@ -197,10 +200,13 @@ class AgentExecutionLoops(
                         break
                     }
                     is WaitResult.NewMessage -> {
-                        executeTask(runner, identity, waitResult.message)
+                        // FIX (Bug #2 + 工作流): isFreshTask=false 表示 continue_conversation
+                        // 或用户干预，executeTask 不会注入"新任务开始"标记，避免丢失上下文。
+                        executeTask(runner, identity, waitResult.message, isFreshTask = waitResult.isFreshTask)
                     }
                     is WaitResult.TaskClaimed -> {
-                        executeTask(runner, identity, waitResult.taskDescription)
+                        // claim 模式下认领的任务：始终是新任务
+                        executeTask(runner, identity, waitResult.taskDescription, isFreshTask = true)
                     }
                     is WaitResult.PeerMessage -> {
                         // WHY: Peer 消息不走 executeTask，避免被当作任务执行。
@@ -326,6 +332,12 @@ class AgentExecutionLoops(
         runner: AgentRunner,
         identity: TeammateIdentity,
         taskPrompt: String,
+        // FIX (Bug #2): 区分"分配新任务"与"延续对话"两种场景。
+        // - true（assign_task / claim 模式认领）→ 注入"新任务开始"标记，
+        //   要求 LLM 忽略旧任务的待办事项，专注新任务。
+        // - false（continue_conversation / 用户干预）→ 不注入标记，让 LLM
+        //   利用已有上下文继续工作。
+        isFreshTask: Boolean = true,
     ) {
         if (taskPrompt.isBlank()) {
             Log.w(TAG, "Teammate '${identity.agentName}' received empty task prompt, skipping execution")
@@ -347,9 +359,12 @@ class AgentExecutionLoops(
 
             val messageOffset = runner.getHistory().size
             onAgentStatusChanged(identity.agentName, AgentStatus.STREAMING)
-            // WHY: 注入任务分界标记，防止 LLM 看到旧任务的 task list（带未完成复选框）后重做旧任务。
-            // 新任务到达时，旧任务的上下文仍在消息历史中，LLM 会把旧任务的 "- [ ]" 当作待办事项。
-            runner.injectSystemMessage("═══ 新任务开始 ═══\n以下是全新的任务指令。请忽略之前所有任务计划和待办事项，专注于执行以下新任务。")
+            // FIX (Bug #2): 仅在全新任务（assign_task / 自动认领）时注入"新任务开始"标记。
+            // continue_conversation 和用户干预属于上下文延续，注入此标记会让 LLM
+            // 把之前的待办事项一并丢弃，破坏延续语义。
+            if (isFreshTask) {
+                runner.injectSystemMessage("═══ 新任务开始 ═══\n以下是全新的任务指令。请忽略之前所有任务计划和待办事项，专注于执行以下新任务。")
+            }
             runner.runTurn(taskPrompt, source = "orchestrator")
 
             // runTurn 正常返回即视为任务执行完毕
@@ -376,7 +391,17 @@ class AgentExecutionLoops(
                 Log.d(TAG, "Teammate '${identity.agentName}' turn aborted, returning to idle")
                 idleReason = IdleReason.INTERRUPTED
                 resultSummary = "任务被中断"
-                hasError = false
+                // FIX (Bug #7): 中断的任务不应上报为成功。
+                // 标记为失败让 Orchestrator 收到 status=failed 的 task-notification，
+                // 避免它误以为任务已完成而进入下一阶段。
+                hasError = true
+                taskCompleted = false
+                // DB 也需同步置为 FAILED，否则数据库行残留 IN_PROGRESS 状态
+                try {
+                    taskManager.failTask(identity.teamName, identity.agentName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to mark interrupted task failed for ${identity.agentName}", e)
+                }
                 // 不 return，让 finally 统一发送报告和 IdleNotification
             } else {
                 // 收集结果（锁外操作，可能抛异常）
@@ -440,14 +465,18 @@ class AgentExecutionLoops(
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // 外部取消（killTeammate 调用 scope.cancel()）
+            // FIX (workflow): suspend 调用在 CancelledScope 上会立刻抛 CE，
+            // 所以 failTask / sendReport 等清理动作必须包在 NonCancellable 内执行。
             if (!taskCompleted) {
                 resultSummary = "Agent 被系统中止，任务未完成。"
                 hasError = true
                 idleReason = IdleReason.FAILED
-                try {
-                    taskManager.failTask(identity.teamName, identity.agentName)
-                } catch (e2: Exception) {
-                    Log.e(TAG, "Failed to mark task failed for ${identity.agentName}", e2)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    try {
+                        taskManager.failTask(identity.teamName, identity.agentName)
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Failed to mark task failed for ${identity.agentName}", e2)
+                    }
                 }
             }
             throw e
@@ -507,18 +536,34 @@ class AgentExecutionLoops(
      * 安全发送 ResultReport，捕获所有异常。
      *
      * 无论 Channel 状态如何，尽力发送，失败只记录日志。
+     *
+     * FIX (Bug #10): 加 5 秒超时。原实现使用 suspend send，若 Orchestrator
+     * 收件箱被填满（容量 256），Sub-Agent 的 finally 块会无限挂起，
+     * 协程无法正常终止，killTeammate 的 join 也只能强制取消。
+     *
+     * FIX (workflow): finally 块在 CancellationException 路径下运行时，
+     * 父协程已处于 cancelled 状态，普通的 suspend 调用会立即抛 CE。
+     * 必须在 NonCancellable 上下文中执行，确保关键的清理上报能完成。
      */
     private suspend fun sendReportSafely(identity: TeammateIdentity, result: String, success: Boolean) {
         try {
-            messageBus.send(
-                ORCHESTRATOR_NAME,
-                TeamMessage.ResultReport(
-                    from = identity.agentName,
-                    taskId = "",
-                    result = result,
-                    success = success,
-                )
-            )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val sent = withTimeoutOrNull(5_000L) {
+                    messageBus.send(
+                        ORCHESTRATOR_NAME,
+                        TeamMessage.ResultReport(
+                            from = identity.agentName,
+                            taskId = "",
+                            result = result,
+                            success = success,
+                        )
+                    )
+                    true
+                }
+                if (sent == null) {
+                    Log.e(TAG, "CRITICAL: ResultReport for ${identity.agentName} timed out — Orchestrator inbox blocked")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "CRITICAL: Failed to send ResultReport for ${identity.agentName} — Orchestrator may hang", e)
         }
@@ -526,16 +571,26 @@ class AgentExecutionLoops(
 
     /**
      * 安全发送 IdleNotification，捕获所有异常。
+     *
+     * FIX (Bug #10 + workflow): 同 sendReportSafely，使用 NonCancellable 包裹超时 send。
      */
     private suspend fun sendIdleSafely(identity: TeammateIdentity, reason: IdleReason) {
         try {
-            messageBus.send(
-                ORCHESTRATOR_NAME,
-                TeamMessage.IdleNotification(
-                    from = identity.agentName,
-                    idleReason = reason,
-                )
-            )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val sent = withTimeoutOrNull(5_000L) {
+                    messageBus.send(
+                        ORCHESTRATOR_NAME,
+                        TeamMessage.IdleNotification(
+                            from = identity.agentName,
+                            idleReason = reason,
+                        )
+                    )
+                    true
+                }
+                if (sent == null) {
+                    Log.e(TAG, "CRITICAL: IdleNotification for ${identity.agentName} timed out — Orchestrator inbox blocked")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "CRITICAL: Failed to send IdleNotification for ${identity.agentName} — Orchestrator may hang", e)
         }
@@ -722,6 +777,12 @@ class AgentExecutionLoops(
         Log.d(TAG, "Waiting for user feedback after completion...")
 
         while (coroutineContext.isActive) {
+            // FIX (workflow): 外部强制设置 isCompleted（例如用户在 UI 点击"停止"）时，
+            // 应当立即退出而不是继续等待 5 分钟超时。
+            if (isCompleted.get()) {
+                Log.d(TAG, "isCompleted set externally, exiting feedback wait")
+                return ""
+            }
             val msg = withTimeoutOrNull(timeoutMs) {
                 messageBus.receive(ORCHESTRATOR_NAME)
             }
@@ -984,17 +1045,48 @@ class AgentExecutionLoops(
      * 将 TeamMessage 转换为 WaitResult。
      *
      * 统一处理消息类型的映射逻辑，避免在多处重复 when 表达式。
+     *
+     * FIX (Bug #2): 来自 Orchestrator 的 Text 必须映射为 NewMessage 而非 PeerMessage。
+     * Orchestrator 通过 [TeamManager.continueAgent] / [TeamManager.sendMessage] 发送
+     * Text 消息（如 continue_conversation 工具或用户干预），Sub-Agent 必须把它当作
+     * 新任务执行（走 executeTask 路径），从而向 Orchestrator 回送 ResultReport。
+     * 原实现把所有 Text 都当作 peer 协作消息，导致：
+     *   - Orchestrator 的 continue_conversation 不会收到 <task-notification>
+     *   - 用户对 Sub-Agent 的干预不会回流给 Orchestrator
+     *   - Orchestrator 永久挂起在 waitForOrchestratorInput 直到 30 分钟超时
      */
     private fun convertToWaitResult(msg: TeamMessage): WaitResult {
         return when (msg) {
             is TeamMessage.ShutdownRequest -> WaitResult.ShutdownRequest(msg)
-            is TeamMessage.Text -> WaitResult.PeerMessage(msg.content, msg.from)
+            is TeamMessage.Text -> {
+                // Orchestrator/user/system 来源 → 当作消息（需回送 ResultReport），
+                // 但不算"新任务"——continue_conversation 和用户干预要保留已有上下文，
+                // 不能注入"新任务开始"标记。
+                // 其它 Sub-Agent 来源 → 协作消息（peer），不打扰 Orchestrator。
+                val isFromOrchestratorOrUser =
+                    msg.from == ORCHESTRATOR_NAME ||
+                    msg.from == "user" ||
+                    msg.from == "system"
+                if (isFromOrchestratorOrUser) {
+                    WaitResult.NewMessage(msg.content, msg.from, isFreshTask = false)
+                } else {
+                    WaitResult.PeerMessage(msg.content, msg.from)
+                }
+            }
             is TeamMessage.TaskAssignment -> WaitResult.NewMessage(
-                "任务: ${msg.subject}\n${msg.description}", msg.from
+                "任务: ${msg.subject}\n${msg.description}",
+                msg.from,
+                isFreshTask = true,
             )
-            is TeamMessage.Wakeup -> WaitResult.Aborted
+            is TeamMessage.Wakeup -> {
+                // FIX (Bug #13): Wakeup 不应被解释为 Aborted。
+                Log.w(TAG, "Wakeup reached convertToWaitResult unexpectedly; treating as no-op")
+                WaitResult.NewMessage("[wakeup]", "system", isFreshTask = false)
+            }
             else -> WaitResult.NewMessage(
-                "[${msg::class.simpleName}] from ${msg.from}", msg.from
+                "[${msg::class.simpleName}] from ${msg.from}",
+                msg.from,
+                isFreshTask = false,
             )
         }
     }

@@ -215,6 +215,8 @@
   "memory.list.title": "AI 自我反省提炼的长效记忆 (%d):",
   "memory.7c4e09ff": "清空全部",
   "memory.empty.hint": "暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！",
+  "memory.unpin": "取消锁定",
+  "memory.pin": "锁定",
   "memory.63e4284a": "删除",
   "memory.d1ce90a9": "创建自定义 System 模板",
   "memory.1866d6dc": "模版说明/标题 (如: Kotlin 写法大师)",

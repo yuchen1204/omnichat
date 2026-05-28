@@ -95,11 +95,17 @@ fun AgentContext.buildSystemPrompt(
 - 如果任务需要访问沙盒之外的文件，告知用户无法执行并说明原因"""
     } else ""
 
-    return systemPrompt
+    var finalPrompt = systemPrompt
         .replace("[CROSS_SESSION_MEMORY]", crossSessionMemory)
         .replace("[MCP_TOOLS]", mcpToolsJson)
         .replace("[AVAILABLE_MODELS]", availableModels)
-        .replace("[SANDBOX_PATH]", sandboxSection)
+
+    if (finalPrompt.contains("[SANDBOX_PATH]")) {
+        finalPrompt = finalPrompt.replace("[SANDBOX_PATH]", sandboxSection)
+    } else if (sandboxSection.isNotEmpty()) {
+        finalPrompt = "$finalPrompt\n$sandboxSection"
+    }
+    return finalPrompt
 }
 
 /**

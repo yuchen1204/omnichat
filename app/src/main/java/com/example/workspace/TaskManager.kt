@@ -55,9 +55,21 @@ class TaskManager(private val dao: TeamTaskDao) {
     /**
      * 尝试认领下一个可执行的任务。
      *
-     * 使用单条原子 SQL（[TeamTaskDao.claimNextAvailableTask]）直接认领，
-     * 消除旧实现中查询与认领之间的竞态窗口。认领成功后在应用层验证 blockedBy
-     * 依赖是否已全部完成；若依赖未满足则释放任务（重置为 PENDING）并返回 null。
+     * FIX (Bug #3): 先在应用层过滤掉 blockedBy 未满足的候选，再用原子单任务 SQL
+     * [TeamTaskDao.claimTask] 认领。原实现先调用 [TeamTaskDao.claimNextAvailableTask]
+     * （只按 id 升序选最小 PENDING 任务，不看 blockedBy），如果最小 id 任务被阻塞，
+     * 会原子认领 → 检测依赖未满足 → 释放为 PENDING → 返回 null。
+     * 由于 observeTasks 一旦看到这条任务可认领就 Wakeup Agent，导致 Agent
+     * 反复认领-释放同一阻塞任务，永远轮不到后面真正可执行的任务（饥饿）。
+     *
+     * 新流程：
+     *   1. 取所有候选 PENDING 任务（应用层快照）
+     *   2. 应用层按 blockedBy / intendedAgent 过滤
+     *   3. 按 (intendedAgent 优先) + (id 升序) 排序
+     *   4. 用单任务 [TeamTaskDao.claimTask]（WHERE id=? AND owner IS NULL）原子认领
+     *   5. 抢占失败（其它 Agent 抢先）则换下一个候选继续尝试
+     *
+     * 这样既保留单任务原子认领的并发安全，又避免阻塞任务卡住整个队列。
      *
      * @param teamName 团队名称
      * @param agentName 认领者 Agent 名称
@@ -67,33 +79,47 @@ class TaskManager(private val dao: TeamTaskDao) {
         teamName: String,
         agentName: String
     ): TeamTask? {
-        // 原子认领：单条 SQL 完成查找 + 更新，无竞态窗口
-        val affected = dao.claimNextAvailableTask(teamName, agentName)
-        if (affected == 0) return null
+        // 1. 拉取候选任务和已完成任务 id 集合
+        val candidates = dao.findClaimableTasks(teamName, agentName)
+        if (candidates.isEmpty()) return null
 
-        // 取回刚认领的任务（owner = agentName, status = IN_PROGRESS）
-        // WHY: 极少数情况下（如 DB 写入后立即被另一线程清理），getInProgressTaskByOwner
-        // 可能返回 null，此时任务已被标记为 IN_PROGRESS 但无人处理，成为"孤儿任务"。
-        // 必须调用 releaseTask 将其重置为 PENDING，否则依赖链永久卡住（Bug #15）。
-        val claimed = dao.getInProgressTaskByOwner(teamName, agentName)
-        if (claimed == null) {
-            android.util.Log.w("TaskManager", "[$agentName] Task claimed (affected=$affected) but not found via getInProgressTaskByOwner — releasing orphan")
-            // 尝试按 owner+status 释放，防止孤儿任务永久卡在 IN_PROGRESS
-            dao.releaseOrphanTask(teamName, agentName)
-            return null
-        }
+        val completedTaskIds = dao.getCompletedTaskIds(teamName).map { it.toString() }.toSet()
 
-        // 应用层 blockedBy 检查（单条 SQL 无法高效内联此逻辑）
-        if (claimed.blockedBy.isNotEmpty()) {
-            val completedTaskIds = dao.getCompletedTaskIds(teamName).map { it.toString() }.toSet()
-            if (!completedTaskIds.containsAll(claimed.blockedBy)) {
-                // 依赖未满足，释放任务
-                dao.releaseTask(claimed.id)
-                return null
+        // 2. 过滤 blockedBy 未满足的任务，3. 排序：intendedAgent 精确匹配优先，否则按 id
+        val eligible = candidates
+            .asSequence()
+            .filter { it.blockedBy.isEmpty() || completedTaskIds.containsAll(it.blockedBy) }
+            .sortedWith(
+                compareBy(
+                    { if (it.intendedAgent == agentName) 0 else 1 },
+                    { it.id }
+                )
+            )
+            .toList()
+
+        if (eligible.isEmpty()) return null
+
+        // 4-5. 逐个尝试原子认领，抢占失败时尝试下一个
+        for (candidate in eligible) {
+            val affected = dao.claimTask(candidate.id, agentName)
+            if (affected == 0) {
+                // 被其它 Agent 抢先，尝试下一个候选
+                continue
             }
+            val claimed = dao.getInProgressTaskByOwner(teamName, agentName)
+            if (claimed == null) {
+                // 极少数情况下被外部清理，释放孤儿
+                android.util.Log.w(
+                    "TaskManager",
+                    "[$agentName] Task ${candidate.id} claimed but not found via getInProgressTaskByOwner — releasing orphan"
+                )
+                dao.releaseOrphanTask(teamName, agentName)
+                continue
+            }
+            return claimed
         }
 
-        return claimed
+        return null
     }
 
     /**

@@ -213,7 +213,7 @@ class AgentLifecycle(
         parentRunner: AgentRunner? = null,
         existingNames: Set<String>,
         parentScope: CoroutineScope,
-        createRunner: suspend (AgentContext, Boolean) -> AgentRunner,
+        createRunner: suspend (AgentContext, Boolean, Int) -> AgentRunner,
         executeLoop: suspend (AgentRunner, TeammateIdentity) -> Unit,
     ): TeammateIdentity {
         // WHY: 使用 size - containsKey 替代 count { predicate }（Bug #27）。
@@ -232,10 +232,11 @@ class AgentLifecycle(
         val uniqueName = generateUniqueName(name, existingNames)
             .take(config.maxAgentNameLength)
 
-        // WHY: 优先从 AgentRegistry 查找 AgentDefinition（JSON 文件 + Room 预设），
-        // 其次使用显式传入的 systemPrompt，最后回退到默认提示。
-        // 替代原来的直接 repository.getAllAgentPresets() 查询，统一由注册中心管理。
-        val agentDef = agentRegistry.get(uniqueName)
+        // FIX (Bug #6): 注册中心和预设查找应使用调用方传入的原始 name 而非生成的 uniqueName。
+        // generateUniqueName 在重名时会追加数字后缀（CodeWriter → CodeWriter2），
+        // 但同名 Agent 应共享相同的 SystemPrompt/modelHint/preset，否则后建的 Agent 会
+        // 退化为默认配置（无法找到 AgentDefinition / AgentPreset）。
+        val agentDef = agentRegistry.get(name)
         val finalSystemPrompt = (
             agentDef?.systemPrompt?.takeIf { it.isNotEmpty() }
                 ?: systemPrompt.takeIf { it.isNotEmpty() }
@@ -245,7 +246,7 @@ class AgentLifecycle(
         // 确定模型配置
         // WHY: AgentDefinition 不含 modelConfigId，仍需从 Room preset 查找模型配置 ID
         val presetModelConfigId = repository.getAllAgentPresets()
-            .find { it.name == uniqueName }?.modelConfigId
+            .find { it.name == name }?.modelConfigId
         val orchestratorRunner = runners[ORCHESTRATOR_NAME]
             ?: error("无法生成 Sub-Agent '$uniqueName'：Orchestrator runner 不存在（团队可能已被销毁）")
         val orchestratorConfig = orchestratorRunner.getModelConfig()
@@ -297,7 +298,10 @@ class AgentLifecycle(
         }
 
         // 创建 AgentRunner（子 Agent 禁用编排工具）
-        val runner = createRunner(context, true)
+        // FIX (Bug #8): 传递 AgentDefinition 中的 maxToolIterations，否则 explorer/verifier
+        // 等预设设置的较小循环上限被忽略，所有 sub-agent 均使用默认 50 次。
+        val maxIter = agentDef?.maxToolIterations ?: AgentRunner.MAX_TOOL_CALL_ITERATIONS
+        val runner = createRunner(context, true, maxIter)
         runners[uniqueName] = runner
 
         // 创建独立 CoroutineScope（对标 Claude Code 的 SupervisorJob + TeammateContext）
@@ -407,6 +411,10 @@ class AgentLifecycle(
      * BUG-025 修复：ConcurrentHashMap 的 forEach 是弱一致性的，
      * 在遍历过程中如果其他线程修改了 map，可能不会反映在遍历中。
      * 修复：先复制 keys/values 到独立列表，再遍历复制的列表。
+     *
+     * FIX (workflow): job.join() 在被取消的 OkHttp 阻塞调用上仍可能等到天荒地老。
+     * 与 [killTeammate] 同样套一层 5 秒超时，超时后直接进入资源清理路径，
+     * 避免整个 workspace 卸载流程被某个卡住的 Agent 挡住。
      */
     internal suspend fun cleanupAll() {
         // WHY: 先通过 TaskRegistry 终止所有注册的 AgentTask，确保任务级资源被释放
@@ -416,34 +424,41 @@ class AgentLifecycle(
         // ConcurrentHashMap.forEach 是弱一致性的，遍历期间其他线程的修改可能不会被看到。
         val scopeKeys = teammateScopes.keys.toList()
         for (key in scopeKeys) {
+            teammateScopes[key]?.coroutineContext?.get(TeammateContext)?.abort()
             teammateScopes[key]?.cancel()
         }
-        
-        // 复制 jobs 到独立列表再 join
+
+        // 复制 jobs 到独立列表再 join，套 5 秒整体超时防卡死
         val jobEntries = teammateJobs.entries.toList()
-        for ((_, job) in jobEntries) {
-            try { job.join() } catch (_: Exception) {}
+        kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+            for ((_, job) in jobEntries) {
+                try { job.join() } catch (_: Exception) {}
+            }
+        } ?: run {
+            Log.w(TAG, "cleanupAll: timeout waiting for ${jobEntries.size} teammate job(s), forcing cleanup")
         }
-        
+
         teammateScopes.clear()
         teammateJobs.clear()
-        
+
         // 复制 runners 到独立列表再 dispose
         val runnerEntries = runners.entries.toList()
         for ((_, runner) in runnerEntries) {
-            runner.dispose()
+            try { runner.dispose() } catch (e: Exception) {
+                Log.w(TAG, "Runner dispose failed (non-fatal)", e)
+            }
         }
         runners.clear()
-        
+
         messageBus.clear()
-        
+
         // 复制 deferreds 到独立列表再 complete
         val deferredEntries = agentCompletionDeferreds.entries.toList()
         for ((_, deferred) in deferredEntries) {
             deferred.complete(Unit)
         }
         agentCompletionDeferreds.clear()
-        
+
         // WHY: 清理 TaskRegistry 注册信息，在所有协程取消和 runner dispose 之后
         taskRegistry.clear()
         colorIndex.set(0)

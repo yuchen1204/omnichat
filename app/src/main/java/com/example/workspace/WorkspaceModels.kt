@@ -134,8 +134,14 @@ data class TeammateState(
 sealed class WaitResult {
     /** 收到关闭请求 */
     data class ShutdownRequest(val request: TeamMessage.ShutdownRequest) : WaitResult()
-    /** 收到新消息（来自 Orchestrator 的任务分配） */
-    data class NewMessage(val message: String, val from: String) : WaitResult()
+    /**
+     * 收到新消息（来自 Orchestrator 的任务分配 / 用户干预 / continue_conversation）。
+     *
+     * @param isFreshTask 是否为全新任务。true 表示需要注入"新任务开始"标记
+     *                    （执行 assign_task 或自动认领时为 true）；false 表示
+     *                    在已有上下文中继续（continue_conversation / 用户干预）。
+     */
+    data class NewMessage(val message: String, val from: String, val isFreshTask: Boolean = true) : WaitResult()
     /** 收到其他 Sub-Agent 的协作消息 */
     data class PeerMessage(val message: String, val from: String) : WaitResult()
     /** 认领了新任务 */

@@ -48,7 +48,10 @@ class AgentRegistry(private val context: Context) {
             for (fileName in files) {
                 if (!fileName.endsWith(".json")) continue
                 try {
-                    val json = context.assets.open("workspace/agents/")
+                    // FIX: 必须传入完整文件路径，原实现传入目录路径
+                    // assets.open("workspace/agents/") 会抛 FileNotFoundException 导致每次循环静默失败，
+                    // 内置 JSON 预设永远无法加载（Bug #1）。
+                    val json = context.assets.open("workspace/agents/$fileName")
                         .bufferedReader().use { it.readText() }
                     val def = parseDefinitionJson(json) ?: continue
                     definitions.putIfAbsent(def.name, def)

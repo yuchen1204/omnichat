@@ -90,26 +90,34 @@ class MessageBus {
     // 但没有消费者读取，导致 send() 挂起（RENDEZVOUS 模式）或内存增长（缓冲模式）。
     private val removedInboxes = ConcurrentHashMap.newKeySet<String>()
 
+    /**
+     * FIX (Bug #11): mutate 状态时统一加锁，消除 removeInbox 与 getOrCreateInbox
+     * 之间的 check-then-act 竞态。原实现下，T1 进入 getOrCreateInbox 已通过
+     * removedInboxes 检查；T2 调用 removeInbox 添加标记并关闭旧 channel；
+     * T1 继续 computeIfAbsent，重建一个无人消费的 live channel，
+     * 后续 send() 累积消息直到 OOM。
+     */
+    private val inboxLock = Any()
+
     fun getOrCreateInbox(agentName: String): Channel<TeamMessage> {
-        // WHY: 已移除的收件箱不再重建，防止死后重建导致内存泄漏
-        if (agentName in removedInboxes) {
-            return Channel<TeamMessage>(1).also { it.close() } // 返回已关闭的 Channel，send() 立即抛出 ClosedSendChannelException
-        }
-        return inboxes.computeIfAbsent(agentName) {
-            // WHY: 使用 Channel(64) 替代 Channel(1000)。
-            // capacity=1000 在高并发场景下（如广播、大量工具调用结果）会累积大量
-            // 未消费消息导致 OOM。64 是足够应对突发流量的缓冲区大小，同时限制了
-            // 最坏情况下的内存占用。消费端使用 receive() 挂起等待，不会丢失消息。
-            Channel(256)
+        synchronized(inboxLock) {
+            // WHY: 已移除的收件箱不再重建，防止死后重建导致内存泄漏
+            if (agentName in removedInboxes) {
+                return Channel<TeamMessage>(1).also { it.close() }
+            }
+            return inboxes.getOrPut(agentName) {
+                // WHY: 256 容量足够应对突发流量（广播 + 工具调用结果），同时限制最坏情况内存。
+                Channel(256)
+            }
         }
     }
 
     // WHY: 显式为新启动的 Agent 创建收件箱，允许复用之前死掉的 Agent 名称。
     // 在 spawnTeammate 中调用，清除 removedInboxes 标记后重建 Channel。
     fun explicitCreateInbox(agentName: String) {
-        removedInboxes.remove(agentName)
-        inboxes.computeIfAbsent(agentName) {
-            Channel(256)
+        synchronized(inboxLock) {
+            removedInboxes.remove(agentName)
+            inboxes.getOrPut(agentName) { Channel(256) }
         }
     }
 
@@ -132,8 +140,6 @@ class MessageBus {
                 val result = channel.trySend(message)
                 if (result.isFailure) {
                     // WHY: 区分 Channel 已关闭和 Channel 已满两种失败原因（Bug #28）。
-                    // 两者都导致 trySend 返回失败，但原因不同：关闭表示 Agent 已死亡，
-                    // 已满表示消费者处理不过来。日志区分有助于快速定位问题。
                     val reason = if (channel.isClosedForSend) "closed" else "full"
                     Log.w("MessageBus", "Channel $reason for $member, message dropped")
                 }
@@ -158,13 +164,17 @@ class MessageBus {
     }
 
     fun removeInbox(agentName: String) {
-        removedInboxes.add(agentName)
-        inboxes.remove(agentName)?.close()
+        synchronized(inboxLock) {
+            removedInboxes.add(agentName)
+            inboxes.remove(agentName)?.close()
+        }
     }
 
     fun clear() {
-        inboxes.values.forEach { it.close() }
-        inboxes.clear()
-        removedInboxes.clear()
+        synchronized(inboxLock) {
+            inboxes.values.forEach { it.close() }
+            inboxes.clear()
+            removedInboxes.clear()
+        }
     }
 }

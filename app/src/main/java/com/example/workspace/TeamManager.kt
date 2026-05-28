@@ -296,7 +296,7 @@ class TeamManager(
             parentRunner = parentRunner,
             existingNames = state.teammates.keys,
             parentScope = parentScope,
-            createRunner = { ctx, isSub -> createAgentRunner(ctx, isSub) },
+            createRunner = { ctx, isSub, maxIter -> createAgentRunner(ctx, isSub, maxIter) },
             executeLoop = { runner, id -> executionLoops.runTeammateLoop(runner, id) },
         )
 
@@ -971,7 +971,11 @@ class TeamManager(
      *
      * suspend 函数，避免在 Dispatchers.Default 线程池上使用 runBlocking 阻塞线程。
      */
-    private suspend fun createAgentRunner(context: AgentContext, isSubAgent: Boolean = false): AgentRunner {
+    private suspend fun createAgentRunner(
+        context: AgentContext,
+        isSubAgent: Boolean = false,
+        maxToolIterations: Int = AgentRunner.MAX_TOOL_CALL_ITERATIONS,
+    ): AgentRunner {
         if (cachedAvailableModelsStr.isEmpty()) {
             val allConfigs = repository.getAllConfigs()
             val allFetchedModels = repository.getAllFetchedModels()
@@ -985,6 +989,7 @@ class TeamManager(
             availableModels = cachedAvailableModelsStr,
             disallowedTools = if (isSubAgent) ORCHESTRATOR_ONLY_TOOLS else emptySet(),
             sandboxPath = _teamState.value?.sandboxPath,
+            maxToolIterations = maxToolIterations,
             onStreamChunk = onStreamChunk,
             onToolCall = { agentName, toolName, args, callId ->
                 orchestratorTools.handleToolCall(agentName, toolName, args, callId)
@@ -1178,7 +1183,9 @@ class TeamManager(
         ) ?: return false
 
         // WHY: 创建新 Runner 并注册到 lifecycle，使 Orchestrator 能通过 runners 访问
-        val runner = createAgentRunner(context, isSubAgent = true)
+        // 同时把 AgentDefinition.maxToolIterations 透传过去（Bug #8）
+        val maxIter = def?.maxToolIterations ?: AgentRunner.MAX_TOOL_CALL_ITERATIONS
+        val runner = createAgentRunner(context, isSubAgent = true, maxToolIterations = maxIter)
         lifecycle.runners[agentName] = runner
 
         val identity = state.teammates[agentName]?.identity ?: return false

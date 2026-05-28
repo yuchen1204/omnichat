@@ -50,6 +50,9 @@ class AgentRunner(
     private val availableModels: String = "",
     private val disallowedTools: Set<String> = emptySet(),
     private val sandboxPath: String? = null,
+    // FIX (Bug #8): AgentDefinition.maxToolIterations 之前未生效。
+    // 让调用方传入此值，覆盖默认 50；用于 explorer/verifier 等设置 30 的预设。
+    private val maxToolIterations: Int = MAX_TOOL_CALL_ITERATIONS,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
     private val onToolCall: suspend (agentName: String, toolName: String, args: JSONObject, callId: String) -> String,
     // 进度摘要回调：每 5 次工具调用后通知外部（如 UI 或日志）
@@ -66,8 +69,8 @@ class AgentRunner(
         /** 压缩时保留的最近消息条数 */
         private const val KEEP_RECENT_MESSAGES = 10
 
-        /** Tool Call 循环最大迭代次数，防止无限循环 */
-        private const val MAX_TOOL_CALL_ITERATIONS = 50
+        /** Tool Call 循环最大迭代次数默认值，防止无限循环 */
+        const val MAX_TOOL_CALL_ITERATIONS = 50
 
         /**
          * 连续纯文本响应（无 tool call）的最大重试次数。
@@ -228,14 +231,14 @@ class AgentRunner(
                 }
                 
                 iterationCount++
-                if (iterationCount > MAX_TOOL_CALL_ITERATIONS) {
-                    Log.w(TAG, "Agent '${context.agentName}' reached max tool call iterations ($MAX_TOOL_CALL_ITERATIONS)")
+                if (iterationCount > maxToolIterations) {
+                    Log.w(TAG, "Agent '${context.agentName}' reached max tool call iterations ($maxToolIterations)")
                     messagesLock.writeLock().lock()
                     try {
                         context.messages.add(
                             AgentMessage(
                                 role = "system",
-                                content = "已达到最大工具调用次数限制 ($MAX_TOOL_CALL_ITERATIONS)，强制结束本轮对话。"
+                                content = "已达到最大工具调用次数限制 ($maxToolIterations)，强制结束本轮对话。"
                             )
                         )
                     } finally {
