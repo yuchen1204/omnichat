@@ -104,3 +104,20 @@ Rules:
     fun findByType(agentType: String): AgentDefinition? =
         ALL.find { it.agentType == agentType }
 }
+
+suspend fun loadAgentDefinitions(
+    repository: com.example.data.AppRepository,
+): List<AgentDefinition> {
+    val presets = repository.getAllAgentPresets()
+    val customAgents = presets.map { preset ->
+        AgentDefinition(
+            agentType = "custom:${preset.name}",
+            displayName = preset.name,
+            systemPrompt = preset.systemPrompt,
+            modelConfigId = preset.modelConfigId,
+            isBuiltIn = false,
+            source = "preset",
+        )
+    }
+    return BuiltInAgents.ALL + customAgents
+}
