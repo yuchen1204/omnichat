@@ -20,7 +20,6 @@ import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.AgentTabState
 import com.example.workspace.AgentStatus
-import com.example.workspace.AgentTaskProgress
 import com.example.workspace.TeamState
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -32,7 +31,6 @@ import com.example.workspace.TeamState
  *
  * 展示所有 Agent 的 Tab，包含：
  * - 主控 Agent 用皇冠图标突出
- * - 颜色标识点（来自 [TeammateState.identity.color]）
  * - 实时状态图标（流式/等待工具/完成/错误）
  * - 后台繁忙提示：选中其他 tab 时，busy 的 tab 在右上角显示一个小红点
  *
@@ -44,7 +42,6 @@ fun AgentTabBar(
     selectedTabIndex: Int,
     teamState: TeamState?,
     agentStatuses: Map<String, AgentStatus>,
-    agentTaskProgress: Map<String, AgentTaskProgress> = emptyMap(),
     onTabSelected: (Int) -> Unit,
 ) {
     val uiSettings = LocalUISettings.current
@@ -73,7 +70,7 @@ fun AgentTabBar(
                 onClick = { onTabSelected(index) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Orchestrator → 皇冠；其他 Agent → 颜色点
+                        // Orchestrator -> 皇冠；其他 Agent -> 颜色点
                         if (tab.isOrchestrator) {
                             Icon(
                                 imageVector = Icons.Default.WorkspacePremium,
@@ -83,9 +80,9 @@ fun AgentTabBar(
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                         } else {
-                            val agentColor = teamState?.teammates?.get(tab.agentName)?.identity?.color
-                            if (agentColor != null) {
-                                AgentColorDot(agentColor)
+                            // 查找 sub-agent 的颜色（如果有的话）
+                            val subAgent = teamState?.activeSubAgents?.find { it.name == tab.agentName }
+                            if (subAgent != null) {
                                 Spacer(modifier = Modifier.width(5.dp))
                             }
                         }
@@ -99,27 +96,6 @@ fun AgentTabBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.widthIn(max = 140.dp)
                         )
-
-                        // TaskList 进度指示器
-                        val progress = agentTaskProgress[tab.agentName]
-                        if (progress != null && progress.totalCount > 0 && !tab.isOrchestrator) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            if (progress.isAllCompleted) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "任务完成",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            } else {
-                                Text(
-                                    text = progress.progressText,
-                                    fontSize = (10 * fs).sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
-                        }
 
                         Spacer(modifier = Modifier.width(6.dp))
 

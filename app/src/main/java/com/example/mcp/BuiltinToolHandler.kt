@@ -60,9 +60,6 @@ object BuiltinToolHandler {
             "create_timer" -> handleCreateTimer(context, arguments, sessionId)
             "cancel_timer" -> handleCancelTimer(arguments)
             "list_timers" -> handleListTimers()
-            "scratchpad_write" -> handleScratchpadWrite(arguments)
-            "scratchpad_read" -> handleScratchpadRead(arguments)
-            "scratchpad_list" -> handleScratchpadList()
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "agent" -> handleAgentTool(arguments)
@@ -948,56 +945,6 @@ object BuiltinToolHandler {
                 appendLine("   标签：${t.label}")
                 appendLine("   内容：${t.message}")
                 appendLine("   剩余：$humanRemaining")
-            }
-        }
-        return successResponse(text.trimEnd())
-    }
-
-    // ── Scratchpad 跨 Agent 共享工具 ────────────────────────────────────────
-
-    private fun handleScratchpadWrite(arguments: JSONObject): JSONObject {
-        val sp = teamManager?.getScratchpad()
-            ?: return errorResponse("Scratchpad 不可用：当前没有活跃的工作区团队。")
-        val key = arguments.optString("key").trim()
-        val content = arguments.optString("content")
-        if (key.isBlank()) return errorResponse("参数 'key' 不能为空。")
-        // WHY: 使用当前 Agent 名称作为命名空间，避免覆盖其他 Agent 的数据
-        val agentName = arguments.optString("_agentName", "unknown").ifBlank { "unknown" }
-        sp.write(agentName, key, content)
-        return successResponse("已写入 Scratchpad：agent=$agentName, key=$key, 大小=${content.length} 字符")
-    }
-
-    private fun handleScratchpadRead(arguments: JSONObject): JSONObject {
-        val sp = teamManager?.getScratchpad()
-            ?: return errorResponse("Scratchpad 不可用：当前没有活跃的工作区团队。")
-        val agentName = arguments.optString("agentName").trim()
-        val key = arguments.optString("key").trim()
-        if (agentName.isBlank()) return errorResponse("参数 'agentName' 不能为空。")
-        if (key.isBlank()) return errorResponse("参数 'key' 不能为空。")
-        val content = sp.read(agentName, key)
-        return if (content == null) {
-            errorResponse("未找到 Scratchpad 条目：agent=$agentName, key=$key")
-        } else {
-            successResponse(content)
-        }
-    }
-
-    private fun handleScratchpadList(): JSONObject {
-        val sp = teamManager?.getScratchpad()
-            ?: return errorResponse("Scratchpad 不可用：当前没有活跃的工作区团队。")
-        val entries = sp.list()
-        if (entries.isEmpty()) {
-            return successResponse("Scratchpad 当前为空。")
-        }
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-        val text = buildString {
-            appendLine("Scratchpad 条目（共 ${entries.size} 个）：")
-            appendLine()
-            entries.forEach { entry ->
-                val preview = entry.content.take(100).replace("\n", " ")
-                appendLine("• [${entry.agentName}] ${entry.key}")
-                appendLine("  最后修改: ${sdf.format(java.util.Date(entry.lastModified))}")
-                appendLine("  预览: $preview${if (entry.content.length > 100) "..." else ""}")
             }
         }
         return successResponse(text.trimEnd())

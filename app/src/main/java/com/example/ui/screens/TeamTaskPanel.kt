@@ -67,32 +67,44 @@ fun TeamTaskPanel(
             verticalArrangement = Arrangement.spacedBy(8.dp * spacingMultiplier)
         ) {
             // ── Agent 概览 ──
-            val teammates = teamState?.teammates ?: emptyMap()
-            if (teammates.isNotEmpty()) {
+            val subAgents = teamState?.activeSubAgents ?: emptyList()
+            val agentCount = if (teamState != null) 1 + subAgents.size else 0
+            if (agentCount > 0) {
                 item(key = "header_agents") {
                     SectionHeader(
                         icon = Icons.Default.Groups,
                         text = uiText("workspace.panel.agents", "Agent 列表"),
-                        countSuffix = teammates.size,
+                        countSuffix = agentCount,
                         fs = fs,
                         fontFamily = resolvedFontFamily
                     )
                 }
 
-                // 主控排在最上
-                val sortedTeammates = teammates.values.sortedByDescending { it.isOrchestrator }
-                items(sortedTeammates, key = { it.identity.agentName }) { teammate ->
-                    val agentName = teammate.identity.agentName
-                    val status = agentStatuses[agentName] ?: teammate.status
+                // Orchestrator 排在最上
+                item(key = "agent_orchestrator") {
+                    val orchStatus = agentStatuses[teamState!!.orchestratorName] ?: AgentStatus.IDLE
+                    AgentRow(
+                        name = teamState!!.orchestratorName,
+                        colorHex = "",
+                        isOrchestrator = true,
+                        status = orchStatus,
+                        fs = fs,
+                        fontFamily = resolvedFontFamily,
+                        onClick = { onAgentClick(teamState!!.orchestratorName) }
+                    )
+                }
+
+                items(subAgents, key = { it.name }) { subAgent ->
+                    val status = agentStatuses[subAgent.name] ?: subAgent.status
 
                     AgentRow(
-                        name = agentName,
-                        colorHex = teammate.identity.color,
-                        isOrchestrator = teammate.isOrchestrator,
+                        name = subAgent.name,
+                        colorHex = "",
+                        isOrchestrator = false,
                         status = status,
                         fs = fs,
                         fontFamily = resolvedFontFamily,
-                        onClick = { onAgentClick(agentName) }
+                        onClick = { onAgentClick(subAgent.name) }
                     )
                 }
             }

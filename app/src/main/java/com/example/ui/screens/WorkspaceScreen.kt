@@ -18,7 +18,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.WorkspaceViewModel
 import com.example.workspace.AgentStatus
-import com.example.workspace.AgentTaskProgress
 import com.example.workspace.ORCHESTRATOR_NAME
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,11 +41,9 @@ fun WorkspaceScreen(
     val agentTabs by workspaceViewModel.agentTabs.collectAsStateWithLifecycle()
     val agentStreamBuffers by workspaceViewModel.agentStreamBuffers.collectAsStateWithLifecycle()
     val agentStatuses by workspaceViewModel.agentStatuses.collectAsStateWithLifecycle()
-    val agentTaskProgress by workspaceViewModel.agentTaskProgress.collectAsStateWithLifecycle()
     val modelConfigs by workspaceViewModel.modelConfigs.collectAsStateWithLifecycle()
     val fetchedModels by workspaceViewModel.fetchedModels.collectAsStateWithLifecycle()
     val teamState by workspaceViewModel.teamState.collectAsStateWithLifecycle()
-    val teamTasks by workspaceViewModel.teamTasks.collectAsStateWithLifecycle()
     val exportLogStatus by workspaceViewModel.exportLogStatus.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -126,7 +123,7 @@ fun WorkspaceScreen(
     // Agent 颜色查找：把 teamState 转成 (name) -> color 函数，
     // 通过 CompositionLocal 暴露给所有子组件
     val agentColorLookup: (String) -> String? = remember(teamState) {
-        { name -> teamState?.teammates?.get(name)?.identity?.color }
+        { _ -> null }
     }
 
     val activeAgentStatus = agentStatuses[activeAgentName] ?: activeTab?.status ?: AgentStatus.IDLE
@@ -144,7 +141,7 @@ fun WorkspaceScreen(
                 phase = phase,
                 agentCount = agentTabs.size,
                 showTaskPanel = showTaskPanel,
-                hasTaskContent = teamTasks.isNotEmpty() || teamState != null,
+                hasTaskContent = teamState != null,
                 exportLogStatus = exportLogStatus,
                 onToggleTaskPanel = { showTaskPanel = !showTaskPanel },
                 onExportLog = {
@@ -161,7 +158,6 @@ fun WorkspaceScreen(
                     selectedTabIndex = selectedTabIndex,
                     teamState = teamState,
                     agentStatuses = agentStatuses,
-                    agentTaskProgress = agentTaskProgress,
                     onTabSelected = { selectedTabIndex = it }
                 )
             }
@@ -186,9 +182,9 @@ fun WorkspaceScreen(
                         )
                     }
 
-                    if (showTaskPanel && (teamTasks.isNotEmpty() || teamState != null)) {
+                    if (showTaskPanel && teamState != null) {
                         TeamTaskPanel(
-                            teamTasks = teamTasks,
+                            teamTasks = emptyList(),
                             teamState = teamState,
                             agentStatuses = agentStatuses,
                             modifier = Modifier
