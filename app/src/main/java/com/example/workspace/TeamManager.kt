@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @property config 工作区配置
  * @property onAgentCreated Agent 创建回调
  * @property onStreamChunk 流式 chunk 回调
+ * @property onMessageAdded 消息添加回调（转发至 AgentRunner）
  * @property onAgentStatusChanged Agent 状态变更回调
  * @property onWorkspaceComplete 工作区完成回调
  * @property onError 错误回调
@@ -318,6 +319,14 @@ class TeamManager(
         return runners[agentName]?.getHistory() ?: emptyList()
     }
 
+    // ─── Runner 访问器（供 SendMessageTool 等跨组件调用）───
+
+    /** Get a specific agent's runner by name */
+    fun getRunner(agentName: String): AgentRunner? = runners[agentName]
+
+    /** Get all active runners */
+    fun getAllRunners(): Map<String, AgentRunner> = runners.toMap()
+
     /**
      * 检测完成标记。
      */
@@ -452,6 +461,7 @@ class TeamManager(
             sandboxPath = _teamState.value?.sandboxPath,
             maxToolIterations = maxToolIterations,
             onStreamChunk = onStreamChunk,
+            onMessageAdded = onMessageAdded,
             onToolCall = { agentName, toolName, args, callId ->
                 if (toolName == AgentTool.TOOL_NAME && agentTool != null) {
                     // 路由到 AgentTool：创建隔离的 SubAgent 执行
