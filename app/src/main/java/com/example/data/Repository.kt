@@ -207,6 +207,16 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun insertTeamTask(task: TeamTask): Long = teamTaskDao.insert(task)
 
     /**
+     * 按 ID 查询单个任务。
+     */
+    suspend fun getTeamTaskById(id: Long): TeamTask? = teamTaskDao.getTaskById(id)
+
+    /**
+     * 获取指定团队的所有任务（别名，供 TaskTools 使用）。
+     */
+    suspend fun getTeamTasksByTeam(teamName: String): List<TeamTask> = teamTaskDao.getTasks(teamName)
+
+    /**
      * 更新任务。
      */
     suspend fun updateTeamTask(task: TeamTask) = teamTaskDao.update(task)

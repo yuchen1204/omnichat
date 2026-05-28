@@ -53,7 +53,10 @@ class AgentRunner(
     // FIX (Bug #8): AgentDefinition.maxToolIterations 之前未生效。
     // 让调用方传入此值，覆盖默认 50；用于 explorer/verifier 等设置 30 的预设。
     private val maxToolIterations: Int = MAX_TOOL_CALL_ITERATIONS,
+    // Phase 4: 支持异步/后台 Agent 执行模式
+    private val isAsync: Boolean = false,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
+    private val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit = { _, _ -> },
     private val onToolCall: suspend (agentName: String, toolName: String, args: JSONObject, callId: String) -> String,
     // 消息持久化回调：每条消息写入内存后同步到 Room DB
     private val persistMessage: ((AgentMessage) -> Unit)? = null,
@@ -89,42 +92,6 @@ class AgentRunner(
          */
         private const val MAX_CONSECUTIVE_TOOL_FAILURES = 5
 
-        /**
-         * Orchestrator 禁用的内置工具黑名单。
-         *
-         * 内置工具（serverId == -1）中，以下破坏性/写操作工具不允许 Orchestrator 直接调用，
-         * 应由 Sub-Agent 执行。未列出的内置工具（包括 get_current_time、ask_user、
-         * search_memory 等）默认对 Orchestrator 开放。
-         *
-         * 外部 MCP 工具（包括 remote_http）不受此黑名单限制，全部对 Orchestrator 开放，
-         * 以避免 remote HTTP MCP 工具因名称不在旧白名单中而被意外屏蔽。
-         */
-        private val ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS = setOf(
-            // 文件写操作
-            "write_file",
-            "create_directory",
-            "move_file",
-            "delete_file",
-            // 文档生成
-            "create_pdf_document",
-            "create_excel_document",
-            "create_word_document",
-            "create_powerpoint_document",
-            // UI 外观修改（由 Sub-Agent 或用户直接操作）
-            "set_primary_color",
-            "set_secondary_color",
-            "set_background_color",
-            "set_surface_color",
-            "set_corner_radius",
-            "set_spacing_multiplier",
-            "set_font_family",
-            "set_font_size_scale",
-            "set_font_weight",
-            // UI 文本修改
-            "set_ui_texts",
-            // MCP 工具组配置
-            "configure_mcp_tool_groups",
-        )
     }
 
     /** Agent 使用统计 */
@@ -171,6 +138,15 @@ class AgentRunner(
      * 流式输出结束后依次处理队列中的干预消息。
      */
     private val interventionQueue = ConcurrentLinkedDeque<AgentMessage>()
+
+    /**
+     * 异步 Agent 的待处理消息队列。
+     *
+     * 由父 Agent 或其他 Agent 通过 queuePendingMessage() 入队，
+     * 在 do-while 循环的工具轮次边界由 drainPendingMessages() 取出并注入上下文。
+     * 模仿 Claude Code 的 LocalAgentTask.pendingMessages 模式。
+     */
+    private val pendingMessages = ConcurrentLinkedDeque<AgentMessage>()
 
     // 接入 ToolOrchestrator：只读工具并行、写入工具串行
     private val toolOrchestrator = ToolOrchestrator(onToolCall)
@@ -236,6 +212,7 @@ class AgentRunner(
                                 content = "已达到最大工具调用次数限制 ($maxToolIterations)，强制结束本轮对话。"
                             )
                         )
+                        onMessageAdded(context.agentName, context.messages.last())
                     } finally {
                         messagesLock.writeLock().unlock()
                     }
@@ -371,6 +348,7 @@ class AgentRunner(
                                 toolCallsJson = toolCallsJson
                             )
                         )
+                        onMessageAdded(context.agentName, context.messages.last())
                         // 持久化 assistant 消息到 Room DB（写锁内，保证顺序一致）
                         persistMessage?.invoke(context.messages.last())
                     } finally {
@@ -403,6 +381,7 @@ class AgentRunner(
                                         toolCallId = callId
                                     )
                                 )
+                                onMessageAdded(context.agentName, context.messages.last())
                             } finally {
                                 messagesLock.writeLock().unlock()
                             }
@@ -431,6 +410,7 @@ class AgentRunner(
                                         toolCallId = result.callId
                                     )
                                 )
+                                onMessageAdded(context.agentName, context.messages.last())
                                 // 持久化 tool 结果消息到 Room DB（写锁内，保证顺序一致）
                                 persistMessage?.invoke(context.messages.last())
                             } finally {
@@ -456,10 +436,27 @@ class AgentRunner(
                                         content = "连续工具调用失败 $MAX_CONSECUTIVE_TOOL_FAILURES 次，强制结束本轮对话。请检查工具是否可用或参数是否正确。"
                                     )
                                 )
+                                onMessageAdded(context.agentName, context.messages.last())
                             } finally {
                                 messagesLock.writeLock().unlock()
                             }
                             break
+                        }
+
+                        // Phase 4: 在工具轮次边界取出异步 Agent 的待处理消息
+                        // 必须在 continue 之前，确保下一轮 API 调用前消息已注入上下文
+                        val pendingMsgs = drainPendingMessages()
+                        if (pendingMsgs.isNotEmpty()) {
+                            messagesLock.writeLock().lock()
+                            try {
+                                for (msg in pendingMsgs) {
+                                    context.messages.add(msg)
+                                    onMessageAdded(context.agentName, msg)
+                                    persistMessage?.invoke(msg)
+                                }
+                            } finally {
+                                messagesLock.writeLock().unlock()
+                            }
                         }
 
                         continue
@@ -501,6 +498,7 @@ class AgentRunner(
                                     "如果确实无法继续，请明确说明原因。不要回复'我马上执行'之类的文本而不实际调用工具。"
                             )
                         )
+                        onMessageAdded(context.agentName, context.messages.last())
                     } finally {
                         messagesLock.writeLock().unlock()
                     }
@@ -602,6 +600,7 @@ class AgentRunner(
         messagesLock.writeLock().lock()
         try {
             context.messages.add(message)
+            onMessageAdded(context.agentName, context.messages.last())
         } finally {
             messagesLock.writeLock().unlock()
         }
@@ -617,6 +616,7 @@ class AgentRunner(
         messagesLock.writeLock().lock()
         try {
             context.messages.add(AgentMessage(role = "system", content = content))
+            onMessageAdded(context.agentName, context.messages.last())
         } finally {
             messagesLock.writeLock().unlock()
         }
@@ -879,11 +879,35 @@ class AgentRunner(
             messagesLock.writeLock().lock()
             try {
                 context.messages.add(message)
+                onMessageAdded(context.agentName, context.messages.last())
             } finally {
                 messagesLock.writeLock().unlock()
             }
             Log.d(TAG, "Processed queued intervention message for ${context.agentName}")
         }
+    }
+
+    /**
+     * 取出并清空待处理消息队列。
+     *
+     * 在 do-while 循环的工具轮次边界调用，将父 Agent 或其他 Agent
+     * 通过 queuePendingMessage() 入队的消息注入上下文。
+     */
+    private fun drainPendingMessages(): List<AgentMessage> {
+        val messages = mutableListOf<AgentMessage>()
+        while (pendingMessages.isNotEmpty()) {
+            pendingMessages.poll()?.let { messages.add(it) }
+        }
+        return messages
+    }
+
+    /**
+     * 入队一条待处理消息，供异步 Agent 在下一轮工具轮次边界处理。
+     *
+     * 用于 SendMessage 工具和任务通知投递场景。
+     */
+    fun queuePendingMessage(message: AgentMessage) {
+        pendingMessages.addLast(message)
     }
 
     /**
@@ -923,63 +947,41 @@ class AgentRunner(
     /**
      * 获取过滤后的工具列表。
      *
-     * 从 MCP 工具列表中移除 [disallowedTools] 中的工具，
-     * 并为 Orchestrator 追加专属编排工具。
-     *
-     * Orchestrator 工具隔离规则：
-     * - 内置工具（serverId == -1）：屏蔽 [ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS] 黑名单中的破坏性工具，
-     *   其余内置工具（get_current_time、ask_user、search_memory 等）全部开放
-     * - 外部 MCP 工具（包括 remote_http）：全部对 Orchestrator 开放，不做额外过滤
-     * - agent 工具由 McpRuntimeManager 注册为内置工具，自动包含在工具列表中
+     * 通过 [AgentToolFilter.filterTools] 集中过滤，基于 AgentDefinition 的
+     * tools/disallowedTools 和 Orchestrator/Async 角色过滤工具。
      *
      * 结果在单次 runTurn 内缓存：工具集的 hashCode 未变化时直接返回缓存，
      * 避免 do-while 循环中重复的格式转换和过滤遍历（Bug #12）。
      *
-     * BUG-029 修复：使用更细粒度的缓存键，包括工具列表的 hashCode，
-     * 以检测工具 schema 变化（如新增参数）。
-     *
      * @return 过滤后的 OpenAI 格式工具数组
      */
     fun getFilteredTools(): JSONArray {
-        // BUG-029 修复：使用工具列表的 hashCode 作为缓存键，而不是仅依赖 toolsVersion
-        // 这样可以检测工具 schema 变化（如新增参数）
         val allTools = mcpRuntimeManager.getAllToolsAsOpenAiFormat()
         val currentHashCode = allTools.toString().hashCode().toLong()
-        
         cachedTools?.let { if (cachedToolsVersion == currentHashCode) return it }
 
-        // 获取内置工具的 serverId（-1L），用于区分内置工具和外部工具
-        val builtinServerId = -1L
-        val builtinToolNames = mcpRuntimeManager.allTools.value
-            .filter { it.serverId == builtinServerId }
-            .map { it.name }
-            .toSet()
-
-        val filtered = JSONArray()
-
+        val allToolNames = mutableSetOf<String>()
         for (i in 0 until allTools.length()) {
-            val tool = allTools.getJSONObject(i)
-            val function = tool.optJSONObject("function") ?: continue
-            val name = function.optString("name")
-
-            // 基础过滤：移除 disallowedTools 中的工具
-            if (name in disallowedTools) continue
-
-            if (context.isOrchestrator) {
-                val isBuiltin = name in builtinToolNames
-                if (isBuiltin) {
-                    // 内置工具：屏蔽黑名单中的破坏性工具，其余全部开放
-                    if (name in ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS) continue
-                }
-                // 外部 MCP 工具（包括 remote_http）：全部透传，不做白名单限制
+            allTools.getJSONObject(i).optJSONObject("function")?.optString("name")?.let {
+                allToolNames.add(it)
             }
-
-            filtered.put(tool)
         }
 
-        // 注：Orchestrator 通过内置的 "agent" 工具（McpRuntimeManager 注册）委派子任务，
-        // 无需额外追加编排工具。旧的 create_agents / assign_task / continue_conversation
-        // 已被 agent 工具取代，不再暴露给 LLM。
+        val allowedNames = AgentToolFilter.filterTools(
+            allToolNames = allToolNames,
+            agentDef = context.agentDefinition,
+            isOrchestrator = context.isOrchestrator,
+            isAsync = isAsync,
+        )
+
+        val filtered = JSONArray()
+        for (i in 0 until allTools.length()) {
+            val tool = allTools.getJSONObject(i)
+            val name = tool.optJSONObject("function")?.optString("name") ?: continue
+            if (name in allowedNames) {
+                filtered.put(tool)
+            }
+        }
 
         cachedTools = filtered
         cachedToolsVersion = currentHashCode

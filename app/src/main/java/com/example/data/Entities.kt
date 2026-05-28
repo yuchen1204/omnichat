@@ -464,6 +464,8 @@ data class UISettings(
  * @property createdAt 创建时间戳
  * @property updatedAt 最近更新时间戳
  */
+// TODO (Phase 7): Wire TeamTask into agent execution via TaskCreate/TaskUpdate tools.
+// Currently unused — will be integrated with AgentToolFilter and SendMessage tools.
 @Entity(
     tableName = "team_tasks",
     indices = [Index(value = ["teamName"])]

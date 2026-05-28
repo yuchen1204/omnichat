@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @property config 工作区配置
  * @property onAgentCreated Agent 创建回调
  * @property onStreamChunk 流式 chunk 回调
+ * @property onMessageAdded 消息添加回调（转发至 AgentRunner）
  * @property onAgentStatusChanged Agent 状态变更回调
  * @property onWorkspaceComplete 工作区完成回调
  * @property onError 错误回调
@@ -49,6 +50,7 @@ class TeamManager(
     private val config: WorkspaceConfig = WorkspaceConfig(),
     private val onAgentCreated: (agentName: String, isOrchestrator: Boolean) -> Unit,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
+    private val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit = { _, _ -> },
     private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
     private val onWorkspaceComplete: (snapshot: TeamCompletionSnapshot) -> Unit,
     private val onError: (message: String) -> Unit,
@@ -127,7 +129,7 @@ class TeamManager(
         val ctx = AgentContext(
             agentName = ORCHESTRATOR_NAME,
             isOrchestrator = true,
-            systemPrompt = ORCHESTRATOR_SYSTEM_PROMPT,
+            systemPrompt = buildOrchestratorSystemPrompt(BuiltInAgents.ALL, sandboxPath),
             modelConfig = orchestratorConfig,
             overrideModelId = orchestratorOverrideModelId,
             teamName = teamName,
@@ -140,7 +142,45 @@ class TeamManager(
         // 存储 AgentTool 所需的上下文
         this.orchestratorContext = ctx
         this.sandboxPath = sandboxPath
-        this.agentTool = AgentTool(mcpRuntimeManager)
+        this.agentTool = AgentTool(
+            mcpRuntimeManager = mcpRuntimeManager,
+            onSubAgentCreated = { name, description ->
+                // Add SubAgent to active list
+                _teamState.update { state ->
+                    state?.copy(
+                        activeSubAgents = state.activeSubAgents + SubAgentInfo(
+                            name = name,
+                            description = description,
+                            status = AgentStatus.IDLE,
+                        )
+                    )
+                }
+                onAgentCreated(name, false)
+                Log.d(TAG, "SubAgent created: $name ($description)")
+            },
+            onSubAgentStreamChunk = { name, chunk ->
+                // Forward to stream chunk callback for live display
+                onStreamChunk(name, chunk)
+            },
+            onSubAgentCompleted = { name, messages ->
+                // Remove SubAgent from active list
+                _teamState.update { state ->
+                    state?.copy(
+                        activeSubAgents = state.activeSubAgents.filter { it.name != name }
+                    )
+                }
+                Log.d(TAG, "SubAgent completed: $name")
+            },
+            onTaskNotification = { notification ->
+                // Inject notification as user message into orchestrator's pending queue
+                val orchestratorRunner = runners[ORCHESTRATOR_NAME]
+                orchestratorRunner?.queuePendingMessage(AgentMessage(
+                    role = "user",
+                    content = buildTaskNotificationText(notification),
+                    source = "task-notification",
+                ))
+            },
+        )
 
         val state = TeamState(
             teamName = teamName,
@@ -279,6 +319,14 @@ class TeamManager(
         return runners[agentName]?.getHistory() ?: emptyList()
     }
 
+    // ─── Runner 访问器（供 SendMessageTool 等跨组件调用）───
+
+    /** Get a specific agent's runner by name */
+    fun getRunner(agentName: String): AgentRunner? = runners[agentName]
+
+    /** Get all active runners */
+    fun getAllRunners(): Map<String, AgentRunner> = runners.toMap()
+
     /**
      * 检测完成标记。
      */
@@ -365,6 +413,30 @@ class TeamManager(
     }
 
     /**
+     * Build the notification text for a completed background task.
+     * Mirrors Claude Code's <task-notification> XML format.
+     */
+    private fun buildTaskNotificationText(notification: TaskNotification): String {
+        return buildString {
+            appendLine("<task-notification>")
+            appendLine("<task-id>${notification.taskId}</task-id>")
+            appendLine("<status>${notification.status.name.lowercase()}</status>")
+            if (notification.result != null) {
+                appendLine("<result>${notification.result}</result>")
+            }
+            if (notification.error != null) {
+                appendLine("<error>${notification.error}</error>")
+            }
+            appendLine("<usage>")
+            appendLine("  <total_tokens>${notification.totalTokens}</total_tokens>")
+            appendLine("  <tool_uses>${notification.toolUseCount}</tool_uses>")
+            appendLine("  <duration_ms>${notification.durationMs}</duration_ms>")
+            appendLine("</usage>")
+            appendLine("</task-notification>")
+        }
+    }
+
+    /**
      * 创建 AgentRunner。
      *
      * suspend 函数，避免在 Dispatchers.Default 线程池上使用 runBlocking 阻塞线程。
@@ -389,6 +461,7 @@ class TeamManager(
             sandboxPath = _teamState.value?.sandboxPath,
             maxToolIterations = maxToolIterations,
             onStreamChunk = onStreamChunk,
+            onMessageAdded = onMessageAdded,
             onToolCall = { agentName, toolName, args, callId ->
                 if (toolName == AgentTool.TOOL_NAME && agentTool != null) {
                     // 路由到 AgentTool：创建隔离的 SubAgent 执行
