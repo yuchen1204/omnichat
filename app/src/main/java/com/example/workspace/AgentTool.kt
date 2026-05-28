@@ -3,6 +3,7 @@ package com.example.workspace
 import android.util.Log
 import com.example.mcp.McpRuntimeManager
 import com.example.mcp.ToolSchemaDsl.schema
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
@@ -25,6 +26,8 @@ class AgentTool(
     private val onSubAgentCreated: (name: String, description: String) -> Unit = { _, _ -> },
     private val onSubAgentStreamChunk: (name: String, chunk: String) -> Unit = { _, _ -> },
     private val onSubAgentCompleted: (name: String, messages: List<AgentMessage>) -> Unit = { _, _ -> },
+    /** Callback to inject a notification message into the orchestrator's queue */
+    private val onTaskNotification: (notification: TaskNotification) -> Unit = { _ -> },
 ) {
     companion object {
         private const val TAG = "AgentTool"
@@ -44,6 +47,7 @@ class AgentTool(
             prop("prompt", "string", "Full task prompt for the SubAgent.")
             prop("subagent_type", "string", "Optional agent type (e.g., 'explore', 'plan', 'verification', 'custom:my-agent'). Defaults to general-purpose.")
             prop("model", "string", "Optional model ID to override the SubAgent's model.")
+            prop("run_in_background", "boolean", "Set to true to run this agent in the background. You will be notified when it completes.")
             required("description", "prompt")
         }
     }
@@ -69,13 +73,19 @@ class AgentTool(
         val modelOverride = args.optString("model", "").ifEmpty { null }
         // 提取 subagent_type，用于查找对应的 AgentDefinition
         val subagentType = args.optString("subagent_type", "").ifEmpty { null }
+        val runInBackground = args.optBoolean("run_in_background", false)
 
         if (prompt.isEmpty()) {
             return errorResult("Missing required parameter: prompt")
         }
 
         return try {
-            runSubAgent(description, prompt, modelOverride, parentContext, sandboxPath, subagentType)
+            val agentDef = resolveAgentDefinition(subagentType)
+            if (runInBackground || agentDef.background) {
+                runAsyncSubAgent(description, prompt, modelOverride, parentContext, sandboxPath, agentDef)
+            } else {
+                runSubAgent(description, prompt, modelOverride, parentContext, sandboxPath, subagentType)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "SubAgent execution failed", e)
             errorResult("SubAgent execution failed: ${e.message}")
@@ -178,6 +188,85 @@ class AgentTool(
             ?: "(SubAgent completed with no output)"
 
         return successResult(resultText)
+    }
+
+    /**
+     * Run a sub-agent asynchronously in the background.
+     * Returns immediately with a task ID; result delivered via notification.
+     */
+    private suspend fun runAsyncSubAgent(
+        description: String,
+        prompt: String,
+        modelOverride: String?,
+        parentContext: AgentContext,
+        sandboxPath: String,
+        agentDef: AgentDefinition,
+    ): JSONObject {
+        val subAgentName = "SubAgent-${java.util.UUID.randomUUID().toString().take(8)}"
+        val effectiveModelId = modelOverride ?: agentDef.overrideModelId
+
+        val subAgentContext = AgentContext(
+            agentName = subAgentName,
+            isOrchestrator = false,
+            systemPrompt = agentDef.systemPrompt.ifEmpty { buildSubAgentPrompt(description, sandboxPath) },
+            modelConfig = parentContext.modelConfig,
+            overrideModelId = effectiveModelId,
+            teamName = parentContext.teamName,
+            messages = ArrayList(),
+            agentDefinition = agentDef,
+        )
+
+        val disallowedTools = buildDisallowedTools(agentDef)
+
+        onSubAgentCreated(subAgentName, description)
+
+        // Launch in background scope — NOT blocking the orchestrator
+        WorkspaceScopes.auxiliary.launch {
+            val runner = AgentRunner(
+                context = subAgentContext,
+                mcpRuntimeManager = mcpRuntimeManager,
+                disallowedTools = disallowedTools,
+                sandboxPath = sandboxPath,
+                maxToolIterations = agentDef.maxTurns,
+                isAsync = true,
+                onStreamChunk = { _, chunk -> onSubAgentStreamChunk(subAgentName, chunk) },
+                onToolCall = { _, toolName, toolArgs, _ ->
+                    val serverId = mcpRuntimeManager.findServerIdForTool(toolName)
+                    if (serverId == null) "Error: Tool '$toolName' not found"
+                    else mcpRuntimeManager.callTool(serverId, toolName, toolArgs)?.toString() ?: "No result"
+                },
+            )
+
+            try {
+                runner.runTurn(userMessage = prompt, source = "agent-tool")
+                val lastMsg = subAgentContext.messages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
+                onTaskNotification(TaskNotification(
+                    taskId = subAgentName,
+                    agentName = subAgentName,
+                    status = TaskNotificationStatus.COMPLETED,
+                    result = lastMsg?.content,
+                    totalTokens = runner.getUsageStats().totalTokens,
+                    toolUseCount = runner.getUsageStats().toolUseCount,
+                    durationMs = runner.getUsageStats().durationMs,
+                ))
+            } catch (e: Exception) {
+                onTaskNotification(TaskNotification(
+                    taskId = subAgentName,
+                    agentName = subAgentName,
+                    status = TaskNotificationStatus.FAILED,
+                    error = e.message,
+                ))
+            } finally {
+                runner.dispose()
+                onSubAgentCompleted(subAgentName, subAgentContext.messages.toList())
+            }
+        }
+
+        return JSONObject().apply {
+            put("status", "async_launched")
+            put("agentId", subAgentName)
+            put("description", description)
+        }
     }
 
     /**

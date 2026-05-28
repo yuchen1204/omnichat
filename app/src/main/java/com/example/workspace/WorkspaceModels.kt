@@ -155,3 +155,26 @@ val AGENT_COLORS = listOf(
     "#FF6D00", "#AA00FF", "#00BFA5", "#D50000",
     "#6200EA", "#0091EA"
 )
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 后台任务通知
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Task notification — delivered to parent when an async agent completes.
+ * Mirrors Claude Code's <task-notification> XML.
+ */
+data class TaskNotification(
+    val taskId: String,
+    val agentName: String,
+    val status: TaskNotificationStatus,
+    val result: String? = null,
+    val error: String? = null,
+    val totalTokens: Int = 0,
+    val toolUseCount: Int = 0,
+    val durationMs: Long = 0,
+)
+
+enum class TaskNotificationStatus {
+    COMPLETED, FAILED, KILLED
+}

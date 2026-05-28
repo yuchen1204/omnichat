@@ -49,6 +49,7 @@ class TeamManager(
     private val config: WorkspaceConfig = WorkspaceConfig(),
     private val onAgentCreated: (agentName: String, isOrchestrator: Boolean) -> Unit,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
+    private val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit = { _, _ -> },
     private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
     private val onWorkspaceComplete: (snapshot: TeamCompletionSnapshot) -> Unit,
     private val onError: (message: String) -> Unit,
@@ -168,6 +169,15 @@ class TeamManager(
                     )
                 }
                 Log.d(TAG, "SubAgent completed: $name")
+            },
+            onTaskNotification = { notification ->
+                // Inject notification as user message into orchestrator's pending queue
+                val orchestratorRunner = runners[ORCHESTRATOR_NAME]
+                orchestratorRunner?.queuePendingMessage(AgentMessage(
+                    role = "user",
+                    content = buildTaskNotificationText(notification),
+                    source = "task-notification",
+                ))
             },
         )
 
@@ -390,6 +400,30 @@ class TeamManager(
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load cross-session memory", e)
             ""
+        }
+    }
+
+    /**
+     * Build the notification text for a completed background task.
+     * Mirrors Claude Code's <task-notification> XML format.
+     */
+    private fun buildTaskNotificationText(notification: TaskNotification): String {
+        return buildString {
+            appendLine("<task-notification>")
+            appendLine("<task-id>${notification.taskId}</task-id>")
+            appendLine("<status>${notification.status.name.lowercase()}</status>")
+            if (notification.result != null) {
+                appendLine("<result>${notification.result}</result>")
+            }
+            if (notification.error != null) {
+                appendLine("<error>${notification.error}</error>")
+            }
+            appendLine("<usage>")
+            appendLine("  <total_tokens>${notification.totalTokens}</total_tokens>")
+            appendLine("  <tool_uses>${notification.toolUseCount}</tool_uses>")
+            appendLine("  <duration_ms>${notification.durationMs}</duration_ms>")
+            appendLine("</usage>")
+            appendLine("</task-notification>")
         }
     }
 
