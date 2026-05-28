@@ -505,6 +505,15 @@ interface TeamTaskDao {
     suspend fun releaseOrphanTask(teamName: String, agentName: String, now: Long = System.currentTimeMillis())
 
     /**
+     * 按 ID 查询单个任务。
+     *
+     * @param id 任务 ID
+     * @return 任务实体，若不存在则返回 null
+     */
+    @Query("SELECT * FROM team_tasks WHERE id = :id LIMIT 1")
+    suspend fun getTaskById(id: Long): TeamTask?
+
+    /**
      * 删除指定团队的所有任务。
      *
      * 团队解散时调用，清理关联的任务数据。
