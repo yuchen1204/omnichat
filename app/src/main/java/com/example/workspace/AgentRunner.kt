@@ -146,7 +146,7 @@ class AgentRunner(
      * Usage stats 写入锁。
      *
      * WHY: usageStats 在 runTurn 协程中被多次写入（toolUseCount++、durationMs、totalTokens、startTimeMs），
-     * 同时被外部读者（OrchestratorTools.summarizeAndInject、TeamManager.triggerWorkspaceComplete）通过
+     * 同时被外部读者（TeamManager.triggerWorkspaceComplete）通过
      * [getUsageStats] 读取。原实现没有同步，存在数据竞争（撕裂读、可见性问题）。
      */
     private val usageStatsLock = Any()
@@ -930,7 +930,7 @@ class AgentRunner(
      * - 内置工具（serverId == -1）：屏蔽 [ORCHESTRATOR_BLOCKED_BUILTIN_TOOLS] 黑名单中的破坏性工具，
      *   其余内置工具（get_current_time、ask_user、search_memory 等）全部开放
      * - 外部 MCP 工具（包括 remote_http）：全部对 Orchestrator 开放，不做额外过滤
-     * - 编排工具（create_agents / assign_task / continue_conversation）单独追加
+     * - agent 工具由 McpRuntimeManager 注册为内置工具，自动包含在工具列表中
      *
      * 结果在单次 runTurn 内缓存：工具集的 hashCode 未变化时直接返回缓存，
      * 避免 do-while 循环中重复的格式转换和过滤遍历（Bug #12）。
@@ -977,18 +977,9 @@ class AgentRunner(
             filtered.put(tool)
         }
 
-        // Orchestrator 追加专属编排工具
-        if (context.isOrchestrator) {
-            filtered.put(CREATE_AGENTS_TOOL)
-            filtered.put(ASSIGN_TASK_TOOL)
-            filtered.put(CONTINUE_CONVERSATION_TOOL)
-        }
-
-        // WHY: Orchestrator 有专属编排工具，不应使用 peer_message 绕过编排流程。
-        // peer_message 仅用于 Sub-Agent 间协作。
-        if (!context.isOrchestrator) {
-            filtered.put(PEER_MESSAGE_TOOL)
-        }
+        // 注：Orchestrator 通过内置的 "agent" 工具（McpRuntimeManager 注册）委派子任务，
+        // 无需额外追加编排工具。旧的 create_agents / assign_task / continue_conversation
+        // 已被 agent 工具取代，不再暴露给 LLM。
 
         cachedTools = filtered
         cachedToolsVersion = currentHashCode

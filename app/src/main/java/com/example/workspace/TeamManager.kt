@@ -463,7 +463,7 @@ class TeamManager(
                 }
             }
             appendLine()
-            appendLine("快捷模型选择：在 create_agents 中使用 modelHint 字段，系统自动选择最合适的模型：")
+            appendLine("快捷模型选择：在 agent 工具中使用 model 字段指定子 Agent 模型：")
             appendLine("- modelHint=\"reasoning\" -> 推理/编程任务，选择支持 thinking 的模型")
             appendLine("- modelHint=\"vision\" -> 图像理解任务，选择支持视觉的模型")
             appendLine("- modelHint=\"fast\" -> 快速响应，选择轻量模型")

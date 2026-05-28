@@ -24,10 +24,6 @@ class WorkspaceCoreTest {
     private lateinit var repository: AppRepository
     private lateinit var mcpRuntimeManager: McpRuntimeManager
 
-    // TeamManager 需要的最小依赖
-    private lateinit var messageBus: MessageBus
-    private lateinit var taskManager: TaskManager
-
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
@@ -36,20 +32,17 @@ class WorkspaceCoreTest {
             .build()
         repository = AppRepository(db)
         mcpRuntimeManager = McpRuntimeManager.getInstance(context)
-        messageBus = MessageBus()
-        taskManager = TaskManager(repository.teamTaskDao)
     }
 
     @After
     fun tearDown() {
-        messageBus.clear()
         db.close()
     }
 
-    // ─── TeamManager：解析与完成标记 ─────────────────────────────────────────
+    // ─── TeamManager ─────────────────────────────────────────────────────
 
     /**
-     * 创建一个仅用于解析测试的 TeamManager（不启动任何协程）。
+     * 创建一个仅用于测试的 TeamManager（不启动任何协程）。
      */
     private fun makeTeamManager(): TeamManager {
         val config = ModelConfig(
@@ -63,11 +56,7 @@ class WorkspaceCoreTest {
         return TeamManager(
             repository = repository,
             mcpRuntimeManager = mcpRuntimeManager,
-            messageBus = messageBus,
-            taskManager = taskManager,
             parentScope = kotlinx.coroutines.MainScope(),
-            agentRegistry = AgentRegistry(context),
-            taskRegistry = TaskRegistry(),
             onAgentCreated = { _, _ -> },
             onStreamChunk = { _, _ -> },
             onAgentStatusChanged = { _, _ -> },
@@ -77,10 +66,9 @@ class WorkspaceCoreTest {
     }
 
     @Test
-    fun testTeamManagerParsingAndMarkers() {
+    fun testCompletionMarkerDetection() {
         val teamManager = makeTeamManager()
 
-        // 完成标记检测（要求标记出现在末尾，避免中间偶然包含时误触发）
         assertFalse(teamManager.isCompletionMarker("【任务完成】 已经搞定了"))
         assertFalse(teamManager.isCompletionMarker("  【任务完成】搞定了 "))
         assertTrue(teamManager.isCompletionMarker("搞定了 【任务完成】"))
@@ -88,88 +76,9 @@ class WorkspaceCoreTest {
         assertTrue(teamManager.isCompletionMarker("全部完成。【任务完成】"))
         assertTrue(teamManager.isCompletionMarker("全部完成。【任务完成】。"))
         assertFalse(teamManager.isCompletionMarker("当你完成时输出【任务完成】然后继续"))
-
-        // 默认 taskMode = CLAIM
-        val directiveJson = """
-            Here is the instruction:
-            {"action": "create_agents", "agents": [{"name": "Coder", "role": "Code Writer", "systemPrompt": "Write Kotlin code", "modelConfigId": 1}]}
-            Please proceed.
-        """.trimIndent()
-        val parsedDirective = teamManager.parseOrchestratorOutput(directiveJson)
-        assertNotNull(parsedDirective)
-        assertEquals(1, parsedDirective?.agents?.size)
-        assertEquals("Coder", parsedDirective?.agents?.get(0)?.name)
-        assertEquals("Code Writer", parsedDirective?.agents?.get(0)?.role)
-        assertEquals("Write Kotlin code", parsedDirective?.agents?.get(0)?.systemPrompt)
-        assertEquals(TaskMode.CLAIM, parsedDirective?.taskMode)
-
-        // taskMode = direct
-        val directDirectiveJson = """
-            {"action": "create_agents", "taskMode": "direct", "agents": [{"name": "Researcher", "role": "Research", "systemPrompt": "Do research"}]}
-        """.trimIndent()
-        val directParsedDirective = teamManager.parseOrchestratorOutput(directDirectiveJson)
-        assertNotNull(directParsedDirective)
-        assertEquals(TaskMode.DIRECT, directParsedDirective?.taskMode)
-        assertEquals("Researcher", directParsedDirective?.agents?.get(0)?.name)
     }
 
-    @Test
-    fun testTeamManagerParsingWithDependsOn() {
-        val teamManager = makeTeamManager()
-
-        val json = """
-            {"action": "create_agents", "taskMode": "direct", "agents": [
-              {"name": "A", "role": "First", "systemPrompt": "Do A", "dependsOn": []},
-              {"name": "B", "role": "Second", "systemPrompt": "Do B", "dependsOn": ["A"]}
-            ]}
-        """.trimIndent()
-        val directive = teamManager.parseOrchestratorOutput(json)
-        assertNotNull(directive)
-        assertEquals(2, directive?.agents?.size)
-        assertEquals(emptyList<String>(), directive?.agents?.get(0)?.dependsOn)
-        assertEquals(listOf("A"), directive?.agents?.get(1)?.dependsOn)
-    }
-
-    // ─── 增强解析：多策略 fallback ──────────────────────────────────────────
-
-    @Test
-    fun testRobustParsingFromCodeBlock() {
-        val teamManager = makeTeamManager()
-
-        // 从 markdown 代码块中提取 JSON
-        val outputWithCodeBlock = """
-我来创建一个 Sub-Agent 来完成任务：
-
-```json
-{"action": "create_agents", "taskMode": "direct", "agents": [{"name": "Writer", "role": "写作", "systemPrompt": "写文章"}]}
-```
-
-请开始执行。
-        """.trimIndent()
-        val directive = teamManager.parseOrchestratorOutputRobust(outputWithCodeBlock)
-        assertNotNull(directive)
-        assertEquals(1, directive?.agents?.size)
-        assertEquals("Writer", directive?.agents?.get(0)?.name)
-    }
-
-    @Test
-    fun testRobustParsingFromNaturalLanguage() {
-        val teamManager = makeTeamManager()
-
-        // 从自然语言中提取 Agent 规格
-        val naturalOutput = """
-我将创建以下 Agent 来协作完成任务：
-- Coder: 负责编写 Kotlin 代码
-- Reviewer: 负责代码审查
-        """.trimIndent()
-        val directive = teamManager.parseOrchestratorOutputRobust(naturalOutput)
-        assertNotNull(directive)
-        assertEquals(2, directive?.agents?.size)
-        assertEquals("Coder", directive?.agents?.get(0)?.name)
-        assertEquals("Reviewer", directive?.agents?.get(1)?.name)
-    }
-
-    // ─── AgentRunner 系统提示与上下文 ────────────────────────────────────────
+    // ─── AgentRunner 系统提示与上下文 ────────────────────────────────────
 
     @Test
     fun testAgentRunnerSystemPromptAndContext() {
@@ -220,24 +129,118 @@ class WorkspaceCoreTest {
         assertEquals("Hello user", history[1].content)
     }
 
-    // ─── ORCHESTRATOR_SYSTEM_PROMPT 格式验证 ─────────────────────────────────
+    // ─── getFilteredTools：agent 工具路由验证 ────────────────────────────
 
     @Test
-    fun testOrchestratorSystemPromptJsonIsValid() {
-        val teamManager = makeTeamManager()
+    fun testOrchestratorFilteredToolsIncludesAgent() {
+        val config = ModelConfig(
+            id = 1,
+            name = "Test Model",
+            endpoint = "http://localhost",
+            apiKey = "test",
+            selectedModelId = "gpt",
+            memoryModelId = "gpt"
+        )
 
-        // 系统提示中的 JSON 示例应能被 parseOrchestratorOutput 正确解析
-        val sampleOutput = """
-            {"action": "create_agents", "taskMode": "direct", "agents": [{"name": "Worker", "role": "执行者", "systemPrompt": "完成任务", "dependsOn": []}]}
-        """.trimIndent()
-        val directive = teamManager.parseOrchestratorOutput(sampleOutput)
-        assertNotNull("系统提示中的 JSON 示例应能被正确解析", directive)
-        assertEquals(1, directive?.agents?.size)
-        assertEquals("Worker", directive?.agents?.get(0)?.name)
-        assertEquals(TaskMode.DIRECT, directive?.taskMode)
+        val agentContext = AgentContext(
+            agentName = ORCHESTRATOR_NAME,
+            isOrchestrator = true,
+            systemPrompt = ORCHESTRATOR_SYSTEM_PROMPT,
+            modelConfig = config,
+            messages = ArrayList(),
+        )
+
+        val runner = AgentRunner(
+            context = agentContext,
+            mcpRuntimeManager = mcpRuntimeManager,
+            onStreamChunk = { _, _ -> },
+            onToolCall = { _, _, _, _ -> "" },
+        )
+
+        val tools = runner.getFilteredTools()
+        val toolNames = (0 until tools.length()).map { i ->
+            tools.getJSONObject(i).getJSONObject("function").getString("name")
+        }
+
+        // agent 工具应包含在 Orchestrator 的工具列表中
+        assertTrue("Orchestrator should have 'agent' tool", "agent" in toolNames)
+
+        // 旧的编排工具不应出现
+        assertFalse("Orchestrator should NOT have 'create_agents' tool", "create_agents" in toolNames)
+        assertFalse("Orchestrator should NOT have 'assign_task' tool", "assign_task" in toolNames)
+        assertFalse("Orchestrator should NOT have 'continue_conversation' tool", "continue_conversation" in toolNames)
+        assertFalse("Orchestrator should NOT have 'peer_message' tool", "peer_message" in toolNames)
     }
 
-    // ─── WorkspaceConfig 配置验证 ────────────────────────────────────────────
+    @Test
+    fun testSubAgentFilteredToolsExcludesAgent() {
+        val config = ModelConfig(
+            id = 1,
+            name = "Test Model",
+            endpoint = "http://localhost",
+            apiKey = "test",
+            selectedModelId = "gpt",
+            memoryModelId = "gpt"
+        )
+
+        val agentContext = AgentContext(
+            agentName = "TestSubAgent",
+            isOrchestrator = false,
+            systemPrompt = "You are a sub-agent.",
+            modelConfig = config,
+            messages = ArrayList(),
+        )
+
+        // SubAgent 使用 disallowedTools = setOf("agent")
+        val runner = AgentRunner(
+            context = agentContext,
+            mcpRuntimeManager = mcpRuntimeManager,
+            disallowedTools = setOf("agent"),
+            onStreamChunk = { _, _ -> },
+            onToolCall = { _, _, _, _ -> "" },
+        )
+
+        val tools = runner.getFilteredTools()
+        val toolNames = (0 until tools.length()).map { i ->
+            tools.getJSONObject(i).getJSONObject("function").getString("name")
+        }
+
+        // agent 工具不应出现在 SubAgent 的工具列表中
+        assertFalse("SubAgent should NOT have 'agent' tool", "agent" in toolNames)
+
+        // SubAgent 不应有旧的编排工具
+        assertFalse("SubAgent should NOT have 'create_agents' tool", "create_agents" in toolNames)
+        assertFalse("SubAgent should NOT have 'assign_task' tool", "assign_task" in toolNames)
+        assertFalse("SubAgent should NOT have 'continue_conversation' tool", "continue_conversation" in toolNames)
+        assertFalse("SubAgent should NOT have 'peer_message' tool", "peer_message" in toolNames)
+    }
+
+    // ─── AgentTool schema 验证 ──────────────────────────────────────────
+
+    @Test
+    fun testAgentToolSchemaIsValid() {
+        val schema = AgentTool.TOOL_SCHEMA
+        assertNotNull("AgentTool schema should not be null", schema)
+
+        // 验证必需参数存在
+        val properties = schema.optJSONObject("properties")
+        assertNotNull("Schema should have properties", properties)
+        assertTrue("Schema should have 'description' property", properties!!.has("description"))
+        assertTrue("Schema should have 'prompt' property", properties.has("prompt"))
+
+        val required = schema.optJSONArray("required")
+        assertNotNull("Schema should have required array", required)
+        val requiredList = (0 until required!!.length()).map { required.getString(it) }
+        assertTrue("'description' should be required", "description" in requiredList)
+        assertTrue("'prompt' should be required", "prompt" in requiredList)
+    }
+
+    @Test
+    fun testAgentToolNameConstant() {
+        assertEquals("agent", AgentTool.TOOL_NAME)
+    }
+
+    // ─── WorkspaceConfig 配置验证 ────────────────────────────────────────
 
     @Test
     fun testWorkspaceConfigDefaults() {
@@ -250,7 +253,7 @@ class WorkspaceCoreTest {
         assertTrue(config.enableCrossSessionMemory)
     }
 
-    // ─── 标题截断 ─────────────────────────────────────────────────────────────
+    // ─── 标题截断 ─────────────────────────────────────────────────────────
 
     @Test
     fun testWorkspaceTitleTruncation() {
@@ -259,5 +262,20 @@ class WorkspaceCoreTest {
 
         val processedTitle = longTaskWithNewlines.trim().replace(Regex("\\s+"), " ").take(20)
         assertEquals(expectedTitle, processedTitle)
+    }
+
+    // ─── Orchestrator 系统提示验证 ────────────────────────────────────────
+
+    @Test
+    fun testOrchestratorSystemPromptReferencesAgentTool() {
+        // 系统提示应引用 agent 工具，而非旧的 create_agents
+        assertTrue(
+            "Orchestrator prompt should mention 'agent' tool",
+            ORCHESTRATOR_SYSTEM_PROMPT.contains("agent 工具")
+        )
+        assertFalse(
+            "Orchestrator prompt should NOT mention 'create_agents'",
+            ORCHESTRATOR_SYSTEM_PROMPT.contains("create_agents")
+        )
     }
 }
