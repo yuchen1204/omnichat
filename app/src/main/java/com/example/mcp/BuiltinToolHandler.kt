@@ -63,6 +63,11 @@ object BuiltinToolHandler {
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "agent" -> handleAgentTool(arguments)
+            com.example.workspace.SendMessageTool.TOOL_NAME -> handleSendMessage(arguments)
+            com.example.workspace.TaskTools.TASK_CREATE -> handleTaskTool(context, toolName, arguments)
+            com.example.workspace.TaskTools.TASK_GET -> handleTaskTool(context, toolName, arguments)
+            com.example.workspace.TaskTools.TASK_LIST -> handleTaskTool(context, toolName, arguments)
+            com.example.workspace.TaskTools.TASK_UPDATE -> handleTaskTool(context, toolName, arguments)
             else -> errorResponse("未知的内置工具: $toolName")
         }
     }
@@ -76,6 +81,26 @@ object BuiltinToolHandler {
             ?: return errorResponse("AgentTool not available: no orchestrator context")
         val sandboxPath = teamManager?.getSandboxPath() ?: ""
         return agentTool.call(arguments, parentContext, sandboxPath)
+    }
+
+    // ── SendMessage 工具 ────────────────────────────────────────────────────
+
+    private suspend fun handleSendMessage(arguments: JSONObject): JSONObject {
+        val manager = teamManager
+            ?: return errorResponse("SendMessage not available: no active workspace")
+        val sendTool = com.example.workspace.SendMessageTool(manager)
+        return sendTool.call(arguments)
+    }
+
+    // ── Task 管理工具 ─────────────────────────────────────────────────────
+
+    private suspend fun handleTaskTool(context: Context, toolName: String, arguments: JSONObject): JSONObject {
+        val manager = teamManager
+            ?: return errorResponse("Task tools not available: no active workspace")
+        val teamName = manager.teamState.value?.teamName ?: ""
+        val repository = getRepository(context)
+        val taskTools = com.example.workspace.TaskTools(repository, teamName)
+        return taskTools.callTool(toolName, arguments)
     }
 
     // ── UI 工具 ────────────────────────────────────────────────────────────

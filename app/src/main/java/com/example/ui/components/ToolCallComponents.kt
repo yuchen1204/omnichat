@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Code
@@ -83,6 +84,7 @@ fun buildToolCallLookup(messages: List<UIModelToolMessage>): Map<String, ToolCal
 
 fun getToolIcon(name: String): ImageVector {
     return when (name) {
+        "agent" -> Icons.Default.Hub
         "file_list" -> Icons.Default.Folder
         "file_read" -> Icons.Default.Code
         "file_write", "file_append" -> Icons.Default.Edit
@@ -138,23 +140,21 @@ fun formatToolCallSummary(name: String, args: JSONObject): String {
         "apply_color_scheme" -> "应用了配色方案: ${args.optString("schemeId")}"
         "save_color_scheme" -> "保存了配色方案: ${args.optString("name")}"
         "delete_color_scheme" -> "删除了配色方案: ${args.optString("schemeId")}"
-        "create_agents" -> {
-            val agents = args.optJSONArray("agents")?.let { arr ->
-                (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }
-            } ?: emptyList()
-            "创建了 Sub-Agent 团队: ${agents.joinToString(", ")}"
+        "agent" -> {
+            val description = args.optString("description")
+            "委派子 Agent: $description"
         }
-        "assign_task" -> {
+        "send_message" -> {
             val to = args.optString("to")
-            "向 $to 分配了新任务"
+            "向 $to 发送了消息"
         }
-        "continue_conversation" -> {
-            val to = args.optString("to")
-            "与 $to 继续对话"
+        "task_create" -> {
+            val subject = args.optString("subject")
+            "创建任务: $subject"
         }
-        "peer_message" -> {
-            val to = args.optString("to")
-            "向 $to 发送了 Agent 间协作消息"
+        "task_update" -> {
+            val status = args.optString("status")
+            "更新任务状态: $status"
         }
         "get_current_time" -> "获取了当前系统时间"
         "get_ui_capabilities" -> "获取了 UI 配置参数范围"

@@ -877,6 +877,43 @@ class McpRuntimeManager private constructor(private val context: Context) {
             description = "Launch a sub-agent to perform a task independently",
             inputSchema = AgentTool.TOOL_SCHEMA,
         ),
+        // ── Inter-Agent Communication ────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = com.example.workspace.SendMessageTool.TOOL_NAME,
+            description = "Send a message to another agent in the workspace. Use '*' as target to broadcast to all agents.",
+            inputSchema = com.example.workspace.SendMessageTool.TOOL_SCHEMA,
+        ),
+        // ── Task Management ──────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = com.example.workspace.TaskTools.TASK_CREATE,
+            description = "Create a new task in the team task list. Tasks can be assigned to specific agents.",
+            inputSchema = com.example.workspace.TaskTools.SCHEMA_CREATE,
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = com.example.workspace.TaskTools.TASK_GET,
+            description = "Get details of a specific task by ID.",
+            inputSchema = com.example.workspace.TaskTools.SCHEMA_GET,
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = com.example.workspace.TaskTools.TASK_LIST,
+            description = "List all tasks in the current workspace.",
+            inputSchema = com.example.workspace.TaskTools.SCHEMA_LIST,
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = com.example.workspace.TaskTools.TASK_UPDATE,
+            description = "Update a task's status or owner.",
+            inputSchema = com.example.workspace.TaskTools.SCHEMA_UPDATE,
+        ),
     )
 
     /**
@@ -914,7 +951,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "scratchpad_list" to "core",
         "list_mcp_tool_groups" to "core",
         "configure_mcp_tool_groups" to "core",
-        AgentTool.TOOL_NAME to "core"
+        AgentTool.TOOL_NAME to "core",
+        com.example.workspace.SendMessageTool.TOOL_NAME to "core",
+        com.example.workspace.TaskTools.TASK_CREATE to "core",
+        com.example.workspace.TaskTools.TASK_GET to "core",
+        com.example.workspace.TaskTools.TASK_LIST to "core",
+        com.example.workspace.TaskTools.TASK_UPDATE to "core",
     )
 
     /** Internal helper: build a HEX color schema node */

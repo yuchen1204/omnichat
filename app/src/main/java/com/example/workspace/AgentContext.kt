@@ -181,6 +181,7 @@ fun buildOrchestratorSystemPrompt(
 - prompt: 完整的任务描述，包含所有必要的上下文和要求（英文）
 - subagent_type: 可选，指定 Agent 类型（见下方列表）
 - model: 可选，指定子 Agent 使用的模型
+- run_in_background: 可选，设为 true 在后台运行
 
 ## 可用 Agent 类型
 $agentList
@@ -198,6 +199,17 @@ $agentList
 - 分析子 Agent 的输出
 - 如果结果不完整或有误，可以重新委派或自己补充
 - 汇总所有结果后输出【任务完成】标记
+
+## send_message 工具
+向正在运行的 Agent 发送消息，用于跟进指令或广播通知。
+- to: 目标 Agent 名称，或 '*' 广播给所有 Agent
+- message: 消息内容
+
+## 任务管理工具
+- task_create: 创建任务（subject, description, intended_agent）
+- task_list: 列出所有任务
+- task_get: 获取任务详情（id）
+- task_update: 更新任务状态（id, status, owner）
 
 ## 工作目录
 [SANDBOX_PATH]
