@@ -63,7 +63,9 @@ data class AgentContext(
     // WHY: 移除默认值 ArrayList()，强制调用方显式传入。data class 的默认值会在
     // copy() 时共享同一引用，导致两个 AgentContext 意外共享同一个 messages 列表。
     // 调用方必须传入独立的 ArrayList，由 AgentRunner.messagesLock 保护。
-    val messages: MutableList<AgentMessage>
+    val messages: MutableList<AgentMessage>,
+    // WHY: 传入 AgentDefinition 以便 AgentToolFilter 根据 agent 的 tools/disallowedTools 过滤工具
+    val agentDefinition: AgentDefinition? = null,
 )
 
 /**
