@@ -449,7 +449,11 @@ class AgentRunner(
                         if (pendingMsgs.isNotEmpty()) {
                             messagesLock.writeLock().lock()
                             try {
-                                context.messages.addAll(pendingMsgs)
+                                for (msg in pendingMsgs) {
+                                    context.messages.add(msg)
+                                    onMessageAdded(context.agentName, msg)
+                                    persistMessage?.invoke(msg)
+                                }
                             } finally {
                                 messagesLock.writeLock().unlock()
                             }
