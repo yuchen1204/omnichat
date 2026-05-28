@@ -127,7 +127,7 @@ class TeamManager(
         val ctx = AgentContext(
             agentName = ORCHESTRATOR_NAME,
             isOrchestrator = true,
-            systemPrompt = ORCHESTRATOR_SYSTEM_PROMPT,
+            systemPrompt = buildOrchestratorSystemPrompt(BuiltInAgents.ALL, sandboxPath),
             modelConfig = orchestratorConfig,
             overrideModelId = orchestratorOverrideModelId,
             teamName = teamName,
@@ -140,7 +140,36 @@ class TeamManager(
         // 存储 AgentTool 所需的上下文
         this.orchestratorContext = ctx
         this.sandboxPath = sandboxPath
-        this.agentTool = AgentTool(mcpRuntimeManager)
+        this.agentTool = AgentTool(
+            mcpRuntimeManager = mcpRuntimeManager,
+            onSubAgentCreated = { name, description ->
+                // Add SubAgent to active list
+                _teamState.update { state ->
+                    state?.copy(
+                        activeSubAgents = state.activeSubAgents + SubAgentInfo(
+                            name = name,
+                            description = description,
+                            status = AgentStatus.IDLE,
+                        )
+                    )
+                }
+                onAgentCreated(name, false)
+                Log.d(TAG, "SubAgent created: $name ($description)")
+            },
+            onSubAgentStreamChunk = { name, chunk ->
+                // Forward to stream chunk callback for live display
+                onStreamChunk(name, chunk)
+            },
+            onSubAgentCompleted = { name, messages ->
+                // Remove SubAgent from active list
+                _teamState.update { state ->
+                    state?.copy(
+                        activeSubAgents = state.activeSubAgents.filter { it.name != name }
+                    )
+                }
+                Log.d(TAG, "SubAgent completed: $name")
+            },
+        )
 
         val state = TeamState(
             teamName = teamName,
