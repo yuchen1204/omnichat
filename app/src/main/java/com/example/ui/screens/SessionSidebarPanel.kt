@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -70,6 +71,10 @@ fun SessionSidebarPanel(
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    // 彩蛋：点击版本号 5 次解锁 workspace 入口
+    var versionClickCount by remember { mutableIntStateOf(0) }
+    var workspaceUnlocked by remember { mutableStateOf(false) }
 
     LaunchedEffect(workspaceError) {
         workspaceError?.let {
@@ -208,70 +213,70 @@ fun SessionSidebarPanel(
                 }
             }
 
-            // ── 工作区分区标题 ──────────────────────────────────────────
-            item {
-                Spacer(Modifier.height(8.dp))
-                SectionHeader(
-                    label = uiText("sidebar.workspaces", "多智能体工作区"),
-                    fs = fs,
-                    sidebarColors = sidebarColors,
-                    actionIcon = Icons.Default.Add,
-                    onAction = {
-                        scope.launch {
-                            val newId = workspaceViewModel.createWorkspaceSession()
-                            if (newId > 0) {
-                                // WHY: createWorkspaceSession 已经设置好 _selectedWorkspaceSession，
-                                // 不需要再调 selectWorkspaceSession（会触发异步清空再重载，导致空白）
-                                onWorkspaceSelected()
+            // ── 工作区分区（彩蛋解锁后显示）────────────────────────────
+            if (workspaceUnlocked) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    SectionHeader(
+                        label = uiText("sidebar.workspaces", "多智能体工作区"),
+                        fs = fs,
+                        sidebarColors = sidebarColors,
+                        actionIcon = Icons.Default.Add,
+                        onAction = {
+                            scope.launch {
+                                val newId = workspaceViewModel.createWorkspaceSession()
+                                if (newId > 0) {
+                                    onWorkspaceSelected()
+                                }
                             }
                         }
-                    }
-                )
-            }
-
-            if (workspaceSessions.isEmpty()) {
-                item {
-                    EmptyHint(
-                        text = uiText("sidebar.no_workspace", "点击 + 新建工作区，让多个 AI 协同完成任务"),
-                        fs = fs,
-                        sidebarColors = sidebarColors
                     )
                 }
-            } else {
-                items(workspaceSessions, key = { "workspace_${it.id}" }) { ws ->
-                    val isActive = ws.id == activeWorkspaceId
 
-                    SessionListItem(
-                        title = ws.title,
-                        subtitle = formatRelativeTime(ws.lastActiveAt),
-                        icon = Icons.Default.Hub,
-                        isActive = isActive,
-                        statusDot = if (ws.isActive) customColors.success else null,
-                        fs = fs,
-                        resolvedFontFamily = resolvedFontFamily,
-                        sidebarColors = sidebarColors,
-                        cornerRadius = cornerRadius,
-                        testTag = "workspace_item_${ws.id}",
-                        onClick = {
-                            workspaceViewModel.selectWorkspaceSession(ws.id)
-                            onWorkspaceSelected()
-                        },
-                        onLongClick = { deleteTargetWorkspace = ws },
-                        trailingContent = {
-                            IconButton(
-                                onClick = { deleteTargetWorkspace = ws },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.5f)
-                                           else sidebarColors.onBackground.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(14.dp)
-                                )
+                if (workspaceSessions.isEmpty()) {
+                    item {
+                        EmptyHint(
+                            text = uiText("sidebar.no_workspace", "点击 + 新建工作区，让多个 AI 协同完成任务"),
+                            fs = fs,
+                            sidebarColors = sidebarColors
+                        )
+                    }
+                } else {
+                    items(workspaceSessions, key = { "workspace_${it.id}" }) { ws ->
+                        val isActive = ws.id == activeWorkspaceId
+
+                        SessionListItem(
+                            title = ws.title,
+                            subtitle = formatRelativeTime(ws.lastActiveAt),
+                            icon = Icons.Default.Hub,
+                            isActive = isActive,
+                            statusDot = if (ws.isActive) customColors.success else null,
+                            fs = fs,
+                            resolvedFontFamily = resolvedFontFamily,
+                            sidebarColors = sidebarColors,
+                            cornerRadius = cornerRadius,
+                            testTag = "workspace_item_${ws.id}",
+                            onClick = {
+                                workspaceViewModel.selectWorkspaceSession(ws.id)
+                                onWorkspaceSelected()
+                            },
+                            onLongClick = { deleteTargetWorkspace = ws },
+                            trailingContent = {
+                                IconButton(
+                                    onClick = { deleteTargetWorkspace = ws },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.5f)
+                                               else sidebarColors.onBackground.copy(alpha = 0.3f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -284,6 +289,13 @@ fun SessionSidebarPanel(
             sidebarColors = sidebarColors,
             cornerRadius = cornerRadius,
             onSettingsClick = onSettingsClick,
+            onVersionClick = {
+                versionClickCount++
+                if (versionClickCount >= 5 && !workspaceUnlocked) {
+                    workspaceUnlocked = true
+                    android.widget.Toast.makeText(context, "已解锁多智能体工作区", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
             context = context
         )
     }
@@ -637,6 +649,7 @@ private fun SidebarFooter(
     sidebarColors: com.example.ui.theme.SidebarColors,
     cornerRadius: androidx.compose.ui.unit.Dp,
     onSettingsClick: () -> Unit,
+    onVersionClick: () -> Unit,
     context: android.content.Context
 ) {
     val customColors = LocalCustomColors.current
@@ -755,6 +768,22 @@ private fun SidebarFooter(
                     contentDescription = uiText("sidebar.7f62f6d8", "恢复默认配色"),
                     tint = sidebarColors.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // 版本号（彩蛋入口）
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)))
+                    .clickable { onVersionClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = com.example.BuildConfig.VERSION_NAME,
+                    fontSize = (10 * fs).sp,
+                    color = sidebarColors.onBackground.copy(alpha = 0.3f),
+                    fontFamily = resolvedFontFamily
                 )
             }
         }
