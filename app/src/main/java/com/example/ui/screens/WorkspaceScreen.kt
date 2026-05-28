@@ -44,6 +44,7 @@ fun WorkspaceScreen(
     val modelConfigs by workspaceViewModel.modelConfigs.collectAsStateWithLifecycle()
     val fetchedModels by workspaceViewModel.fetchedModels.collectAsStateWithLifecycle()
     val teamState by workspaceViewModel.teamState.collectAsStateWithLifecycle()
+    val teamTasks by workspaceViewModel.teamTasks.collectAsStateWithLifecycle()
     val exportLogStatus by workspaceViewModel.exportLogStatus.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -120,10 +121,10 @@ fun WorkspaceScreen(
         hasSubAgents = hasSubAgents,
     )
 
-    // Agent 颜色查找：把 teamState 转成 (name) -> color 函数，
+    // Agent 颜色查找：根据 agentName 确定性生成颜色
     // 通过 CompositionLocal 暴露给所有子组件
-    val agentColorLookup: (String) -> String? = remember(teamState) {
-        { _ -> null }
+    val agentColorLookup: (String) -> String? = remember {
+        { name -> agentNameToColorHex(name) }
     }
 
     val activeAgentStatus = agentStatuses[activeAgentName] ?: activeTab?.status ?: AgentStatus.IDLE
@@ -184,7 +185,7 @@ fun WorkspaceScreen(
 
                     if (showTaskPanel && teamState != null) {
                         TeamTaskPanel(
-                            teamTasks = emptyList(),
+                            teamTasks = teamTasks,
                             teamState = teamState,
                             agentStatuses = agentStatuses,
                             modifier = Modifier
