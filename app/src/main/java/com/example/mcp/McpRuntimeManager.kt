@@ -628,60 +628,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 prop("resetAll", "boolean", "Pass true to remove all overrides at once and restore all default Chinese strings (other fields are ignored).")
             }
         ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "reset_font_to_default",
-            description = "Reset all font settings (font size scale, chat font scale, and font family) to their default values. Call this tool when the user asks to restore the default font or when you have made a mess of the font configuration.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "list_ui_texts",
-            description = "View all adjustable UI text strings in the app along with their default Chinese values and current override values. An optional `query` parameter (e.g. \"mcp\" or \"session\") can be provided to fuzzy-filter results by key or default value.\n\n## Line break tip\n\nYou can use `\\n` in `set_ui_texts` values to insert line breaks. For longer translated strings (e.g. French, German), insert `\\n` at semantic break points to enable automatic wrapping and prevent text from being clipped.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("query", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Fuzzy-filter by key name or default Chinese text. If not provided, all UI text entries are listed.")
-                    })
-                })
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "set_ui_texts",
-            description = "Override any UI text labels (buttons, headings, hints, placeholders, etc.). Changes take effect globally and immediately without a restart.\n\n## How it works\n\nEvery UI string in the app is registered via a `uiText(key, default)` call. Each key maps to a default Chinese string in the code. When the AI writes a new value for a key using this tool, every location that references that key immediately displays the new text. Keys without an override automatically fall back to their default.\n\n## Usage\n\n• `updates`: A key→value dictionary of strings to set or update. E.g. `{\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}`.\n• `delete`: A list of keys whose overrides should be removed (reverting to the default Chinese). E.g. `[\"action.confirm\"]`.\n• `resetAll`: Pass true to remove all overrides at once and restore all default Chinese strings.\n\n## Key naming conventions (not enforced)\n\ntopbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*\n\n## Line break support\n\nUse `\\n` in values to insert line breaks. For languages where translations are significantly longer (e.g. French, German), insert `\\n` at appropriate semantic break points to enable automatic wrapping and prevent text from being clipped. Example: `\"tab.settings.memory\": \"Mémoire\\nlongue\"`. The app handles multi-line text display automatically.\n\n## Important\n\nThe key must exactly match the key used in the `uiText()` call in the code for the override to take effect. Call `list_ui_texts` first to see existing overrides. If the user wants to change a string but no existing key is found, ask which area of the UI it appears in (top bar / sidebar / chat / settings / dialog, etc.) and derive the key from the naming conventions above. Common example keys: `topbar.title.chat`, `topbar.title.settings`, `topbar.menu.open`, `topbar.memory.syncing`, `topbar.provider.prefix`, `sidebar.title`, `sidebar.settings`, `sidebar.session.add`, `tab.settings.models` / `tab.settings.mcp` / `tab.settings.memory`, `chat.input.hint`, `chat.send.contentDescription`, `chat.no_provider.warning`, `chat.memory.injected` (contains %d), `chat.current.model` (contains two %s), `models.empty.hint`, `models.default.badge`, `models.add.provider`, `models.set.default.title` / `models.set.default.desc`, `memory.manual.input.title`, `memory.empty.hint`, `mcp.empty.title` / `mcp.empty.desc`, `mcp.examples.title`, `mcp.builtin.title` / `mcp.builtin.status` / `mcp.view.tools`, `dialog.delete.session.title` / `dialog.delete.session.body` (contains %s), `action.confirm` / `action.cancel` / `action.delete` / `action.save` / `action.edit` / `action.add` / `action.close` / `action.reset`.\n\n## Placeholders\n\nSome strings contain format placeholders: `%s` for strings, `%d` for numbers. When rewriting these strings you **must preserve the same number and order of placeholders**, otherwise a runtime crash will occur. The comments returned by `list_ui_texts` indicate which placeholders are present.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("updates", JSONObject().apply {
-                        put("type", "object")
-                        put("description", "A key→value dictionary of UI text strings to set or update. The key is the name used in the uiText() call in the code; the value is the new text to display.")
-                        put("additionalProperties", JSONObject().apply {
-                            put("type", "string")
-                        })
-                    })
-                    put("delete", JSONObject().apply {
-                        put("type", "array")
-                        put("description", "A list of keys whose overrides should be removed (reverting to the default Chinese).")
-                        put("items", JSONObject().apply {
-                            put("type", "string")
-                        })
-                    })
-                    put("resetAll", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Pass true to remove all overrides at once and restore all default Chinese strings (other fields are ignored).")
-                    })
-                })
-            }
-        ),
         // ── 文件系统工具 ──────────────────────────────────────────────────
         McpTool(
             serverId = BUILTIN_SERVER_ID,
