@@ -101,6 +101,12 @@ class TeamManager(
 
     private val createTeamMutex = kotlinx.coroutines.sync.Mutex()
 
+    // ── AgentTool 访问器（Task 4 会正式接入）───
+
+    fun getAgentTool(): AgentTool? = null // Will be wired in Task 4
+    fun getOrchestratorContext(): AgentContext? = null // Will be wired in Task 4
+    fun getSandboxPath(): String? = null // Will be wired in Task 4
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // 公开 API
     // ═══════════════════════════════════════════════════════════════════════════════

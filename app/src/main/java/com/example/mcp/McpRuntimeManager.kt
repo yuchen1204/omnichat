@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import com.example.mcp.ToolSchemaDsl.schema
+import com.example.workspace.AgentTool
 private const val TAG = "McpRuntimeManager"
 
 // ── 公开数据类 ────────────────────────────────────────────────────────────
@@ -867,7 +868,15 @@ class McpRuntimeManager private constructor(private val context: Context) {
                     }
                 }
             }
-        )
+        ),
+        // ── Agent 工具 ─────────────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = AgentTool.TOOL_NAME,
+            description = "Launch a sub-agent to perform a task independently",
+            inputSchema = AgentTool.TOOL_SCHEMA,
+        ),
     )
 
     /**
@@ -904,7 +913,8 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "scratchpad_read" to "core",
         "scratchpad_list" to "core",
         "list_mcp_tool_groups" to "core",
-        "configure_mcp_tool_groups" to "core"
+        "configure_mcp_tool_groups" to "core",
+        AgentTool.TOOL_NAME to "core"
     )
 
     /** Internal helper: build a HEX color schema node */

@@ -65,8 +65,20 @@ object BuiltinToolHandler {
             "scratchpad_list" -> handleScratchpadList()
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
+            "agent" -> handleAgentTool(arguments)
             else -> errorResponse("未知的内置工具: $toolName")
         }
+    }
+
+    // ── Agent 工具 ──────────────────────────────────────────────────────────
+
+    private suspend fun handleAgentTool(arguments: JSONObject): JSONObject {
+        val agentTool = teamManager?.getAgentTool()
+            ?: return errorResponse("AgentTool not available: no active workspace")
+        val parentContext = teamManager?.getOrchestratorContext()
+            ?: return errorResponse("AgentTool not available: no orchestrator context")
+        val sandboxPath = teamManager?.getSandboxPath() ?: ""
+        return agentTool.call(arguments, parentContext, sandboxPath)
     }
 
     // ── UI 工具 ────────────────────────────────────────────────────────────
