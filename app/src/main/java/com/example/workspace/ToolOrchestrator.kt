@@ -57,15 +57,8 @@ class ToolOrchestrator(
     companion object {
         private const val TAG = "ToolOrchestrator"
 
-        /** 只读工具集合，这些工具可以安全地并行执行 */
-        val READ_ONLY_TOOLS: Set<String> = setOf(
-            "read_file",
-            "list_directory",
-            "search_files",
-            "get_file_info",
-            "search_memory",
-            "get_current_time",
-        )
+        /** 只读工具集合，这些工具可以安全地并行执行（委托给 AgentToolFilter） */
+        val READ_ONLY_TOOLS: Set<String> get() = AgentToolFilter.READ_ONLY_TOOLS
 
         /**
          * 判断工具是否为只读工具。
