@@ -1,0 +1,112 @@
+<h2>Claude Code vs OmniChat 当前架构对比</h2>
+<p class="subtitle">核心差异一目了然</p>
+
+<div class="section">
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header" style="background: #1b998b;">Claude Code 模式 (目标)</div>
+      <div class="mockup-body" style="font-size: 13px; line-height: 1.7; padding: 16px;">
+        <div style="color: #1b998b; font-weight: bold; margin-bottom: 8px;">极简工具 Schema</div>
+        <div style="background: #0d1b2a; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 12px; margin-bottom: 12px;">
+          <span style="color: #e94560;">Agent</span>(<br>
+          &nbsp;&nbsp;<span style="color: #aaa;">description</span>: <span style="color: #1b998b;">"3-5 词描述"</span>, <br>
+          &nbsp;&nbsp;<span style="color: #aaa;">prompt</span>: <span style="color: #1b998b;">"完整任务描述"</span>,<br>
+          &nbsp;&nbsp;<span style="color: #aaa;">subagent_type?</span>: <span style="color: #533483;">"Explore" | "Plan" | ...</span>,<br>
+          &nbsp;&nbsp;<span style="color: #aaa;">model?</span>: <span style="color: #533483;">"sonnet" | "opus" | "haiku"</span>,<br>
+          &nbsp;&nbsp;<span style="color: #aaa;">run_in_background?</span>: <span style="color: #533483;">boolean</span><br>
+          )
+        </div>
+        <div style="color: #1b998b; font-weight: bold; margin-bottom: 8px;">执行流程</div>
+        <div style="color: #aaa; font-size: 12px; line-height: 2;">
+          1. Lead Agent 调用 Agent 工具<br>
+          2. 选择 AgentDefinition (预设)<br>
+          3. 克隆上下文，创建隔离环境<br>
+          4. 启动 runAgent() AsyncGenerator<br>
+          5. SubAgent 独立执行，流式返回消息<br>
+          6. 收集最后一条 assistant 消息作为结果<br>
+          7. 清理资源，返回结果给 Lead Agent
+        </div>
+        <div style="color: #1b998b; font-weight: bold; margin-top: 12px; margin-bottom: 8px;">通信</div>
+        <div style="color: #aaa; font-size: 12px;">
+          SubAgent → 结果返回 Lead Agent<br>
+          SubAgent 之间 <span style="color: #e94560;">不通信</span>
+        </div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header" style="background: #e94560;">OmniChat 当前模式 (要替换)</div>
+      <div class="mockup-body" style="font-size: 13px; line-height: 1.7; padding: 16px;">
+        <div style="color: #e94560; font-weight: bold; margin-bottom: 8px;">复杂工具 Schema</div>
+        <div style="background: #0d1b2a; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 12px; margin-bottom: 12px;">
+          <span style="color: #e94560;">create_agents</span>(<br>
+          &nbsp;&nbsp;<span style="color: #aaa;">agents</span>: [{<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #aaa;">name</span>, <span style="color: #aaa;">role</span>, <span style="color: #aaa;">systemPrompt</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #aaa;">modelConfigId</span>, <span style="color: #aaa;">modelHint</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #aaa;">dependsOn</span>, <span style="color: #aaa;">spawnMode</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #aaa;">taskMode</span>, <span style="color: #aaa;">task</span>, <span style="color: #aaa;">description</span><br>
+          &nbsp;&nbsp;}]<br>
+          )<br>
+          <span style="color: #e94560;">assign_task</span>(target, task)<br>
+          <span style="color: #e94560;">continue_conversation</span>(target, msg)<br>
+          <span style="color: #e94560;">peer_message</span>(to, message)
+        </div>
+        <div style="color: #e94560; font-weight: bold; margin-bottom: 8px;">执行流程</div>
+        <div style="color: #aaa; font-size: 12px; line-height: 2;">
+          1. Orchestrator 调用 create_agents<br>
+          2. 解析复杂 JSON (3 层 fallback)<br>
+          3. 创建 AgentContext + AgentRunner<br>
+          4. 启动 runTeammateLoop() 协程<br>
+          5. Agent 进入 idle → execute → idle 循环<br>
+          6. 通过 MessageBus 发送 ResultReport<br>
+          7. Orchestrator 收到 <task-notification>
+        </div>
+        <div style="color: #e94560; font-weight: bold; margin-top: 12px; margin-bottom: 8px;">通信</div>
+        <div style="color: #aaa; font-size: 12px;">
+          Orchestrator ↔ MessageBus ↔ SubAgent<br>
+          SubAgent ↔ <span style="color: #e94560;">peer_message</span> ↔ SubAgent
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>要删除的模块</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="messagebus" onclick="toggleSelect(this)">
+      <div class="letter" style="background: #e94560;">✗</div>
+      <div class="content">
+        <h3>MessageBus</h3>
+        <p>Channel-based 消息总线，256 容量收件箱，死 Agent 保护。Claude Code 模式不需要。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="taskmanager" onclick="toggleSelect(this)">
+      <div class="letter" style="background: #e94560;">✗</div>
+      <div class="content">
+        <h3>TaskManager + Claim 模式</h3>
+        <p>Room 持久化的任务队列，原子认领，依赖阻塞。过度设计。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="executionloops" onclick="toggleSelect(this)">
+      <div class="letter" style="background: #e94560;">✗</div>
+      <div class="content">
+        <h3>AgentExecutionLoops (1245 行)</h3>
+        <p>idle → execute → idle 循环，waitForNextMessage 优先级，ResultReport 格式化。全部重写。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="orchestrator-tools" onclick="toggleSelect(this)">
+      <div class="letter" style="background: #e94560;">✗</div>
+      <div class="content">
+        <h3>OrchestratorTools 复杂路由</h3>
+        <p>4 个工具的拦截路由，3 层 JSON fallback 解析。简化为单一 Agent 工具。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="peer-message" onclick="toggleSelect(this)">
+      <div class="letter" style="background: #e94560;">✗</div>
+      <div class="content">
+        <h3>Peer Messaging</h3>
+        <p>SubAgent 间直接通信，广播模式。Claude Code 模式下 SubAgent 互相隔离。</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -405,9 +405,15 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                // 直接通过 runner 注入消息
-                val history = manager.getAgentHistory(targetAgentName)
-                // 注入消息到 UI
+                // 注入消息到 AgentRunner 的运行时上下文
+                val runner = manager.getRunner(targetAgentName)
+                if (runner != null) {
+                    runner.injectMessage("user", message, isIntervention = true, imagePath = imagePath)
+                } else {
+                    Log.w("WorkspaceViewModel", "Cannot send intervention: runner not found for $targetAgentName")
+                }
+
+                // 同步更新 UI 状态
                 val userMsg = AgentMessage(
                     role = "user",
                     content = message,

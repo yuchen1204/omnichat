@@ -1,0 +1,86 @@
+<h2>当前 Agent Team 架构总览</h2>
+<p class="subtitle">18 个源文件 · Orchestrator 模式 · Channel-based 消息总线</p>
+
+<div class="section">
+  <h3>分层架构</h3>
+  <div class="mockup">
+    <div class="mockup-header">OmniChat Workspace 架构</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6; padding: 20px;">
+      <div style="display: flex; gap: 16px;">
+        <!-- Left: Layers -->
+        <div style="flex: 1;">
+          <div style="background: #1a1a2e; border: 2px solid #e94560; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="color: #e94560; font-weight: bold; margin-bottom: 8px;">UI 层</div>
+            <div style="color: #aaa; font-size: 12px;">WorkspaceScreen · WorkspaceToolbar · AgentTabBar<br>AgentMessageArea · TeamTaskPanel · InterventionInput</div>
+          </div>
+          <div style="text-align: center; color: #555; margin: 4px 0;">▼ StateFlow&lt;TeamState&gt;</div>
+          <div style="background: #16213e; border: 2px solid #0f3460; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="color: #0f3460; font-weight: bold; margin-bottom: 8px;">门面层 (1201 行)</div>
+            <div style="color: #e94560;">TeamManager</div>
+            <div style="color: #aaa; font-size: 12px;">createTeam · startExecution · spawnTeammate<br>sendPeerMessage · deleteTeam · spawnWithDependencies</div>
+          </div>
+          <div style="text-align: center; color: #555; margin: 4px 0;">▼ 委托</div>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <div style="flex: 1; background: #1a1a2e; border: 2px solid #533483; border-radius: 8px; padding: 10px;">
+              <div style="color: #533483; font-weight: bold; font-size: 12px;">AgentLifecycle</div>
+              <div style="color: #aaa; font-size: 11px;">575 行<br>创建 · 终止 · 颜色</div>
+            </div>
+            <div style="flex: 1; background: #1a1a2e; border: 2px solid #533483; border-radius: 8px; padding: 10px;">
+              <div style="color: #533483; font-weight: bold; font-size: 12px;">ExecutionLoops</div>
+              <div style="color: #aaa; font-size: 11px;">1245 行<br>主循环 · 子循环</div>
+            </div>
+            <div style="flex: 1; background: #1a1a2e; border: 2px solid #533483; border-radius: 8px; padding: 10px;">
+              <div style="color: #533483; font-weight: bold; font-size: 12px;">OrchestratorTools</div>
+              <div style="color: #aaa; font-size: 11px;">602 行<br>工具拦截 · 路由</div>
+            </div>
+          </div>
+          <div style="text-align: center; color: #555; margin: 4px 0;">▼ 使用</div>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <div style="flex: 1; background: #0d1b2a; border: 2px solid #1b998b; border-radius: 8px; padding: 10px;">
+              <div style="color: #1b998b; font-weight: bold; font-size: 12px;">AgentRunner</div>
+              <div style="color: #aaa; font-size: 11px;">1047 行<br>API 流式 · 工具循环<br>上下文压缩 · 干预队列</div>
+            </div>
+            <div style="flex: 1; background: #0d1b2a; border: 2px solid #1b998b; border-radius: 8px; padding: 10px;">
+              <div style="color: #1b998b; font-weight: bold; font-size: 12px;">MessageBus</div>
+              <div style="color: #aaa; font-size: 11px;">Channel&lt;TeamMessage&gt;<br>256 容量 · 死 Agent 保护</div>
+            </div>
+            <div style="flex: 1; background: #0d1b2a; border: 2px solid #1b998b; border-radius: 8px; padding: 10px;">
+              <div style="color: #1b998b; font-weight: bold; font-size: 12px;">TaskManager</div>
+              <div style="color: #aaa; font-size: 11px;">Claim-based 队列<br>Room 持久化 · 依赖阻塞</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <div style="flex: 1; background: #0d1b2a; border: 1px solid #2d4059; border-radius: 6px; padding: 8px; text-align: center;">
+              <div style="color: #2d4059; font-size: 11px;">ModelSelector · AgentRegistry · Scratchpad · ToolOrchestrator</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Key metrics -->
+        <div style="width: 200px;">
+          <div style="background: #1a1a2e; border: 1px solid #e94560; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="color: #e94560; font-weight: bold; margin-bottom: 8px;">关键指标</div>
+            <div style="color: #aaa; font-size: 12px; line-height: 2;">
+              总代码行数: <span style="color: #fff;">~6500+</span><br>
+              最大文件: <span style="color: #fff;">1245 行</span><br>
+              源文件数: <span style="color: #fff;">18</span><br>
+              测试文件: <span style="color: #fff;">7</span><br>
+              消息类型: <span style="color: #fff;">9 种</span><br>
+              Agent 工具: <span style="color: #fff;">4 个</span>
+            </div>
+          </div>
+          <div style="background: #1a1a2e; border: 1px solid #533483; border-radius: 8px; padding: 12px;">
+            <div style="color: #533483; font-weight: bold; margin-bottom: 8px;">通信模式</div>
+            <div style="color: #aaa; font-size: 12px; line-height: 1.8;">
+              Orchestrator → Tool Call<br>
+              Tool Call → MessageBus<br>
+              MessageBus → Agent Inbox<br>
+              Agent → ResultReport<br>
+              ResultReport → Orchestrator
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -27,6 +27,10 @@ object BuiltinToolHandler {
     @Volatile
     var teamManager: com.example.workspace.TeamManager? = null
 
+    // ── 共享 Scratchpad（跨 Agent 协作的内存 KV 存储）──────────────────
+    private val scratchpad = java.util.concurrent.ConcurrentHashMap<String, ScratchpadEntry>()
+    data class ScratchpadEntry(val agentName: String, val key: String, val content: String, val timestamp: Long = System.currentTimeMillis())
+
     // 提取公共 Repository 工厂方法，消除 13 处重复的 AppDatabase.getDatabase + AppRepository 实例化
     private fun getRepository(context: Context): AppRepository {
         return AppRepository(AppDatabase.getDatabase(context))
@@ -68,6 +72,9 @@ object BuiltinToolHandler {
             com.example.workspace.TaskTools.TASK_GET -> handleTaskTool(context, toolName, arguments)
             com.example.workspace.TaskTools.TASK_LIST -> handleTaskTool(context, toolName, arguments)
             com.example.workspace.TaskTools.TASK_UPDATE -> handleTaskTool(context, toolName, arguments)
+            "scratchpad_write" -> handleScratchpadWrite(arguments)
+            "scratchpad_read" -> handleScratchpadRead(arguments)
+            "scratchpad_list" -> handleScratchpadList()
             else -> errorResponse("未知的内置工具: $toolName")
         }
     }
@@ -97,10 +104,42 @@ object BuiltinToolHandler {
     private suspend fun handleTaskTool(context: Context, toolName: String, arguments: JSONObject): JSONObject {
         val manager = teamManager
             ?: return errorResponse("Task tools not available: no active workspace")
-        val teamName = manager.teamState.value?.teamName ?: ""
+        val teamName = manager.teamState?.value?.teamName ?: ""
         val repository = getRepository(context)
         val taskTools = com.example.workspace.TaskTools(repository, teamName)
         return taskTools.callTool(toolName, arguments)
+    }
+
+    // ── Scratchpad 工具 ────────────────────────────────────────────────────
+
+    private fun handleScratchpadWrite(arguments: JSONObject): JSONObject {
+        val agentName = teamManager?.teamState?.value?.orchestratorName ?: "unknown"
+        val key = arguments.optString("key", "").replace(Regex("[^a-zA-Z0-9_]"), "_")
+        val content = arguments.optString("content", "")
+        if (key.isEmpty()) return errorResponse("Missing 'key'")
+        if (content.isEmpty()) return errorResponse("Missing 'content'")
+        scratchpad[key] = ScratchpadEntry(agentName, key, content)
+        return successResponse("Wrote '$key' to scratchpad")
+    }
+
+    private fun handleScratchpadRead(arguments: JSONObject): JSONObject {
+        val agentName = arguments.optString("agentName", "")
+        val key = arguments.optString("key", "")
+        if (key.isEmpty()) return errorResponse("Missing 'key'")
+        val entry = scratchpad[key]
+            ?: return errorResponse("No scratchpad entry for key '$key'")
+        if (agentName.isNotEmpty() && entry.agentName != agentName) {
+            return errorResponse("Entry '$key' was written by '${entry.agentName}', not '$agentName'")
+        }
+        return successResponse(entry.content)
+    }
+
+    private fun handleScratchpadList(): JSONObject {
+        if (scratchpad.isEmpty()) return successResponse("Scratchpad is empty")
+        val list = scratchpad.values.joinToString("\n") { entry ->
+            "- [${entry.agentName}] ${entry.key}: ${entry.content.take(100)}${if (entry.content.length > 100) "..." else ""}"
+        }
+        return successResponse(list)
     }
 
     // ── UI 工具 ────────────────────────────────────────────────────────────

@@ -61,14 +61,14 @@ class TeamManager(
 
     // ─── Runner 管理 ───
 
-    /** Agent 名称 → AgentRunner 映射 */
-    private val runners = mutableMapOf<String, AgentRunner>()
+    /** Agent 名称 → AgentRunner 映射（使用 ConcurrentHashMap 保证线程安全） */
+    private val runners = java.util.concurrent.ConcurrentHashMap<String, AgentRunner>()
 
     /** Agent 名称 → 协程作用域 */
-    private val agentScopes = mutableMapOf<String, CoroutineScope>()
+    private val agentScopes = java.util.concurrent.ConcurrentHashMap<String, CoroutineScope>()
 
     /** Agent 名称 → Job */
-    private val agentJobs = mutableMapOf<String, Job>()
+    private val agentJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
     // ─── AgentTool（Orchestrator 用于委派子 Agent）───
 
@@ -126,10 +126,13 @@ class TeamManager(
 
         crossSessionMemoryText = loadCrossSessionMemory()
 
+        // 加载所有 Agent 定义（内置 + 用户自定义预设）
+        val agentDefinitions = loadAgentDefinitions(repository)
+
         val ctx = AgentContext(
             agentName = ORCHESTRATOR_NAME,
             isOrchestrator = true,
-            systemPrompt = buildOrchestratorSystemPrompt(BuiltInAgents.ALL, sandboxPath),
+            systemPrompt = buildOrchestratorSystemPrompt(agentDefinitions, sandboxPath),
             modelConfig = orchestratorConfig,
             overrideModelId = orchestratorOverrideModelId,
             teamName = teamName,
@@ -144,6 +147,7 @@ class TeamManager(
         this.sandboxPath = sandboxPath
         this.agentTool = AgentTool(
             mcpRuntimeManager = mcpRuntimeManager,
+            agentDefinitions = agentDefinitions,
             onSubAgentCreated = { name, description ->
                 // Add SubAgent to active list
                 _teamState.update { state ->
@@ -354,6 +358,11 @@ class TeamManager(
         // 清理 sub-agent scopes
         val state = _teamState.value
         val subAgentNames = runners.keys.filter { it != ORCHESTRATOR_NAME }
+        // 先捕获 sub-agent 消息历史，再清理
+        for (name in subAgentNames) {
+            subAgentMessages[name] = runners[name]?.getHistory() ?: emptyList()
+        }
+        val agentCountBeforeCleanup = runners.size
         for (name in subAgentNames) {
             agentScopes[name]?.cancel()
             try {
@@ -374,7 +383,7 @@ class TeamManager(
 
         // 触发工作区完成 Hook
         val teamName = state?.teamName ?: ""
-        val agentCount = runners.size
+        val agentCount = agentCountBeforeCleanup
         val totalDurationMs = if (workspaceStartTimeMs > 0) System.currentTimeMillis() - workspaceStartTimeMs else 0L
         val orchestratorSummary = orchestratorMessages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }?.content?.take(500) ?: ""
         WorkspaceScopes.auxiliary.launch {

@@ -77,7 +77,12 @@ fun AgentMessageArea(
 
     val listState = rememberLazyListState()
     val isStreaming = agentStatus == AgentStatus.STREAMING || agentStatus == AgentStatus.WAITING_TOOL
-    val showStreamBubble = isStreaming && streamingText.isNotEmpty()
+    val lastMessage = activeTab.messages.lastOrNull()
+    val finalMessageAlreadyPresent = lastMessage?.role == "assistant" &&
+        streamingText.isNotEmpty() &&
+        lastMessage.content.contains(streamingText.take(50))
+
+    val showStreamBubble = isStreaming && streamingText.isNotEmpty() && !finalMessageAlreadyPresent
 
     val totalCount = processedMessages.size + (if (showStreamBubble) 1 else 0)
 

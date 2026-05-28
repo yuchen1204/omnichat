@@ -138,12 +138,12 @@ class AgentTool(
         val subAgentContext = AgentContext(
             agentName = subAgentName,
             isOrchestrator = false,
-            // 若 AgentDefinition 的 systemPrompt 为空则回退到原有 buildSubAgentPrompt
             systemPrompt = agentDef.systemPrompt.ifEmpty { buildSubAgentPrompt(description, sandboxPath) },
             modelConfig = parentContext.modelConfig,
             overrideModelId = effectiveModelId,
             teamName = parentContext.teamName,
             messages = ArrayList(),
+            agentDefinition = agentDef,
         )
 
         // 合并禁止工具列表：递归防护 + AgentDefinition 配置

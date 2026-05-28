@@ -28,9 +28,14 @@ fun ChunkedStreamingText(
     val parser = remember { MarkdownChunkParser() }
     val highlightBg = MaterialTheme.colorScheme.surfaceVariant
     val highlightText = MaterialTheme.colorScheme.onSurfaceVariant
-    
-    // Parse the text into chunks
-    val result = remember(text) { parser.parse(text) }
+
+    // Incremental parse: reuse previously locked chunks and only re-parse the tail
+    var previousResult by remember { mutableStateOf(ChunkParseResult(emptyList(), "")) }
+    val result = remember(text) {
+        val newResult = parser.parseIncremental(text, previousResult)
+        previousResult = newResult
+        newResult
+    }
 
     Column(modifier = modifier) {
         // 1. Render locked chunks

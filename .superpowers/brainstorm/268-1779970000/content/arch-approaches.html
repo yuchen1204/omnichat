@@ -1,0 +1,131 @@
+<h2>三种重构方案</h2>
+<p class="subtitle">从当前 6500+ 行到极简 Agent 工具</p>
+
+<div class="section">
+  <h3>方案 A：最小可行移植 (推荐)</h3>
+  <p class="subtitle">直接对标 Claude Code AgentTool，只移植核心执行循环</p>
+
+  <div class="mockup">
+    <div class="mockup-header">方案 A 架构</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.8; padding: 20px;">
+      <div style="display: flex; gap: 16px;">
+        <div style="flex: 1;">
+          <div style="background: #1a1a2e; border: 2px solid #1b998b; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="color: #1b998b; font-weight: bold; margin-bottom: 8px;">新建文件 (3 个)</div>
+            <div style="color: #aaa; font-size: 12px;">
+              <span style="color: #fff;">AgentTool.kt</span> — 工具定义 + 执行入口<br>
+              <span style="color: #fff;">AgentRunner.kt</span> — SubAgent 隔离执行循环<br>
+              <span style="color: #fff;">AgentContext.kt</span> — Agent 上下文 (精简版)
+            </div>
+          </div>
+          <div style="background: #1a1a2e; border: 2px solid #e94560; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="color: #e94560; font-weight: bold; margin-bottom: 8px;">删除文件 (12+ 个)</div>
+            <div style="color: #aaa; font-size: 12px;">
+              MessageBus.kt · TaskManager.kt · Scratchpad.kt<br>
+              AgentExecutionLoops.kt · OrchestratorTools.kt<br>
+              AgentLifecycle.kt · AgentRegistry.kt · AgentDefinition.kt<br>
+              AgentTask.kt · ModelSelector.kt · ToolOrchestrator.kt<br>
+              AgentProgressSummarizer.kt · WorkspaceModels.kt (大部分)
+            </div>
+          </div>
+          <div style="background: #1a1a2e; border: 2px solid #533483; border-radius: 8px; padding: 12px;">
+            <div style="color: #533483; font-weight: bold; margin-bottom: 8px;">保留/修改</div>
+            <div style="color: #aaa; font-size: 12px;">
+              TeamManager.kt — 精简为薄门面 (~100 行)<br>
+              TeammateContext.kt — 保留身份传播<br>
+              WorkspaceModels.kt — 只保留 TeamState 等 UI 类型
+            </div>
+          </div>
+        </div>
+        <div style="width: 220px;">
+          <div style="background: #0d1b2a; border: 1px solid #1b998b; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="color: #1b998b; font-weight: bold; margin-bottom: 8px;">Agent 工具 Schema</div>
+            <div style="font-size: 12px; color: #aaa;">
+              <span style="color: #fff;">description</span>: String<br>
+              <span style="color: #fff;">prompt</span>: String<br>
+              <span style="color: #aaa;">model?</span>: String<br>
+              <span style="color: #aaa;">subagent_type?</span>: String
+            </div>
+          </div>
+          <div style="background: #0d1b2a; border: 1px solid #533483; border-radius: 8px; padding: 12px;">
+            <div style="color: #533483; font-weight: bold; margin-bottom: 8px;">预估代码量</div>
+            <div style="font-size: 12px; color: #aaa;">
+              新增: <span style="color: #1b998b;">~400 行</span><br>
+              删除: <span style="color: #e94560;">~5500 行</span><br>
+              保留: <span style="color: #fff;">~1000 行</span><br>
+              净减: <span style="color: #1b998b;">~5100 行</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优点</h4>
+      <ul>
+        <li>代码量减少 ~80%</li>
+        <li>直接对标 Claude Code，可验证</li>
+        <li>SubAgent 上下文完全隔离</li>
+        <li>无 MessageBus/TaskManager 复杂性</li>
+        <li>后续加 B (异步) 不需要重构</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>缺点</h4>
+      <ul>
+        <li>SubAgent 之间不能直接通信</li>
+        <li>没有 Claim 模式的自动任务分配</li>
+        <li>需要重写 Orchestrator 系统 prompt</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 B：渐进式重构</h3>
+  <p class="subtitle">保留当前文件结构，逐步删除不需要的模块</p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优点</h4>
+      <ul>
+        <li>每一步都可编译可测试</li>
+        <li>风险更低，可以随时停下来</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>缺点</h4>
+      <ul>
+        <li>中间态代码仍然复杂</li>
+        <li>容易陷入"改了一半"的泥潭</li>
+        <li>最终结果和方案 A 相同但耗时更长</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 C：全新模块</h3>
+  <p class="subtitle">在新 package 下从零实现，旧代码保留但不使用</p>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优点</h4>
+      <ul>
+        <li>完全干净的新代码，无历史包袱</li>
+        <li>旧代码可作为参考</li>
+        <li>可以并行开发，不影响现有功能</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>缺点</h4>
+      <ul>
+        <li>需要处理 UI 层的适配</li>
+        <li>旧代码不删会成为噪音</li>
+        <li>两个系统并存增加认知负担</li>
+      </ul>
+    </div>
+  </div>
+</div>

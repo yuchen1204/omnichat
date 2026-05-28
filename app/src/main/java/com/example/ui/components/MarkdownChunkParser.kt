@@ -25,6 +25,32 @@ class MarkdownChunkParser {
     }
 
     /**
+     * Incremental parse: reuse previously locked chunks and only re-parse the tail.
+     *
+     * @param fullText Full current text
+     * @param previousResult ChunkParseResult from the previous parse call
+     * @return Updated ChunkParseResult
+     */
+    fun parseIncremental(fullText: String, previousResult: ChunkParseResult): ChunkParseResult {
+        if (previousResult.lockedChunks.isEmpty() && previousResult.activeChunk.isEmpty()) {
+            return parse(fullText)
+        }
+
+        // Find how much of the text is already locked
+        val lockedLength = previousResult.lockedChunks.sumOf { it.length }
+
+        if (lockedLength >= fullText.length) return previousResult
+
+        // Re-parse only the tail (from the end of the last locked chunk)
+        val tail = fullText.substring(lockedLength)
+        val tailResult = parse(tail)
+
+        // Merge: keep all previously locked chunks, add newly locked from tail, plus new active
+        val newLocked = previousResult.lockedChunks + tailResult.lockedChunks
+        return ChunkParseResult(newLocked, tailResult.activeChunk)
+    }
+
+    /**
      * Splits [fullText] into a list of stable chunks and one active chunk.
      */
     fun parse(fullText: String): ChunkParseResult {

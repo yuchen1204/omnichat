@@ -8,7 +8,23 @@
       "Bash(awk '/^class TeamManager/,0' app/src/main/java/com/example/workspace/TeamManager.kt)",
       "Bash(xxd -l 20 \"E:/omnichat/app/src/main/java/com/example/ui/screens/WorkspaceScreen.kt\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git tag *)",
+      "Bash(git push *)",
+      "Bash(bash *)",
+      "Bash(git commit *)",
+      "Bash(./gradlew testDebugUnitTest --no-configuration-cache)",
+      "Bash(rm -rf \"D:/yuchen/.gradle/caches/9.3.1/transforms/8ce475dbadec381911dd600776182d11\")",
+      "Bash(./gradlew testDebugUnitTest --no-configuration-cache --no-daemon)",
+      "Bash(./gradlew compileDebugKotlin --no-configuration-cache)",
+      "Bash(./gradlew compileDebugUnitTestKotlin --no-configuration-cache)",
+      "Read(//c/Program Files/Java/**)",
+      "Read(//c/Program Files/**)",
+      "Bash(java -version)",
+      "Bash(grep -i \"material.*icon\" gradle/libs.versions.toml)",
+      "Bash(grep -i \"compose.*icon\" gradle/libs.versions.toml)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(git show *)"
     ]
   }
 }

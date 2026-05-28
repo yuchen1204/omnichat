@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import com.example.ui.theme.LocalCustomColors
 import com.example.workspace.AgentStatus
 import com.example.workspace.ORCHESTRATOR_NAME
-import com.example.workspace.TeammateState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -183,3 +182,28 @@ fun resolveWorkflowPhase(
  * 无需层层向下传递 [TeammateState] 列表。
  */
 val LocalAgentColorLookup = staticCompositionLocalOf<(String) -> String?> { { null } }
+
+/**
+ * 根据 Agent 名称生成确定性颜色。
+ *
+ * 同一名称始终返回相同颜色，SubAgent 的颜色在 Orchestrator 主色基础上偏移。
+ * Orchestrator 固定返回 null（由调用方使用 primary 色）。
+ */
+fun agentNameToColorHex(agentName: String): String? {
+    if (agentName == ORCHESTRATOR_NAME) return null
+    val hue = ((agentName.hashCode().toLong() and 0xFFFFFFF) % 360).toInt().let { if (it < 0) it + 360 else it }
+    val r: Int; val g: Int; val b: Int
+    val h = hue / 60f
+    val c = 0.55f // chroma
+    val x = c * (1 - kotlin.math.abs(h % 2 - 1))
+    val m = 0.35f
+    when (h.toInt()) {
+        0 -> { r = ((c + m) * 255).toInt(); g = ((x + m) * 255).toInt(); b = (m * 255).toInt() }
+        1 -> { r = ((x + m) * 255).toInt(); g = ((c + m) * 255).toInt(); b = (m * 255).toInt() }
+        2 -> { r = (m * 255).toInt(); g = ((c + m) * 255).toInt(); b = ((x + m) * 255).toInt() }
+        3 -> { r = (m * 255).toInt(); g = ((x + m) * 255).toInt(); b = ((c + m) * 255).toInt() }
+        4 -> { r = ((x + m) * 255).toInt(); g = (m * 255).toInt(); b = ((c + m) * 255).toInt() }
+        else -> { r = ((c + m) * 255).toInt(); g = (m * 255).toInt(); b = ((x + m) * 255).toInt() }
+    }
+    return "#%02X%02X%02X".format(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
+}

@@ -85,7 +85,7 @@ fun TeamTaskPanel(
                     val orchStatus = agentStatuses[teamState!!.orchestratorName] ?: AgentStatus.IDLE
                     AgentRow(
                         name = teamState!!.orchestratorName,
-                        colorHex = "",
+                        colorHex = agentNameToColorHex(teamState!!.orchestratorName) ?: "",
                         isOrchestrator = true,
                         status = orchStatus,
                         fs = fs,
@@ -99,7 +99,7 @@ fun TeamTaskPanel(
 
                     AgentRow(
                         name = subAgent.name,
-                        colorHex = "",
+                        colorHex = agentNameToColorHex(subAgent.name) ?: "",
                         isOrchestrator = false,
                         status = status,
                         fs = fs,

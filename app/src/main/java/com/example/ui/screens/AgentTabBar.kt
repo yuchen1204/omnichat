@@ -80,9 +80,9 @@ fun AgentTabBar(
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                         } else {
-                            // 查找 sub-agent 的颜色（如果有的话）
-                            val subAgent = teamState?.activeSubAgents?.find { it.name == tab.agentName }
-                            if (subAgent != null) {
+                            val colorHex = agentNameToColorHex(tab.agentName)
+                            if (colorHex != null) {
+                                AgentColorDot(colorHex, size = 8.dp)
                                 Spacer(modifier = Modifier.width(5.dp))
                             }
                         }

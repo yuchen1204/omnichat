@@ -143,11 +143,8 @@ data class TeammateState(
 /** Orchestrator 固定名称 */
 const val ORCHESTRATOR_NAME = "主控 Agent"
 
-/** 任务完成标记 */
+/** 任务完成标记（装饰性，由 LLM 输出，无程序化检测） */
 const val COMPLETION_MARKER = "【任务完成】"
-
-/** 消息轮询间隔（毫秒） */
-const val POLL_INTERVAL_MS = 500L
 
 /** Agent UI 标识色列表 */
 val AGENT_COLORS = listOf(

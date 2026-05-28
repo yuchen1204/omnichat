@@ -479,7 +479,7 @@ class AgentRunner(
                     text.contains("任务完成") || text.contains("任务圆满完成") ||
                     text.contains("任务已") || text.contains("最终结果") ||
                     text.contains("已完成") || text.contains("任务报告") ||
-                    text.contains("最终任务") || text.contains("完成标准") && text.contains("已满足")
+                    text.contains("最终任务") || (text.contains("完成标准") && text.contains("已满足"))
                 }
                 if (isCompletedResponse) {
                     Log.d(TAG, "Agent '${context.agentName}' reports task completed, skipping nudge")
