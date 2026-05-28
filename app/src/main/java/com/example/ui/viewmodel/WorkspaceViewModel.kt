@@ -1209,11 +1209,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         val manager = TeamManager(
             repository = repository,
             mcpRuntimeManager = runtimeManager,
-            messageBus = messageBus,
-            taskManager = taskManager,
             parentScope = teamScope,
             agentRegistry = agentRegistry,
-            taskRegistry = taskRegistry,
             onAgentCreated = { agentName, isOrchestrator ->
                 // BUG-10：恢复模式下不覆盖 _agentTabs，避免破坏已从 DB 恢复的 tabs
                 if (!isRestoringSession) {
