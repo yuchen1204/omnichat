@@ -20,6 +20,9 @@ import org.json.JSONObject
  */
 class AgentTool(
     private val mcpRuntimeManager: McpRuntimeManager,
+    private val onSubAgentCreated: (name: String, description: String) -> Unit = { _, _ -> },
+    private val onSubAgentStreamChunk: (name: String, chunk: String) -> Unit = { _, _ -> },
+    private val onSubAgentCompleted: (name: String, messages: List<AgentMessage>) -> Unit = { _, _ -> },
 ) {
     companion object {
         private const val TAG = "AgentTool"
@@ -89,7 +92,7 @@ class AgentTool(
         parentContext: AgentContext,
         sandboxPath: String,
     ): JSONObject {
-        val subAgentName = "SubAgent-${System.currentTimeMillis() % 10000}"
+        val subAgentName = "SubAgent-${java.util.UUID.randomUUID().toString().take(8)}"
 
         val subAgentContext = AgentContext(
             agentName = subAgentName,
@@ -101,12 +104,18 @@ class AgentTool(
             messages = ArrayList(),
         )
 
+        // Notify UI: SubAgent created
+        onSubAgentCreated(subAgentName, description)
+
         val runner = AgentRunner(
             context = subAgentContext,
             mcpRuntimeManager = mcpRuntimeManager,
             disallowedTools = setOf(TOOL_NAME),
             sandboxPath = sandboxPath,
-            onStreamChunk = { _, _ -> /* no-op: SubAgent streams are not shown to user */ },
+            onStreamChunk = { _, chunk ->
+                // Forward stream chunks to UI for live display
+                onSubAgentStreamChunk(subAgentName, chunk)
+            },
             onToolCall = { _, toolName, toolArgs, _ ->
                 val serverId = mcpRuntimeManager.findServerIdForTool(toolName)
                 if (serverId == null) {
@@ -124,6 +133,9 @@ class AgentTool(
         } finally {
             runner.dispose()
         }
+
+        // Notify UI: SubAgent completed with its messages
+        onSubAgentCompleted(subAgentName, subAgentContext.messages.toList())
 
         // Extract the last assistant message from the SubAgent's conversation
         val lastAssistantMsg = subAgentContext.messages
