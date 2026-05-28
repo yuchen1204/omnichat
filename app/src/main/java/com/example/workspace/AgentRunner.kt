@@ -53,6 +53,8 @@ class AgentRunner(
     // FIX (Bug #8): AgentDefinition.maxToolIterations 之前未生效。
     // 让调用方传入此值，覆盖默认 50；用于 explorer/verifier 等设置 30 的预设。
     private val maxToolIterations: Int = MAX_TOOL_CALL_ITERATIONS,
+    // Phase 4: 支持异步/后台 Agent 执行模式
+    private val isAsync: Boolean = false,
     private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
     private val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit = { _, _ -> },
     private val onToolCall: suspend (agentName: String, toolName: String, args: JSONObject, callId: String) -> String,
@@ -137,6 +139,15 @@ class AgentRunner(
      */
     private val interventionQueue = ConcurrentLinkedDeque<AgentMessage>()
 
+    /**
+     * 异步 Agent 的待处理消息队列。
+     *
+     * 由父 Agent 或其他 Agent 通过 queuePendingMessage() 入队，
+     * 在 do-while 循环的工具轮次边界由 drainPendingMessages() 取出并注入上下文。
+     * 模仿 Claude Code 的 LocalAgentTask.pendingMessages 模式。
+     */
+    private val pendingMessages = ConcurrentLinkedDeque<AgentMessage>()
+
     // 接入 ToolOrchestrator：只读工具并行、写入工具串行
     private val toolOrchestrator = ToolOrchestrator(onToolCall)
 
@@ -201,6 +212,7 @@ class AgentRunner(
                                 content = "已达到最大工具调用次数限制 ($maxToolIterations)，强制结束本轮对话。"
                             )
                         )
+                        onMessageAdded(context.agentName, context.messages.last())
                     } finally {
                         messagesLock.writeLock().unlock()
                     }
@@ -336,6 +348,7 @@ class AgentRunner(
                                 toolCallsJson = toolCallsJson
                             )
                         )
+                        onMessageAdded(context.agentName, context.messages.last())
                         // 持久化 assistant 消息到 Room DB（写锁内，保证顺序一致）
                         persistMessage?.invoke(context.messages.last())
                     } finally {
@@ -428,6 +441,18 @@ class AgentRunner(
                                 messagesLock.writeLock().unlock()
                             }
                             break
+                        }
+
+                        // Phase 4: 在工具轮次边界取出异步 Agent 的待处理消息
+                        // 必须在 continue 之前，确保下一轮 API 调用前消息已注入上下文
+                        val pendingMsgs = drainPendingMessages()
+                        if (pendingMsgs.isNotEmpty()) {
+                            messagesLock.writeLock().lock()
+                            try {
+                                context.messages.addAll(pendingMsgs)
+                            } finally {
+                                messagesLock.writeLock().unlock()
+                            }
                         }
 
                         continue
@@ -859,6 +884,29 @@ class AgentRunner(
     }
 
     /**
+     * 取出并清空待处理消息队列。
+     *
+     * 在 do-while 循环的工具轮次边界调用，将父 Agent 或其他 Agent
+     * 通过 queuePendingMessage() 入队的消息注入上下文。
+     */
+    private fun drainPendingMessages(): List<AgentMessage> {
+        val messages = mutableListOf<AgentMessage>()
+        while (pendingMessages.isNotEmpty()) {
+            pendingMessages.poll()?.let { messages.add(it) }
+        }
+        return messages
+    }
+
+    /**
+     * 入队一条待处理消息，供异步 Agent 在下一轮工具轮次边界处理。
+     *
+     * 用于 SendMessage 工具和任务通知投递场景。
+     */
+    fun queuePendingMessage(message: AgentMessage) {
+        pendingMessages.addLast(message)
+    }
+
+    /**
      * 构建上下文消息列表。
      *
      * 将 AgentContext.messages 转换为 ApiClient 所需的 Message 列表格式。
@@ -919,7 +967,7 @@ class AgentRunner(
             allToolNames = allToolNames,
             agentDef = context.agentDefinition,
             isOrchestrator = context.isOrchestrator,
-            isAsync = false, // Will be updated in Phase 4
+            isAsync = isAsync,
         )
 
         val filtered = JSONArray()
