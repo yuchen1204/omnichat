@@ -28,6 +28,7 @@ fun AskUserDialog(
     val cornerRadius = uiSettings.cornerRadiusDp.dp
 
     var customInput by remember { mutableStateOf("") }
+    var selectedOptions by remember { mutableStateOf(setOf<String>()) }
 
     Dialog(
         onDismissRequest = {
@@ -91,21 +92,52 @@ fun AskUserDialog(
                             Spacer(modifier = Modifier.height(8.dp))
 
                             // Predefined options
-                            request.options.forEach { option ->
-                                OutlinedButton(
-                                    onClick = { onRespond(option) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                                ) {
-                                    Text(
-                                        text = option,
-                                        fontSize = (13 * fs).sp,
-                                        fontFamily = resolvedFontFamily,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(vertical = 2.dp)
-                                    )
+                            if (request.multiSelect) {
+                                // Multi-select mode: checkboxes
+                                request.options.forEach { option ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 2.dp),
+                                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = selectedOptions.contains(option),
+                                            onCheckedChange = { checked ->
+                                                selectedOptions = if (checked) {
+                                                    selectedOptions + option
+                                                } else {
+                                                    selectedOptions - option
+                                                }
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = option,
+                                            fontSize = (13 * fs).sp,
+                                            fontFamily = resolvedFontFamily,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Single-select mode: buttons
+                                request.options.forEach { option ->
+                                    OutlinedButton(
+                                        onClick = { onRespond(option) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
+                                    ) {
+                                        Text(
+                                            text = option,
+                                            fontSize = (13 * fs).sp,
+                                            fontFamily = resolvedFontFamily,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -141,9 +173,20 @@ fun AskUserDialog(
                     }
 
                     Button(
-                        onClick = { onRespond(customInput.trim()) },
+                        onClick = {
+                            if (request.multiSelect && selectedOptions.isNotEmpty()) {
+                                val jsonArray = org.json.JSONArray(selectedOptions.toList())
+                                onRespond(jsonArray.toString())
+                            } else {
+                                onRespond(customInput.trim())
+                            }
+                        },
                         modifier = Modifier.weight(1f),
-                        enabled = customInput.trim().isNotEmpty(),
+                        enabled = if (request.multiSelect) {
+                            selectedOptions.isNotEmpty() || customInput.trim().isNotEmpty()
+                        } else {
+                            customInput.trim().isNotEmpty()
+                        },
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) {
                         Text(uiText("action.confirm", "确认"), fontFamily = resolvedFontFamily)

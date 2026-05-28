@@ -11,15 +11,16 @@ object AskUserManager {
         val id: String = UUID.randomUUID().toString(),
         val question: String,
         val options: List<String>,
+        val multiSelect: Boolean = false,
         val deferred: CompletableDeferred<String>
     )
 
     private val _requests = MutableStateFlow<List<AskUserRequest>>(emptyList())
     val requests = _requests.asStateFlow()
 
-    suspend fun askUser(question: String, options: List<String>): String {
+    suspend fun askUser(question: String, options: List<String>, multiSelect: Boolean = false): String {
         val deferred = CompletableDeferred<String>()
-        val request = AskUserRequest(question = question, options = options, deferred = deferred)
+        val request = AskUserRequest(question = question, options = options, multiSelect = multiSelect, deferred = deferred)
         _requests.update { it + request }
         try {
             return deferred.await()
