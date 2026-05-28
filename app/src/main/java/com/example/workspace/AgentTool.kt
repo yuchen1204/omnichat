@@ -3,7 +3,6 @@ package com.example.workspace
 import android.util.Log
 import com.example.mcp.McpRuntimeManager
 import com.example.mcp.ToolSchemaDsl.schema
-import com.example.network.ApiClient
 import org.json.JSONObject
 
 /**
@@ -21,7 +20,6 @@ import org.json.JSONObject
  */
 class AgentTool(
     private val mcpRuntimeManager: McpRuntimeManager,
-    private val apiClient: ApiClient,
 ) {
     companion object {
         private const val TAG = "AgentTool"
