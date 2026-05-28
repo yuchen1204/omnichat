@@ -51,6 +51,7 @@ class AppRepository(private val db: AppDatabase) {
     // Memories
     val allMemories: Flow<List<MemoryItem>> = memoryItemDao.getAllMemoriesFlow()
     suspend fun getAllMemories(): List<MemoryItem> = memoryItemDao.getAllMemories()
+    suspend fun searchMemoriesByKeyword(keyword: String): List<MemoryItem> = memoryItemDao.searchMemoriesByKeyword(keyword)
     suspend fun getMemoryById(id: Long): MemoryItem? = memoryItemDao.getMemoryById(id)
     suspend fun insertMemory(memory: MemoryItem): Long = memoryItemDao.insertMemory(memory)
     suspend fun updateMemory(memory: MemoryItem) = memoryItemDao.updateMemory(memory)

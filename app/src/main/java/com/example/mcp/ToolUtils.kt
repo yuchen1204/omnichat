@@ -51,7 +51,7 @@ object ToolUtils {
                     buffer.clear()
                 }
                 tokens.add(ch.toString())
-            } else if (ch.isWhitespace() || ch in "，。！？、；：""''（）【】《》,.!?;:\"'()[]<>") {
+            } else if (ch.isWhitespace() || ch in "，。！？、；：\u201C\u201D\u2018\u2019（）【】《》,.!?;:\"'()[]<>") {
                 if (buffer.isNotEmpty()) {
                     tokens.add(buffer.toString().lowercase())
                     buffer.clear()

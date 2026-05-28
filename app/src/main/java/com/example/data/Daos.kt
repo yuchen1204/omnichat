@@ -82,6 +82,9 @@ interface MemoryItemDao {
     @Query("SELECT * FROM memory_items ORDER BY pinned DESC, confidence DESC, updatedAt DESC")
     suspend fun getAllMemories(): List<MemoryItem>
 
+    @Query("SELECT * FROM memory_items WHERE content LIKE '%' || :keyword || '%' ORDER BY pinned DESC, confidence DESC, updatedAt DESC")
+    suspend fun searchMemoriesByKeyword(keyword: String): List<MemoryItem>
+
     @Query("SELECT * FROM memory_items WHERE id = :id LIMIT 1")
     suspend fun getMemoryById(id: Long): MemoryItem?
 

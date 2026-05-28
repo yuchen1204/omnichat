@@ -19,6 +19,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import com.example.mcp.ToolSchemaDsl.schema
 private const val TAG = "McpRuntimeManager"
 
 // ── 公开数据类 ────────────────────────────────────────────────────────────
@@ -499,15 +500,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "get_current_time",
             description = "Get the current real date and time (including timezone). Call this tool whenever you need to know today's date, the current time, the day of the week, or perform any reasoning that depends on the current time.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("timezone", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. IANA timezone name, e.g. Asia/Shanghai or America/New_York. Leave empty to use the device's local timezone.")
-                    })
-                })
-                put("required", JSONArray())
+            // 使用 ToolSchemaDsl 替代手写 JSONObject
+            inputSchema = schema {
+                prop("timezone", "string", "Optional. IANA timezone name, e.g. Asia/Shanghai or America/New_York. Leave empty to use the device's local timezone.")
             }
         ),
         McpTool(
@@ -515,67 +510,21 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "get_ui_capabilities",
             description = "Query the capability manifest and current values of the app's UI theme configuration. **Call this tool before calling adjust_ui** to learn all adjustable fields, their semantics, constraints, and current effective values. The response includes: color field list (primary palette / status colors / extended colors), layout parameters (corner radius / spacing), valid value constraints (HEX range), and recommended color combination suggestions.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
+            inputSchema = schema {}
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "adjust_ui",
             description = "Adjust the app's complete color scheme and layout. Covers the full Material 3 color palette (primary / secondary / tertiary + their container and on-colors), surface and outline colors, error / success / warning / info / accent colors, as well as corner radius and spacing multiplier.\n\n**Important**: Call get_ui_capabilities first to see the current values and constraints for all adjustable fields. All colors must be in #RRGGBB or #RRGGBBAA format. Fields not provided will retain their current values (incremental update). Changes take effect immediately across the entire app without a restart.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    // —— Primary palette ——
-                    put("primaryColor", colorProp("Primary color (buttons / selected / brand color), e.g. #6750A4"))
-                    put("onPrimaryColor", colorProp("Text and icon color on primary (high contrast against primaryColor), e.g. #FFFFFF"))
-                    put("primaryContainerColor", colorProp("Primary container (e.g. default provider badge background), a lighter variant of the primary color"))
-                    put("onPrimaryContainerColor", colorProp("Text color on primary container, high contrast against primaryContainerColor"))
-                    put("secondaryColor", colorProp("Secondary color"))
-                    put("onSecondaryColor", colorProp("Text color on secondary"))
-                    put("secondaryContainerColor", colorProp("Secondary container background"))
-                    put("onSecondaryContainerColor", colorProp("Text color on secondary container"))
-                    put("tertiaryColor", colorProp("Tertiary color (accent highlight), often used for special badges"))
-                    put("onTertiaryColor", colorProp("Text color on tertiary"))
-                    // —— Surface & text ——
-                    put("backgroundColor", colorProp("Full-page background color"))
-                    put("onBackgroundColor", colorProp("Body text color on background"))
-                    put("surfaceColor", colorProp("Surface color for cards / dialogs / input fields"))
-                    put("onSurfaceColor", colorProp("Primary text color on surface (e.g. headings)"))
-                    put("surfaceVariantColor", colorProp("Secondary surface (aggregated tool messages, thinking panel background)"))
-                    put("onSurfaceVariantColor", colorProp("Secondary text color on surface variant"))
-                    put("outlineColor", colorProp("Primary divider / border color"))
-                    put("outlineVariantColor", colorProp("Lighter divider / border color"))
-                    // —— Status colors ——
-                    put("errorColor", colorProp("Error state color (delete buttons, error messages)"))
-                    put("onErrorColor", colorProp("Text color on error"))
-                    put("errorContainerColor", colorProp("Error container background (error message bubbles)"))
-                    put("onErrorContainerColor", colorProp("Text color inside error container"))
-                    put("successColor", colorProp("Success color (running status, green badges); iOS-style #34C759 is the default"))
-                    put("warningColor", colorProp("Warning color (starting up, orange hints); #FF9800 is the default"))
-                    put("infoColor", colorProp("Info color (visual / blue badges); #007AFF is the default"))
-                    put("accentColor", colorProp("Accent color (thinking-process star, orange highlight); #FF9500 is the default"))
-                    // —— Sidebar-specific colors ——
-                    put("sidebarBackgroundColor", colorProp("Sidebar background color, e.g. #FFFBFE"))
-                    put("sidebarOnBackgroundColor", colorProp("Sidebar text and secondary icon color, e.g. #1C1B1F"))
-                    put("sidebarActiveColor", colorProp("Sidebar active item background color, e.g. #EADDFF"))
-                    put("sidebarOnActiveColor", colorProp("Sidebar active item text and icon color, e.g. #21005D"))
-                    // —— Layout ——
-                    put("cornerRadiusDp", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Global corner radius in dp, range 0–32. Affects cards, buttons, and other rounded elements.")
-                    })
-                    put("spacingMultiplier", JSONObject().apply {
-                        put("type", "number")
-                        put("description", "Global spacing multiplier, range 0.5–2.0. 1.0 is the default; >1 is more spacious, <1 is more compact.")
-                    })
-                    put("resetToDefault", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Pass true to immediately reset all UI to defaults (other fields are ignored).")
-                    })
-                })
+            // 颜色字段使用 UiFieldRegistry + colorProp（带 HEX pattern 约束）
+            inputSchema = schema {
+                for (f in UiFieldRegistry.colorFields) {
+                    put(f.key, colorProp(f.desc))
+                }
+                prop("cornerRadiusDp", "integer", "Global corner radius in dp, range 0–32. Affects cards, buttons, and other rounded elements.")
+                prop("spacingMultiplier", "number", "Global spacing multiplier, range 0.5–2.0. 1.0 is the default; >1 is more spacious, <1 is more compact.")
+                prop("resetToDefault", "boolean", "Pass true to immediately reset all UI to defaults (other fields are ignored).")
             }
         ),
         McpTool(
@@ -583,32 +532,17 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "reset_ui_to_default",
             description = "Reset all UI settings — colors, layout, corner radius, etc. — to their system defaults. Call this tool when the user asks to reset the interface, restore the original look, or when you have made a mess of the color scheme.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
+            inputSchema = schema {}
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "save_color_scheme",
             description = "Save the current app color scheme as a named preset for easy restoration later. Up to ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets can be saved; if the limit is reached an error is returned — call delete_color_scheme to free up a slot first. Returns the unique schemeId of the newly saved preset.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("name", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Preset name — short and memorable, e.g. \"Deep Ocean Blue\" or \"Minimal White\". Max 30 characters.")
-                    })
-                    put("description", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Preset summary describing the color style or use case, e.g. \"An immersive dark night theme with deep blue as the primary color\". Max 100 characters.")
-                    })
-                })
-                put("required", JSONArray().apply {
-                    put("name")
-                    put("description")
-                })
+            inputSchema = schema {
+                prop("name", "string", "Preset name — short and memorable, e.g. \"Deep Ocean Blue\" or \"Minimal White\". Max 30 characters.")
+                prop("description", "string", "Preset summary describing the color style or use case, e.g. \"An immersive dark night theme with deep blue as the primary color\". Max 100 characters.")
+                required("name", "description")
             }
         ),
         McpTool(
@@ -616,25 +550,16 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "list_color_schemes",
             description = "List all saved color scheme presets, returning each preset's schemeId, name, description, save time, and a preview of the primary and background colors. Call this tool before applying or deleting a preset to obtain the schemeId.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
+            inputSchema = schema {}
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "apply_color_scheme",
             description = "Apply a saved color scheme preset by its schemeId as the current theme, taking effect immediately. Call list_color_schemes first to obtain the available schemeIds.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("schemeId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The ID of the preset to apply (returned by save_color_scheme or listed by list_color_schemes).")
-                    })
-                })
-                put("required", JSONArray().apply { put("schemeId") })
+            inputSchema = schema {
+                prop("schemeId", "string", "The ID of the preset to apply (returned by save_color_scheme or listed by list_color_schemes).")
+                required("schemeId")
             }
         ),
         McpTool(
@@ -642,19 +567,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "search_memory",
             description = "Search the long-term memory store for entries related to a keyword. Call this tool when you need to recall a specific user preference, habit, or historical detail that is not present in the current context. The system automatically injects the top 30 highest-confidence memories; all other memories must be retrieved proactively via this tool.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("query", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Search keywords; multiple words are supported (space-separated), e.g. \"programming language Kotlin\" or \"dietary preference\". The search performs fuzzy matching against memory content.")
-                    })
-                    put("limit", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Maximum number of results to return. Default 10, max 50.")
-                    })
-                })
-                put("required", JSONArray().apply { put("query") })
+            inputSchema = schema {
+                prop("query", "string", "Search keywords; multiple words are supported (space-separated), e.g. \"programming language Kotlin\" or \"dietary preference\". The search performs fuzzy matching against memory content.")
+                prop("limit", "integer", "Maximum number of results to return. Default 10, max 50.")
+                required("query")
             }
         ),
         McpTool(
@@ -662,15 +578,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "delete_color_scheme",
             description = "Delete a saved color scheme preset by its schemeId. Use this when ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets are already saved and you need to free up a slot.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("schemeId", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The ID of the preset to delete (listed by list_color_schemes).")
-                    })
-                })
-                put("required", JSONArray().apply { put("schemeId") })
+            inputSchema = schema {
+                prop("schemeId", "string", "The ID of the preset to delete (listed by list_color_schemes).")
+                required("schemeId")
             }
         ),
         McpTool(
@@ -678,28 +588,44 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "adjust_font",
             description = "Adjust the app's font settings, including global font size scale, chat bubble font size scale, and font family. Changes take effect globally and immediately without a restart.\n\n**Adjustable fields:**\n• fontSizeScale — Global UI font size scale (0.75–1.5, default 1.0)\n• chatFontSizeScale — Chat bubble body font size scale (0.75–1.5, default 1.0)\n• fontFamily — Font family (\"default\" / \"serif\" / \"monospace\" / \"cursive\")\n\nFields not provided retain their current values (incremental update).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("fontSizeScale", JSONObject().apply {
-                        put("type", "number")
-                        put("description", "Global UI font size scale, range 0.75–1.5. 1.0 is the default (100%); 1.2 enlarges by 20%, 0.9 reduces by 10%. Affects all UI text including headings, buttons, and labels.")
-                    })
-                    put("chatFontSizeScale", JSONObject().apply {
-                        put("type", "number")
-                        put("description", "Chat bubble body font size scale, range 0.75–1.5. Independent of the global scale — you can increase chat content font size without affecting other UI elements.")
-                    })
-                    put("fontFamily", JSONObject().apply {
-                        put("type", "string")
-                        put("enum", JSONArray().apply {
-                            put("default")
-                            put("serif")
-                            put("monospace")
-                            put("cursive")
-                        })
-                        put("description", "Font family. \"default\" = system default (Roboto), \"serif\" = serif font (Noto Serif), \"monospace\" = monospace font (Noto Sans Mono), \"cursive\" = handwriting-style font.")
-                    })
-                })
+            // 使用 UiFieldRegistry.fontFields 消除重复定义
+            inputSchema = schema {
+                for (f in UiFieldRegistry.fontFields) {
+                    prop(f.key, f.type, f.desc) {
+                        if (f.enumValues != null) enum(*f.enumValues.toTypedArray())
+                    }
+                }
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "reset_font_to_default",
+            description = "Reset all font settings (font size scale, chat font scale, and font family) to their default values. Call this tool when the user asks to restore the default font or when you have made a mess of the font configuration.",
+            inputSchema = schema {}
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "list_ui_texts",
+            description = "View all adjustable UI text strings in the app along with their default Chinese values and current override values. An optional `query` parameter (e.g. \"mcp\" or \"session\") can be provided to fuzzy-filter results by key or default value.\n\n## Line break tip\n\nYou can use `\\n` in `set_ui_texts` values to insert line breaks. For longer translated strings (e.g. French, German), insert `\\n` at semantic break points to enable automatic wrapping and prevent text from being clipped.",
+            inputSchema = schema {
+                prop("query", "string", "Optional. Fuzzy-filter by key name or default Chinese text. If not provided, all UI text entries are listed.")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "set_ui_texts",
+            description = "Override any UI text labels (buttons, headings, hints, placeholders, etc.). Changes take effect globally and immediately without a restart.\n\n## How it works\n\nEvery UI string in the app is registered via a `uiText(key, default)` call. Each key maps to a default Chinese string in the code. When the AI writes a new value for a key using this tool, every location that references that key immediately displays the new text. Keys without an override automatically fall back to their default.\n\n## Usage\n\n• `updates`: A key→value dictionary of strings to set or update. E.g. `{\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}`.\n• `delete`: A list of keys whose overrides should be removed (reverting to the default Chinese). E.g. `[\"action.confirm\"]`.\n• `resetAll`: Pass true to remove all overrides at once and restore all default Chinese strings.\n\n## Key naming conventions (not enforced)\n\ntopbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*\n\n## Line break support\n\nUse `\\n` in values to insert line breaks. For languages where translations are significantly longer (e.g. French, German), insert `\\n` at appropriate semantic break points to enable automatic wrapping and prevent text from being clipped. Example: `\"tab.settings.memory\": \"Mémoire\\nlongue\"`. The app handles multi-line text display automatically.\n\n## Important\n\nThe key must exactly match the key used in the `uiText()` call in the code for the override to take effect. Call `list_ui_texts` first to see existing overrides. If the user wants to change a string but no existing key is found, ask which area of the UI it appears in (top bar / sidebar / chat / settings / dialog, etc.) and derive the key from the naming conventions above. Common example keys: `topbar.title.chat`, `topbar.title.settings`, `topbar.menu.open`, `topbar.memory.syncing`, `topbar.provider.prefix`, `sidebar.title`, `sidebar.menu.newSession`, `chat.input.placeholder`, `chat.empty.title`, `action.confirm`, `action.cancel`, `dialog.delete.title`, `status.loading`, `hint.swipeDelete`.",
+            inputSchema = schema {
+                prop("updates", "object", "A key→value dictionary of UI text strings to set or update. The key is the name used in the uiText() call in the code; the value is the new text to display.") {
+                    additionalProperties { /* type string is default */ }
+                }
+                prop("delete", "array", "A list of keys whose overrides should be removed (reverting to the default Chinese).") {
+                    items { /* type string is default */ }
+                }
+                prop("resetAll", "boolean", "Pass true to remove all overrides at once and restore all default Chinese strings (other fields are ignored).")
             }
         ),
         McpTool(
@@ -762,24 +688,13 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_write",
             description = "Write content to a file in the OmniChat/files/ directory on external storage. Creates the file (and any missing parent directories) if it does not exist, or overwrites it if it does. Use this to save notes, generated code, configuration snippets, or any text data the user wants to persist.\n\n**Path rules**: Provide a relative path such as `notes/todo.txt` or `output.json`. Absolute paths and `..` traversal are rejected for safety. The resolved absolute path is returned on success.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\" or \"data/result.json\". Parent directories are created automatically.")
-                    })
-                    put("content", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Text content to write. The file is saved as UTF-8.")
-                    })
-                    put("encoding", JSONObject().apply {
-                        put("type", "string")
-                        put("enum", JSONArray().apply { put("utf8"); put("base64") })
-                        put("description", "Content encoding. \"utf8\" (default) writes the string as-is; \"base64\" decodes the string first (useful for binary files).")
-                    })
-                })
-                put("required", JSONArray().apply { put("path"); put("content") })
+            inputSchema = schema {
+                prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\" or \"data/result.json\". Parent directories are created automatically.")
+                prop("content", "string", "Text content to write. The file is saved as UTF-8.")
+                prop("encoding", "string", "Content encoding. \"utf8\" (default) writes the string as-is; \"base64\" decodes the string first (useful for binary files).") {
+                    enum("utf8", "base64")
+                }
+                required("path", "content")
             }
         ),
         McpTool(
@@ -787,24 +702,13 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_read",
             description = "Read the content of a file from the OmniChat/files/ directory. Returns the file content as a UTF-8 string (or Base64 if `encoding` is set to \"base64\"). Optionally limit the output to a specific byte range for large files.\n\n**Path rules**: Relative paths only; `..` traversal is rejected.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
-                    })
-                    put("encoding", JSONObject().apply {
-                        put("type", "string")
-                        put("enum", JSONArray().apply { put("utf8"); put("base64") })
-                        put("description", "\"utf8\" (default) returns the content as a plain string; \"base64\" returns Base64-encoded bytes (useful for binary files).")
-                    })
-                    put("maxBytes", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Optional. Maximum number of bytes to read from the start of the file. Useful for previewing large files. Default: read the entire file (up to 1 MB).")
-                    })
-                })
-                put("required", JSONArray().apply { put("path") })
+            inputSchema = schema {
+                prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
+                prop("encoding", "string", "\"utf8\" (default) returns the content as a plain string; \"base64\" returns Base64-encoded bytes (useful for binary files).") {
+                    enum("utf8", "base64")
+                }
+                prop("maxBytes", "integer", "Optional. Maximum number of bytes to read from the start of the file. Useful for previewing large files. Default: read the entire file (up to 1 MB).")
+                required("path")
             }
         ),
         McpTool(
@@ -812,19 +716,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_append",
             description = "Append text to the end of an existing file in OmniChat/files/. If the file does not exist it is created. A newline is automatically inserted before the appended content when the file already has content and does not end with a newline.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative file path inside OmniChat/files/.")
-                    })
-                    put("content", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Text to append. Saved as UTF-8.")
-                    })
-                })
-                put("required", JSONArray().apply { put("path"); put("content") })
+            inputSchema = schema {
+                prop("path", "string", "Relative file path inside OmniChat/files/.")
+                prop("content", "string", "Text to append. Saved as UTF-8.")
+                required("path", "content")
             }
         ),
         McpTool(
@@ -832,19 +727,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_delete",
             description = "Delete a file or an empty directory from OmniChat/files/. To delete a directory and all its contents recursively, set `recursive` to true.\n\n**Safety**: `..` traversal is rejected. Deletion is permanent.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative path of the file or directory to delete inside OmniChat/files/.")
-                    })
-                    put("recursive", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If true, delete the directory and all its contents recursively. Default false (only deletes empty directories or files).")
-                    })
-                })
-                put("required", JSONArray().apply { put("path") })
+            inputSchema = schema {
+                prop("path", "string", "Relative path of the file or directory to delete inside OmniChat/files/.")
+                prop("recursive", "boolean", "If true, delete the directory and all its contents recursively. Default false (only deletes empty directories or files).")
+                required("path")
             }
         ),
         McpTool(
@@ -852,19 +738,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_list",
             description = "List the contents of a directory inside OmniChat/files/. Returns file names, types (file/directory), sizes, and last-modified timestamps. Pass an empty string or \".\" to list the root OmniChat/files/ directory.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative directory path inside OmniChat/files/. Use \"\" or \".\" for the root. E.g. \"notes\" or \"data/exports\".")
-                    })
-                    put("showHidden", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "Include entries whose names start with a dot. Default false.")
-                    })
-                })
-                put("required", JSONArray())
+            inputSchema = schema {
+                prop("path", "string", "Relative directory path inside OmniChat/files/. Use \"\" or \".\" for the root. E.g. \"notes\" or \"data/exports\".")
+                prop("showHidden", "boolean", "Include entries whose names start with a dot. Default false.")
             }
         ),
         McpTool(
@@ -872,27 +748,11 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_search",
             description = "Search for files by name pattern or by text content within OmniChat/files/. Supports glob-style name matching (e.g. `*.txt`, `report_*`) and optional full-text content search. Returns matching file paths with optional context lines around content matches.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("namePattern", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Glob-style filename pattern, e.g. \"*.txt\", \"report_*\", \"*.json\". Matches against the file name only (not the full path). If omitted, all files are candidates.")
-                    })
-                    put("contentQuery", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Search string to look for inside file contents. Case-insensitive plain-text match. Only text files are searched.")
-                    })
-                    put("directory", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional. Relative directory to restrict the search to, e.g. \"notes\". Defaults to the root OmniChat/files/ directory (recursive).")
-                    })
-                    put("maxResults", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Maximum number of results to return. Default 20, max 100.")
-                    })
-                })
-                put("required", JSONArray())
+            inputSchema = schema {
+                prop("namePattern", "string", "Optional. Glob-style filename pattern, e.g. \"*.txt\", \"report_*\", \"*.json\". Matches against the file name only (not the full path). If omitted, all files are candidates.")
+                prop("contentQuery", "string", "Optional. Search string to look for inside file contents. Case-insensitive plain-text match. Only text files are searched.")
+                prop("directory", "string", "Optional. Relative directory to restrict the search to, e.g. \"notes\". Defaults to the root OmniChat/files/ directory (recursive).")
+                prop("maxResults", "integer", "Maximum number of results to return. Default 20, max 100.")
             }
         ),
         McpTool(
@@ -900,15 +760,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_info",
             description = "Get metadata for a file or directory inside OmniChat/files/: absolute path, size in bytes, last-modified timestamp, MIME type guess, whether it is readable/writable, and (for directories) the number of direct children.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
-                    })
-                })
-                put("required", JSONArray().apply { put("path") })
+            inputSchema = schema {
+                prop("path", "string", "Relative path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
+                required("path")
             }
         ),
         McpTool(
@@ -916,23 +770,11 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "file_move",
             description = "Move or rename a file or directory inside OmniChat/files/. The destination parent directory is created automatically if it does not exist. Both source and destination must be within OmniChat/files/.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("sourcePath", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative source path inside OmniChat/files/, e.g. \"drafts/note.txt\".")
-                    })
-                    put("destinationPath", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative destination path inside OmniChat/files/, e.g. \"archive/note_2024.txt\".")
-                    })
-                    put("overwrite", JSONObject().apply {
-                        put("type", "boolean")
-                        put("description", "If true, overwrite the destination if it already exists. Default false (returns an error if destination exists).")
-                    })
-                })
-                put("required", JSONArray().apply { put("sourcePath"); put("destinationPath") })
+            inputSchema = schema {
+                prop("sourcePath", "string", "Relative source path inside OmniChat/files/, e.g. \"drafts/note.txt\".")
+                prop("destinationPath", "string", "Relative destination path inside OmniChat/files/, e.g. \"archive/note_2024.txt\".")
+                prop("overwrite", "boolean", "If true, overwrite the destination if it already exists. Default false (returns an error if destination exists).")
+                required("sourcePath", "destinationPath")
             }
         ),
         // ── 文档创建工具 ──────────────────────────────────────────────────
@@ -941,77 +783,56 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "create_document",
             description = "Create an exquisite, formatted document (PDF, Excel, Word, or PowerPoint) with rich sections and styling. Use this for reports, presentations, or data analysis.\n\n**Sections support:**\n- `heading`: Title/Header text with hierarchy (1-3).\n- `text`: Paragraph text, supports **bold**, *italic*, and lists if `markdown` is true.\n- `table`: Data grid with headers and rows.\n- `image`: Insert image from local path (OmniChat/files/path.jpg).\n- `page_break`: Force a new page or slide.\n\n**Style options:**\n- `themeColor`: Hex color code (e.g., \"#1A73E8\").\n- `preset`: \"business\", \"modern\", or \"classic\".",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("path", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Relative file path inside OmniChat/files/, e.g. \"reports/analysis.pdf\".")
-                    })
-                    put("format", JSONObject().apply {
-                        put("type", "string")
-                        put("enum", JSONArray().apply { put("pdf"); put("xlsx"); put("docx"); put("pptx") })
-                    })
-                    put("title", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Main document title.")
-                    })
-                    put("style", JSONObject().apply {
-                        put("type", "object")
-                        put("properties", JSONObject().apply {
-                            put("themeColor", JSONObject().apply { put("type", "string"); put("description", "Hex color code.") })
-                            put("preset", JSONObject().apply { put("type", "string"); put("enum", JSONArray().apply { put("business"); put("modern"); put("classic") }) })
-                        })
-                    })
-                    put("sections", JSONObject().apply {
-                        put("type", "array")
-                        put("description", "List of document sections in order.")
-                        put("items", JSONObject().apply {
-                            put("type", "object")
-                            put("properties", JSONObject().apply {
-                                put("type", JSONObject().apply { put("type", "string"); put("enum", JSONArray().apply { put("heading"); put("text"); put("table"); put("image"); put("page_break") }) })
-                                put("content", JSONObject().apply { put("type", "string"); put("description", "Text content for heading/text, or image path.") })
-                                put("level", JSONObject().apply { put("type", "integer"); put("description", "For heading: 1 (main), 2 (sub), 3 (minor).") })
-                                put("markdown", JSONObject().apply { put("type", "boolean"); put("description", "Apply markdown formatting to text.") })
-                                put("table", JSONObject().apply {
-                                    put("type", "object")
-                                    put("properties", JSONObject().apply {
-                                        put("headers", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "string") }) })
-                                        put("rows", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "string") }) }) })
-                                    })
-                                })
-                            })
-                        })
-                    })
-                    // Backward compatibility fields
-                    put("paragraphs", JSONObject().apply { put("type", "array"); put("items", JSONObject().apply { put("type", "string") }); put("description", "Legacy: use sections instead.") })
-                    put("table", JSONObject().apply { put("type", "object"); put("description", "Legacy: use sections instead.") })
-                    put("slides", JSONObject().apply { put("type", "array"); put("description", "Legacy: use sections instead.") })
-                })
-                put("required", JSONArray().apply { put("path"); put("format") })
+            inputSchema = schema {
+                prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"reports/analysis.pdf\".")
+                prop("format", "string", "Document format.") {
+                    enum("pdf", "xlsx", "docx", "pptx")
+                }
+                prop("title", "string", "Main document title.")
+                prop("style", "object", "Document style options.") {
+                    properties {
+                        prop("themeColor", "string", "Hex color code.")
+                        prop("preset", "string", "Style preset.") {
+                            enum("business", "modern", "classic")
+                        }
+                    }
+                }
+                prop("sections", "array", "List of document sections in order.") {
+                    items {
+                        properties {
+                            prop("type", "string", "Section type.") {
+                                enum("heading", "text", "table", "image", "page_break")
+                            }
+                            prop("content", "string", "Text content for heading/text, or image path.")
+                            prop("level", "integer", "For heading: 1 (main), 2 (sub), 3 (minor).")
+                            prop("markdown", "boolean", "Apply markdown formatting to text.")
+                            prop("table", "object", "Table data for table sections.") {
+                                properties {
+                                    prop("headers", "array", "Column headers.") { items { } }
+                                    prop("rows", "array", "Table rows.") { items { } }
+                                }
+                            }
+                        }
+                    }
+                }
+                prop("paragraphs", "array", "Legacy: use sections instead.") { items { } }
+                prop("table", "object", "Legacy: use sections instead.")
+                prop("slides", "array", "Legacy: use sections instead.") { items { } }
+                required("path", "format")
             }
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "ask_user",
-            description = "Ask the user a clarifying question when their request is ambiguous or underspecified, or to confirm a decision. You can provide 1 to 5 options for them to choose from, or they can input their custom answer. The function will block and wait for user response.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("question", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The clarifying question or prompt to display to the user.")
-                    })
-                    put("options", JSONObject().apply {
-                        put("type", "array")
-                        put("description", "Optional list of 1 to 5 predefined options that the user can choose from.")
-                        put("items", JSONObject().apply {
-                            put("type", "string")
-                        })
-                    })
-                })
-                put("required", JSONArray().apply { put("question") })
+            description = "Ask the user a clarifying question when their request is ambiguous or underspecified, or to confirm a decision. You can provide 1 to 5 options for them to choose from, or they can input their custom answer. Supports single-select (default) and multi-select modes. The function will block and wait for user response.",
+            inputSchema = schema {
+                prop("question", "string", "The clarifying question or prompt to display to the user.")
+                prop("options", "array", "Optional list of 1 to 5 predefined options that the user can choose from.") {
+                    items { }
+                }
+                prop("multi_select", "boolean", "If true, the user can select multiple options (checkboxes). If false or omitted, the user can only select one option (buttons). When multi_select is true, the response is a JSON array of selected options.")
+                required("question")
             }
         ),
         // ── 定时器工具 ────────────────────────────────────────────────────
@@ -1020,26 +841,11 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "create_timer",
             description = "Create a one-shot timer that fires after a specified delay. When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Use this when the user asks to be reminded about something after a delay (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\").\n\nReturns a `timerId` that can be used with `cancel_timer` to cancel the timer before it fires.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("delay_seconds", JSONObject().apply {
-                        put("type", "integer")
-                        put("description", "Delay in seconds before the timer fires. Range: 1 to 86400 (24 hours). Examples: 60 = 1 minute, 1800 = 30 minutes, 3600 = 1 hour.")
-                    })
-                    put("message", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable, e.g. \"Time to take a break!\", \"Check the oven\", \"Meeting starts now\".")
-                    })
-                    put("label", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
-                    })
-                })
-                put("required", JSONArray().apply {
-                    put("delay_seconds")
-                    put("message")
-                })
+            inputSchema = schema {
+                prop("delay_seconds", "integer", "Delay in seconds before the timer fires. Range: 1 to 86400 (24 hours). Examples: 60 = 1 minute, 1800 = 30 minutes, 3600 = 1 hour.")
+                prop("message", "string", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable, e.g. \"Time to take a break!\", \"Check the oven\", \"Meeting starts now\".")
+                prop("label", "string", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
+                required("delay_seconds", "message")
             }
         ),
         McpTool(
@@ -1047,15 +853,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "cancel_timer",
             description = "Cancel a pending timer before it fires. Use the `timerId` returned by `create_timer`. Returns an error if the timer does not exist or has already fired.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("timer_id", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The timer ID returned by create_timer.")
-                    })
-                })
-                put("required", JSONArray().apply { put("timer_id") })
+            inputSchema = schema {
+                prop("timer_id", "string", "The timer ID returned by create_timer.")
+                required("timer_id")
             }
         ),
         McpTool(
@@ -1063,10 +863,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "list_timers",
             description = "List all currently pending (not yet fired) timers created in this session. Returns each timer's ID, label, message, remaining seconds, and scheduled fire time.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
+            inputSchema = schema {}
         ),
         // ── Scratchpad 跨 Agent 共享工具 ──────────────────────────────────
         McpTool(
@@ -1074,19 +871,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "scratchpad_write",
             description = "Write content to the shared scratchpad. The scratchpad is a shared key-value store for cross-agent collaboration within the current workspace. Each agent can write notes, intermediate results, or coordination data that other agents can read.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("key", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "A unique key for this entry, e.g. \"design_spec\" or \"api_response\". Only alphanumeric characters and underscores are allowed; other characters are replaced with underscores.")
-                    })
-                    put("content", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The text content to store.")
-                    })
-                })
-                put("required", JSONArray().apply { put("key"); put("content") })
+            inputSchema = schema {
+                prop("key", "string", "A unique key for this entry, e.g. \"design_spec\" or \"api_response\". Only alphanumeric characters and underscores are allowed; other characters are replaced with underscores.")
+                prop("content", "string", "The text content to store.")
+                required("key", "content")
             }
         ),
         McpTool(
@@ -1094,19 +882,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "scratchpad_read",
             description = "Read content from the shared scratchpad written by a specific agent. Use scratchpad_list first to discover available entries.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    put("agentName", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The name of the agent whose scratchpad entry to read.")
-                    })
-                    put("key", JSONObject().apply {
-                        put("type", "string")
-                        put("description", "The key of the entry to read.")
-                    })
-                })
-                put("required", JSONArray().apply { put("agentName"); put("key") })
+            inputSchema = schema {
+                prop("agentName", "string", "The name of the agent whose scratchpad entry to read.")
+                prop("key", "string", "The key of the entry to read.")
+                required("agentName", "key")
             }
         ),
         McpTool(
@@ -1114,10 +893,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "scratchpad_list",
             description = "List all entries in the shared scratchpad. Returns each entry's agent name, key, content preview, and last modified time. Use this to discover what data other agents have shared.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
+            inputSchema = schema {}
         ),
         // ── 运行时工具组管理 ──────────────────────────────────────────────
         McpTool(
@@ -1125,41 +901,25 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverName = BUILTIN_SERVER_NAME,
             name = "list_mcp_tool_groups",
             description = "List all available built-in MCP tool groups and their current enabled/disabled status. Use this tool to discover what capabilities are currently available to you or can be activated. Groups: core (essential), ui_appearance (theming/colors), ui_text (i18n), files (storage), documents (office), efficiency (timers), memory (long-term facts).",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject())
-            }
+            inputSchema = schema {}
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "configure_mcp_tool_groups",
             description = "Enable or disable specific built-in MCP tool groups. Use this when you need a tool that is currently disabled, or when you want to simplify your toolset. Note: 'core' group cannot be disabled. Changes persist across sessions.",
-            inputSchema = JSONObject().apply {
-                put("type", "object")
-                put("properties", JSONObject().apply {
-                    // BUG-010: 使用 enum 约束有效组名，避免无效值写入数据库
-                    put("enable", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply {
-                            put("type", "string")
-                            put("enum", JSONArray().apply {
-                                put("ui_text"); put("ui_appearance"); put("files"); put("documents"); put("efficiency"); put("memory")
-                            })
-                        })
-                        put("description", "List of group names to enable. Valid: ui_text, ui_appearance, files, documents, efficiency, memory. Note: 'core' cannot be disabled.")
-                    })
-                    put("disable", JSONObject().apply {
-                        put("type", "array")
-                        put("items", JSONObject().apply {
-                            put("type", "string")
-                            put("enum", JSONArray().apply {
-                                put("ui_text"); put("ui_appearance"); put("files"); put("documents"); put("efficiency"); put("memory")
-                            })
-                        })
-                        put("description", "List of group names to disable. Note: 'core' cannot be disabled.")
-                    })
-                })
+            // BUG-010: 使用 enum 约束有效组名，避免无效值写入数据库
+            inputSchema = schema {
+                prop("enable", "array", "List of group names to enable. Valid: ui_text, ui_appearance, files, documents, efficiency, memory. Note: 'core' cannot be disabled.") {
+                    items {
+                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory")
+                    }
+                }
+                prop("disable", "array", "List of group names to disable. Note: 'core' cannot be disabled.") {
+                    items {
+                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory")
+                    }
+                }
             }
         )
     )
