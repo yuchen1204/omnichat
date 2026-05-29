@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.*
 import com.example.mcp.McpRuntimeManager
+import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.example.workspace.mailbox.MailboxService
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -114,9 +116,12 @@ class WorkspaceCoreTest {
         assertEquals("Prompt:  with tools $toolsJson", compiledPromptNoMemory)
 
         // 3. 上下文消息构建（不应触发任何记忆同步）
+        val testIdentity = TeammateIdentity(agentId = "TestAgent", agentName = "TestAgent", teamName = "test-team")
         val runner = AgentRunner(
             context = agentContext,
             mcpRuntimeManager = mcpRuntimeManager,
+            lifecycleManager = AgentLifecycleManager(testIdentity),
+            mailboxService = MailboxService(repository),
             onStreamChunk = { _, _ -> },
             onToolCall = { _, _, _, _ -> "" },
         )
@@ -153,9 +158,12 @@ class WorkspaceCoreTest {
             messages = ArrayList(),
         )
 
+        val orchestratorIdentity = TeammateIdentity(agentId = ORCHESTRATOR_NAME, agentName = ORCHESTRATOR_NAME, teamName = "test-team")
         val runner = AgentRunner(
             context = agentContext,
             mcpRuntimeManager = mcpRuntimeManager,
+            lifecycleManager = AgentLifecycleManager(orchestratorIdentity),
+            mailboxService = MailboxService(repository),
             onStreamChunk = { _, _ -> },
             onToolCall = { _, _, _, _ -> "" },
         )
@@ -195,9 +203,12 @@ class WorkspaceCoreTest {
         )
 
         // SubAgent 使用 disallowedTools = setOf("agent")
+        val subAgentIdentity = TeammateIdentity(agentId = "TestSubAgent", agentName = "TestSubAgent", teamName = "test-team")
         val runner = AgentRunner(
             context = agentContext,
             mcpRuntimeManager = mcpRuntimeManager,
+            lifecycleManager = AgentLifecycleManager(subAgentIdentity),
+            mailboxService = MailboxService(repository),
             disallowedTools = setOf("agent"),
             onStreamChunk = { _, _ -> },
             onToolCall = { _, _, _, _ -> "" },

@@ -3,6 +3,9 @@ package com.example.workspace
 import android.util.Log
 import com.example.mcp.McpRuntimeManager
 import com.example.mcp.ToolSchemaDsl.schema
+import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.example.workspace.mailbox.MailboxService
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -21,6 +24,8 @@ import org.json.JSONObject
  */
 class AgentTool(
     private val mcpRuntimeManager: McpRuntimeManager,
+    private val agentRegistry: AgentRegistry,
+    private val mailboxService: MailboxService,
     // 支持 AgentDefinition 注入，使 subagent_type 参数可解析到对应的 Agent 定义
     private val agentDefinitions: List<AgentDefinition> = BuiltInAgents.ALL,
     private val onSubAgentCreated: (name: String, description: String) -> Unit = { _, _ -> },
@@ -28,6 +33,8 @@ class AgentTool(
     private val onSubAgentCompleted: (name: String, messages: List<AgentMessage>) -> Unit = { _, _ -> },
     /** Callback to inject a notification message into the orchestrator's queue */
     private val onTaskNotification: (notification: TaskNotification) -> Unit = { _ -> },
+    /** BUG-01 fix: callback to register async SubAgent scope/job with TeamManager for cancellation */
+    private val onSubAgentLaunched: (name: String, scope: kotlinx.coroutines.CoroutineScope, job: Job) -> Unit = { _, _, _ -> },
 ) {
     companion object {
         private const val TAG = "AgentTool"
@@ -115,6 +122,17 @@ class AgentTool(
     }
 
     /**
+     * Create a [TeammateIdentity] for a sub-agent.
+     */
+    private fun buildSubAgentIdentity(subAgentName: String, parentContext: AgentContext): TeammateIdentity {
+        return TeammateIdentity(
+            agentId = subAgentName,
+            agentName = subAgentName,
+            teamName = parentContext.teamName,
+        )
+    }
+
+    /**
      * Create an isolated SubAgent context and run it.
      *
      * Uses AgentDefinition to configure system prompt, disallowed tools,
@@ -149,11 +167,22 @@ class AgentTool(
         // 合并禁止工具列表：递归防护 + AgentDefinition 配置
         val disallowedTools = buildDisallowedTools(agentDef)
 
+        // Create lifecycle manager and register in agent registry
+        val subAgentIdentity = buildSubAgentIdentity(subAgentName, parentContext)
+        val lifecycle = AgentLifecycleManager(subAgentIdentity)
+        agentRegistry.register(AgentRegistry.AgentEntry(
+            identity = subAgentIdentity,
+            lifecycle = lifecycle,
+            instanceId = 0L, // Sub-agents don't have DB instances by default
+        ))
+
         onSubAgentCreated(subAgentName, description)
 
         val runner = AgentRunner(
             context = subAgentContext,
             mcpRuntimeManager = mcpRuntimeManager,
+            lifecycleManager = lifecycle,
+            mailboxService = mailboxService,
             disallowedTools = disallowedTools,
             sandboxPath = sandboxPath,
             // 使用 AgentDefinition 中的 maxTurns 限制工具调用次数
@@ -181,14 +210,13 @@ class AgentTool(
             messagesSnapshot = subAgentContext.messages.toList()
             onSubAgentCompleted(subAgentName, messagesSnapshot)
             runner.dispose()
+            agentRegistry.unregister(subAgentName)
         }
 
         val lastAssistantMsg = messagesSnapshot
             .lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
-
         val resultText = lastAssistantMsg?.content
             ?: "(SubAgent completed with no output)"
-
         return successResult(resultText)
     }
 
@@ -220,13 +248,27 @@ class AgentTool(
 
         val disallowedTools = buildDisallowedTools(agentDef)
 
+        // Create lifecycle manager and register in agent registry
+        val subAgentIdentity = buildSubAgentIdentity(subAgentName, parentContext)
+        val lifecycle = AgentLifecycleManager(subAgentIdentity)
+        agentRegistry.register(AgentRegistry.AgentEntry(
+            identity = subAgentIdentity,
+            lifecycle = lifecycle,
+            instanceId = 0L, // Sub-agents don't have DB instances by default
+        ))
+
         onSubAgentCreated(subAgentName, description)
 
-        // Launch in background scope — NOT blocking the orchestrator
-        WorkspaceScopes.auxiliary.launch {
+        // BUG-01 fix: Create a managed scope so TeamManager can cancel the SubAgent
+        val subAgentScope = kotlinx.coroutines.CoroutineScope(
+            WorkspaceScopes.auxiliary.coroutineContext + kotlinx.coroutines.SupervisorJob()
+        )
+        val subAgentJob = subAgentScope.launch {
             val runner = AgentRunner(
                 context = subAgentContext,
                 mcpRuntimeManager = mcpRuntimeManager,
+                lifecycleManager = lifecycle,
+                mailboxService = mailboxService,
                 disallowedTools = disallowedTools,
                 sandboxPath = sandboxPath,
                 maxToolIterations = agentDef.maxTurns,
@@ -238,7 +280,6 @@ class AgentTool(
                     else mcpRuntimeManager.callTool(serverId, toolName, toolArgs)?.toString() ?: "No result"
                 },
             )
-
             try {
                 runner.runTurn(userMessage = prompt, source = "agent-tool")
                 val lastMsg = subAgentContext.messages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
@@ -259,12 +300,15 @@ class AgentTool(
                     error = e.message,
                 ))
             } finally {
-                // 在 dispose 之前保存消息快照
                 val messagesSnapshot = subAgentContext.messages.toList()
                 runner.dispose()
+                agentRegistry.unregister(subAgentName)
                 onSubAgentCompleted(subAgentName, messagesSnapshot)
             }
         }
+
+        // BUG-01 fix: Register SubAgent scope/job with TeamManager for cancellation
+        onSubAgentLaunched(subAgentName, subAgentScope, subAgentJob)
 
         return JSONObject().apply {
             put("status", "async_launched")
