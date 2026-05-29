@@ -177,6 +177,9 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun insertMailboxMessage(message: MailboxMessage): Long = mailboxMessageDao.insert(message)
     suspend fun markMailboxMessagesDelivered(agentId: Long) = mailboxMessageDao.markAllDelivered(agentId)
     suspend fun markMailboxMessageDelivered(id: Long) = mailboxMessageDao.markDelivered(id)
+    suspend fun markMailboxDelivered(id: Long) = mailboxMessageDao.markDelivered(id)
+    suspend fun countUndeliveredMailboxMessages(agentId: Long): Int = mailboxMessageDao.countUndelivered(agentId)
+    suspend fun getMailboxHistory(agentId: Long): List<MailboxMessage> = mailboxMessageDao.getByAgent(agentId)
     suspend fun deleteMailboxMessagesByAgent(agentId: Long) = mailboxMessageDao.deleteByAgent(agentId)
 
     // ── Agent State Snapshots ──────────────────────────────────────────

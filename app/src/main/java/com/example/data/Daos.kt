@@ -358,6 +358,9 @@ interface MailboxMessageDao {
     @Query("UPDATE mailbox_messages SET delivered = 1 WHERE id = :id")
     suspend fun markDelivered(id: Long)
 
+    @Query("SELECT COUNT(*) FROM mailbox_messages WHERE recipientAgentId = :agentId AND delivered = 0")
+    suspend fun countUndelivered(agentId: Long): Int
+
     @Query("DELETE FROM mailbox_messages WHERE recipientAgentId = :agentId")
     suspend fun deleteByAgent(agentId: Long)
 
