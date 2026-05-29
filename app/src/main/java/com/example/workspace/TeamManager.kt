@@ -203,6 +203,18 @@ class TeamManager(
                     content = buildTaskNotificationText(notification),
                     source = "task-notification",
                 ))
+                // Wake orchestrator: if it's not currently streaming, trigger a new runTurn
+                // to process the notification from mailbox
+                val orchestratorRunner = orchestratorEntry?.runner
+                if (orchestratorRunner != null && !orchestratorRunner.isStreaming()) {
+                    WorkspaceScopes.auxiliary.launch {
+                        try {
+                            orchestratorRunner.runTurn(userMessage = null, source = "task-notification-wake")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to wake orchestrator for notification", e)
+                        }
+                    }
+                }
             },
             onSubAgentLaunched = { name, scope, job ->
                 subAgentJobs[name] = job
@@ -342,6 +354,9 @@ class TeamManager(
         val state = _teamState.value ?: return
 
         Log.d(TAG, "Deleting team '${state.teamName}'")
+
+        // Cancel all async sub-agent scopes (prevents leaked coroutines after team deletion)
+        agentTool?.cancelAllAsyncAgents()
 
         // 取消所有 Sub-Agent 协程
         subAgentScope.cancel()

@@ -6,6 +6,7 @@ import com.example.mcp.ToolSchemaDsl.schema
 import com.example.workspace.lifecycle.AgentLifecycleManager
 import com.example.workspace.mailbox.MailboxService
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -58,6 +59,9 @@ class AgentTool(
             required("description", "prompt")
         }
     }
+
+    // Track async sub-agent scopes for cancellation
+    private val asyncScopes = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.CoroutineScope>()
 
     /**
      * Execute the agent tool.
@@ -263,6 +267,7 @@ class AgentTool(
         val subAgentScope = kotlinx.coroutines.CoroutineScope(
             WorkspaceScopes.auxiliary.coroutineContext + kotlinx.coroutines.SupervisorJob()
         )
+        asyncScopes[subAgentName] = subAgentScope
         val subAgentJob = subAgentScope.launch {
             val runner = AgentRunner(
                 context = subAgentContext,
@@ -300,6 +305,7 @@ class AgentTool(
                     error = e.message,
                 ))
             } finally {
+                asyncScopes.remove(subAgentName)
                 val messagesSnapshot = subAgentContext.messages.toList()
                 runner.dispose()
                 agentRegistry.unregister(subAgentName)
@@ -315,6 +321,18 @@ class AgentTool(
             put("agentId", subAgentName)
             put("description", description)
         }
+    }
+
+    /**
+     * Cancel all running async sub-agent scopes.
+     * Called by TeamManager during team deletion to prevent leaked coroutines.
+     */
+    fun cancelAllAsyncAgents() {
+        for ((name, scope) in asyncScopes) {
+            Log.d(TAG, "Cancelling async sub-agent: $name")
+            scope.cancel()
+        }
+        asyncScopes.clear()
     }
 
     /**
