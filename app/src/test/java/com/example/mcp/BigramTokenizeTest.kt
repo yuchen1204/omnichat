@@ -51,7 +51,7 @@ class BigramTokenizeTest {
     fun `chinese text produces character bigrams`() {
         val tokens = bigramTokenize("用户习惯")
         assertTrue("用户" in tokens)
-        assertTrue("有习" in tokens)
+        assertTrue("户习" in tokens)
         assertTrue("习惯" in tokens)
         assertTrue(tokens.size >= 3)
     }
