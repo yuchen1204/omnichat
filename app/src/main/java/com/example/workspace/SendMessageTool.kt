@@ -19,6 +19,7 @@ import org.json.JSONObject
 class SendMessageTool(
     private val agentRegistry: AgentRegistry,
     private val mailboxService: MailboxService,
+    private val senderAgentName: String = "orchestrator",
 ) {
     companion object {
         private const val TAG = "SendMessageTool"
@@ -57,7 +58,7 @@ class SendMessageTool(
 
         mailboxService.send(entry.instanceId, MailboxMessage(
             recipientAgentId = entry.instanceId,
-            senderAgentName = "orchestrator",
+            senderAgentName = senderAgentName,
             role = "user",
             content = message,
             source = "send_message",
@@ -73,7 +74,7 @@ class SendMessageTool(
         for (entry in agents) {
             mailboxService.send(entry.instanceId, MailboxMessage(
                 recipientAgentId = entry.instanceId,
-                senderAgentName = "orchestrator",
+                senderAgentName = senderAgentName,
                 role = "user",
                 content = message,
                 source = "broadcast",
