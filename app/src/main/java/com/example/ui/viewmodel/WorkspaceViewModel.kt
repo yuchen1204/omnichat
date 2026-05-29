@@ -9,6 +9,7 @@ import com.example.data.*
 import com.example.service.WorkspaceForegroundService
 import com.example.workspace.*
 import com.example.workspace.TeamCompletionSnapshot
+import com.example.workspace.executor.ExecutorType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -137,6 +138,14 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     val sandboxPath: StateFlow<String?> = _sandboxPath.asStateFlow()
 
     /**
+     * 团队执行模式（编排器 / 对等）。
+     *
+     * 用户在提交任务前选择，决定 TeamManager 使用哪种 Executor。
+     */
+    private val _teamMode = MutableStateFlow(ExecutorType.ORCHESTRATOR)
+    val teamMode: StateFlow<ExecutorType> = _teamMode.asStateFlow()
+
+    /**
      * 团队状态（来自 TeamManager 的 StateFlow）。
      *
      * 包含所有 Teammate 的运行时状态，用于 UI 展示 Agent 颜色等。
@@ -178,6 +187,20 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun setSandboxPath(path: String?) {
         _sandboxPath.value = path?.trim()?.ifEmpty { null }
+    }
+
+    /**
+     * 设置团队执行模式。
+     */
+    fun setTeamMode(mode: ExecutorType) {
+        _teamMode.value = mode
+    }
+
+    /**
+     * 获取可恢复的活跃工作区团队列表。
+     */
+    suspend fun getResumableTeams(): List<com.example.data.WorkspaceTeam> {
+        return repository.getActiveWorkspaceTeams()
     }
 
     /**
@@ -367,7 +390,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                teamManager?.createTeam("workspace_$wsId", orchestratorConfig, orchestratorOverrideModelId, sandboxPath)
+                teamManager?.createTeam("workspace_$wsId", mode = _teamMode.value, orchestratorConfig = orchestratorConfig, orchestratorOverrideModelId = orchestratorOverrideModelId, sandboxPath = sandboxPath)
 
                 // 团队创建后刷新任务列表，捕获 task_create 工具产生的任务
                 loadTeamTasks("workspace_$wsId")
@@ -717,7 +740,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     isRestoringSession = true
-                    teamManager?.createTeam("workspace_$workspaceSessionId", orchestratorConfig)
+                    teamManager?.createTeam("workspace_$workspaceSessionId", mode = _teamMode.value, orchestratorConfig = orchestratorConfig)
 
                     _agentTabs.value = agentInstances.map { instance ->
                         AgentTabState(
@@ -961,152 +984,154 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             repository = repository,
             mcpRuntimeManager = runtimeManager,
             parentScope = teamScope,
-            onAgentCreated = { agentName, isOrchestrator ->
-                if (!isRestoringSession && isOrchestrator) {
-                    val newTab = AgentTabState(
-                        agentName = agentName,
-                        isOrchestrator = true,
-                        status = AgentStatus.IDLE,
-                        messages = emptyList()
+            callbacks = TeamCallbacks(
+                onAgentCreated = { agentName, isOrchestrator ->
+                    if (!isRestoringSession && isOrchestrator) {
+                        val newTab = AgentTabState(
+                            agentName = agentName,
+                            isOrchestrator = true,
+                            status = AgentStatus.IDLE,
+                            messages = emptyList()
+                        )
+                        _agentTabs.value = listOf(newTab)
+                    }
+                },
+                onStreamChunk = { agentName, chunk ->
+                    // Only update stream buffer for agents with tabs (Orchestrator).
+                    // SubAgent streams are captured by AgentTool and shown inline.
+                    if (_agentTabs.value.any { it.agentName == agentName }) {
+                        _agentStreamBuffers.update { it.toMutableMap().apply { put(agentName, chunk) } }
+                    }
+                },
+                onMessageAdded = { agentName, message ->
+                    val hasTab = _agentTabs.value.any { it.agentName == agentName }
+                    if (hasTab) {
+                        _agentTabs.update { tabs ->
+                            tabs.map { tab ->
+                                if (tab.agentName == agentName) {
+                                    tab.copy(messages = tab.messages + message)
+                                } else tab
+                            }
+                        }
+                    }
+                },
+                onAgentStatusChanged = { agentName, status ->
+                    _agentStatuses.update { it.toMutableMap().apply { put(agentName, status) } }
+                    val hasTab = _agentTabs.value.any { it.agentName == agentName }
+                    if (hasTab) {
+                        if (status == AgentStatus.IDLE || status == AgentStatus.COMPLETED) {
+                            val history = managerRef?.getAgentHistory(agentName) ?: emptyList()
+                            _agentTabs.update { tabs ->
+                                tabs.map { tab ->
+                                    if (tab.agentName == agentName) {
+                                        val newMessages = history.ifEmpty { tab.messages }
+                                        tab.copy(status = status, messages = newMessages)
+                                    } else tab
+                                }
+                            }
+                            _agentStreamBuffers.update { it.toMutableMap().apply { remove(agentName) } }
+
+                            if (status == AgentStatus.COMPLETED && history.isNotEmpty()) {
+                                viewModelScope.launch {
+                                    try {
+                                        val currentWsId = _selectedWorkspaceId.value ?: return@launch
+                                        val instances = repository.getAgentInstancesByWorkspaceSession(currentWsId)
+                                        val instance = instances.find { it.agentName == agentName } ?: return@launch
+                                        val messages = history.map { msg ->
+                                            WorkspaceMessage(
+                                                workspaceSessionId = currentWsId,
+                                                agentInstanceId = instance.id,
+                                                role = msg.role,
+                                                content = msg.content,
+                                                toolCallId = msg.toolCallId,
+                                                toolCallsJson = msg.toolCallsJson,
+                                                isIntervention = msg.isIntervention,
+                                                timestamp = msg.timestamp
+                                            )
+                                        }
+                                        repository.replaceAgentMessages(currentWsId, instance.id, messages)
+                                        Log.d("WorkspaceViewModel", "Eagerly persisted ${messages.size} messages for $agentName on COMPLETED")
+                                    } catch (e: Exception) {
+                                        Log.w("WorkspaceViewModel", "Eager persist for $agentName failed (non-fatal)", e)
+                                    }
+                                }
+                            }
+                        } else {
+                            _agentTabs.update { tabs ->
+                                tabs.map { tab ->
+                                    if (tab.agentName == agentName) {
+                                        tab.copy(status = status)
+                                    } else tab
+                                }
+                            }
+                        }
+                    }
+                    // SubAgents without tabs are tracked via teamState.activeSubAgents (updated by TeamManager)
+                },
+                onWorkspaceComplete = { snapshot ->
+                    viewModelScope.launch {
+                        try {
+                            _agentTabs.update { tabs ->
+                                tabs.map { tab ->
+                                    val snapshotMessages = when {
+                                        tab.isOrchestrator ->
+                                            snapshot.orchestratorMessages
+                                        else ->
+                                            snapshot.subAgentMessages[tab.agentName]
+                                                ?: tab.messages
+                                    }
+                                    tab.copy(
+                                        status = AgentStatus.COMPLETED,
+                                        messages = snapshotMessages.ifEmpty { tab.messages }
+                                    )
+                                }
+                            }
+
+                            persistAllAgentMessages(wsId, snapshot)
+
+                            val firstUserMsg = snapshot.orchestratorMessages.find { it.role == "user" }?.content ?: "新工作区"
+                            val title = firstUserMsg.trim().replace(Regex("\\s+"), " ").take(20)
+                            repository.updateWorkspaceSessionTitle(wsId, title)
+
+                            repository.updateWorkspaceSessionStatus(wsId, isActive = false, lastActiveAt = System.currentTimeMillis())
+
+                            val updatedSession = repository.getWorkspaceSessionById(wsId)
+                            if (updatedSession != null) {
+                                _selectedWorkspaceSession.value = updatedSession
+                            }
+
+                            WorkspaceForegroundService.complete(
+                                getApplication(),
+                                "任务已完成：$title"
+                            )
+
+                            val completedManager = managerRef
+                            if (teamManager === completedManager) {
+                                teamManager = null
+                                com.example.mcp.BuiltinToolHandler.teamManager = null
+                            }
+                            completedManager?.deleteTeam()
+                        } catch (e: Exception) {
+                            Log.e("WorkspaceViewModel", "Failed to persist workspace session complete state", e)
+                        }
+                    }
+                },
+                onError = { errMsg ->
+                    Log.e("WorkspaceViewModel", "Orchestrator error: $errMsg")
+                    val errorSystemMsg = AgentMessage(
+                        role = "system",
+                        content = "⚠️ $errMsg",
+                        timestamp = System.currentTimeMillis()
                     )
-                    _agentTabs.value = listOf(newTab)
-                }
-            },
-            onStreamChunk = { agentName, chunk ->
-                // Only update stream buffer for agents with tabs (Orchestrator).
-                // SubAgent streams are captured by AgentTool and shown inline.
-                if (_agentTabs.value.any { it.agentName == agentName }) {
-                    _agentStreamBuffers.update { it.toMutableMap().apply { put(agentName, chunk) } }
-                }
-            },
-            onMessageAdded = { agentName, message ->
-                val hasTab = _agentTabs.value.any { it.agentName == agentName }
-                if (hasTab) {
                     _agentTabs.update { tabs ->
                         tabs.map { tab ->
-                            if (tab.agentName == agentName) {
-                                tab.copy(messages = tab.messages + message)
+                            if (tab.isOrchestrator) {
+                                tab.copy(messages = tab.messages + errorSystemMsg)
                             } else tab
                         }
                     }
                 }
-            },
-            onAgentStatusChanged = { agentName, status ->
-                _agentStatuses.update { it.toMutableMap().apply { put(agentName, status) } }
-                val hasTab = _agentTabs.value.any { it.agentName == agentName }
-                if (hasTab) {
-                    if (status == AgentStatus.IDLE || status == AgentStatus.COMPLETED) {
-                        val history = managerRef?.getAgentHistory(agentName) ?: emptyList()
-                        _agentTabs.update { tabs ->
-                            tabs.map { tab ->
-                                if (tab.agentName == agentName) {
-                                    val newMessages = history.ifEmpty { tab.messages }
-                                    tab.copy(status = status, messages = newMessages)
-                                } else tab
-                            }
-                        }
-                        _agentStreamBuffers.update { it.toMutableMap().apply { remove(agentName) } }
-
-                        if (status == AgentStatus.COMPLETED && history.isNotEmpty()) {
-                            viewModelScope.launch {
-                                try {
-                                    val currentWsId = _selectedWorkspaceId.value ?: return@launch
-                                    val instances = repository.getAgentInstancesByWorkspaceSession(currentWsId)
-                                    val instance = instances.find { it.agentName == agentName } ?: return@launch
-                                    val messages = history.map { msg ->
-                                        WorkspaceMessage(
-                                            workspaceSessionId = currentWsId,
-                                            agentInstanceId = instance.id,
-                                            role = msg.role,
-                                            content = msg.content,
-                                            toolCallId = msg.toolCallId,
-                                            toolCallsJson = msg.toolCallsJson,
-                                            isIntervention = msg.isIntervention,
-                                            timestamp = msg.timestamp
-                                        )
-                                    }
-                                    repository.replaceAgentMessages(currentWsId, instance.id, messages)
-                                    Log.d("WorkspaceViewModel", "Eagerly persisted ${messages.size} messages for $agentName on COMPLETED")
-                                } catch (e: Exception) {
-                                    Log.w("WorkspaceViewModel", "Eager persist for $agentName failed (non-fatal)", e)
-                                }
-                            }
-                        }
-                    } else {
-                        _agentTabs.update { tabs ->
-                            tabs.map { tab ->
-                                if (tab.agentName == agentName) {
-                                    tab.copy(status = status)
-                                } else tab
-                            }
-                        }
-                    }
-                }
-                // SubAgents without tabs are tracked via teamState.activeSubAgents (updated by TeamManager)
-            },
-            onWorkspaceComplete = { snapshot ->
-                viewModelScope.launch {
-                    try {
-                        _agentTabs.update { tabs ->
-                            tabs.map { tab ->
-                                val snapshotMessages = when {
-                                    tab.isOrchestrator ->
-                                        snapshot.orchestratorMessages
-                                    else ->
-                                        snapshot.subAgentMessages[tab.agentName]
-                                            ?: tab.messages
-                                }
-                                tab.copy(
-                                    status = AgentStatus.COMPLETED,
-                                    messages = snapshotMessages.ifEmpty { tab.messages }
-                                )
-                            }
-                        }
-
-                        persistAllAgentMessages(wsId, snapshot)
-
-                        val firstUserMsg = snapshot.orchestratorMessages.find { it.role == "user" }?.content ?: "新工作区"
-                        val title = firstUserMsg.trim().replace(Regex("\\s+"), " ").take(20)
-                        repository.updateWorkspaceSessionTitle(wsId, title)
-
-                        repository.updateWorkspaceSessionStatus(wsId, isActive = false, lastActiveAt = System.currentTimeMillis())
-
-                        val updatedSession = repository.getWorkspaceSessionById(wsId)
-                        if (updatedSession != null) {
-                            _selectedWorkspaceSession.value = updatedSession
-                        }
-
-                        WorkspaceForegroundService.complete(
-                            getApplication(),
-                            "任务已完成：$title"
-                        )
-
-                        val completedManager = managerRef
-                        if (teamManager === completedManager) {
-                            teamManager = null
-                            com.example.mcp.BuiltinToolHandler.teamManager = null
-                        }
-                        completedManager?.deleteTeam()
-                    } catch (e: Exception) {
-                        Log.e("WorkspaceViewModel", "Failed to persist workspace session complete state", e)
-                    }
-                }
-            },
-            onError = { errMsg ->
-                Log.e("WorkspaceViewModel", "Orchestrator error: $errMsg")
-                val errorSystemMsg = AgentMessage(
-                    role = "system",
-                    content = "⚠️ $errMsg",
-                    timestamp = System.currentTimeMillis()
-                )
-                _agentTabs.update { tabs ->
-                    tabs.map { tab ->
-                        if (tab.isOrchestrator) {
-                            tab.copy(messages = tab.messages + errorSystemMsg)
-                        } else tab
-                    }
-                }
-            }
+            ),
         )
         managerRef = manager
         com.example.mcp.BuiltinToolHandler.teamManager = manager

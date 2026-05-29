@@ -1,21 +1,24 @@
 package com.example.workspace
 
 import android.util.Log
+import com.example.data.MailboxMessage
 import com.example.mcp.ToolSchemaDsl.schema
+import com.example.workspace.mailbox.MailboxService
 import org.json.JSONObject
 
 /**
- * SendMessage tool — enables inter-agent communication.
+ * SendMessage tool -- enables inter-agent communication via MailboxService.
  *
  * Mirrors Claude Code's SendMessageTool:
  * - Send to named agent (running or completed)
  * - Send to orchestrator from sub-agent
  * - Broadcast to all agents
  *
- * Messages are queued in the target agent's pendingMessages deque.
+ * Messages are persisted to Room DB via MailboxService.
  */
 class SendMessageTool(
-    private val teamManager: TeamManager,
+    private val agentRegistry: AgentRegistry,
+    private val mailboxService: MailboxService,
 ) {
     companion object {
         private const val TAG = "SendMessageTool"
@@ -47,12 +50,14 @@ class SendMessageTool(
         }
     }
 
-    // 路由消息到指定 Agent 的 pending 队列
-    private fun sendToAgent(agentName: String, message: String): JSONObject {
-        val runner = teamManager.getRunner(agentName)
-            ?: return errorResult("Agent '$agentName' not found")
+    private suspend fun sendToAgent(agentName: String, message: String): JSONObject {
+        val entry = agentRegistry.getActiveAgents().find {
+            it.identity.agentName == agentName
+        } ?: return errorResult("Agent '$agentName' not found")
 
-        runner.queuePendingMessage(AgentMessage(
+        mailboxService.send(entry.instanceId, MailboxMessage(
+            recipientAgentId = entry.instanceId,
+            senderAgentName = "orchestrator",
             role = "user",
             content = message,
             source = "send_message",
@@ -63,18 +68,19 @@ class SendMessageTool(
         }
     }
 
-    // 广播消息到所有活跃 Agent 的 pending 队列
-    private fun broadcastMessage(message: String): JSONObject {
-        val runners = teamManager.getAllRunners()
-        for ((name, runner) in runners) {
-            runner.queuePendingMessage(AgentMessage(
+    private suspend fun broadcastMessage(message: String): JSONObject {
+        val agents = agentRegistry.getActiveAgents()
+        for (entry in agents) {
+            mailboxService.send(entry.instanceId, MailboxMessage(
+                recipientAgentId = entry.instanceId,
+                senderAgentName = "orchestrator",
                 role = "user",
                 content = message,
                 source = "broadcast",
             ))
         }
         return JSONObject().apply {
-            put("content", "Message broadcast to ${runners.size} agents")
+            put("content", "Message broadcast to ${agents.size} agents")
         }
     }
 

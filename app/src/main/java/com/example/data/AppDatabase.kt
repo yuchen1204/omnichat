@@ -51,13 +51,16 @@ class Converters {
         // 多 Agent 工作区相关实体
         AgentPreset::class,
         WorkspaceSession::class,
+        WorkspaceTeam::class,
         AgentInstance::class,
         WorkspaceMessage::class,
+        MailboxMessage::class,
+        AgentStateSnapshot::class,
         // Agent Team 任务系统
         TeamTask::class,
         McpFilePermission::class,
     ],
-    version = 30,
+    version = 31,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -75,8 +78,11 @@ abstract class AppDatabase : RoomDatabase() {
     // 多 Agent 工作区相关 DAO
     abstract fun agentPresetDao(): AgentPresetDao
     abstract fun workspaceSessionDao(): WorkspaceSessionDao
+    abstract fun workspaceTeamDao(): WorkspaceTeamDao
     abstract fun agentInstanceDao(): AgentInstanceDao
     abstract fun workspaceMessageDao(): WorkspaceMessageDao
+    abstract fun mailboxMessageDao(): MailboxMessageDao
+    abstract fun agentStateSnapshotDao(): AgentStateSnapshotDao
     // Agent Team 任务系统 DAO
     abstract fun teamTaskDao(): TeamTaskDao
     // MCP 文件权限 DAO
@@ -481,6 +487,69 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v30→v31：新增 workspace_teams、mailbox_messages、agent_state_snapshots 表；
+         *  agent_instances 增加 teamId、agentType、status、updatedAt 字段 */
+        private val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // workspace_teams 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS workspace_teams (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        teamName TEXT NOT NULL,
+                        mode TEXT NOT NULL,
+                        orchestratorModelConfigId INTEGER NOT NULL,
+                        sandboxPath TEXT,
+                        status TEXT NOT NULL DEFAULT 'active',
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_workspace_teams_teamName ON workspace_teams(teamName)")
+
+                // agent_instances 新增列
+                db.execSQL("ALTER TABLE agent_instances ADD COLUMN teamId INTEGER")
+                db.execSQL("ALTER TABLE agent_instances ADD COLUMN agentType TEXT NOT NULL DEFAULT 'sub'")
+                db.execSQL("ALTER TABLE agent_instances ADD COLUMN status TEXT NOT NULL DEFAULT 'idle'")
+                db.execSQL("ALTER TABLE agent_instances ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_instances_teamId ON agent_instances(teamId)")
+
+                // mailbox_messages 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS mailbox_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        recipientAgentId INTEGER NOT NULL,
+                        senderAgentName TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        delivered INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mailbox_messages_recipientAgentId ON mailbox_messages(recipientAgentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mailbox_messages_delivered ON mailbox_messages(delivered)")
+
+                // agent_state_snapshots 表
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_state_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        agentInstanceId INTEGER NOT NULL,
+                        messagesJson TEXT NOT NULL,
+                        usageStatsJson TEXT NOT NULL,
+                        snapshotType TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_state_snapshots_agentInstanceId ON agent_state_snapshots(agentInstanceId)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -514,7 +583,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_26_27,
                         MIGRATION_27_28,
                         MIGRATION_28_29,
-                        MIGRATION_29_30
+                        MIGRATION_29_30,
+                        MIGRATION_30_31
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。

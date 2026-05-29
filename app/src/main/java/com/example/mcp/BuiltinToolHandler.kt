@@ -95,7 +95,7 @@ object BuiltinToolHandler {
     private suspend fun handleSendMessage(arguments: JSONObject): JSONObject {
         val manager = teamManager
             ?: return errorResponse("SendMessage not available: no active workspace")
-        val sendTool = com.example.workspace.SendMessageTool(manager)
+        val sendTool = com.example.workspace.SendMessageTool(manager.agentRegistry, manager.mailboxService)
         return sendTool.call(arguments)
     }
 

@@ -175,3 +175,46 @@ data class TaskNotification(
 enum class TaskNotificationStatus {
     COMPLETED, FAILED, KILLED
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Teammate 身份与权限
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Teammate 身份信息。
+ *
+ * 标识一个 Agent 实例的完整身份，用于消息路由、日志和 UI 展示。
+ */
+data class TeammateIdentity(
+    val agentId: String,
+    val agentName: String,
+    val teamName: String,
+    val color: String = "",
+    val agentType: String = "",
+    val parentSessionId: String = "",
+)
+
+/**
+ * 权限模式枚举。
+ */
+enum class PermissionMode {
+    DEFAULT,
+    AUTO,
+    PLAN
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 团队回调
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 团队回调接口 — 将 TeamManager 的事件统一传递给 UI 层。
+ */
+data class TeamCallbacks(
+    val onAgentCreated: (agentName: String, isOrchestrator: Boolean) -> Unit,
+    val onStreamChunk: (agentName: String, chunk: String) -> Unit,
+    val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit,
+    val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
+    val onWorkspaceComplete: (snapshot: TeamCompletionSnapshot) -> Unit,
+    val onError: (message: String) -> Unit,
+)

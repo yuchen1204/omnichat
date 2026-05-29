@@ -16,8 +16,11 @@ class AppRepository(private val db: AppDatabase) {
     private val colorSchemePresetDao = db.colorSchemePresetDao()
     private val agentPresetDao = db.agentPresetDao()
     private val workspaceSessionDao = db.workspaceSessionDao()
+    private val workspaceTeamDao = db.workspaceTeamDao()
     private val agentInstanceDao = db.agentInstanceDao()
     private val workspaceMessageDao = db.workspaceMessageDao()
+    private val mailboxMessageDao = db.mailboxMessageDao()
+    private val agentStateSnapshotDao = db.agentStateSnapshotDao()
     // Agent Team 任务系统
     val teamTaskDao: TeamTaskDao = db.teamTaskDao()
 
@@ -129,10 +132,71 @@ class AppRepository(private val db: AppDatabase) {
     }
 
     // Agent Instances
-    suspend fun getAgentInstancesByWorkspaceSession(wsId: Long): List<AgentInstance> = 
+    suspend fun getAgentInstancesByWorkspaceSession(wsId: Long): List<AgentInstance> =
         agentInstanceDao.getByWorkspaceSession(wsId)
+    suspend fun getAgentInstancesByTeamId(teamId: Long): List<AgentInstance> =
+        agentInstanceDao.getByTeamId(teamId)
+    suspend fun getAgentInstanceById(id: Long): AgentInstance? =
+        agentInstanceDao.getById(id)
+    suspend fun getOrchestratorByTeamId(teamId: Long): AgentInstance? =
+        agentInstanceDao.getOrchestratorByTeamId(teamId)
     suspend fun insertAgentInstance(instance: AgentInstance): Long = agentInstanceDao.insertInstance(instance)
+    suspend fun updateAgentInstance(instance: AgentInstance) = agentInstanceDao.updateInstance(instance)
+    suspend fun updateAgentInstanceStatus(id: Long, status: String) =
+        agentInstanceDao.updateStatus(id, status)
     suspend fun deleteAgentInstancesByWorkspaceSession(wsId: Long) = agentInstanceDao.deleteByWorkspaceSession(wsId)
+    suspend fun deleteAgentInstancesByTeamId(teamId: Long) = agentInstanceDao.deleteByTeamId(teamId)
+
+    // ── Workspace Teams ────────────────────────────────────────────────
+
+    val allWorkspaceTeams: Flow<List<WorkspaceTeam>> = workspaceTeamDao.getAllTeamsFlow()
+    suspend fun getAllWorkspaceTeams(): List<WorkspaceTeam> = workspaceTeamDao.getAllTeams()
+    suspend fun getActiveWorkspaceTeams(): List<WorkspaceTeam> = workspaceTeamDao.getActiveTeams()
+    suspend fun getWorkspaceTeamById(id: Long): WorkspaceTeam? = workspaceTeamDao.getById(id)
+    suspend fun getWorkspaceTeamByName(teamName: String): WorkspaceTeam? = workspaceTeamDao.getByTeamName(teamName)
+    suspend fun insertWorkspaceTeam(team: WorkspaceTeam): Long = workspaceTeamDao.insert(team)
+    suspend fun updateWorkspaceTeam(team: WorkspaceTeam) = workspaceTeamDao.update(team)
+    suspend fun updateWorkspaceTeamStatus(id: Long, status: String) = workspaceTeamDao.updateStatus(id, status)
+    suspend fun deleteWorkspaceTeam(id: Long) {
+        db.withTransaction {
+            // 级联清理关联数据
+            agentStateSnapshotDao.deleteByTeamId(id)
+            mailboxMessageDao.deleteByTeamId(id)
+            agentInstanceDao.deleteByTeamId(id)
+            workspaceTeamDao.deleteById(id)
+        }
+    }
+
+    // ── Mailbox Messages ───────────────────────────────────────────────
+
+    suspend fun getUndeliveredMailboxMessages(agentId: Long): List<MailboxMessage> =
+        mailboxMessageDao.getUndeliveredByAgent(agentId)
+    fun getMailboxMessagesByAgentFlow(agentId: Long): Flow<List<MailboxMessage>> =
+        mailboxMessageDao.getByAgentFlow(agentId)
+    suspend fun getMailboxMessagesByAgent(agentId: Long): List<MailboxMessage> =
+        mailboxMessageDao.getByAgent(agentId)
+    suspend fun insertMailboxMessage(message: MailboxMessage): Long = mailboxMessageDao.insert(message)
+    suspend fun markMailboxMessagesDelivered(agentId: Long) = mailboxMessageDao.markAllDelivered(agentId)
+    suspend fun markMailboxMessageDelivered(id: Long) = mailboxMessageDao.markDelivered(id)
+    suspend fun markMailboxDelivered(id: Long) = mailboxMessageDao.markDelivered(id)
+    suspend fun countUndeliveredMailboxMessages(agentId: Long): Int = mailboxMessageDao.countUndelivered(agentId)
+    suspend fun getMailboxHistory(agentId: Long): List<MailboxMessage> = mailboxMessageDao.getByAgent(agentId)
+    suspend fun deleteMailboxMessagesByAgent(agentId: Long) = mailboxMessageDao.deleteByAgent(agentId)
+
+    // ── Agent State Snapshots ──────────────────────────────────────────
+
+    fun getAgentStateSnapshotsByAgentFlow(agentId: Long): Flow<List<AgentStateSnapshot>> =
+        agentStateSnapshotDao.getByAgentFlow(agentId)
+    suspend fun getAgentStateSnapshotsByAgent(agentId: Long): List<AgentStateSnapshot> =
+        agentStateSnapshotDao.getByAgent(agentId)
+    suspend fun getLatestAgentStateSnapshot(agentId: Long, type: String): AgentStateSnapshot? =
+        agentStateSnapshotDao.getLatestByType(agentId, type)
+    suspend fun getAgentStateSnapshotById(id: Long): AgentStateSnapshot? =
+        agentStateSnapshotDao.getById(id)
+    suspend fun insertAgentStateSnapshot(snapshot: AgentStateSnapshot): Long =
+        agentStateSnapshotDao.insert(snapshot)
+    suspend fun deleteAgentStateSnapshotsByAgent(agentId: Long) =
+        agentStateSnapshotDao.deleteByAgent(agentId)
 
     // Workspace Messages
     fun getWorkspaceMessagesByAgentFlow(agentId: Long): Flow<List<WorkspaceMessage>> = 
