@@ -305,19 +305,27 @@ object BuiltinToolHandler {
         if (query.isBlank()) {
             return errorResponse("搜索失败：query 不能为空。")
         }
+        val tagFilter = arguments.optString("tag").trim().lowercase().takeIf { it.isNotBlank() }
         val limit = arguments.optInt("limit", 10).coerceIn(1, 50)
         val repository = getRepository(context)
 
-        // DB 预过滤：先用 SQL LIKE 缩小候选集，再做 Jaccard 相似度
-        val keywords = query.split(" ").filter { it.isNotBlank() }
-        val totalCount: Int
+        // 确定候选集：按 tag 预过滤或全量
+        val validTags = setOf("preference", "fact", "instruction", "habit", "context")
         val candidates: List<com.example.data.MemoryItem>
-        if (keywords.isNotEmpty()) {
-            totalCount = repository.getAllMemories().size
-            candidates = keywords.flatMap { repository.searchMemoriesByKeyword(it) }.distinctBy { it.id }
-        } else {
-            candidates = repository.getAllMemories()
+        val totalCount: Int
+        if (tagFilter != null && tagFilter in validTags) {
+            candidates = repository.searchMemoriesByTag(tagFilter)
             totalCount = candidates.size
+        } else {
+            // 无 tag 过滤时用 SQL LIKE 缩小候选集
+            val keywords = query.split(" ").filter { it.isNotBlank() }
+            if (keywords.isNotEmpty()) {
+                totalCount = repository.getAllMemories().size
+                candidates = keywords.flatMap { repository.searchMemoriesByKeyword(it) }.distinctBy { it.id }
+            } else {
+                candidates = repository.getAllMemories()
+                totalCount = candidates.size
+            }
         }
 
         val queryTokens = bigramTokenize(query)
@@ -331,12 +339,19 @@ object BuiltinToolHandler {
                 val union = queryTokens.union(memTokens).size
                 if (union == 0 || intersection == 0) return@mapNotNull null
                 val jaccard = intersection.toDouble() / union.toDouble()
-                ScoredMemory(mem, jaccard * mem.confidence)
+                var score = jaccard * mem.confidence
+                // tag 匹配加成：如果记忆包含查询的 tag，相关度 ×1.2
+                if (tagFilter != null && mem.tags.split(",").contains(tagFilter)) {
+                    score *= 1.2
+                }
+                ScoredMemory(mem, score)
             }
             .sortedByDescending { it.score }
             .take(limit)
+
+        val filterDesc = if (tagFilter != null) "，标签过滤：$tagFilter" else ""
         val text = buildString {
-            appendLine("记忆库搜索结果（关键词：「$query」，共 $totalCount 条记忆，命中 ${scored.size} 条）：")
+            appendLine("记忆库搜索结果（关键词：「$query」$filterDesc，共 $totalCount 条记忆，命中 ${scored.size} 条）：")
             appendLine()
             if (scored.isEmpty()) {
                 appendLine("未找到与关键词相关的记忆。")
@@ -344,7 +359,8 @@ object BuiltinToolHandler {
             } else {
                 scored.forEachIndexed { i, sm ->
                     val pinnedTag = if (sm.memory.pinned) " [已锁定]" else ""
-                    appendLine("${i + 1}. [id=${sm.memory.id}, 置信度=${sm.memory.confidence}, 相关度=${String.format("%.2f", sm.score)}$pinnedTag]")
+                    val tagsDisplay = if (sm.memory.tags.isNotBlank()) " [${sm.memory.tags}]" else ""
+                    appendLine("${i + 1}. [id=${sm.memory.id}, 置信度=${sm.memory.confidence}, 相关度=${String.format("%.2f", sm.score)}$pinnedTag$tagsDisplay]")
                     appendLine("   ${sm.memory.content}")
                 }
             }
