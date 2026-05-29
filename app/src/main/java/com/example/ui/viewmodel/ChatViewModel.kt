@@ -523,8 +523,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * CRUD JSON 格式（LLM 输出）：
      * {
      *   "ops": [
-     *     {"op": "ADD",    "content": "..."},
-     *     {"op": "UPDATE", "id": 7, "content": "..."},
+     *     {"op": "ADD",    "content": "...", "tags": ["preference"]},
+     *     {"op": "UPDATE", "id": 7, "content": "...", "tags": ["fact"]},
      *     {"op": "REINFORCE", "id": 3},          // 内容不变，仅 confidence+1
      *     {"op": "DELETE", "id": 12}
      *   ]
@@ -650,10 +650,17 @@ You will receive:
 - Recent raw messages (ground truth — use these to catch signals the summary may have missed)
 
 Output a JSON object with an "ops" array. Each op must be one of:
-  {"op": "ADD",       "content": "<one short sentence>"}
-  {"op": "UPDATE",    "id": <existing_id>, "content": "<revised sentence>"}
+  {"op": "ADD",       "content": "<one short sentence>", "tags": ["<tag>"]}
+  {"op": "UPDATE",    "id": <existing_id>, "content": "<revised sentence>", "tags": ["<tag>"]}
   {"op": "REINFORCE", "id": <existing_id>}
   {"op": "DELETE",    "id": <existing_id>}
+
+Tag vocabulary (assign 1-2 tags per ADD/UPDATE):
+  - "preference": user's likes, dislikes, style choices
+  - "fact": objective info about the user (job, location, tech stack)
+  - "instruction": how the user wants the AI to behave
+  - "habit": recurring patterns, routines
+  - "context": project-specific or temporal context
 
 Rules:
 - ADD new facts not yet captured. IMPORTANT: before adding, check if an existing fact already covers the same information — if so, use REINFORCE or UPDATE instead of ADD. Avoid semantic duplicates.
@@ -737,8 +744,9 @@ Rules:
                             if (duplicate != null) {
                                 repository.reinforceMemory(duplicate.id, duplicate.content, now)
                             } else {
+                                val tags = parseTagsFromJson(op.optJSONArray("tags"))
                                 repository.insertMemory(
-                                    MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1)
+                                    MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags)
                                 )
                             }
                         }
@@ -754,8 +762,9 @@ Rules:
                         } else if (content.isBlank()) {
                             Log.w("ChatViewModel", "Memory UPDATE ignored: id=$id has blank content")
                         } else {
+                            val tags = parseTagsFromJson(op.optJSONArray("tags"))
                             repository.updateMemory(
-                                existing.copy(content = content, updatedAt = now, confidence = existing.confidence + 1)
+                                existing.copy(content = content, updatedAt = now, confidence = existing.confidence + 1, tags = tags)
                             )
                         }
                     }
@@ -799,6 +808,19 @@ Rules:
         val intersection = tokensA.intersect(tokensB).size
         val union = tokensA.union(tokensB).size
         return intersection.toDouble() / union.toDouble()
+    }
+
+    /**
+     * 从 LLM 返回的 tags JSON 数组中解析标签。
+     * 只保留预定义词汇表中的标签，忽略无效条目，最长 100 字符。
+     */
+    private fun parseTagsFromJson(tagsArray: org.json.JSONArray?): String {
+        if (tagsArray == null) return ""
+        val validTags = setOf("preference", "fact", "instruction", "habit", "context")
+        val tags = (0 until tagsArray.length())
+            .map { tagsArray.optString(it, "").trim().lowercase() }
+            .filter { it in validTags }
+        return tags.joinToString(",").take(100)
     }
 
     companion object {
