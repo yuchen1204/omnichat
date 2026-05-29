@@ -22,7 +22,7 @@ class AgentRegistry {
      * @property instanceId Room DB 中的 AgentInstance ID
      * @property runner AgentRunner 实例（可为 null，如 Agent 已完成但条目保留）
      */
-    data class AgentEntry(
+    class AgentEntry(
         val identity: TeammateIdentity,
         val lifecycle: AgentLifecycleManager,
         val instanceId: Long,

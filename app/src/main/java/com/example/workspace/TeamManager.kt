@@ -316,7 +316,12 @@ class TeamManager(
         )
 
         // Update registry with runner
-        agentRegistry.register(entry.copy(runner = runner))
+        agentRegistry.register(AgentRegistry.AgentEntry(
+            identity = entry.identity,
+            lifecycle = entry.lifecycle,
+            instanceId = entry.instanceId,
+            runner = runner,
+        ))
 
         entry.lifecycle.transitionTo(AgentStatus.STREAMING)
         try {

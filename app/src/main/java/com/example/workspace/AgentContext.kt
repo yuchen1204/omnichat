@@ -53,22 +53,21 @@ enum class AgentStatus {
  * @property teamName 所属团队名称（用于 AgentRunner.getTeamName() 等场景）
  * @property messages 内存中的对话历史（使用 ArrayList + ReentrantReadWriteLock 保证线程安全，见 AgentRunner）
  */
-data class AgentContext(
+class AgentContext(
     val agentName: String,
     val isOrchestrator: Boolean,
     val systemPrompt: String,
     val modelConfig: ModelConfig,
     val overrideModelId: String? = null,
     val teamName: String = "",
-    // WHY: 移除默认值 ArrayList()，强制调用方显式传入。data class 的默认值会在
-    // copy() 时共享同一引用，导致两个 AgentContext 意外共享同一个 messages 列表。
-    // 调用方必须传入独立的 ArrayList，由 AgentRunner.messagesLock 保护。
     val messages: MutableList<AgentMessage>,
-    // WHY: 传入 AgentDefinition 以便 AgentToolFilter 根据 agent 的 tools/disallowedTools 过滤工具
     val agentDefinition: AgentDefinition? = null,
     /** Agent 实例的 DB ID，用于 MailboxService 消息路由。null 表示未注册（如 SubAgentTool 临时 Agent）。 */
     val agentInstanceId: Long? = null,
-)
+) {
+    override fun toString(): String =
+        "AgentContext(agentName=$agentName, isOrchestrator=$isOrchestrator, messages=${messages.size})"
+}
 
 /**
  * 构建最终的系统提示。
