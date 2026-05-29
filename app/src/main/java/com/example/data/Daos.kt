@@ -319,6 +319,9 @@ interface WorkspaceTeamDao {
     @Query("SELECT * FROM workspace_teams ORDER BY updatedAt DESC")
     suspend fun getAllTeams(): List<WorkspaceTeam>
 
+    @Query("SELECT * FROM workspace_teams WHERE status = 'active' ORDER BY updatedAt DESC")
+    suspend fun getActiveTeams(): List<WorkspaceTeam>
+
     @Query("SELECT * FROM workspace_teams WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): WorkspaceTeam?
 

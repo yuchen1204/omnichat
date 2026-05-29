@@ -40,6 +40,7 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
+import com.example.workspace.executor.ExecutorType
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 工作区就绪界面（空状态 + 任务输入）
@@ -57,6 +58,8 @@ fun WorkspaceReadyView(
     sessionTitle: String,
     modelConfigs: List<ModelConfig>,
     fetchedModels: List<com.example.data.FetchedModel>,
+    teamMode: ExecutorType = ExecutorType.ORCHESTRATOR,
+    onTeamModeChanged: (ExecutorType) -> Unit = {},
     onSubmit: (String, Long, String?, String?, String?) -> Unit,
 ) {
     val uiSettings = LocalUISettings.current
@@ -420,6 +423,54 @@ fun WorkspaceReadyView(
                                     )
                                 }
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 团队模式选择
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Group,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = uiText("workspace.mode.label", "协作模式"),
+                                fontSize = (12 * fs).sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            FilterChip(
+                                selected = teamMode == ExecutorType.ORCHESTRATOR,
+                                onClick = { onTeamModeChanged(ExecutorType.ORCHESTRATOR) },
+                                label = {
+                                    Text(
+                                        uiText("workspace.mode.orchestrator", "编排器"),
+                                        fontSize = (12 * fs).sp
+                                    )
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            FilterChip(
+                                selected = teamMode == ExecutorType.PEER,
+                                onClick = { onTeamModeChanged(ExecutorType.PEER) },
+                                label = {
+                                    Text(
+                                        uiText("workspace.mode.peer", "对等模式"),
+                                        fontSize = (12 * fs).sp
+                                    )
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(28.dp)
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))

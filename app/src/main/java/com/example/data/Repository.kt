@@ -151,6 +151,7 @@ class AppRepository(private val db: AppDatabase) {
 
     val allWorkspaceTeams: Flow<List<WorkspaceTeam>> = workspaceTeamDao.getAllTeamsFlow()
     suspend fun getAllWorkspaceTeams(): List<WorkspaceTeam> = workspaceTeamDao.getAllTeams()
+    suspend fun getActiveWorkspaceTeams(): List<WorkspaceTeam> = workspaceTeamDao.getActiveTeams()
     suspend fun getWorkspaceTeamById(id: Long): WorkspaceTeam? = workspaceTeamDao.getById(id)
     suspend fun getWorkspaceTeamByName(teamName: String): WorkspaceTeam? = workspaceTeamDao.getByTeamName(teamName)
     suspend fun insertWorkspaceTeam(team: WorkspaceTeam): Long = workspaceTeamDao.insert(team)
