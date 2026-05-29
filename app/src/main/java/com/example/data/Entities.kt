@@ -40,6 +40,27 @@ data class WorkspaceSession(
 )
 
 /**
+ * Agent Team 实体。
+ *
+ * 代表一个可复用的 Agent 团队配置，包含模式（编排/对等）、
+ * 编排器模型、沙盒路径等元数据。
+ */
+@Entity(
+    tableName = "workspace_teams",
+    indices = [Index(value = ["teamName"], unique = true)]
+)
+data class WorkspaceTeam(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val teamName: String,
+    val mode: String,                  // "orchestrator" | "peer"
+    val orchestratorModelConfigId: Long,
+    val sandboxPath: String? = null,
+    val status: String = "active",     // "active" | "paused" | "completed"
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+/**
  * Agent 实例元数据。
  *
  * 记录工作区内每个 Agent 的元数据。仅 Orchestrator 的记录在完成后保留，
@@ -47,7 +68,10 @@ data class WorkspaceSession(
  */
 @Entity(
     tableName = "agent_instances",
-    indices = [Index(value = ["workspaceSessionId"])]
+    indices = [
+        Index(value = ["workspaceSessionId"]),
+        Index(value = ["teamId"]),
+    ]
 )
 data class AgentInstance(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -57,7 +81,55 @@ data class AgentInstance(
     val systemPrompt: String = "",
     val modelConfigId: Long,
     val overrideModelId: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    // ── v31 新增列（Agent Team 重构） ──────────────────────────
+    val teamId: Long? = null,                  // 关联 WorkspaceTeam.id
+    val agentType: String = "sub",             // "orchestrator" | "sub" | "standalone"
+    val status: String = "idle",               // "idle" | "busy" | "paused" | "completed"
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * Agent 邮箱消息。
+ *
+ * 用于跨 Agent 异步通信。发送方将消息写入收件人的邮箱，
+ * 收件人在下一次 LLM 循环时拉取未投递的消息。
+ */
+@Entity(
+    tableName = "mailbox_messages",
+    indices = [
+        Index(value = ["recipientAgentId"]),
+        Index(value = ["delivered"]),
+    ]
+)
+data class MailboxMessage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val recipientAgentId: Long,
+    val senderAgentName: String,
+    val role: String,                  // "user" | "system"
+    val content: String,
+    val source: String,                // "orchestrator" | "send_message" | "broadcast" | "task-notification"
+    val delivered: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/**
+ * Agent 状态快照。
+ *
+ * 用于持久化 Agent 的对话历史和使用统计，
+ * 支持 checkpoint（定期保存）和 completion（任务完成时保存）两种类型。
+ */
+@Entity(
+    tableName = "agent_state_snapshots",
+    indices = [Index(value = ["agentInstanceId"])]
+)
+data class AgentStateSnapshot(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val agentInstanceId: Long,
+    val messagesJson: String,
+    val usageStatsJson: String,
+    val snapshotType: String,          // "checkpoint" | "completion"
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 /**

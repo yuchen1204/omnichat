@@ -286,11 +286,107 @@ interface AgentInstanceDao {
     @Query("SELECT * FROM agent_instances WHERE workspaceSessionId = :wsId ORDER BY createdAt ASC")
     suspend fun getByWorkspaceSession(wsId: Long): List<AgentInstance>
 
+    @Query("SELECT * FROM agent_instances WHERE teamId = :teamId ORDER BY createdAt ASC")
+    suspend fun getByTeamId(teamId: Long): List<AgentInstance>
+
+    @Query("SELECT * FROM agent_instances WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): AgentInstance?
+
+    @Query("SELECT * FROM agent_instances WHERE teamId = :teamId AND agentType = 'orchestrator' LIMIT 1")
+    suspend fun getOrchestratorByTeamId(teamId: Long): AgentInstance?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertInstance(instance: AgentInstance): Long
 
+    @Update
+    suspend fun updateInstance(instance: AgentInstance)
+
+    @Query("UPDATE agent_instances SET status = :status, updatedAt = :now WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, now: Long = System.currentTimeMillis())
+
     @Query("DELETE FROM agent_instances WHERE workspaceSessionId = :wsId")
     suspend fun deleteByWorkspaceSession(wsId: Long)
+
+    @Query("DELETE FROM agent_instances WHERE teamId = :teamId")
+    suspend fun deleteByTeamId(teamId: Long)
+}
+
+@Dao
+interface WorkspaceTeamDao {
+    @Query("SELECT * FROM workspace_teams ORDER BY updatedAt DESC")
+    fun getAllTeamsFlow(): Flow<List<WorkspaceTeam>>
+
+    @Query("SELECT * FROM workspace_teams ORDER BY updatedAt DESC")
+    suspend fun getAllTeams(): List<WorkspaceTeam>
+
+    @Query("SELECT * FROM workspace_teams WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): WorkspaceTeam?
+
+    @Query("SELECT * FROM workspace_teams WHERE teamName = :teamName LIMIT 1")
+    suspend fun getByTeamName(teamName: String): WorkspaceTeam?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(team: WorkspaceTeam): Long
+
+    @Update
+    suspend fun update(team: WorkspaceTeam)
+
+    @Query("UPDATE workspace_teams SET status = :status, updatedAt = :now WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, now: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM workspace_teams WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+@Dao
+interface MailboxMessageDao {
+    @Query("SELECT * FROM mailbox_messages WHERE recipientAgentId = :agentId AND delivered = 0 ORDER BY createdAt ASC")
+    suspend fun getUndeliveredByAgent(agentId: Long): List<MailboxMessage>
+
+    @Query("SELECT * FROM mailbox_messages WHERE recipientAgentId = :agentId ORDER BY createdAt ASC")
+    fun getByAgentFlow(agentId: Long): Flow<List<MailboxMessage>>
+
+    @Query("SELECT * FROM mailbox_messages WHERE recipientAgentId = :agentId ORDER BY createdAt ASC")
+    suspend fun getByAgent(agentId: Long): List<MailboxMessage>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(message: MailboxMessage): Long
+
+    @Query("UPDATE mailbox_messages SET delivered = 1 WHERE recipientAgentId = :agentId AND delivered = 0")
+    suspend fun markAllDelivered(agentId: Long)
+
+    @Query("UPDATE mailbox_messages SET delivered = 1 WHERE id = :id")
+    suspend fun markDelivered(id: Long)
+
+    @Query("DELETE FROM mailbox_messages WHERE recipientAgentId = :agentId")
+    suspend fun deleteByAgent(agentId: Long)
+
+    @Query("DELETE FROM mailbox_messages WHERE recipientAgentId IN (SELECT id FROM agent_instances WHERE teamId = :teamId)")
+    suspend fun deleteByTeamId(teamId: Long)
+}
+
+@Dao
+interface AgentStateSnapshotDao {
+    @Query("SELECT * FROM agent_state_snapshots WHERE agentInstanceId = :agentId ORDER BY createdAt DESC")
+    fun getByAgentFlow(agentId: Long): Flow<List<AgentStateSnapshot>>
+
+    @Query("SELECT * FROM agent_state_snapshots WHERE agentInstanceId = :agentId ORDER BY createdAt DESC")
+    suspend fun getByAgent(agentId: Long): List<AgentStateSnapshot>
+
+    @Query("SELECT * FROM agent_state_snapshots WHERE agentInstanceId = :agentId AND snapshotType = :type ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestByType(agentId: Long, type: String): AgentStateSnapshot?
+
+    @Query("SELECT * FROM agent_state_snapshots WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): AgentStateSnapshot?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(snapshot: AgentStateSnapshot): Long
+
+    @Query("DELETE FROM agent_state_snapshots WHERE agentInstanceId = :agentId")
+    suspend fun deleteByAgent(agentId: Long)
+
+    @Query("DELETE FROM agent_state_snapshots WHERE agentInstanceId IN (SELECT id FROM agent_instances WHERE teamId = :teamId)")
+    suspend fun deleteByTeamId(teamId: Long)
 }
 
 @Dao
