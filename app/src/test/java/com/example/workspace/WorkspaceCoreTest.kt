@@ -57,11 +57,14 @@ class WorkspaceCoreTest {
             repository = repository,
             mcpRuntimeManager = mcpRuntimeManager,
             parentScope = kotlinx.coroutines.MainScope(),
-            onAgentCreated = { _, _ -> },
-            onStreamChunk = { _, _ -> },
-            onAgentStatusChanged = { _, _ -> },
-            onWorkspaceComplete = {},
-            onError = {}
+            callbacks = TeamCallbacks(
+                onAgentCreated = { _, _ -> },
+                onStreamChunk = { _, _ -> },
+                onMessageAdded = { _, _ -> },
+                onAgentStatusChanged = { _, _ -> },
+                onWorkspaceComplete = {},
+                onError = {}
+            )
         )
     }
 

@@ -3,12 +3,19 @@ package com.example.workspace
 import android.util.Log
 import com.example.data.AppRepository
 import com.example.data.ModelConfig
+import com.example.data.WorkspaceMessage
+import com.example.data.WorkspaceTeam
+import com.example.data.AgentInstance
 import com.example.mcp.McpRuntimeManager
+import com.example.workspace.executor.ExecutorType
+import com.example.workspace.executor.OrchestratorExecutor
+import com.example.workspace.executor.TeammateExecutor
+import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.example.workspace.mailbox.MailboxService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,8 +29,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 // ═══════════════════════════════════════════════════════════════════════════════
 // TeamManager — 团队管理器（薄门面）
 //
-// 职责：管理 AgentRunner 的创建和生命周期，
-// 通过 AgentTool 实现 Orchestrator 的子 Agent 委派。
+// 职责：管理团队生命周期和持久化，委托给 OrchestratorExecutor（Agent 调度）、
+// AgentRegistry（Agent 追踪）和 MailboxService（Agent 间通信）。
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -36,39 +43,32 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @property mcpRuntimeManager MCP 运行时管理器
  * @property parentScope 父协程作用域
  * @property config 工作区配置
- * @property onAgentCreated Agent 创建回调
- * @property onStreamChunk 流式 chunk 回调
- * @property onMessageAdded 消息添加回调（转发至 AgentRunner）
- * @property onAgentStatusChanged Agent 状态变更回调
- * @property onWorkspaceComplete 工作区完成回调
- * @property onError 错误回调
+ * @property callbacks 团队事件回调
  */
 class TeamManager(
     private val repository: AppRepository,
     private val mcpRuntimeManager: McpRuntimeManager,
     private val parentScope: CoroutineScope,
     private val config: WorkspaceConfig = WorkspaceConfig(),
-    private val onAgentCreated: (agentName: String, isOrchestrator: Boolean) -> Unit,
-    private val onStreamChunk: (agentName: String, chunk: String) -> Unit,
-    private val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit = { _, _ -> },
-    private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
-    private val onWorkspaceComplete: (snapshot: TeamCompletionSnapshot) -> Unit,
-    private val onError: (message: String) -> Unit,
+    private val callbacks: TeamCallbacks,
 ) {
     companion object {
         private const val TAG = "TeamManager"
     }
 
-    // ─── Runner 管理 ───
+    // ─── 新抽象 ───
 
-    /** Agent 名称 → AgentRunner 映射（使用 ConcurrentHashMap 保证线程安全） */
-    private val runners = java.util.concurrent.ConcurrentHashMap<String, AgentRunner>()
+    private var executor: TeammateExecutor? = null
+    private val agentRegistry = AgentRegistry()
+    private val mailboxService = MailboxService(repository)
+    private var teamDbId: Long = 0L
 
-    /** Agent 名称 → 协程作用域 */
-    private val agentScopes = java.util.concurrent.ConcurrentHashMap<String, CoroutineScope>()
+    // ─── Sub-Agent 管理（通过 onSubAgentLaunched 追踪）───
 
-    /** Agent 名称 → Job */
-    private val agentJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+    private val subAgentScope = CoroutineScope(
+        parentScope.coroutineContext + SupervisorJob()
+    )
+    private val subAgentJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
     // ─── AgentTool（Orchestrator 用于委派子 Agent）───
 
@@ -111,10 +111,11 @@ class TeamManager(
     /**
      * 创建团队。
      *
-     * 初始化团队状态和 Orchestrator 的 AgentRunner。
+     * 初始化团队状态，创建 [TeammateExecutor]，并注册 Orchestrator 到 [AgentRegistry]。
      */
     suspend fun createTeam(
         teamName: String,
+        mode: ExecutorType = ExecutorType.ORCHESTRATOR,
         orchestratorConfig: ModelConfig,
         orchestratorOverrideModelId: String? = null,
         sandboxPath: String? = null,
@@ -126,25 +127,63 @@ class TeamManager(
 
         crossSessionMemoryText = loadCrossSessionMemory()
 
-        // 加载所有 Agent 定义（内置 + 用户自定义预设）
-        val agentDefinitions = loadAgentDefinitions(repository)
-
-        val ctx = AgentContext(
-            agentName = ORCHESTRATOR_NAME,
-            isOrchestrator = true,
-            systemPrompt = buildOrchestratorSystemPrompt(agentDefinitions, sandboxPath),
-            modelConfig = orchestratorConfig,
-            overrideModelId = orchestratorOverrideModelId,
+        // Persist team to DB
+        teamDbId = repository.insertWorkspaceTeam(WorkspaceTeam(
             teamName = teamName,
-            messages = ArrayList(),
+            mode = mode.name.lowercase(),
+            orchestratorModelConfigId = orchestratorConfig.id,
+            sandboxPath = sandboxPath,
+        ))
+
+        // Create executor based on mode
+        executor = when (mode) {
+            ExecutorType.ORCHESTRATOR -> OrchestratorExecutor(
+                repository = repository,
+                mcpRuntimeManager = mcpRuntimeManager,
+                agentRegistry = agentRegistry,
+                mailboxService = mailboxService,
+                parentScope = parentScope,
+                callbacks = callbacks,
+                orchestratorConfig = orchestratorConfig,
+                workspaceSessionId = teamDbId,
+                sandboxPath = sandboxPath,
+            )
+            ExecutorType.PEER -> throw NotImplementedError("PeerExecutor not yet implemented")
+        }
+
+        // Create orchestrator agent instance in DB
+        val orchestratorInstanceId = repository.insertAgentInstance(
+            AgentInstance(
+                workspaceSessionId = teamDbId,
+                agentName = ORCHESTRATOR_NAME,
+                agentType = "orchestrator",
+                isOrchestrator = true,
+                status = "idle",
+                modelConfigId = orchestratorConfig.id,
+                overrideModelId = orchestratorOverrideModelId,
+                teamId = teamDbId,
+            )
         )
 
-        val orchestratorRunner = createAgentRunner(ctx)
-        runners[ORCHESTRATOR_NAME] = orchestratorRunner
+        val identity = TeammateIdentity(
+            agentId = "${ORCHESTRATOR_NAME}@${teamName}",
+            agentName = ORCHESTRATOR_NAME,
+            teamName = teamName,
+        )
 
-        // 存储 AgentTool 所需的上下文
-        this.orchestratorContext = ctx
+        val lifecycle = AgentLifecycleManager(identity) { status ->
+            callbacks.onAgentStatusChanged(ORCHESTRATOR_NAME, status)
+        }
+
+        agentRegistry.register(AgentRegistry.AgentEntry(
+            identity = identity,
+            lifecycle = lifecycle,
+            instanceId = orchestratorInstanceId,
+        ))
+
+        // Wire AgentTool for orchestrator's sub-agent spawning
         this.sandboxPath = sandboxPath
+        val agentDefinitions = loadAgentDefinitions(repository)
         this.agentTool = AgentTool(
             mcpRuntimeManager = mcpRuntimeManager,
             agentDefinitions = agentDefinitions,
@@ -159,12 +198,12 @@ class TeamManager(
                         )
                     )
                 }
-                onAgentCreated(name, false)
+                callbacks.onAgentCreated(name, false)
                 Log.d(TAG, "SubAgent created: $name ($description)")
             },
             onSubAgentStreamChunk = { name, chunk ->
                 // Forward to stream chunk callback for live display
-                onStreamChunk(name, chunk)
+                callbacks.onStreamChunk(name, chunk)
             },
             onSubAgentCompleted = { name, messages ->
                 // Remove SubAgent from active list
@@ -177,12 +216,16 @@ class TeamManager(
             },
             onTaskNotification = { notification ->
                 // Inject notification as user message into orchestrator's pending queue
-                val orchestratorRunner = runners[ORCHESTRATOR_NAME]
-                orchestratorRunner?.queuePendingMessage(AgentMessage(
+                val orchestratorEntry = agentRegistry.get("${ORCHESTRATOR_NAME}@${teamName}")
+                orchestratorEntry?.runner?.queuePendingMessage(AgentMessage(
                     role = "user",
                     content = buildTaskNotificationText(notification),
                     source = "task-notification",
                 ))
+            },
+            onSubAgentLaunched = { name, scope, job ->
+                subAgentJobs[name] = job
+                Log.d(TAG, "SubAgent scope registered: $name")
             },
         )
 
@@ -192,7 +235,7 @@ class TeamManager(
             sandboxPath = sandboxPath,
         )
         if (!_teamState.compareAndSet(null, state)) {
-            runners.remove(ORCHESTRATOR_NAME)
+            agentRegistry.clear()
             error("并发创建团队冲突，请重试")
         }
 
@@ -204,8 +247,8 @@ class TeamManager(
             Log.d(TAG, "Registered workspace sandbox hook for: $sandboxPath")
         }
 
-        onAgentCreated(ORCHESTRATOR_NAME, true)
-        Log.d(TAG, "Team '$teamName' created with Orchestrator")
+        callbacks.onAgentCreated(ORCHESTRATOR_NAME, true)
+        Log.d(TAG, "Team '$teamName' created with Orchestrator (mode=$mode)")
 
         state
     }
@@ -215,61 +258,95 @@ class TeamManager(
      */
     suspend fun startExecution(userTask: String, imagePath: String? = null) {
         val state = _teamState.value ?: error("无活跃团队，请先调用 createTeam")
-        val runner = runners[ORCHESTRATOR_NAME] ?: error("Orchestrator 未初始化")
-
-        // WHY: 防止 startExecution 被重复调用时泄露前一个 scope。
-        agentScopes[ORCHESTRATOR_NAME]?.let { oldScope ->
-            Log.w(TAG, "Cancelling previous orchestrator scope before restart")
-            oldScope.cancel()
-        }
-        try {
-            val oldJob = agentJobs[ORCHESTRATOR_NAME]
-            if (oldJob != null && !oldJob.isCompleted) {
-                withTimeoutOrNull(3000L) {
-                    oldJob.join()
-                }
-                if (!oldJob.isCompleted) {
-                    Log.w(TAG, "Cancelling old orchestrator job forcefully")
-                    oldJob.cancel()
-                }
-            }
-        } catch (_: Exception) {}
+        val orchestratorId = "${ORCHESTRATOR_NAME}@${state.teamName}"
+        val entry = agentRegistry.get(orchestratorId) ?: error("Orchestrator 未注册")
 
         Log.d(TAG, "Starting orchestrator execution with task: ${userTask.take(80)}...")
 
         workspaceStartTimeMs = System.currentTimeMillis()
         _teamState.update { it?.copy(isRunning = true) }
 
-        val identity = TeammateIdentity(
-            agentId = "${ORCHESTRATOR_NAME}@${state.teamName}",
-            agentName = ORCHESTRATOR_NAME,
-            teamName = state.teamName,
-            parentSessionId = "leader",
-        )
-
-        val orchestratorScope = CoroutineScope(
-            parentScope.coroutineContext + SupervisorJob()
-        )
-        agentScopes[ORCHESTRATOR_NAME] = orchestratorScope
-
-        val job = orchestratorScope.launch {
-            try {
-                onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.STREAMING)
-                runner.runTurn(userTask, imagePath = imagePath)
-                onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.COMPLETED)
-                triggerWorkspaceComplete(runner)
-            } catch (e: Exception) {
-                Log.e(TAG, "Orchestrator execution failed", e)
-                onError(e.message ?: "Unknown error")
-                onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.ERROR)
-            } finally {
-                agentJobs.remove(ORCHESTRATOR_NAME)
-                agentScopes.remove(ORCHESTRATOR_NAME)
+        // Load agent definitions and build system prompt
+        val agentDefinitions = loadAgentDefinitions(repository)
+        val cachedModels = run {
+            if (cachedAvailableModelsStr.isEmpty()) {
+                val allConfigs = repository.getAllConfigs()
+                val allFetchedModels = repository.getAllFetchedModels()
+                cachedAvailableModelsStr = buildAvailableModelsString(allConfigs, allFetchedModels)
             }
+            cachedAvailableModelsStr
         }
-        agentJobs[ORCHESTRATOR_NAME] = job
 
-        job.join()
+        // Build orchestrator context with agentInstanceId for MailboxService routing
+        val ctx = AgentContext(
+            agentName = ORCHESTRATOR_NAME,
+            isOrchestrator = true,
+            systemPrompt = buildOrchestratorSystemPrompt(agentDefinitions, state.sandboxPath),
+            modelConfig = state.orchestratorConfig,
+            teamName = state.teamName,
+            messages = ArrayList(),
+            agentInstanceId = entry.instanceId,
+        )
+
+        // Store orchestrator context for AgentTool access
+        this.orchestratorContext = ctx
+
+        val runner = AgentRunner(
+            context = ctx,
+            mcpRuntimeManager = mcpRuntimeManager,
+            lifecycleManager = entry.lifecycle,
+            mailboxService = mailboxService,
+            crossSessionMemory = crossSessionMemoryText,
+            availableModels = cachedModels,
+            sandboxPath = state.sandboxPath,
+            onStreamChunk = callbacks.onStreamChunk,
+            onMessageAdded = callbacks.onMessageAdded,
+            onToolCall = { agentName, toolName, args, callId ->
+                // Route tool calls: agent tool -> AgentTool, others -> MCP
+                if (toolName == AgentTool.TOOL_NAME && agentTool != null) {
+                    agentTool!!.call(args, orchestratorContext!!, sandboxPath ?: "").toString()
+                } else {
+                    val serverId = mcpRuntimeManager.findServerIdForTool(toolName)
+                    if (serverId == null) "Error: Tool '$toolName' not found"
+                    else mcpRuntimeManager.callTool(serverId, toolName, args)?.toString() ?: "No result"
+                }
+            },
+            persistMessage = { message ->
+                WorkspaceScopes.auxiliary.launch {
+                    try {
+                        repository.insertWorkspaceMessage(
+                            WorkspaceMessage(
+                                workspaceSessionId = teamDbId,
+                                agentInstanceId = entry.instanceId,
+                                role = message.role,
+                                content = message.content,
+                                toolCallId = message.toolCallId,
+                                toolCallsJson = message.toolCallsJson,
+                                isIntervention = message.isIntervention,
+                                imagePath = message.imagePath,
+                                timestamp = message.timestamp,
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to persist message", e)
+                    }
+                }
+            },
+        )
+
+        // Update registry with runner
+        agentRegistry.register(entry.copy(runner = runner))
+
+        entry.lifecycle.transitionTo(AgentStatus.STREAMING)
+        try {
+            runner.runTurn(userMessage = userTask, imagePath = imagePath)
+            entry.lifecycle.transitionTo(AgentStatus.COMPLETED)
+            triggerWorkspaceComplete(runner)
+        } catch (e: Exception) {
+            Log.e(TAG, "Orchestrator execution failed", e)
+            callbacks.onError(e.message ?: "Unknown error")
+            entry.lifecycle.transitionTo(AgentStatus.ERROR)
+        }
     }
 
     /**
@@ -280,19 +357,8 @@ class TeamManager(
 
         Log.d(TAG, "Deleting team '${state.teamName}'")
 
-        // 取消所有协程作用域
-        val scopeKeys = agentScopes.keys.toList()
-        for (key in scopeKeys) {
-            agentScopes[key]?.let {
-                it.cancel()
-            }
-        }
-
-        // 等待所有 Job 完成
-        val jobEntries = agentJobs.entries.toList()
-        for ((_, job) in jobEntries) {
-            try { job.join() } catch (_: Exception) { }
-        }
+        // 取消所有 Sub-Agent 协程
+        subAgentScope.cancel()
 
         // 注销沙盒 Hook
         sandboxHook?.let {
@@ -301,14 +367,24 @@ class TeamManager(
         }
         sandboxHook = null
 
+        // 从数据库删除团队（级联清理 AgentInstance、MailboxMessage、AgentStateSnapshot）
+        if (teamDbId > 0) {
+            try {
+                repository.deleteWorkspaceTeam(teamDbId)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete workspace team from DB", e)
+            }
+        }
+
         isCompleted.set(false)
         cachedAvailableModelsStr = ""
         agentTool = null
         orchestratorContext = null
         sandboxPath = null
-        runners.clear()
-        agentScopes.clear()
-        agentJobs.clear()
+        teamDbId = 0L
+        executor = null
+        agentRegistry.clear()
+        subAgentJobs.clear()
         _teamState.value = null
 
         Log.d(TAG, "Team '${state.teamName}' deleted")
@@ -318,16 +394,26 @@ class TeamManager(
      * 获取指定 Agent 的对话历史。
      */
     fun getAgentHistory(agentName: String): List<AgentMessage> {
-        return runners[agentName]?.getHistory() ?: emptyList()
+        val state = _teamState.value ?: return emptyList()
+        val agentId = "${agentName}@${state.teamName}"
+        return agentRegistry.get(agentId)?.runner?.getHistory() ?: emptyList()
     }
 
     // ─── Runner 访问器（供 SendMessageTool 等跨组件调用）───
 
     /** Get a specific agent's runner by name */
-    fun getRunner(agentName: String): AgentRunner? = runners[agentName]
+    fun getRunner(agentName: String): AgentRunner? {
+        val state = _teamState.value ?: return null
+        val agentId = "${agentName}@${state.teamName}"
+        return agentRegistry.get(agentId)?.runner
+    }
 
     /** Get all active runners */
-    fun getAllRunners(): Map<String, AgentRunner> = runners.toMap()
+    fun getAllRunners(): Map<String, AgentRunner> {
+        return agentRegistry.getActiveAgents()
+            .filter { it.runner != null }
+            .associate { it.identity.agentName to it.runner!! }
+    }
 
     /**
      * 检测完成标记。
@@ -345,7 +431,7 @@ class TeamManager(
         if (!isCompleted.compareAndSet(false, true)) return
 
         Log.d(TAG, "Triggering workspace complete")
-        onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.COMPLETED)
+        callbacks.onAgentStatusChanged(ORCHESTRATOR_NAME, AgentStatus.COMPLETED)
 
         val orchestratorMessages = runner.getHistory()
         val subAgentMessages = mutableMapOf<String, List<AgentMessage>>()
@@ -353,23 +439,21 @@ class TeamManager(
 
         _teamState.update { s -> s?.copy(isCompleted = true, isRunning = false) }
 
-        // 清理 sub-agent scopes
-        val state = _teamState.value
-        val subAgentNames = runners.keys.filter { it != ORCHESTRATOR_NAME }
         // 先捕获 sub-agent 消息历史，再清理
-        for (name in subAgentNames) {
-            subAgentMessages[name] = runners[name]?.getHistory() ?: emptyList()
+        val nonOrchestratorEntries = agentRegistry.getActiveAgents()
+            .filter { it.identity.agentName != ORCHESTRATOR_NAME }
+
+        for (entry in nonOrchestratorEntries) {
+            subAgentMessages[entry.identity.agentName] = entry.runner?.getHistory() ?: emptyList()
+            subAgentIdentities[entry.identity.agentName] = entry.identity
         }
-        val agentCountBeforeCleanup = runners.size
-        for (name in subAgentNames) {
-            agentScopes[name]?.cancel()
-            try {
-                withTimeoutOrNull(3_000L) {
-                    agentJobs[name]?.join()
-                } ?: Log.w(TAG, "Timeout waiting for sub-agent '$name' to stop, forcing cleanup")
-            } catch (_: Exception) {}
-            runners[name]?.dispose()
-            runners.remove(name)
+
+        val agentCountBeforeCleanup = agentRegistry.size()
+
+        // 清理 sub-agent
+        for (entry in nonOrchestratorEntries) {
+            entry.runner?.dispose()
+            agentRegistry.unregister(entry.identity.agentId)
         }
 
         val snapshot = TeamCompletionSnapshot(
@@ -377,18 +461,17 @@ class TeamManager(
             subAgentMessages = subAgentMessages,
             subAgentIdentities = subAgentIdentities,
         )
-        onWorkspaceComplete(snapshot)
+        callbacks.onWorkspaceComplete(snapshot)
 
         // 触发工作区完成 Hook
-        val teamName = state?.teamName ?: ""
-        val agentCount = agentCountBeforeCleanup
+        val teamName = _teamState.value?.teamName ?: ""
         val totalDurationMs = if (workspaceStartTimeMs > 0) System.currentTimeMillis() - workspaceStartTimeMs else 0L
         val orchestratorSummary = orchestratorMessages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }?.content?.take(500) ?: ""
         WorkspaceScopes.auxiliary.launch {
             try {
                 com.example.hooks.HookManager.dispatchWorkspaceComplete(
                     teamName = teamName,
-                    agentCount = agentCount,
+                    agentCount = agentCountBeforeCleanup,
                     totalDurationMs = totalDurationMs,
                     orchestratorSummary = orchestratorSummary,
                 )
@@ -441,79 +524,6 @@ class TeamManager(
             appendLine("</usage>")
             appendLine("</task-notification>")
         }
-    }
-
-    /**
-     * 创建 AgentRunner。
-     *
-     * suspend 函数，避免在 Dispatchers.Default 线程池上使用 runBlocking 阻塞线程。
-     */
-    private suspend fun createAgentRunner(
-        context: AgentContext,
-        isSubAgent: Boolean = false,
-        maxToolIterations: Int = AgentRunner.MAX_TOOL_CALL_ITERATIONS,
-    ): AgentRunner {
-        if (cachedAvailableModelsStr.isEmpty()) {
-            val allConfigs = repository.getAllConfigs()
-            val allFetchedModels = repository.getAllFetchedModels()
-            cachedAvailableModelsStr = buildAvailableModelsString(allConfigs, allFetchedModels)
-        }
-
-        return AgentRunner(
-            context = context,
-            mcpRuntimeManager = mcpRuntimeManager,
-            crossSessionMemory = crossSessionMemoryText,
-            availableModels = cachedAvailableModelsStr,
-            disallowedTools = if (isSubAgent) setOf("agent") else emptySet(),
-            sandboxPath = _teamState.value?.sandboxPath,
-            maxToolIterations = maxToolIterations,
-            onStreamChunk = onStreamChunk,
-            onMessageAdded = onMessageAdded,
-            onToolCall = { agentName, toolName, args, callId ->
-                if (toolName == AgentTool.TOOL_NAME && agentTool != null) {
-                    // 路由到 AgentTool：创建隔离的 SubAgent 执行
-                    agentTool!!.call(args, orchestratorContext!!, sandboxPath ?: "").toString()
-                } else {
-                    // 路由到 MCP 工具
-                    val serverId = mcpRuntimeManager.findServerIdForTool(toolName)
-                    if (serverId == null) {
-                        Log.e(TAG, "Tool '$toolName' not found in any MCP server")
-                        "Error: Tool '$toolName' not found"
-                    } else {
-                        val result = mcpRuntimeManager.callTool(serverId, toolName, args)
-                        result?.toString() ?: "No result"
-                    }
-                }
-            },
-            // 消息持久化：每条消息写入内存后同步到 Room DB（fire-and-forget）
-            persistMessage = { message ->
-                WorkspaceScopes.auxiliary.launch {
-                    try {
-                        // teamName 格式为 "workspace_$wsId"，提取 sessionId
-                        val teamName = _teamState.value?.teamName ?: ""
-                        val sessionId = teamName.removePrefix("workspace_").toLongOrNull() ?: 0L
-                        // 通过 sessionId + agentName 查找 AgentInstance 的 DB ID
-                        val instanceId = repository.getAgentInstancesByWorkspaceSession(sessionId)
-                            .firstOrNull { it.agentName == context.agentName }?.id ?: 0L
-                        repository.insertWorkspaceMessage(
-                            com.example.data.WorkspaceMessage(
-                                workspaceSessionId = sessionId,
-                                agentInstanceId = instanceId,
-                                role = message.role,
-                                content = message.content,
-                                toolCallId = message.toolCallId,
-                                toolCallsJson = message.toolCallsJson,
-                                isIntervention = message.isIntervention,
-                                imagePath = message.imagePath,
-                                timestamp = message.timestamp,
-                            )
-                        )
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to persist message for ${context.agentName}", e)
-                    }
-                }
-            },
-        )
     }
 
     /**
