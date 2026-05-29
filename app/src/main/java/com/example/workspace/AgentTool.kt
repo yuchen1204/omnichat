@@ -173,15 +173,17 @@ class AgentTool(
             },
         )
 
+        var messagesSnapshot: List<AgentMessage> = emptyList()
         try {
             runner.runTurn(userMessage = prompt, source = "agent-tool")
         } finally {
+            // 在 dispose 之前保存消息快照（dispose 会清空同一个 ArrayList 实例）
+            messagesSnapshot = subAgentContext.messages.toList()
+            onSubAgentCompleted(subAgentName, messagesSnapshot)
             runner.dispose()
         }
 
-        onSubAgentCompleted(subAgentName, subAgentContext.messages.toList())
-
-        val lastAssistantMsg = subAgentContext.messages
+        val lastAssistantMsg = messagesSnapshot
             .lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
 
         val resultText = lastAssistantMsg?.content
@@ -257,8 +259,10 @@ class AgentTool(
                     error = e.message,
                 ))
             } finally {
+                // 在 dispose 之前保存消息快照
+                val messagesSnapshot = subAgentContext.messages.toList()
                 runner.dispose()
-                onSubAgentCompleted(subAgentName, subAgentContext.messages.toList())
+                onSubAgentCompleted(subAgentName, messagesSnapshot)
             }
         }
 
