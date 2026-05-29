@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -39,7 +39,7 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with three top-level views: `"chat"`, `"workspace"`, and `"settings"` (toggled via `mutableStateOf`). The `"settings"` view contains a **TabRow with 5 sub-tabs**: 模型配置, MCP工具, 长效记忆, Agent 预设, 数据管理.
 
 ```
-Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 entities, v28)
+Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 entities, v30)
                                     ↘ ApiClient (OkHttp + SSE, vision support)
                                     ↘ McpRuntimeManager (Node.js / Python / remote_http via JNI)
 ```
@@ -50,7 +50,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **Chinese UI strings** are hardcoded in Compose (not `strings.xml`). AI-adjustable strings use the `uiText("namespace.key", "默认中文")` pattern with auto-generated `ui_text_keys.json`
-- **Room database** version 28 with 24 sequential migrations (v4→v28). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`
+- **Room database** version 30 with 26 sequential migrations (v4→v30). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`
 - **Node.js can start only once per process** (nodejs-mobile limitation) — merge multiple servers into one entry script
 - **Native runtimes are optional**; app degrades gracefully without them
 
@@ -66,7 +66,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 | `com.example.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
 | `com.example.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
 | `com.example.ui.theme` | Material 3 theming with DB-driven dynamic color |
-| `com.example.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentLifecycle`, `AgentExecutionLoops`, `OrchestratorTools`, `TaskManager`, `MessageBus`, `ModelSelector`, `WorkspaceModels` |
+| `com.example.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
 
 ## Native Code (MCP Runtime)
 
@@ -86,7 +86,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, use `LocalUiStrings.current` in Compose screens
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; MCP tools in `BuiltinToolHandler` update it
-- **Modify workspace multi-agent logic**: Edit `TeamManager.kt` (facade), `AgentRunner.kt` (per-agent LLM loop), `OrchestratorTools.kt` (tool routing), `TaskManager.kt` (task queue), `AgentLifecycle.kt` (spawn/destroy)
+- **Modify workspace multi-agent logic**: Edit `TeamManager.kt` (facade), `AgentRunner.kt` (per-agent LLM loop), `AgentTool.kt` (SubAgent spawning), `ToolOrchestrator.kt` (tool routing), `TaskTools.kt` (task CRUD), `SendMessageTool.kt` (inter-agent messaging), `AgentDefinition.kt` (agent type registry)
 - **Modify workspace UI**: Edit `WorkspaceScreen.kt` for main layout, `WorkspaceToolbar.kt` for top bar, `AgentTabBar.kt` for agent switching, `AgentMessageArea.kt` for message display, `TeamTaskPanel.kt` for task status, `InterventionInput.kt` for user input to agents
 
 ## Conventions
@@ -102,4 +102,4 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **Storage permissions**: Android 11+ needs `MANAGE_EXTERNAL_STORAGE` (settings page); required for MCP script deployment
 - **Thinking/reasoning support**: `reasoning_effort` (low/medium/high/xhigh) with `budget_tokens`
 - **MCP protocol versions**: Remote HTTP supports both old SSE (2024-11-05) and new Streamable HTTP (2025-03-26)
-- **Workspace (multi-agent)**: Orchestrator pattern — `TeamManager` manages teammates via `TeammateContext` coroutine elements, `AgentLifecycle` handles creation/destruction, `AgentExecutionLoops` implements the core LLM loop per agent, `OrchestratorTools` intercepts orchestrator tools (`create_agents`, `assign_task`, `continue_conversation`, `peer_message`), `TaskManager` handles task CRUD with auto-claim and blocking, `MessageBus` provides inter-agent communication, `ModelSelector` resolves model config per agent. See `workspace/` package and tests in `app/src/test/java/com/example/workspace/`
+- **Workspace (multi-agent)**: Orchestrator pattern — `TeamManager` manages teammates via `TeammateContext` coroutine elements, `AgentTool` spawns isolated SubAgents with configurable `AgentDefinition` (built-in: general-purpose, explore, plan, verification; custom: from `agent_presets` DB), `AgentRunner` implements the core LLM loop per agent with tool filtering via `AgentToolFilter`, `SendMessageTool` enables inter-agent communication, `TaskTools` handles task CRUD with auto-claim and blocking, `ToolOrchestrator` routes tool calls. See `workspace/` package and tests in `app/src/test/java/com/example/workspace/`

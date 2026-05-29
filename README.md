@@ -41,7 +41,7 @@
 ├─────────┴─────────────────┴───────────────────┴────────────┤
 │                 Data / Repository Layer                      │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │              AppRepository (Room DB v21 · 15 tables)   │  │
+│  │              AppRepository (Room DB v30 · 16 tables)   │  │
 │  └───────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │                   MCP Runtime Layer                          │
@@ -52,7 +52,7 @@
 ├─────────────────────────────────────────────────────────────┤
 │                  Workspace (Multi-Agent)                     │
 │  ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │TeamManager│  │TaskManager│  │MessageBus│  │AgentRunner│  │
+│  │TeamManager│  │TaskTools │  │AgentTool │  │AgentRunner│  │
 │  └───────────┘  └──────────┘  └──────────┘  └───────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -105,44 +105,44 @@ cd omnichat
 omnichat/
 ├── app/src/main/java/com/example/
 │   ├── MainActivity.kt              # 入口 Activity
-│   ├── data/                          # 数据层
-│   │   ├── Entities.kt                # Room 实体定义 (15 个表)
-│   │   ├── Daos.kt                    # DAO 接口
-│   │   ├── AppDatabase.kt             # 数据库配置 (v21, 17 次迁移)
-│   │   └── Repository.kt              # 数据仓库 (AppRepository)
-│   ├── mcp/                           # MCP 运行时
-│   │   ├── McpRuntimeManager.kt       # 运行时管理器
-│   │   ├── McpScriptManager.kt        # 脚本部署管理
-│   │   ├── McpPermissionManager.kt    # MCP 权限管理
-│   │   ├── NodeJsBridge.kt            # Node.js JNI 桥接 (TCP)
-│   │   ├── PythonBridge.kt            # Python 桥接 (stdin/stdout)
-│   │   ├── PythonRuntime.kt           # Python 运行时 (dlopen)
-│   │   └── BuiltinToolHandler.kt      # 内置工具处理
-│   ├── hooks/                         # Hook 系统
-│   │   ├── HookManager.kt             # Hook 管理器
-│   │   ├── HookInterfaces.kt          # Hook 接口定义
-│   │   ├── LoggingHooks.kt            # 日志 Hook
-│   │   └── McpFilePermissionHook.kt   # 文件权限 Hook
+│   ├── data/                        # 数据层
+│   │   ├── Entities.kt              # Room 实体定义 (16 个表)
+│   │   ├── Daos.kt                  # DAO 接口
+│   │   ├── AppDatabase.kt           # 数据库配置 (v30, 26 次迁移)
+│   │   └── Repository.kt            # 数据仓库 (AppRepository)
+│   ├── mcp/                         # MCP 运行时
+│   │   ├── McpRuntimeManager.kt     # 运行时管理器
+│   │   ├── McpScriptManager.kt      # 脚本部署管理
+│   │   ├── McpPermissionManager.kt  # MCP 权限管理
+│   │   ├── NodeJsBridge.kt          # Node.js JNI 桥接 (TCP)
+│   │   ├── PythonBridge.kt          # Python 桥接 (stdin/stdout)
+│   │   ├── PythonRuntime.kt         # Python 运行时 (dlopen)
+│   │   └── BuiltinToolHandler.kt    # 内置工具处理
+│   ├── hooks/                       # Hook 系统
+│   │   ├── HookManager.kt           # Hook 管理器
+│   │   ├── HookInterfaces.kt        # Hook 接口定义
+│   │   ├── LoggingHooks.kt          # 日志 Hook
+│   │   └── McpFilePermissionHook.kt # 文件权限 Hook
 │   ├── network/
-│   │   └── ApiClient.kt              # OpenAI 兼容 API 客户端 (SSE)
-│   ├── workspace/                     # 多 Agent 工作区
-│   │   ├── TeamManager.kt             # 团队管理
-│   │   ├── TaskManager.kt             # 任务管理
-│   │   ├── AgentRunner.kt             # Agent 执行器
-│   │   ├── AgentContext.kt            # Agent 上下文
-│   │   ├── TeammateContext.kt         # 队友协程上下文
-│   │   └── MessageBus.kt             # Agent 间消息总线
+│   │   └── ApiClient.kt            # OpenAI 兼容 API 客户端 (SSE)
+│   ├── workspace/                   # 多 Agent 工作区
+│   │   ├── TeamManager.kt           # 团队管理
+│   │   ├── AgentRunner.kt           # Agent 执行器
+│   │   ├── TaskTools.kt             # 任务管理
+│   │   ├── AgentTool.kt             # SubAgent 创建
+│   │   ├── AgentDefinition.kt       # Agent 类型定义
+│   │   └── SendMessageTool.kt       # Agent 间通信
 │   ├── ui/
-│   │   ├── screens/                   # Compose 界面
-│   │   ├── viewmodel/                 # ViewModel 层
-│   │   ├── components/                # 可复用组件
-│   │   └── theme/                     # Material 3 主题系统
-│   └── TimerManager.kt               # 定时器管理
-├── app/src/main/cpp/                  # C++ JNI 代码
+│   │   ├── screens/                 # Compose 界面
+│   │   ├── viewmodel/               # ViewModel 层
+│   │   ├── components/              # 可复用组件
+│   │   └── theme/                   # Material 3 主题系统
+│   └── TimerManager.kt             # 定时器管理
+├── app/src/main/cpp/                # C++ JNI 代码
 ├── app/src/main/assets/
-│   ├── node/                          # Node.js MCP 脚本
-│   └── python/                        # Python stdlib
-└── scripts/                           # 工具脚本
+│   ├── node/                        # Node.js MCP 脚本
+│   └── python/                      # Python stdlib
+└── scripts/                         # 工具脚本
 ```
 
 ## 🛠️ 技术栈
@@ -151,7 +151,7 @@ omnichat/
 |------|------|
 | 语言 | Kotlin 2.2.10, C++17 (JNI) |
 | UI | Jetpack Compose (Material 3) |
-| 数据库 | Room v2.7.0 (v21, 15 个实体, 17 次迁移) |
+| 数据库 | Room v2.7.0 (v30, 16 个实体, 26 次迁移) |
 | 网络 | OkHttp + SSE |
 | 构建 | AGP 9.1.1, KSP 2.2.10-2.0.2, CMake 3.22.1 |
 | 原生运行时 | nodejs-mobile (libnode.so), Python 3.14 (dlopen) |
@@ -162,7 +162,7 @@ omnichat/
 | CI/CD | GitHub Actions (自动 Release 构建) |
 | ABI | arm64-v8a, x86_64 |
 
-## 📊 数据库表结构 (v21 · 15 个实体)
+## 📊 数据库表结构 (v30 · 16 个实体)
 
 | 实体 | 表名 | 用途 |
 |------|------|------|
@@ -181,10 +181,11 @@ omnichat/
 | `AgentInstance` | `agent_instances` | 运行中的 Agent 实例 |
 | `WorkspaceMessage` | `workspace_messages` | 工作区消息 |
 | `TeamTask` | `team_tasks` | 团队任务 (状态/阻塞管理) |
+| `McpFilePermission` | `mcp_file_permissions` | MCP 文件访问权限 |
 
-## 🔧 MCP工具扩展
+## 🔧 MCP 工具扩展
 
-### 内置工具
+### 内置工具 (34 个)
 
 | 工具 | 说明 |
 |------|------|
@@ -197,12 +198,13 @@ omnichat/
 | 相机拍照 | 调用设备相机拍照并保存 |
 | 图片选取 | 从相册选取图片 |
 | 定时器 | 创建和管理倒计时 / 秒表 |
-| 权限管理 | 请求和管理运行时权限 |
-| 包管理器 | 查看/安装 Node.js 包 |
+| Agent 管理 | 创建/管理多 Agent 工作区 |
+| 任务管理 | 任务 CRUD、状态跟踪、阻塞依赖 |
+| 记忆搜索 | 搜索跨会话记忆 |
 
 ### 添加自定义 MCP 服务器
 
-1. 在 **设置 → MCP工具** 标签页点击 **添加**
+1. 在 **设置 → MCP 工具** 标签页点击 **添加**
 2. 配置服务器信息：
    - **Node.js**: 指定 `.js` 文件路径
    - **Python**: 指定 `.py` 文件路径
@@ -216,9 +218,10 @@ omnichat/
 编排模式的多 Agent 协作系统：
 
 - **TeamManager** — 管理队友和整体工作流
-- **TaskManager** — 任务 CRUD、状态跟踪、阻塞依赖
+- **AgentTool** — 创建隔离的 SubAgent 执行任务
+- **TaskTools** — 任务 CRUD、状态跟踪、阻塞依赖
 - **AgentRunner** — Agent 执行循环（含 MCP 工具调用）
-- **MessageBus** — Agent 间异步消息通信
+- **SendMessageTool** — Agent 间异步消息通信
 - **TeammateContext** — 协程上下文隔离
 
 ## 📦 Release 构建

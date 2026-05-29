@@ -24,7 +24,24 @@
       "Bash(grep -i \"material.*icon\" gradle/libs.versions.toml)",
       "Bash(grep -i \"compose.*icon\" gradle/libs.versions.toml)",
       "Bash(./gradlew assembleDebug)",
-      "Bash(git show *)"
+      "Bash(git show *)",
+      "Bash(./gradlew assembleDebug --no-configuration-cache)",
+      "Bash(./gradlew testDebugUnitTest --tests \"com.example.ui.viewmodel.MemoryTagTest\" --no-configuration-cache)",
+      "Bash(where java *)",
+      "Bash(./gradlew testDebugUnitTest --tests \"com.example.ui.viewmodel.MemoryTagTest\" --no-configuration-cache --rerun-tasks)",
+      "Bash(./gradlew testDebugUnitTest --tests \"com.example.ui.viewmodel.MemoryTagTest\")",
+      "Bash(JAVA_HOME=\"C:\\\\\\\\Program Files\\\\\\\\Java\\\\\\\\jdk-17\" ./gradlew testDebugUnitTest --tests \"com.example.ui.viewmodel.MemoryTagTest\")",
+      "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-17\" ./gradlew assembleDebug)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew assembleDebug)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew testDebugUnitTest *)",
+      "Bash(git checkout *)",
+      "Bash(git log *)",
+      "Bash(export JAVA_HOME=\"C:/Program Files/Java/jdk-17\")",
+      "Bash(git merge refactor/agent-team-swarm --no-ff -m ' *)",
+      "Bash(git branch *)",
+      "Bash(./gradlew testDebugUnitTest --tests \"com.example.workspace.*\")",
+      "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew compileDebugKotlin compileDebugUnitTestKotlin)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew compileDebugKotlin)"
     ]
   }
 }
