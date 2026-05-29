@@ -152,7 +152,9 @@ data class MemoryItem(
     /** 用户手动锁定：pinned=true 时 LLM 不可删除或覆盖此条目 */
     val pinned: Boolean = false,
     /** 最近一次被强化的时间戳，用于置信度衰减计算 */
-    val lastReinforcedAt: Long = System.currentTimeMillis()
+    val lastReinforcedAt: Long = System.currentTimeMillis(),
+    /** LLM 生成的语义标签，逗号分隔，如 "preference,fact" */
+    val tags: String = ""
 )
 
 @Entity(tableName = "prompt_templates")
