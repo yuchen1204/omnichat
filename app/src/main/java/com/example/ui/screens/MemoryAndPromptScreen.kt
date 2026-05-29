@@ -204,10 +204,11 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top
                             ) {
                                 Box(
                                     modifier = Modifier
+                                        .padding(top = 6.dp)
                                         .size(6.dp)
                                         .clip(RoundedCornerShape(3.dp))
                                         .background(
@@ -216,42 +217,68 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         )
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = memory.content,
-                                    fontSize = (13 * fs).sp,
-                                    fontFamily = resolvedFontFamily,
-                                    modifier = Modifier.weight(1f),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                IconButton(
-                                    onClick = { viewModel.togglePinMemory(memory) },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (memory.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
-                                        contentDescription = if (memory.pinned)
-                                            uiText("memory.unpin", "取消锁定")
-                                        else
-                                            uiText("memory.pin", "锁定"),
-                                        tint = if (memory.pinned)
-                                            MaterialTheme.colorScheme.primary
-                                        else
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(16.dp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = memory.content,
+                                        fontSize = (13 * fs).sp,
+                                        fontFamily = resolvedFontFamily,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
+                                    if (memory.tags.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            memory.tags.split(",").filter { it.isNotBlank() }.forEach { tag ->
+                                                SuggestionChip(
+                                                    onClick = {},
+                                                    label = {
+                                                        Text(
+                                                            text = tag,
+                                                            fontSize = 10.sp,
+                                                            lineHeight = 12.sp
+                                                        )
+                                                    },
+                                                    modifier = Modifier.height(20.dp),
+                                                    border = null,
+                                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                                                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                IconButton(
-                                    onClick = { viewModel.deleteMemoryItem(memory.id) },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = uiText("memory.63e4284a", "删除"),
-                                        tint = MaterialTheme.colorScheme.error.copy(
-                                            alpha = if (memory.pinned) 0.3f else 0.7f
-                                        ),
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                Column {
+                                    IconButton(
+                                        onClick = { viewModel.togglePinMemory(memory) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (memory.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                                            contentDescription = if (memory.pinned)
+                                                uiText("memory.unpin", "取消锁定")
+                                            else
+                                                uiText("memory.pin", "锁定"),
+                                            tint = if (memory.pinned)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.deleteMemoryItem(memory.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = uiText("memory.63e4284a", "删除"),
+                                            tint = MaterialTheme.colorScheme.error.copy(
+                                                alpha = if (memory.pinned) 0.3f else 0.7f
+                                            ),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
