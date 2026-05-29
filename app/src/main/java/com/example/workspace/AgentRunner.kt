@@ -1,17 +1,16 @@
 package com.example.workspace
 
 import android.util.Log
+import com.example.data.MailboxMessage
 import com.example.data.Message
 import com.example.data.ModelConfig
 import com.example.mcp.McpRuntimeManager
 import com.example.network.ApiClient
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.transform
-import kotlinx.coroutines.withContext
+import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.example.workspace.mailbox.MailboxService
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlinx.coroutines.flow.takeWhile
-import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
  * Agent 使用统计。
@@ -46,6 +45,8 @@ data class AgentUsageStats(
 class AgentRunner(
     private val context: AgentContext,
     private val mcpRuntimeManager: McpRuntimeManager,
+    private val lifecycleManager: AgentLifecycleManager,
+    private val mailboxService: MailboxService,
     private val crossSessionMemory: String = "",
     private val availableModels: String = "",
     private val disallowedTools: Set<String> = emptySet(),
@@ -118,35 +119,14 @@ class AgentRunner(
      */
     private val usageStatsLock = Any()
 
-    /** 干预队列锁，保护 isStreaming 的 check-then-act 操作 */
-    private val interventionLock = Any()
-
     /**
      * 消息列表读写锁（BUG-5/6）。
      *
      * 替代 CopyOnWriteArrayList，统一保护所有对 context.messages 的读写操作。
      * - 读锁：getHistory()、buildContextMessages()
-     * - 写锁：injectMessage()、compactContext()、processInterventionQueue()、runTurn() 中的 add()、dispose()
+     * - 写锁：injectMessage()、compactContext()、runTurn() 中的 add()、dispose()
      */
     private val messagesLock = java.util.concurrent.locks.ReentrantReadWriteLock()
-
-    /**
-     * 干预消息队列。
-     *
-     * 使用 ConcurrentLinkedDeque 保证线程安全。
-     * 需求 8.6：用户发送的干预消息在当前流式输出完成后立即被处理。
-     * 流式输出结束后依次处理队列中的干预消息。
-     */
-    private val interventionQueue = ConcurrentLinkedDeque<AgentMessage>()
-
-    /**
-     * 异步 Agent 的待处理消息队列。
-     *
-     * 由父 Agent 或其他 Agent 通过 queuePendingMessage() 入队，
-     * 在 do-while 循环的工具轮次边界由 drainPendingMessages() 取出并注入上下文。
-     * 模仿 Claude Code 的 LocalAgentTask.pendingMessages 模式。
-     */
-    private val pendingMessages = ConcurrentLinkedDeque<AgentMessage>()
 
     // 接入 ToolOrchestrator：只读工具并行、写入工具串行
     private val toolOrchestrator = ToolOrchestrator(onToolCall)
@@ -197,7 +177,7 @@ class AgentRunner(
             // BUG-022 修复：跟踪连续工具调用失败次数，防止无限循环
             var consecutiveToolFailureCount = 0
             do {
-                if (kotlin.coroutines.coroutineContext[TeammateContext]?.isCurrentTurnAborted == true) {
+                if (lifecycleManager.isTurnAborted()) {
                     break
                 }
                 
@@ -233,31 +213,17 @@ class AgentRunner(
                 var lastCallbackTime = 0L
                 val accumulatedToolCalls = mutableMapOf<Int, JSONObject>()
 
-                // WHY: 在外部协程上下文中提前捕获 TeammateContext，避免在 Flow.transform
-                // lambda 内通过 kotlin.coroutines.coroutineContext 获取——后者返回的是 Flow
-                // 内部协程的上下文，若 Flow 切到 Dispatchers.IO 等 Dispatcher，则
-                // TeammateContext 元素会丢失，导致 isCurrentTurnAborted 检查永远返回 null。
-                val capturedTeammateCtx = kotlin.coroutines.coroutineContext[TeammateContext]
-
-                // WHY: 使用 transform 替代 takeWhile + collect 分离模式。
-                // takeWhile 在条件为 false 时直接完成 Flow 但不抛异常，导致协程取消信号
-                // (CancellationException) 被 takeWhile 吞掉，collect 内的代码继续运行直到
-                // 下一个 emit 点。改用 transform + return@transform 后，isCurrentTurnAborted
-                // 检查在每次 emit 前执行，且不会干扰 Flow 的正常取消传播。
+                // Abort 检查在 do-while 循环顶部通过 lifecycleManager.isTurnAborted() 完成，
+                // 不再需要在 Flow 内部拦截（TeammateContext 已删除）。
                 ApiClient.executeStreamingChat(
-                    config = context.modelConfig.let { 
-                        if (context.overrideModelId != null) it.copy(selectedModelId = context.overrideModelId) 
-                        else it 
+                    config = context.modelConfig.let {
+                        if (context.overrideModelId != null) it.copy(selectedModelId = context.overrideModelId)
+                        else it
                     },
                     systemPrompt = systemPrompt,
                     history = history,
                     tools = tools
-                ).transform { chunk ->
-                    if (capturedTeammateCtx?.isCurrentTurnAborted == true) {
-                        return@transform
-                    }
-                    emit(chunk)
-                }.collect { chunk ->
+                ).collect { chunk ->
                     when {
                         chunk.startsWith("ERROR:") -> {
                             // 错误消息，直接推送
@@ -443,19 +409,27 @@ class AgentRunner(
                             break
                         }
 
-                        // Phase 4: 在工具轮次边界取出异步 Agent 的待处理消息
+                        // 在工具轮次边界从 MailboxService 取出待处理消息
                         // 必须在 continue 之前，确保下一轮 API 调用前消息已注入上下文
-                        val pendingMsgs = drainPendingMessages()
-                        if (pendingMsgs.isNotEmpty()) {
-                            messagesLock.writeLock().lock()
-                            try {
-                                for (msg in pendingMsgs) {
-                                    context.messages.add(msg)
-                                    onMessageAdded(context.agentName, msg)
-                                    persistMessage?.invoke(msg)
+                        val instanceId = context.agentInstanceId ?: 0L
+                        if (instanceId > 0) {
+                            val mailboxMsgs = mailboxService.drain(instanceId)
+                            if (mailboxMsgs.isNotEmpty()) {
+                                messagesLock.writeLock().lock()
+                                try {
+                                    for (msg in mailboxMsgs) {
+                                        val agentMsg = AgentMessage(
+                                            role = msg.role,
+                                            content = msg.content,
+                                            source = msg.source,
+                                        )
+                                        context.messages.add(agentMsg)
+                                        onMessageAdded(context.agentName, agentMsg)
+                                        persistMessage?.invoke(agentMsg)
+                                    }
+                                } finally {
+                                    messagesLock.writeLock().unlock()
                                 }
-                            } finally {
-                                messagesLock.writeLock().unlock()
                             }
                         }
 
@@ -475,15 +449,21 @@ class AgentRunner(
                     break
                 }
                 // 跳过明确表示任务完成的 Agent：文本报告是合理的结束方式
-                val isCompletedResponse = lastAssistantResponse.let { text ->
-                    text.contains("任务完成") || text.contains("任务圆满完成") ||
-                    text.contains("任务已") || text.contains("最终结果") ||
-                    text.contains("已完成") || text.contains("任务报告") ||
-                    text.contains("最终任务") || (text.contains("完成标准") && text.contains("已满足"))
-                }
-                if (isCompletedResponse) {
-                    Log.d(TAG, "Agent '${context.agentName}' reports task completed, skipping nudge")
-                    break
+                // 只允许 Orchestrator 通过文本声明完成（它负责协调，不执行具体文件操作）。
+                // 子 Agent 不能自己宣布完成——它们必须跑完迭代或重试耗尽，
+                // 由 Orchestrator 判断整体任务是否完成。否则子 Agent 可能只做了 1/3
+                // 的工作（如只创建了 index.html）就报告"任务完成"，导致 css/js 缺失。
+                if (context.isOrchestrator) {
+                    val isCompletedResponse = lastAssistantResponse.let { text ->
+                        text.contains("任务完成") || text.contains("任务圆满完成") ||
+                        text.contains("任务已") || text.contains("最终结果") ||
+                        text.contains("已完成") || text.contains("任务报告") ||
+                        text.contains("最终任务") || (text.contains("完成标准") && text.contains("已满足"))
+                    }
+                    if (isCompletedResponse) {
+                        Log.d(TAG, "Orchestrator '${context.agentName}' reports task completed, accepting")
+                        break
+                    }
                 }
                 consecutiveTextOnlyCount++
                 if (consecutiveTextOnlyCount <= MAX_TEXT_ONLY_RETRIES && !context.isOrchestrator) {
@@ -508,14 +488,22 @@ class AgentRunner(
             } while (true)
 
         } finally {
-            // BUG-023 修复：将 isStreaming = false 和 processInterventionQueue 原子化。
-            // 原实现在 isStreaming = false 和 processInterventionQueue() 之间存在时间窗口，
-            // 新的干预消息可能在此期间被添加到队列但永远不会被处理。
-            // 修复：在 interventionLock 内设置 isStreaming = false 并立即处理队列。
-            synchronized(interventionLock) {
-                isStreaming = false
-                // 在锁内处理队列，确保不会遗漏任何消息
-                processInterventionQueue()
+            isStreaming = false
+
+            // 从 MailboxService 取出并注入剩余的未投递消息（干预、通知等）
+            val drainInstanceId = context.agentInstanceId ?: 0L
+            if (drainInstanceId > 0) {
+                val remaining = mailboxService.drain(drainInstanceId)
+                if (remaining.isNotEmpty()) {
+                    messagesLock.writeLock().lock()
+                    try {
+                        for (msg in remaining) {
+                            context.messages.add(AgentMessage(role = msg.role, content = msg.content, source = msg.source))
+                        }
+                    } finally {
+                        messagesLock.writeLock().unlock()
+                    }
+                }
             }
 
             // BUG-7：在锁内读取 messages 计算 token；之前的实现绕过 messagesLock，
@@ -563,8 +551,8 @@ class AgentRunner(
      * 向该 Agent 注入一条消息。
      *
      * 用于 Orchestrator 下发任务、用户干预等场景。
-     * 如果当前正在流式输出，将消息加入干预队列，等待流式输出结束后处理。
-     * 使用 synchronized 保护 isStreaming 的 check-then-act 操作，避免 TOCTOU 竞态。
+     * 如果当前正在流式输出且为干预消息，通过 MailboxService 投递，
+     * runTurn 结束时统一 drain 注入上下文。
      *
      * @param role 消息角色："user" | "assistant" | "tool" | "system"
      * @param content 消息内容
@@ -580,20 +568,21 @@ class AgentRunner(
             imagePath = imagePath
         )
 
-        // WHY: 缩小 interventionLock 的范围到仅干预路径。
-        // 原实现用 synchronized(interventionLock) 包裹整个 if-else，包括非干预的
-        // messagesLock 写入路径。这造成非干预消息的 injectMessage 被不必要地串行化，
-        // 与 runTurn 中 messagesLock 的并发读写产生不必要的竞争。
-        // 分离后：干预路径用 interventionLock 保护 isStreaming check-then-act；
-        // 非干预路径直接用 messagesLock 写入，与 runTurn 一致。
+        // 干预消息在流式输出期间通过 MailboxService 投递，runTurn 结束时统一 drain。
         if (isStreaming && isIntervention) {
-            synchronized(interventionLock) {
-                // Double-check：synchronized 进入后 isStreaming 可能已变回 false
-                if (isStreaming) {
-                    interventionQueue.addLast(message)
-                    Log.d(TAG, "Queued intervention message for ${context.agentName}")
-                    return
+            val instanceId = context.agentInstanceId ?: 0L
+            if (instanceId > 0) {
+                WorkspaceScopes.auxiliary.launch {
+                    mailboxService.send(instanceId, MailboxMessage(
+                        recipientAgentId = instanceId,
+                        senderAgentName = "user",
+                        role = role,
+                        content = content,
+                        source = "intervention",
+                    ))
                 }
+                Log.d(TAG, "Queued intervention via mailbox for ${context.agentName}")
+                return
             }
         }
 
@@ -651,7 +640,6 @@ class AgentRunner(
         } finally {
             messagesLock.writeLock().unlock()
         }
-        interventionQueue.clear()
         Log.d(TAG, "Disposed AgentRunner for ${context.agentName}")
     }
 
@@ -869,45 +857,26 @@ class AgentRunner(
     }
 
     /**
-     * 处理干预消息队列。
-     *
-     * 需求 8.6：流式输出结束后依次处理队列中的干预消息。
-     */
-    private fun processInterventionQueue() {
-        while (interventionQueue.isNotEmpty()) {
-            val message = interventionQueue.removeFirst()
-            messagesLock.writeLock().lock()
-            try {
-                context.messages.add(message)
-                onMessageAdded(context.agentName, context.messages.last())
-            } finally {
-                messagesLock.writeLock().unlock()
-            }
-            Log.d(TAG, "Processed queued intervention message for ${context.agentName}")
-        }
-    }
-
-    /**
-     * 取出并清空待处理消息队列。
-     *
-     * 在 do-while 循环的工具轮次边界调用，将父 Agent 或其他 Agent
-     * 通过 queuePendingMessage() 入队的消息注入上下文。
-     */
-    private fun drainPendingMessages(): List<AgentMessage> {
-        val messages = mutableListOf<AgentMessage>()
-        while (pendingMessages.isNotEmpty()) {
-            pendingMessages.poll()?.let { messages.add(it) }
-        }
-        return messages
-    }
-
-    /**
      * 入队一条待处理消息，供异步 Agent 在下一轮工具轮次边界处理。
      *
+     * 通过 MailboxService 投递，替代原来的 ConcurrentLinkedDeque。
      * 用于 SendMessage 工具和任务通知投递场景。
      */
     fun queuePendingMessage(message: AgentMessage) {
-        pendingMessages.addLast(message)
+        val instanceId = context.agentInstanceId ?: 0L
+        if (instanceId <= 0) {
+            Log.w(TAG, "Cannot queue message for ${context.agentName}: no agentInstanceId")
+            return
+        }
+        WorkspaceScopes.auxiliary.launch {
+            mailboxService.send(instanceId, MailboxMessage(
+                recipientAgentId = instanceId,
+                senderAgentName = message.source.ifEmpty { "system" },
+                role = message.role,
+                content = message.content,
+                source = message.source,
+            ))
+        }
     }
 
     /**

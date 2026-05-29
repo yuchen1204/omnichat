@@ -66,6 +66,8 @@ data class AgentContext(
     val messages: MutableList<AgentMessage>,
     // WHY: 传入 AgentDefinition 以便 AgentToolFilter 根据 agent 的 tools/disallowedTools 过滤工具
     val agentDefinition: AgentDefinition? = null,
+    /** Agent 实例的 DB ID，用于 MailboxService 消息路由。null 表示未注册（如 SubAgentTool 临时 Agent）。 */
+    val agentInstanceId: Long? = null,
 )
 
 /**
