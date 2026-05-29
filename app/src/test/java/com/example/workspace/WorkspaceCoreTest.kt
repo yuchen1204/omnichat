@@ -292,4 +292,18 @@ class WorkspaceCoreTest {
             ORCHESTRATOR_SYSTEM_PROMPT.contains("create_agents")
         )
     }
+
+    // ─── COMPLETION_MARKER 验证 ─────────────────────────────────────────────
+
+    @Test
+    fun testCompletionMarkerIsStructuredBrackets() {
+        assertEquals("【任务完成】", COMPLETION_MARKER)
+    }
+
+    @Test
+    fun testCompletionMarkerisContainedInOrchestratorPrompt() {
+        val prompt = buildOrchestratorSystemPrompt(BuiltInAgents.ALL)
+        assertTrue("Orchestrator prompt should reference completion marker",
+            prompt.contains(COMPLETION_MARKER))
+    }
 }
