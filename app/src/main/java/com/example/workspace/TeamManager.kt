@@ -61,7 +61,9 @@ class TeamManager(
 
     // ─── Sub-Agent 管理（通过 onSubAgentLaunched 追踪）───
 
-    private val subAgentScope = CoroutineScope(
+    private var subAgentScope = createSubAgentScope()
+
+    private fun createSubAgentScope() = CoroutineScope(
         parentScope.coroutineContext + SupervisorJob()
     )
     private val subAgentJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
@@ -360,6 +362,7 @@ class TeamManager(
 
         // 取消所有 Sub-Agent 协程
         subAgentScope.cancel()
+        subAgentScope = createSubAgentScope()
 
         // 注销沙盒 Hook
         sandboxHook?.let {

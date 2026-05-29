@@ -454,14 +454,8 @@ class AgentRunner(
                 // 由 Orchestrator 判断整体任务是否完成。否则子 Agent 可能只做了 1/3
                 // 的工作（如只创建了 index.html）就报告"任务完成"，导致 css/js 缺失。
                 if (context.isOrchestrator) {
-                    val isCompletedResponse = lastAssistantResponse.let { text ->
-                        text.contains("任务完成") || text.contains("任务圆满完成") ||
-                        text.contains("任务已") || text.contains("最终结果") ||
-                        text.contains("已完成") || text.contains("任务报告") ||
-                        text.contains("最终任务") || (text.contains("完成标准") && text.contains("已满足"))
-                    }
-                    if (isCompletedResponse) {
-                        Log.d(TAG, "Orchestrator '${context.agentName}' reports task completed, accepting")
+                    if (lastAssistantResponse.contains(COMPLETION_MARKER)) {
+                        Log.d(TAG, "Orchestrator '${context.agentName}' output completion marker, accepting")
                         break
                     }
                 }
@@ -522,8 +516,8 @@ class AgentRunner(
             val finalToolUseCount: Int
             synchronized(usageStatsLock) {
                 usageStats.durationMs = System.currentTimeMillis() - usageStats.startTimeMs
-                // 估算 token 消耗（粗略估算：1 token ≈ 4 字符）
-                usageStats.totalTokens = totalChars / 4
+                // 估算 token 消耗（混合中英文内容约 2.5 字符/token）
+                usageStats.totalTokens = (totalChars / 2.5).toInt()
                 finalDuration = usageStats.durationMs
                 finalToolUseCount = usageStats.toolUseCount
             }
