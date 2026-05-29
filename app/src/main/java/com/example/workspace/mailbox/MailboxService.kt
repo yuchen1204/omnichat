@@ -3,6 +3,9 @@ package com.example.workspace.mailbox
 import android.util.Log
 import com.example.data.AppRepository
 import com.example.data.MailboxMessage
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 邮箱服务 — Agent 间通信的 Room DB 后端。
@@ -23,6 +26,13 @@ class MailboxService(
         private const val TAG = "MailboxService"
         /** 每个 Agent 的未投递消息上限，超过后删除最旧的已投递消息 */
         private const val MAX_UNDELIVERED = 1000
+    }
+
+    // Per-agent drain mutex to prevent concurrent drains from duplicating messages
+    private val drainMutexes = ConcurrentHashMap<Long, Mutex>()
+
+    private fun getDrainMutex(agentInstanceId: Long): Mutex {
+        return drainMutexes.getOrPut(agentInstanceId) { Mutex() }
     }
 
     /**
@@ -50,14 +60,16 @@ class MailboxService(
      * @return 未投递的消息列表，按时间顺序
      */
     suspend fun drain(agentInstanceId: Long): List<MailboxMessage> {
-        val messages = repository.getUndeliveredMailboxMessages(agentInstanceId)
-        for (msg in messages) {
-            repository.markMailboxDelivered(msg.id)
+        return getDrainMutex(agentInstanceId).withLock {
+            val messages = repository.getUndeliveredMailboxMessages(agentInstanceId)
+            for (msg in messages) {
+                repository.markMailboxDelivered(msg.id)
+            }
+            if (messages.isNotEmpty()) {
+                Log.d(TAG, "Drained ${messages.size} messages for agent $agentInstanceId")
+            }
+            messages
         }
-        if (messages.isNotEmpty()) {
-            Log.d(TAG, "Drained ${messages.size} messages for agent $agentInstanceId")
-        }
-        return messages
     }
 
     /**
