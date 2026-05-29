@@ -175,3 +175,30 @@ data class TaskNotification(
 enum class TaskNotificationStatus {
     COMPLETED, FAILED, KILLED
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Teammate 身份与权限
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Teammate 身份信息。
+ *
+ * 标识一个 Agent 实例的完整身份，用于消息路由、日志和 UI 展示。
+ */
+data class TeammateIdentity(
+    val agentId: String,
+    val agentName: String,
+    val teamName: String,
+    val color: String = "",
+    val agentType: String = "",
+    val parentSessionId: String = "",
+)
+
+/**
+ * 权限模式枚举。
+ */
+enum class PermissionMode {
+    DEFAULT,
+    AUTO,
+    PLAN
+}

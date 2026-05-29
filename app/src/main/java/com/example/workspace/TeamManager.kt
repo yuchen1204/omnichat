@@ -220,7 +220,6 @@ class TeamManager(
         // WHY: 防止 startExecution 被重复调用时泄露前一个 scope。
         agentScopes[ORCHESTRATOR_NAME]?.let { oldScope ->
             Log.w(TAG, "Cancelling previous orchestrator scope before restart")
-            oldScope.coroutineContext[TeammateContext]?.abort()
             oldScope.cancel()
         }
         try {
@@ -249,7 +248,7 @@ class TeamManager(
         )
 
         val orchestratorScope = CoroutineScope(
-            parentScope.coroutineContext + SupervisorJob() + TeammateContext(identity)
+            parentScope.coroutineContext + SupervisorJob()
         )
         agentScopes[ORCHESTRATOR_NAME] = orchestratorScope
 
@@ -285,7 +284,6 @@ class TeamManager(
         val scopeKeys = agentScopes.keys.toList()
         for (key in scopeKeys) {
             agentScopes[key]?.let {
-                it.coroutineContext[TeammateContext]?.abort()
                 it.cancel()
             }
         }
