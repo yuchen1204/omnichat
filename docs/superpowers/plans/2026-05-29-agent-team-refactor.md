@@ -789,21 +789,55 @@ Remove capturedTeammateCtx, simplify streaming collect."
 
 ---
 
-### Task 7: Update TeammateContext — Deprecate or Remove
+### Task 7: Move TeammateIdentity and Remove TeammateContext
 
 **Files:**
-- Modify: `app/src/main/java/com/example/workspace/TeammateContext.kt`
+- Modify: `app/src/main/java/com/example/workspace/WorkspaceModels.kt`
+- Delete: `app/src/main/java/com/example/workspace/TeammateContext.kt`
 
-**Context:** After Task 6, `TeammateContext` is no longer used by `AgentRunner`. It may still be referenced elsewhere. We either delete it or mark as deprecated.
+**Context:** `TeammateIdentity` and `PermissionMode` are defined in `TeammateContext.kt` but used by `AgentLifecycleManager`, `AgentRegistry`, and executors. We must move them to `WorkspaceModels.kt` before deleting `TeammateContext.kt`.
 
-- [ ] **Step 1: Search for remaining TeammateContext references**
+- [ ] **Step 1: Move TeammateIdentity and PermissionMode to WorkspaceModels.kt**
 
-Run: `grep -r "TeammateContext" app/src/main/java/com/example/workspace/`
-Check if any files still import or use it.
+Add to `WorkspaceModels.kt` (after the existing data classes):
 
-- [ ] **Step 2: Remove or deprecate**
+```kotlin
+/**
+ * Teammate 身份信息。
+ *
+ * 标识一个 Agent 实例的完整身份，用于消息路由、日志和 UI 展示。
+ */
+data class TeammateIdentity(
+    val agentId: String,
+    val agentName: String,
+    val teamName: String,
+    val color: String = "",
+    val agentType: String = "",
+    val parentSessionId: String = "",
+)
 
-If no references remain, delete `TeammateContext.kt`. If some remain (e.g., in TeamManager for scope context), keep the file but remove the abort-related code (since that's now in `AgentLifecycleManager`).
+/**
+ * 权限模式枚举。
+ */
+enum class PermissionMode {
+    DEFAULT,
+    AUTO,
+    PLAN
+}
+```
+
+- [ ] **Step 2: Update imports in files that used TeammateContext**
+
+Update imports in `AgentLifecycleManager.kt`, `AgentRegistry.kt`, `OrchestratorExecutor.kt`, `PeerExecutor.kt` to use `com.example.workspace.TeammateIdentity` from `WorkspaceModels.kt` instead of `TeammateContext.kt`.
+
+- [ ] **Step 3: Delete TeammateContext.kt**
+
+Remove the file entirely. The abort-related code is now in `AgentLifecycleManager`. The identity types are now in `WorkspaceModels.kt`.
+
+- [ ] **Step 4: Verify no remaining references**
+
+Run: `grep -r "TeammateContext" app/src/main/java/com/example/`
+Fix any remaining imports (the `teammateContext` extension property on CoroutineScope should also be removed).
 
 - [ ] **Step 3: Commit**
 
