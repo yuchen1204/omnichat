@@ -59,8 +59,8 @@ class TeamManager(
     // ─── 新抽象 ───
 
     private var executor: TeammateExecutor? = null
-    private val agentRegistry = AgentRegistry()
-    private val mailboxService = MailboxService(repository)
+    val agentRegistry = AgentRegistry()
+    val mailboxService = MailboxService(repository)
     private var teamDbId: Long = 0L
 
     // ─── Sub-Agent 管理（通过 onSubAgentLaunched 追踪）───
@@ -186,6 +186,8 @@ class TeamManager(
         val agentDefinitions = loadAgentDefinitions(repository)
         this.agentTool = AgentTool(
             mcpRuntimeManager = mcpRuntimeManager,
+            agentRegistry = agentRegistry,
+            mailboxService = mailboxService,
             agentDefinitions = agentDefinitions,
             onSubAgentCreated = { name, description ->
                 // Add SubAgent to active list
