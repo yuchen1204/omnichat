@@ -9,7 +9,6 @@ import com.example.data.*
 import com.example.service.WorkspaceForegroundService
 import com.example.workspace.*
 import com.example.workspace.TeamCompletionSnapshot
-import com.example.workspace.executor.ExecutorType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -138,14 +137,6 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     val sandboxPath: StateFlow<String?> = _sandboxPath.asStateFlow()
 
     /**
-     * 团队执行模式（编排器 / 对等）。
-     *
-     * 用户在提交任务前选择，决定 TeamManager 使用哪种 Executor。
-     */
-    private val _teamMode = MutableStateFlow(ExecutorType.ORCHESTRATOR)
-    val teamMode: StateFlow<ExecutorType> = _teamMode.asStateFlow()
-
-    /**
      * 团队状态（来自 TeamManager 的 StateFlow）。
      *
      * 包含所有 Teammate 的运行时状态，用于 UI 展示 Agent 颜色等。
@@ -187,13 +178,6 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun setSandboxPath(path: String?) {
         _sandboxPath.value = path?.trim()?.ifEmpty { null }
-    }
-
-    /**
-     * 设置团队执行模式。
-     */
-    fun setTeamMode(mode: ExecutorType) {
-        _teamMode.value = mode
     }
 
     /**
@@ -390,7 +374,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                teamManager?.createTeam("workspace_$wsId", mode = _teamMode.value, orchestratorConfig = orchestratorConfig, orchestratorOverrideModelId = orchestratorOverrideModelId, sandboxPath = sandboxPath)
+                teamManager?.createTeam("workspace_$wsId", orchestratorConfig = orchestratorConfig, orchestratorOverrideModelId = orchestratorOverrideModelId, sandboxPath = sandboxPath)
 
                 // 团队创建后刷新任务列表，捕获 task_create 工具产生的任务
                 loadTeamTasks("workspace_$wsId")
@@ -740,7 +724,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     isRestoringSession = true
-                    teamManager?.createTeam("workspace_$workspaceSessionId", mode = _teamMode.value, orchestratorConfig = orchestratorConfig)
+                    teamManager?.createTeam("workspace_$workspaceSessionId", orchestratorConfig = orchestratorConfig)
 
                     _agentTabs.value = agentInstances.map { instance ->
                         AgentTabState(

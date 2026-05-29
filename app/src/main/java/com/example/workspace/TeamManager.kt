@@ -7,9 +7,6 @@ import com.example.data.WorkspaceMessage
 import com.example.data.WorkspaceTeam
 import com.example.data.AgentInstance
 import com.example.mcp.McpRuntimeManager
-import com.example.workspace.executor.ExecutorType
-import com.example.workspace.executor.OrchestratorExecutor
-import com.example.workspace.executor.TeammateExecutor
 import com.example.workspace.lifecycle.AgentLifecycleManager
 import com.example.workspace.mailbox.MailboxService
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 // ═══════════════════════════════════════════════════════════════════════════════
 // TeamManager — 团队管理器（薄门面）
 //
-// 职责：管理团队生命周期和持久化，委托给 OrchestratorExecutor（Agent 调度）、
+// 职责：管理团队生命周期和持久化，委托给 AgentTool（Agent 调度）、
 // AgentRegistry（Agent 追踪）和 MailboxService（Agent 间通信）。
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -58,7 +55,6 @@ class TeamManager(
 
     // ─── 新抽象 ───
 
-    private var executor: TeammateExecutor? = null
     val agentRegistry = AgentRegistry()
     val mailboxService = MailboxService(repository)
     private var teamDbId: Long = 0L
@@ -111,11 +107,10 @@ class TeamManager(
     /**
      * 创建团队。
      *
-     * 初始化团队状态，创建 [TeammateExecutor]，并注册 Orchestrator 到 [AgentRegistry]。
+     * 初始化团队状态，创建 AgentTool，并注册 Orchestrator 到 [AgentRegistry]。
      */
     suspend fun createTeam(
         teamName: String,
-        mode: ExecutorType = ExecutorType.ORCHESTRATOR,
         orchestratorConfig: ModelConfig,
         orchestratorOverrideModelId: String? = null,
         sandboxPath: String? = null,
@@ -130,26 +125,10 @@ class TeamManager(
         // Persist team to DB
         teamDbId = repository.insertWorkspaceTeam(WorkspaceTeam(
             teamName = teamName,
-            mode = mode.name.lowercase(),
+            mode = "orchestrator",
             orchestratorModelConfigId = orchestratorConfig.id,
             sandboxPath = sandboxPath,
         ))
-
-        // Create executor based on mode
-        executor = when (mode) {
-            ExecutorType.ORCHESTRATOR -> OrchestratorExecutor(
-                repository = repository,
-                mcpRuntimeManager = mcpRuntimeManager,
-                agentRegistry = agentRegistry,
-                mailboxService = mailboxService,
-                parentScope = parentScope,
-                callbacks = callbacks,
-                orchestratorConfig = orchestratorConfig,
-                workspaceSessionId = teamDbId,
-                sandboxPath = sandboxPath,
-            )
-            ExecutorType.PEER -> throw NotImplementedError("PeerExecutor not yet implemented")
-        }
 
         // Create orchestrator agent instance in DB
         val orchestratorInstanceId = repository.insertAgentInstance(
@@ -250,7 +229,7 @@ class TeamManager(
         }
 
         callbacks.onAgentCreated(ORCHESTRATOR_NAME, true)
-        Log.d(TAG, "Team '$teamName' created with Orchestrator (mode=$mode)")
+        Log.d(TAG, "Team '$teamName' created with Orchestrator")
 
         state
     }
@@ -384,7 +363,6 @@ class TeamManager(
         orchestratorContext = null
         sandboxPath = null
         teamDbId = 0L
-        executor = null
         agentRegistry.clear()
         subAgentJobs.clear()
         _teamState.value = null

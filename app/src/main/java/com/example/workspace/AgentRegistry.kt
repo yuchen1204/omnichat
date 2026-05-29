@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Agent 注册表 — 运行时 Agent 实例索引。
  *
  * 所有活跃 Agent 在此注册，支持按名称查找、状态查询和遍历。
- * 用于 PeerExecutor 的 agent 间通信和 TeamManager 的生命周期管理。
+ * 用于 Agent 间通信和 TeamManager 的生命周期管理。
  *
  * 线程安全：使用 ConcurrentHashMap。
  */

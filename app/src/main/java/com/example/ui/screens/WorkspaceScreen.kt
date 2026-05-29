@@ -19,7 +19,6 @@ import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.WorkspaceViewModel
 import com.example.workspace.AgentStatus
 import com.example.workspace.ORCHESTRATOR_NAME
-import com.example.workspace.executor.ExecutorType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,8 +46,6 @@ fun WorkspaceScreen(
     val teamState by workspaceViewModel.teamState.collectAsStateWithLifecycle()
     val teamTasks by workspaceViewModel.teamTasks.collectAsStateWithLifecycle()
     val exportLogStatus by workspaceViewModel.exportLogStatus.collectAsStateWithLifecycle()
-    val teamMode by workspaceViewModel.teamMode.collectAsStateWithLifecycle()
-
     val context = LocalContext.current
 
     // 通知权限请求（Android 13+）
@@ -105,8 +102,6 @@ fun WorkspaceScreen(
             sessionTitle = session.title,
             modelConfigs = modelConfigs,
             fetchedModels = fetchedModels,
-            teamMode = teamMode,
-            onTeamModeChanged = { workspaceViewModel.setTeamMode(it) },
             onSubmit = { taskText, configId, modelId, imagePath, sandboxPath ->
                 workspaceViewModel.submitTask(taskText, configId, modelId, imagePath, sandboxPath)
             }
