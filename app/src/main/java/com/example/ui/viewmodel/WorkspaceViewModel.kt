@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
@@ -37,6 +39,9 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     // WHY: 每次 submitTask/loadSessionHistory 都会启动新的 collect 协程。
     // 旧协程未取消会导致多个收集器同时更新 _teamState，造成状态污染。
     private var teamStateCollectorJob: Job? = null
+
+    // Protects team lifecycle: createTeam, deleteTeam, submitTask, selectWorkspaceSession
+    private val teamLifecycleMutex = Mutex()
 
     // BUG-10：恢复模式标志，防止 onAgentCreated 回调覆盖已从 DB 恢复的 _agentTabs
     @Volatile
@@ -218,7 +223,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 _teamState.value = null
                 _sandboxPath.value = null
                 // 初始化新工作区的团队任务列表（空）
-                loadTeamTasks("workspace_$newId")
+                loadTeamTasks(teamNameForSession(newId))
                 newId
             } else {
                 _errorMessage.value = "创建工作区失败，请重试"
@@ -259,12 +264,14 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
             // 切换到任何会话前必须清理旧活跃会话的 TeamManager 和收集器
             teamStateCollectorJob?.cancel()
-            val oldManager = teamManager
-            teamManager = null
-            try {
-                oldManager?.deleteTeam()
-            } catch (e: Exception) {
-                Log.w("WorkspaceViewModel", "deleteTeam on switch failed (non-fatal)", e)
+            teamLifecycleMutex.withLock {
+                val oldManager = teamManager
+                teamManager = null
+                try {
+                    oldManager?.deleteTeam()
+                } catch (e: Exception) {
+                    Log.w("WorkspaceViewModel", "deleteTeam on switch failed (non-fatal)", e)
+                }
             }
             // 停止前台服务
             WorkspaceForegroundService.stop(getApplication())
@@ -282,7 +289,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 _selectedWorkspaceSession.value = session
                 loadSessionHistory(id, session.isActive)
                 // 加载该工作区的团队任务，使 TeamTaskPanel 展示实时数据
-                loadTeamTasks("workspace_$id")
+                loadTeamTasks(teamNameForSession(id))
             }
         }
     }
@@ -354,13 +361,13 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 _agentStatuses.value = emptyMap()
                 _agentTabs.value = emptyList()
 
-                // 清理旧 TeamManager
-                val oldManager = teamManager
-                teamManager = null
-                oldManager?.deleteTeam()
-
-                // 创建 TeamManager 并启动执行
-                teamManager = createTeamManager(wsId)
+                // 清理旧 TeamManager 并创建新的（受 mutex 保护，防止与 selectWorkspaceSession 竞争）
+                teamLifecycleMutex.withLock {
+                    val oldManager = teamManager
+                    teamManager = null
+                    oldManager?.deleteTeam()
+                    teamManager = createTeamManager(wsId)
+                }
 
                 val runtimeManager = com.example.mcp.McpRuntimeManager.getInstance(getApplication())
                 runtimeManager.waitForStartingServersToFinish()
@@ -374,10 +381,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                teamManager?.createTeam("workspace_$wsId", orchestratorConfig = orchestratorConfig, orchestratorOverrideModelId = orchestratorOverrideModelId, sandboxPath = sandboxPath)
+                teamManager?.createTeam(teamNameForSession(wsId), orchestratorConfig = orchestratorConfig, orchestratorOverrideModelId = orchestratorOverrideModelId, sandboxPath = sandboxPath)
 
                 // 团队创建后刷新任务列表，捕获 task_create 工具产生的任务
-                loadTeamTasks("workspace_$wsId")
+                loadTeamTasks(teamNameForSession(wsId))
 
                 WorkspaceForegroundService.start(
                     getApplication(),
@@ -704,9 +711,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             _teamState.value = null
 
             teamStateCollectorJob?.cancel()
-            val oldManager = teamManager
-            teamManager = null
-            oldManager?.deleteTeam()
+            teamLifecycleMutex.withLock {
+                val oldManager = teamManager
+                teamManager = null
+                oldManager?.deleteTeam()
+            }
 
             if (orchestratorInstance != null) {
                 val allConfigs = repository.getAllConfigs()
@@ -715,7 +724,9 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     ?: allConfigs.firstOrNull()
 
                 if (orchestratorConfig != null) {
-                    teamManager = createTeamManager(workspaceSessionId)
+                    teamLifecycleMutex.withLock {
+                        teamManager = createTeamManager(workspaceSessionId)
+                    }
 
                     teamStateCollectorJob = viewModelScope.launch {
                         teamManager?.teamState?.collect { state ->
@@ -724,7 +735,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     isRestoringSession = true
-                    teamManager?.createTeam("workspace_$workspaceSessionId", orchestratorConfig = orchestratorConfig)
+                    teamManager?.createTeam(teamNameForSession(workspaceSessionId), orchestratorConfig = orchestratorConfig)
 
                     _agentTabs.value = agentInstances.map { instance ->
                         AgentTabState(
@@ -734,9 +745,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                             messages = messagesByAgentInstanceId[instance.id] ?: emptyList()
                         )
                     }
-                    isRestoringSession = false
 
+                    // Reset isRestoringSession inside the async launch so the onAgentCreated
+                    // callback sees it as true until the coroutine actually starts
                     viewModelScope.launch {
+                        isRestoringSession = false
                         try {
                             teamManager?.startExecution("")
                         } catch (e: Exception) {
@@ -1121,6 +1134,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         com.example.mcp.BuiltinToolHandler.teamManager = manager
         return manager
     }
+
+    /**
+     * 生成团队名称，统一 "workspace_$wsId" 模式。
+     */
+    private fun teamNameForSession(wsId: Long): String = "workspace_$wsId"
 
     // ── 初始化 ─────────────────────────────────────────────────────────────
 

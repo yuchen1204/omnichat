@@ -23,9 +23,38 @@ import java.util.UUID
 
 object BuiltinToolHandler {
 
+    /**
+     * Interface for accessing workspace state from MCP tools.
+     * Decouples MCP runtime from concrete TeamManager implementation.
+     */
+    interface WorkspaceProvider {
+        fun getAgentTool(): com.example.workspace.AgentTool?
+        fun getOrchestratorContext(): com.example.workspace.AgentContext?
+        fun getSandboxPath(): String?
+        fun getAgentRegistry(): com.example.workspace.AgentRegistry
+        fun getMailboxService(): com.example.workspace.mailbox.MailboxService
+        fun getTeamName(): String?
+    }
+
+    @Volatile
+    var workspaceProvider: WorkspaceProvider? = null
+
     // WHY: 由 WorkspaceViewModel 在创建/清理 TeamManager 时设置，供 scratchpad 工具访问
     @Volatile
     var teamManager: com.example.workspace.TeamManager? = null
+        set(value) {
+            field = value
+            workspaceProvider = if (value != null) {
+                object : WorkspaceProvider {
+                    override fun getAgentTool() = value.getAgentTool()
+                    override fun getOrchestratorContext() = value.getOrchestratorContext()
+                    override fun getSandboxPath() = value.getSandboxPath()
+                    override fun getAgentRegistry() = value.agentRegistry
+                    override fun getMailboxService() = value.mailboxService
+                    override fun getTeamName() = value.teamState.value?.teamName
+                }
+            } else null
+        }
 
     // ── 共享 Scratchpad（跨 Agent 协作的内存 KV 存储）──────────────────
     private val scratchpad = java.util.concurrent.ConcurrentHashMap<String, ScratchpadEntry>()
