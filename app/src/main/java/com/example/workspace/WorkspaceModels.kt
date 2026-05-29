@@ -202,3 +202,19 @@ enum class PermissionMode {
     AUTO,
     PLAN
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 团队回调
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 团队回调接口 — 将 TeamManager 的事件统一传递给 UI 层。
+ */
+data class TeamCallbacks(
+    val onAgentCreated: (agentName: String, isOrchestrator: Boolean) -> Unit,
+    val onStreamChunk: (agentName: String, chunk: String) -> Unit,
+    val onMessageAdded: (agentName: String, message: AgentMessage) -> Unit,
+    val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
+    val onWorkspaceComplete: (snapshot: TeamCompletionSnapshot) -> Unit,
+    val onError: (message: String) -> Unit,
+)
