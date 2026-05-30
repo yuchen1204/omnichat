@@ -586,3 +586,91 @@ data class McpFilePermission(
     val isAllowed: Boolean,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+/**
+ * Agent 定义实体 — 存储用户自定义 Agent 定义。
+ * 对齐 Claude Code 的 AgentDefinition 结构。
+ */
+@Entity(
+    tableName = "agent_definitions",
+    indices = [Index(value = ["agentType"], unique = true)]
+)
+data class AgentDefinitionEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+
+    /** Agent type identifier (e.g., "custom:my-agent") */
+    val agentType: String,
+
+    /** Display name */
+    val displayName: String,
+
+    /** When to use description */
+    val whenToUse: String = "",
+
+    /** System prompt */
+    val systemPrompt: String,
+
+    /** Model hint: "default", "fast", "reasoning", "vision", "inherit" */
+    val modelHint: String? = null,
+
+    /** Model config ID override */
+    val modelConfigId: Long? = null,
+
+    /** Model ID override */
+    val overrideModelId: String? = null,
+
+    /** Allowed tools (JSON array string, null or ["*"] = all) */
+    val toolsJson: String? = null,
+
+    /** Disallowed tools (JSON array string) */
+    val disallowedToolsJson: String? = null,
+
+    /** Background execution */
+    val background: Boolean = false,
+
+    /** Max turns */
+    val maxTurns: Int = 50,
+
+    /** UI color */
+    val color: String? = null,
+
+    /** Memory scope: "user", "project", "local" */
+    val memory: String? = null,
+
+    /** MCP servers (JSON array string) */
+    val mcpServersJson: String? = null,
+
+    /** Hooks (JSON string) */
+    val hooksJson: String? = null,
+
+    /** Permission mode */
+    val permissionMode: String? = null,
+
+    /** Initial prompt */
+    val initialPrompt: String? = null,
+
+    /** Effort level */
+    val effort: String? = null,
+
+    /** Omit CLAUDE.md */
+    val omitClaudeMd: Boolean = false,
+
+    /** Required MCP servers (JSON array string) */
+    val requiredMcpServersJson: String? = null,
+
+    /** Source file path (for markdown agents) */
+    val filePath: String? = null,
+
+    /** Base directory */
+    val baseDir: String? = null,
+
+    /** Critical system reminder */
+    val criticalSystemReminder: String? = null,
+
+    /** Created timestamp */
+    val createdAt: Long = System.currentTimeMillis(),
+
+    /** Updated timestamp */
+    val updatedAt: Long = System.currentTimeMillis(),
+)

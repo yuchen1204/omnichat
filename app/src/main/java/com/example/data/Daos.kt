@@ -670,3 +670,34 @@ interface McpFilePermissionDao {
     @Query("DELETE FROM mcp_file_permissions WHERE path = :path")
     suspend fun deletePermissionByPath(path: String)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Agent Definition DAO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Dao
+interface AgentDefinitionDao {
+    @Query("SELECT * FROM agent_definitions ORDER BY createdAt DESC")
+    suspend fun getAll(): List<AgentDefinitionEntity>
+
+    @Query("SELECT * FROM agent_definitions WHERE agentType = :agentType LIMIT 1")
+    suspend fun getByType(agentType: String): AgentDefinitionEntity?
+
+    @Query("SELECT * FROM agent_definitions WHERE baseDir = :baseDir")
+    suspend fun getByBaseDir(baseDir: String): List<AgentDefinitionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: AgentDefinitionEntity): Long
+
+    @Update
+    suspend fun update(entity: AgentDefinitionEntity)
+
+    @Delete
+    suspend fun delete(entity: AgentDefinitionEntity)
+
+    @Query("DELETE FROM agent_definitions WHERE agentType = :agentType")
+    suspend fun deleteByType(agentType: String)
+
+    @Query("DELETE FROM agent_definitions")
+    suspend fun deleteAll()
+}

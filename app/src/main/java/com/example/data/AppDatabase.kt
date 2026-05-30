@@ -59,8 +59,10 @@ class Converters {
         // Agent Team 任务系统
         TeamTask::class,
         McpFilePermission::class,
+        // Agent 定义
+        AgentDefinitionEntity::class,
     ],
-    version = 31,
+    version = 32,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -87,6 +89,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun teamTaskDao(): TeamTaskDao
     // MCP 文件权限 DAO
     abstract fun mcpFilePermissionDao(): McpFilePermissionDao
+    // Agent 定义 DAO
+    abstract fun agentDefinitionDao(): AgentDefinitionDao
 
     companion object {
         @Volatile
@@ -550,6 +554,45 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v31→v32：新增 agent_definitions 表 */
+        private val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_definitions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        agentType TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        whenToUse TEXT NOT NULL DEFAULT '',
+                        systemPrompt TEXT NOT NULL,
+                        modelHint TEXT,
+                        modelConfigId INTEGER,
+                        overrideModelId TEXT,
+                        toolsJson TEXT,
+                        disallowedToolsJson TEXT,
+                        background INTEGER NOT NULL DEFAULT 0,
+                        maxTurns INTEGER NOT NULL DEFAULT 50,
+                        color TEXT,
+                        memory TEXT,
+                        mcpServersJson TEXT,
+                        hooksJson TEXT,
+                        permissionMode TEXT,
+                        initialPrompt TEXT,
+                        effort TEXT,
+                        omitClaudeMd INTEGER NOT NULL DEFAULT 0,
+                        requiredMcpServersJson TEXT,
+                        filePath TEXT,
+                        baseDir TEXT,
+                        criticalSystemReminder TEXT,
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_agent_definitions_agentType ON agent_definitions(agentType)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -584,7 +627,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_27_28,
                         MIGRATION_28_29,
                         MIGRATION_29_30,
-                        MIGRATION_30_31
+                        MIGRATION_30_31,
+                        MIGRATION_31_32
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。
