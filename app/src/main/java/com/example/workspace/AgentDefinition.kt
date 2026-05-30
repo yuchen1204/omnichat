@@ -36,6 +36,125 @@ data class AgentDefinition(
     val isBuiltIn: Boolean = true,
     /** Source: "built-in", "preset", "custom" */
     val source: String = "built-in",
+
+    // === New fields for Claude Code alignment ===
+
+    /** Memory configuration for this agent (e.g., enabled/disabled, custom instructions) */
+    val memory: AgentMemoryConfig? = null,
+    /** MCP servers to attach to this agent */
+    val mcpServers: List<AgentMcpServerSpec>? = null,
+    /** Lifecycle hooks for this agent */
+    val hooks: AgentHooks? = null,
+    /** Permission mode: "auto", "plan", "ask", or "review" */
+    val permissionMode: String? = null,
+    /** Initial prompt to inject when agent starts */
+    val initialPrompt: String? = null,
+    /** Reasoning effort level: "low", "medium", "high", "xhigh" */
+    val effort: String? = null,
+    /** Whether to omit CLAUDE.md from agent context */
+    val omitClaudeMd: Boolean = false,
+    /** MCP servers that must be available for this agent to function */
+    val requiredMcpServers: List<String>? = null,
+    /** Source filename if loaded from a .claude/agents/ file */
+    val filename: String? = null,
+    /** Base directory for resolving relative paths */
+    val baseDir: String? = null,
+    /** Critical system reminder to inject after system prompt */
+    val criticalSystemReminder: String? = null,
+    /** Pending snapshot update to apply */
+    val pendingSnapshotUpdate: PendingSnapshotUpdate? = null,
+)
+
+/**
+ * Memory configuration for an agent.
+ */
+data class AgentMemoryConfig(
+    /** Whether memory is enabled for this agent */
+    val enabled: Boolean = true,
+    /** Custom memory instructions */
+    val instructions: String? = null,
+)
+
+/**
+ * MCP server specification for an agent.
+ * Can be either a reference to an existing server or an inline configuration.
+ */
+sealed class AgentMcpServerSpec {
+    /** Reference to an MCP server by name */
+    data class Reference(val name: String) : AgentMcpServerSpec()
+
+    /** Inline MCP server configuration */
+    data class Inline(val config: McpServerConfig) : AgentMcpServerSpec()
+}
+
+/**
+ * MCP server configuration for inline server definitions.
+ */
+data class McpServerConfig(
+    /** Server name/identifier */
+    val name: String,
+    /** Transport type: "stdio", "sse", "http" */
+    val transport: String,
+    /** Command to execute (for stdio transport) */
+    val command: String? = null,
+    /** Arguments for the command */
+    val args: List<String>? = null,
+    /** Environment variables */
+    val env: Map<String, String>? = null,
+    /** URL for SSE/HTTP transport */
+    val url: String? = null,
+    /** Request timeout in milliseconds */
+    val timeout: Long? = null,
+    /** Whether to trust all certificates (for development) */
+    val trustAllCertificates: Boolean = false,
+)
+
+/**
+ * Lifecycle hooks for an agent.
+ */
+data class AgentHooks(
+    /** Hook to run before agent starts */
+    val preStart: List<AgentHook>? = null,
+    /** Hook to run after agent completes */
+    val postEnd: List<AgentHook>? = null,
+    /** Hook to run before each tool call */
+    val preToolCall: List<AgentHook>? = null,
+    /** Hook to run after each tool call */
+    val postToolCall: List<AgentHook>? = null,
+    /** Hook to run before each message */
+    val preMessage: List<AgentHook>? = null,
+    /** Hook to run after each message */
+    val postMessage: List<AgentHook>? = null,
+)
+
+/**
+ * A single hook definition.
+ */
+data class AgentHook(
+    /** Hook type/identifier */
+    val type: String,
+    /** Shell command to execute (if applicable) */
+    val command: String? = null,
+    /** Script to execute (if applicable) */
+    val script: String? = null,
+    /** Whether to stop agent on hook failure */
+    val stopOnFailure: Boolean = false,
+    /** Timeout for hook execution in milliseconds */
+    val timeout: Long? = null,
+)
+
+/**
+ * Pending snapshot update to apply to the agent.
+ */
+data class PendingSnapshotUpdate(
+    /** Operation type: "add", "update", "delete" */
+    val operation: String,
+    /** Target path for the operation */
+    val path: String,
+    /** Content for add/update operations */
+    val content: String? = null,
+    /** Whether this is a critical update */
+    val critical: Boolean = false,
 )
 
 /**
