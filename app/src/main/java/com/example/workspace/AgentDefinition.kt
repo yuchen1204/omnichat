@@ -18,7 +18,7 @@ data class AgentDefinition(
     val whenToUse: String = "",
     /** System prompt template (may contain [CROSS_SESSION_MEMORY], [MCP_TOOLS], etc.) */
     val systemPrompt: String,
-    /** Model alias hint: "default", "fast", "reasoning", "vision" — resolved at spawn time */
+    /** Model alias hint: "default", "fast", "reasoning", "vision", "inherit" — resolved at spawn time */
     val modelHint: String? = null,
     /** Specific model config ID override — takes precedence over modelHint */
     val modelConfigId: Long? = null,
@@ -36,67 +36,66 @@ data class AgentDefinition(
     val color: String? = null,
     /** Whether this is a built-in agent (vs user-defined) */
     val isBuiltIn: Boolean = true,
-    /** Source: "built-in", "preset", "custom" */
+    /** Source: "built-in", "preset", "custom", "markdown" */
     val source: String = "built-in",
 
-    // === New fields for Claude Code alignment ===
+    // === 新增字段（对齐 Claude Code）===
 
-    /** Memory configuration for this agent (e.g., enabled/disabled, custom instructions) */
-    val memory: AgentMemoryConfig? = null,
-    /** MCP servers to attach to this agent */
+    /** Memory scope: "user", "project", "local" — enables persistent agent memory */
+    val memory: String? = null,
+
+    /** Agent-specific MCP servers (inline definitions or references) */
     val mcpServers: List<AgentMcpServerSpec>? = null,
-    /** Lifecycle hooks for this agent */
+
+    /** Agent-level hooks (PreToolUse, PostToolUse, etc.) */
     val hooks: AgentHooks? = null,
-    /** Permission mode: "auto", "plan", "ask", or "review" */
+
+    /** Permission mode override: "default", "plan", "acceptEdits", "bypassPermissions" */
     val permissionMode: String? = null,
-    /** Initial prompt to inject when agent starts */
+
+    /** Initial prompt prepended to first user turn (supports slash commands) */
     val initialPrompt: String? = null,
+
     /** Reasoning effort level: "low", "medium", "high", "xhigh" */
     val effort: String? = null,
-    /** Whether to omit CLAUDE.md from agent context */
+
+    /** Whether to omit CLAUDE.md hierarchy from agent's context (saves tokens) */
     val omitClaudeMd: Boolean = false,
-    /** MCP servers that must be available for this agent to function */
+
+    /** Required MCP server patterns (agent unavailable if not configured) */
     val requiredMcpServers: List<String>? = null,
-    /** Source filename if loaded from a .claude/agents/ file */
+
+    /** Filename for markdown-defined agents (without .md extension) */
     val filename: String? = null,
-    /** Base directory for resolving relative paths */
+
+    /** Base directory for the agent definition source */
     val baseDir: String? = null,
-    /** Critical system reminder to inject after system prompt */
+
+    /** Critical system reminder injected at every turn */
     val criticalSystemReminder: String? = null,
-    /** Pending snapshot update to apply */
+
+    /** Pending snapshot update info (for memory sync) */
     val pendingSnapshotUpdate: PendingSnapshotUpdate? = null,
 )
 
 /**
- * Memory configuration for an agent.
- */
-data class AgentMemoryConfig(
-    /** Whether memory is enabled for this agent */
-    val enabled: Boolean = true,
-    /** Custom memory instructions */
-    val instructions: String? = null,
-)
-
-/**
- * MCP server specification for an agent.
- * Can be either a reference to an existing server or an inline configuration.
+ * Agent-specific MCP server specification.
+ * Can be a reference to an existing server by name, or an inline definition.
  */
 sealed class AgentMcpServerSpec {
-    /** Reference to an MCP server by name */
+    /** Reference to existing MCP server by name */
     data class Reference(val name: String) : AgentMcpServerSpec()
 
-    /** Inline MCP server configuration */
-    data class Inline(val config: McpServerConfig) : AgentMcpServerSpec()
+    /** Inline MCP server definition with config */
+    data class Inline(val name: String, val config: McpServerConfig) : AgentMcpServerSpec()
 }
 
 /**
  * MCP server configuration for inline server definitions.
  */
 data class McpServerConfig(
-    /** Server name/identifier */
-    val name: String,
     /** Transport type: "stdio", "sse", "http" */
-    val transport: String,
+    val transport: String = "stdio",
     /** Command to execute (for stdio transport) */
     val command: String? = null,
     /** Arguments for the command */
@@ -112,51 +111,27 @@ data class McpServerConfig(
 )
 
 /**
- * Lifecycle hooks for an agent.
+ * Agent-level hooks configuration.
+ * Mirrors Claude Code's HooksSettings.
  */
 data class AgentHooks(
-    /** Hook to run before agent starts */
-    val preStart: List<AgentHook>? = null,
-    /** Hook to run after agent completes */
-    val postEnd: List<AgentHook>? = null,
-    /** Hook to run before each tool call */
-    val preToolCall: List<AgentHook>? = null,
-    /** Hook to run after each tool call */
-    val postToolCall: List<AgentHook>? = null,
-    /** Hook to run before each message */
-    val preMessage: List<AgentHook>? = null,
-    /** Hook to run after each message */
-    val postMessage: List<AgentHook>? = null,
+    val preToolUse: List<AgentHook>? = null,
+    val postToolUse: List<AgentHook>? = null,
+    val prePrompt: List<AgentHook>? = null,
+    val postPrompt: List<AgentHook>? = null,
+    val stop: List<AgentHook>? = null,
 )
 
-/**
- * A single hook definition.
- */
 data class AgentHook(
-    /** Hook type/identifier */
-    val type: String,
-    /** Shell command to execute (if applicable) */
-    val command: String? = null,
-    /** Script to execute (if applicable) */
-    val script: String? = null,
-    /** Whether to stop agent on hook failure */
-    val stopOnFailure: Boolean = false,
-    /** Timeout for hook execution in milliseconds */
-    val timeout: Long? = null,
+    val matcher: String,  // Tool name pattern or "*"
+    val hooks: List<String>,  // Shell commands to run
 )
 
 /**
- * Pending snapshot update to apply to the agent.
+ * Pending memory snapshot update info.
  */
 data class PendingSnapshotUpdate(
-    /** Operation type: "add", "update", "delete" */
-    val operation: String,
-    /** Target path for the operation */
-    val path: String,
-    /** Content for add/update operations */
-    val content: String? = null,
-    /** Whether this is a critical update */
-    val critical: Boolean = false,
+    val snapshotTimestamp: String,
 )
 
 /**
@@ -299,7 +274,7 @@ object BuiltInAgents {
 - 安装依赖或包
 - 运行 git 写操作（add, commit, push）
 
-你可以通过 Bash 重定向在临时目录（/tmp 或 \$TMPDIR）写入临时测试脚本 —— 当内联命令不够时，如多步骤竞态 harness 或 Playwright 测试。完成后清理。
+你可以通过 Bash 重定向在临时目录（/tmp 或 ${'$'}TMPDIR）写入临时测试脚本 —— 当内联命令不够时，如多步骤竞态 harness 或 Playwright 测试。完成后清理。
 
 检查你实际可用的工具，而不是从此提示假设。根据会话，你可能有浏览器自动化（mcp__claude-in-chrome__*, mcp__playwright__*）、WebFetch 或其他 MCP 工具 —— 不要跳过你没想到检查的能力。
 
@@ -318,7 +293,7 @@ object BuiltInAgents {
 **数据/ML 管道**：用样本输入运行 → 验证输出形状/schema/types → 测试空输入、单行、NaN/null 处理 → 检查静默数据丢失（行数入 vs 出）
 **数据库迁移**：运行迁移 up → 验证 schema 匹配意图 → 运行迁移 down（可逆性） → 对现有数据测试，不只是空 DB
 **重构（无行为变更）**：现有测试套件必须不变通过 → diff 公共 API 表面（无新增/删除导出） → 抽查可观察行为相同（相同输入 → 相同输出）
-**其他变更类型**：模式总是相同 — (a) 找出如何直接执行此变更（运行/调用/调用/部署它）， 检查输出符合预期， 尝试用实现者没测试的输入/条件打破它。以上策略是常见案例的实例。
+**其他变更类型**：模式总是相同 — (a) 找出如何直接执行此变更（运行/调用/调用/部署它），(b) 检查输出符合预期，(c) 尝试用实现者没测试的输入/条件打破它。以上策略是常见案例的实例。
 
 === 必需步骤（通用基线） ===
 1. 读取项目的 CLAUDE.md / README 获取构建/测试命令和约定。检查 package.json / Makefile / pyproject.toml 获取脚本名。如果实现者指向计划或 spec 文件，读取它 —— 这是成功标准。
@@ -404,7 +379,7 @@ VERDICT: PARTIAL
 
 PARTIAL 仅用于环境限制（无测试框架、工具不可用、服务器无法启动） —— 不是 "我不确定这是否 bug"。如果能运行检查，必须决定 PASS 或 FAIL。
 
-使用字面字符串 \`VERDICT: \` 后跟 \`PASS\`、\`FAIL\` 或 \`PARTIAL\` 之一。无 markdown bold、无标点、无变体。
+使用字面字符串 `VERDICT: ` 后跟 `PASS`、`FAIL` 或 `PARTIAL` 之一。无 markdown bold、无标点、无变体。
 - **FAIL**：包含失败内容、确切错误输出、复现步骤。
 - **PARTIAL**：验证了什么、无法验证什么及原因（缺少工具/env）、实现者应知道什么。""",
         disallowedTools = listOf("agent", "exit_plan_mode", "write_file", "edit_file", "create_directory", "move_file", "delete_file"),
@@ -426,8 +401,41 @@ PARTIAL 仅用于环境限制（无测试框架、工具不可用、服务器无
 suspend fun loadAgentDefinitions(
     repository: com.example.data.AppRepository,
 ): List<AgentDefinition> {
+    // Load from DB agent_definitions table
+    val dbDefinitions = repository.getAllAgentDefinitions()
+    val customFromDb = dbDefinitions.map { entity ->
+        AgentDefinition(
+            agentType = entity.agentType,
+            displayName = entity.displayName,
+            whenToUse = entity.whenToUse,
+            systemPrompt = entity.systemPrompt,
+            modelHint = entity.modelHint,
+            modelConfigId = entity.modelConfigId,
+            overrideModelId = entity.overrideModelId,
+            tools = entity.toolsJson?.let { parseJsonList(it) },
+            disallowedTools = entity.disallowedToolsJson?.let { parseJsonList(it) },
+            background = entity.background,
+            maxTurns = entity.maxTurns,
+            color = entity.color,
+            memory = entity.memory,
+            mcpServers = entity.mcpServersJson?.let { parseMcpServers(it) },
+            hooks = entity.hooksJson?.let { parseHooks(it) },
+            permissionMode = entity.permissionMode,
+            initialPrompt = entity.initialPrompt,
+            effort = entity.effort,
+            omitClaudeMd = entity.omitClaudeMd,
+            requiredMcpServers = entity.requiredMcpServersJson?.let { parseJsonList(it) },
+            filename = entity.filePath?.let { java.io.File(it).nameWithoutExtension },
+            baseDir = entity.baseDir,
+            criticalSystemReminder = entity.criticalSystemReminder,
+            isBuiltIn = false,
+            source = entity.baseDir ?: "db",
+        )
+    }
+
+    // Load from legacy agent_presets table (backward compatibility)
     val presets = repository.getAllAgentPresets()
-    val customAgents = presets.map { preset ->
+    val legacyPresets = presets.map { preset ->
         AgentDefinition(
             agentType = "custom:${preset.name}",
             displayName = preset.name,
@@ -437,5 +445,93 @@ suspend fun loadAgentDefinitions(
             source = "preset",
         )
     }
-    return BuiltInAgents.ALL + customAgents
+
+    return BuiltInAgents.ALL + customFromDb + legacyPresets
+}
+
+private fun parseJsonList(json: String): List<String>? {
+    return try {
+        val arr = org.json.JSONArray(json)
+        val list = mutableListOf<String>()
+        for (i in 0 until arr.length()) {
+            list.add(arr.getString(i))
+        }
+        list
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun parseMcpServers(json: String): List<AgentMcpServerSpec>? {
+    return try {
+        val arr = org.json.JSONArray(json)
+        val list = mutableListOf<AgentMcpServerSpec>()
+        for (i in 0 until arr.length()) {
+            val item = arr.getJSONObject(i)
+            if (item.has("name") && !item.has("config")) {
+                // Reference format: {"name": "slack"}
+                list.add(AgentMcpServerSpec.Reference(item.getString("name")))
+            } else if (item.has("name") && item.has("config")) {
+                // Inline format: {"name": "my-server", "config": {...}}
+                val configObj = item.getJSONObject("config")
+                val config = McpServerConfig(
+                    transport = configObj.optString("transport", "stdio"),
+                    command = configObj.optString("command").takeIf { it.isNotEmpty() },
+                    args = configObj.optJSONArray("args")?.let { arr ->
+                        val argsList = mutableListOf<String>()
+                        for (j in 0 until arr.length()) {
+                            argsList.add(arr.getString(j))
+                        }
+                        argsList
+                    },
+                    env = configObj.optJSONObject("env")?.let { obj ->
+                        val map = mutableMapOf<String, String>()
+                        for (key in obj.keys()) {
+                            map[key] = obj.getString(key)
+                        }
+                        map
+                    },
+                    url = configObj.optString("url").takeIf { it.isNotEmpty() },
+                    timeout = configObj.optLong("timeout").takeIf { it > 0 },
+                    trustAllCertificates = configObj.optBoolean("trustAllCertificates", false),
+                )
+                list.add(AgentMcpServerSpec.Inline(item.getString("name"), config))
+            }
+        }
+        list
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun parseHooks(json: String): AgentHooks? {
+    return try {
+        val obj = org.json.JSONObject(json)
+        AgentHooks(
+            preToolUse = obj.optJSONArray("preToolUse")?.let { parseHookArray(it) },
+            postToolUse = obj.optJSONArray("postToolUse")?.let { parseHookArray(it) },
+            prePrompt = obj.optJSONArray("prePrompt")?.let { parseHookArray(it) },
+            postPrompt = obj.optJSONArray("postPrompt")?.let { parseHookArray(it) },
+            stop = obj.optJSONArray("stop")?.let { parseHookArray(it) },
+        )
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun parseHookArray(arr: org.json.JSONArray): List<AgentHook>? {
+    val list = mutableListOf<AgentHook>()
+    for (i in 0 until arr.length()) {
+        val item = arr.getJSONObject(i)
+        val matcher = item.optString("matcher", "*")
+        val hooksArr = item.optJSONArray("hooks")
+        if (hooksArr != null) {
+            val hooksList = mutableListOf<String>()
+            for (j in 0 until hooksArr.length()) {
+                hooksList.add(hooksArr.getString(j))
+            }
+            list.add(AgentHook(matcher, hooksList))
+        }
+    }
+    return list.takeIf { it.isNotEmpty() }
 }
