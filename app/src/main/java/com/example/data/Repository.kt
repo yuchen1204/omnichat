@@ -296,4 +296,48 @@ class AppRepository(private val db: AppDatabase) {
      * 删除指定团队的所有任务。
      */
     suspend fun deleteAllTeamTasks(teamName: String) = teamTaskDao.deleteAllForTeam(teamName)
+
+    // ── Agent Definitions ──────────────────────────────────────────────
+
+    /**
+     * 获取所有 Agent 定义。
+     */
+    suspend fun getAllAgentDefinitions(): List<AgentDefinitionEntity> =
+        db.agentDefinitionDao().getAll()
+
+    /**
+     * 按 agentType 查询 Agent 定义。
+     */
+    suspend fun getAgentDefinitionByType(agentType: String): AgentDefinitionEntity? =
+        db.agentDefinitionDao().getByType(agentType)
+
+    /**
+     * 按 baseDir 查询 Agent 定义。
+     */
+    suspend fun getAgentDefinitionsByBaseDir(baseDir: String): List<AgentDefinitionEntity> =
+        db.agentDefinitionDao().getByBaseDir(baseDir)
+
+    /**
+     * 插入 Agent 定义。
+     */
+    suspend fun insertAgentDefinition(entity: AgentDefinitionEntity): Long =
+        db.agentDefinitionDao().insert(entity)
+
+    /**
+     * 更新 Agent 定义。
+     */
+    suspend fun updateAgentDefinition(entity: AgentDefinitionEntity) =
+        db.agentDefinitionDao().update(entity)
+
+    /**
+     * 删除 Agent 定义。
+     */
+    suspend fun deleteAgentDefinition(entity: AgentDefinitionEntity) =
+        db.agentDefinitionDao().delete(entity)
+
+    /**
+     * 按 agentType 删除 Agent 定义。
+     */
+    suspend fun deleteAgentDefinitionByType(agentType: String) =
+        db.agentDefinitionDao().deleteByType(agentType)
 }

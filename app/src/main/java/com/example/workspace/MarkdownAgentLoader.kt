@@ -6,7 +6,7 @@ import java.io.File
 /**
  * Markdown Agent 定义加载器。
  *
- * 解析 .claude/agents/*.md 文件，从 YAML frontmatter 提取 Agent 定义。
+ * 解析 .claude/agents/ 目录下的 .md 文件，从 YAML frontmatter 提取 Agent 定义。
  * 对齐 Claude Code 的 parseAgentFromMarkdown。
  */
 object MarkdownAgentLoader {
@@ -77,13 +77,14 @@ object MarkdownAgentLoader {
         }
 
         // 找到结束的 ---
-        val endIdx = lines.indexOf("---", 1)
+        val endIdx = lines.drop(1).indexOf("---")
         if (endIdx == -1) {
             return null
         }
+        val actualEndIdx = endIdx + 1
 
         // 解析 YAML（简化实现，仅支持基本类型）
-        val frontmatterLines = lines.subList(1, endIdx)
+        val frontmatterLines = lines.subList(1, actualEndIdx)
         return parseYaml(frontmatterLines)
     }
 
@@ -92,10 +93,11 @@ object MarkdownAgentLoader {
      */
     private fun extractBodyContent(content: String): String {
         val lines = content.lines()
-        val startIdx = lines.indexOf("---", 1)
+        val startIdx = lines.drop(1).indexOf("---")
         if (startIdx == -1) return content.trim()
+        val actualStartIdx = startIdx + 1
 
-        val bodyLines = lines.subList(startIdx + 1, lines.size)
+        val bodyLines = lines.subList(actualStartIdx + 1, lines.size)
         return bodyLines.joinToString("\n").trim()
     }
 

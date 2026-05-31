@@ -746,16 +746,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     }
 
-                    // Reset isRestoringSession inside the async launch so the onAgentCreated
-                    // callback sees it as true until the coroutine actually starts
-                    viewModelScope.launch {
-                        isRestoringSession = false
-                        try {
-                            teamManager?.startExecution("")
-                        } catch (e: Exception) {
-                            Log.e("WorkspaceViewModel", "Failed to restore orchestrator loop", e)
-                        }
-                    }
+                    // FIX: Don't auto-start execution with empty task.
+                    // Original code called startExecution("") which caused Orchestrator to
+                    // output a greeting message and then exit (text-only response with no task).
+                    // Now: just create the team and wait for user to submit a real task.
+                    isRestoringSession = false
+                    // Orchestrator stays in IDLE state, ready to receive user input via submitTask()
                 }
             } else {
                 Log.d("WorkspaceViewModel", "No AgentInstance in DB for session $workspaceSessionId yet (task just submitted), keeping current agentTabs")

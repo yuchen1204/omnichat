@@ -439,13 +439,23 @@ class AgentRunner(
 
                 // 没有工具调用 — 检测是否为"假完成"（LLM 回复文本但不执行工具）
                 // 跳过明确表示"等待中"的 Agent：其任务就是等待，不是假完成
+                //
+                // FIX: 原检测逻辑过于宽松，"等待"可能只是描述性语言（如"我等待文件写入完成"）。
+                // 改为检测明确的等待声明，包括欢迎文本特征（"请告诉我你需要做什么"）。
                 val isWaitingResponse = lastAssistantResponse.let { text ->
-                    text.contains("等待") || text.contains("等待中") ||
-                    text.contains("空闲") || text.contains("waiting") ||
-                    text.contains("idle") || text.contains("⏳")
+                    // 明确的等待声明（独立短语）
+                    text.contains("等待用户输入") ||
+                    text.contains("等待中") ||
+                    text.contains("waiting for user input") ||
+                    text.trim().endsWith("等待你的指令") ||
+                    // 欢迎文本特征：Orchestrator 在无任务时输出问候语
+                    (text.contains("请告诉我") && text.contains("需要做什么")) ||
+                    (text.contains("tell me") && text.contains("what you need")) ||
+                    (text.contains("how can I help") && text.contains("?"))
                 }
                 if (isWaitingResponse) {
-                    Log.d(TAG, "Agent '${context.agentName}' is in waiting state, skipping nudge")
+                    Log.d(TAG, "Agent '${context.agentName}' is waiting for user input, pausing")
+                    // 不注入 nudge，退出本轮 runTurn，Agent 保持 IDLE 状态等待新输入
                     break
                 }
                 // 跳过明确表示任务完成的 Agent：文本报告是合理的结束方式
@@ -453,25 +463,48 @@ class AgentRunner(
                 // 子 Agent 不能自己宣布完成——它们必须跑完迭代或重试耗尽，
                 // 由 Orchestrator 判断整体任务是否完成。否则子 Agent 可能只做了 1/3
                 // 的工作（如只创建了 index.html）就报告"任务完成"，导致 css/js 缺失。
+                //
+                // FIX: 完成标记检测更严格，必须是独立出现的标记，而非描述性语言的一部分。
                 if (context.isOrchestrator) {
-                    if (lastAssistantResponse.contains(COMPLETION_MARKER)) {
+                    val trimmed = lastAssistantResponse.trim()
+                    if (trimmed == COMPLETION_MARKER ||
+                        trimmed.endsWith(COMPLETION_MARKER) ||
+                        trimmed.contains("\n$COMPLETION_MARKER\n") ||
+                        lastAssistantResponse.contains("【任务完成】\n")
+                    ) {
                         Log.d(TAG, "Orchestrator '${context.agentName}' output completion marker, accepting")
                         break
                     }
                 }
                 consecutiveTextOnlyCount++
-                if (consecutiveTextOnlyCount <= MAX_TEXT_ONLY_RETRIES && !context.isOrchestrator) {
+                // FIX: Orchestrator 也需要 retry nudge，否则欢迎文本后直接退出。
+                // 原逻辑只有 Sub-Agent 会注入 nudge，Orchestrator 第一次纯文本就退出。
+                if (consecutiveTextOnlyCount <= MAX_TEXT_ONLY_RETRIES) {
                     Log.w(TAG, "Agent '${context.agentName}' produced text-only response " +
                         "($consecutiveTextOnlyCount/$MAX_TEXT_ONLY_RETRIES), injecting retry nudge")
                     messagesLock.writeLock().lock()
                     try {
-                        context.messages.add(
+                        val nudgeMsg = if (context.isOrchestrator) {
+                            // Orchestrator 特殊提示：要么委派任务，要么明确完成/等待
                             AgentMessage(
                                 role = "system",
-                                content = "你的上一条回复没有调用任何工具。如果你需要执行操作（如创建文件、读取文件等），请立即调用相应的工具完成任务。" +
-                                    "如果确实无法继续，请明确说明原因。不要回复'我马上执行'之类的文本而不实际调用工具。"
+                                content = buildString {
+                                    appendLine("Your last response did not call any tools or declare completion.")
+                                    appendLine("If the user has given a task: use the 'agent' tool to delegate to sub-agents, or call other tools directly.")
+                                    appendLine("If waiting for user input: output 'Waiting for user input' to pause.")
+                                    appendLine("If the task is truly complete: output the marker 【任务完成】 to end.")
+                                    appendLine("Do not output descriptive text without taking action.")
+                                }
                             )
-                        )
+                        } else {
+                            // Sub-Agent 提示：必须调用工具
+                            AgentMessage(
+                                role = "system",
+                                content = "Your last response did not call any tools. If you need to perform operations (create file, read file, etc.), call the appropriate tool immediately. " +
+                                    "If you truly cannot proceed, clearly state the reason. Do not reply with text like 'I will execute now' without actually calling tools."
+                            )
+                        }
+                        context.messages.add(nudgeMsg)
                         onMessageAdded(context.agentName, context.messages.last())
                     } finally {
                         messagesLock.writeLock().unlock()

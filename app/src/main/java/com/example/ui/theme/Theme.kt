@@ -37,10 +37,10 @@ data class CustomColors(
 
 val LocalCustomColors = staticCompositionLocalOf {
     CustomColors(
-        success = Color(0xFF34C759),
-        warning = Color(0xFFFF9800),
-        info = Color(0xFF007AFF),
-        accent = Color(0xFFFF9500),
+        success = AppleGreen,
+        warning = AppleOrange,
+        info = AppleBlue,
+        accent = AppleOrange,
     )
 }
 
@@ -56,10 +56,10 @@ data class SidebarColors(
 
 val LocalSidebarColors = staticCompositionLocalOf {
     SidebarColors(
-        background = Color(0xFFFFFBFE),
-        onBackground = Color(0xFF1C1B1F),
-        activeBackground = Color(0xFFEADDFF),
-        onActiveBackground = Color(0xFF21005D)
+        background = AppleSidebarLightBg,
+        onBackground = AppleLightLabel,
+        activeBackground = AppleSoftBlue,
+        onActiveBackground = AppleBlue
     )
 }
 
@@ -70,13 +70,55 @@ val LocalSidebarColors = staticCompositionLocalOf {
 val LocalChatFontScale = staticCompositionLocalOf { 1.0f }
 
 private val DarkColorScheme =
-  darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
+  darkColorScheme(
+    primary = AppleDarkBlue,
+    onPrimary = Color.White,
+    primaryContainer = AppleSoftBlueDark,
+    onPrimaryContainer = AppleSoftBlueTextDark,
+    secondary = AppleDarkIndigo,
+    onSecondary = Color.White,
+    secondaryContainer = AppleSoftIndigoDark,
+    onSecondaryContainer = AppleSoftIndigoTextDark,
+    tertiary = AppleDarkPink,
+    onTertiary = Color.White,
+    background = AppleDarkBg,
+    onBackground = AppleDarkLabel,
+    surface = AppleDarkSurface,
+    onSurface = AppleDarkLabel,
+    surfaceVariant = AppleDarkSurfaceVariantColor,
+    onSurfaceVariant = AppleDarkSecondaryLabel,
+    outline = AppleDarkSeparator,
+    outlineVariant = AppleDarkOpaqueSeparator,
+    error = AppleDarkRed,
+    onError = Color.White,
+    errorContainer = AppleDarkRedContainer,
+    onErrorContainer = AppleDarkRedText,
+  )
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
+    primary = AppleBlue,
+    onPrimary = Color.White,
+    primaryContainer = AppleSoftBlue,
+    onPrimaryContainer = AppleDeepBlue,
+    secondary = AppleIndigo,
+    onSecondary = Color.White,
+    secondaryContainer = AppleSoftIndigo,
+    onSecondaryContainer = AppleDeepIndigo,
+    tertiary = ApplePink,
+    onTertiary = Color.White,
+    background = AppleLightBg,
+    onBackground = AppleLightLabel,
+    surface = AppleLightSurface,
+    onSurface = AppleLightLabel,
+    surfaceVariant = AppleLightBg,
+    onSurfaceVariant = AppleLightSecondaryLabel,
+    outline = AppleLightSeparator,
+    outlineVariant = AppleLightOpaqueSeparator,
+    error = AppleRed,
+    onError = Color.White,
+    errorContainer = AppleSoftRed,
+    onErrorContainer = AppleDeepRed,
   )
 
 /**

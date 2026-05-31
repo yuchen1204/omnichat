@@ -35,7 +35,7 @@ object UiFieldRegistry {
 
     val colorFields = listOf(
         ColorField("primaryColor", { it.primaryColor }, { s, v -> s.copy(primaryColor = v) },
-            "Primary color (buttons / selected / brand color), e.g. #6750A4",
+            "Primary color (buttons / selected / brand color), e.g. #007AFF",
             "主色调（按钮、链接、选中态、品牌色）"),
         ColorField("onPrimaryColor", { it.onPrimaryColor }, { s, v -> s.copy(onPrimaryColor = v) },
             "Text and icon color on primary (high contrast against primaryColor), e.g. #FFFFFF",

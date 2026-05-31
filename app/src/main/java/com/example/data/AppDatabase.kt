@@ -207,7 +207,7 @@ abstract class AppDatabase : RoomDatabase() {
                     """
                     INSERT OR IGNORE INTO ui_settings 
                     (id, primaryColor, onPrimaryColor, secondaryColor, backgroundColor, surfaceColor, cornerRadiusDp, spacingMultiplier, updatedAt)
-                    VALUES (1, '#6750A4', '#FFFFFF', '#625B71', '#FFFBFE', '#FFFBFE', 12, 1.0, 0)
+                    VALUES (1, '#007AFF', '#FFFFFF', '#5856D6', '#F2F2F7', '#FFFFFF', 12, 1.0, 0)
                     """.trimIndent()
                 )
             }
