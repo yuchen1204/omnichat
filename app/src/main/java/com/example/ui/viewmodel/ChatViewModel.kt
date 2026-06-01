@@ -676,6 +676,18 @@ Rules:
 - DELETE facts that are clearly contradicted or permanently irrelevant (do NOT delete [PINNED] items).
 - If nothing changed, return {"ops": []}.
 - Return ONLY the raw JSON object, no markdown fences, no commentary.
+
+If two existing facts are meaningfully connected, output an "associations" array alongside "ops":
+  {"from": <id>, "to": <id>, "label": "<label>", "direction": "directed"|"bidirectional"}
+Label vocabulary: related, causes, part_of, contrasts, belongs_to, implies.
+- "related": general semantic connection
+- "causes": one fact leads to or results from another
+- "part_of": one fact is a component/detail of another
+- "contrasts": facts that oppose or conflict
+- "belongs_to": one fact categorizes or contextualizes another
+- "implies": one fact logically implies another
+Only link facts that have a genuine semantic connection. When in doubt, skip.
+Do NOT create associations for newly added facts (they don't have stable IDs yet).
 """.trimIndent()
 
                 val factsUserQuery = buildString {
@@ -797,8 +809,49 @@ Rules:
                     }
                 }
             }
+
+            // Parse and apply associations from the same JSON response
+            val existingIds = existingMemories.map { it.id }.toSet()
+            applyAssociationsFromJson(json, existingIds)
         } catch (e: Exception) {
             // JSON 解析失败或任何异常 → 静默忽略，旧记忆完整保留
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 解析 associations JSON 数组并存入数据库。
+     * 跳过无效的 id、自关联和未知标签。
+     */
+    private suspend fun applyAssociationsFromJson(json: String, validIds: Set<Long>) {
+        try {
+            val cleaned = json
+                .removePrefix("```json").removePrefix("```")
+                .removeSuffix("```").trim()
+            val root = org.json.JSONObject(cleaned)
+            val associations = root.optJSONArray("associations") ?: return
+
+            for (i in 0 until associations.length()) {
+                val assoc = associations.optJSONObject(i) ?: continue
+                val from = assoc.optLong("from", -1L)
+                val to = assoc.optLong("to", -1L)
+                val label = assoc.optString("label", "related").trim().lowercase()
+                val direction = assoc.optString("direction", "bidirectional").trim().lowercase()
+
+                if (from !in validIds || to !in validIds || from == to) continue
+                if (label !in ASSOC_LABEL_VOCABULARY) continue
+                if (direction !in setOf("bidirectional", "directed")) continue
+
+                repository.insertAssociation(
+                    MemoryAssociation(
+                        fromMemoryId = from,
+                        toMemoryId = to,
+                        relationLabel = label,
+                        direction = direction
+                    )
+                )
+            }
+        } catch (e: Exception) {
             e.printStackTrace()
         }
     }
@@ -839,6 +892,8 @@ Rules:
         private const val DEDUP_SIMILARITY_THRESHOLD = 0.55      // ADD 去重的 Jaccard 相似度阈值
         private const val MEMORY_INJECT_LIMIT = 30               // 注入 system prompt 的最大记忆条数
         private const val MAX_TOOL_CALL_DEPTH = 10               // 工具调用最大递归深度，防止无限循环
+        private const val COLD_START_ASSOC_LIMIT = 20
+        private val ASSOC_LABEL_VOCABULARY = setOf("related", "causes", "part_of", "contrasts", "belongs_to", "implies")
     }
 
     /**
