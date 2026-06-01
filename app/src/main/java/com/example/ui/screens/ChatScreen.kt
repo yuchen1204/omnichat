@@ -55,6 +55,7 @@ import com.example.data.MemoryItem
 import com.example.data.ModelConfig
 import com.example.ui.components.ChunkedStreamingText
 import com.example.ui.components.ToolGroupCard
+import com.example.ui.components.SilentToolIndicator
 import com.example.ui.components.toUIModel
 import com.example.ui.theme.LocalChatFontScale
 import com.example.ui.theme.LocalUISettings
@@ -350,10 +351,17 @@ fun ChatView(viewModel: ChatViewModel) {
                             // 渲染工具调用聚合条
                             @Suppress("UNCHECKED_CAST")
                             val toolMsgs = (item as List<com.example.data.Message>).map { it.toUIModel() }
-                            ToolGroupCard(
-                                messages = toolMsgs,
-                                allMessages = uiModelMessages
-                            )
+                            if (uiSettings.silentToolCalls) {
+                                SilentToolIndicator(
+                                    messages = toolMsgs,
+                                    allMessages = uiModelMessages
+                                )
+                            } else {
+                                ToolGroupCard(
+                                    messages = toolMsgs,
+                                    allMessages = uiModelMessages
+                                )
+                            }
                         }
                     }
                 }

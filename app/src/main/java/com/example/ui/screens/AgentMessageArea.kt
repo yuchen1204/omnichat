@@ -21,6 +21,7 @@ import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.AgentTabState
 import com.example.workspace.AgentStatus
 import com.example.ui.components.ToolGroupCard
+import com.example.ui.components.SilentToolIndicator
 import com.example.ui.components.toUIModel
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -138,10 +139,17 @@ fun AgentMessageArea(
                 is List<*> -> {
                     @Suppress("UNCHECKED_CAST")
                     val toolMsgs = (item as List<com.example.workspace.AgentMessage>).map { it.toUIModel() }
-                    ToolGroupCard(
-                        messages = toolMsgs,
-                        allMessages = uiModelMessages
-                    )
+                    if (uiSettings.silentToolCalls) {
+                        SilentToolIndicator(
+                            messages = toolMsgs,
+                            allMessages = uiModelMessages
+                        )
+                    } else {
+                        ToolGroupCard(
+                            messages = toolMsgs,
+                            allMessages = uiModelMessages
+                        )
+                    }
                 }
             }
         }
