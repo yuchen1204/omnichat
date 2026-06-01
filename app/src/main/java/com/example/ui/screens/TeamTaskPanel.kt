@@ -21,13 +21,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.TeamTask
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
 import com.example.workspace.AgentStatus
 import com.example.workspace.TeamState
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 右侧任务面板
@@ -73,7 +75,7 @@ fun TeamTaskPanel(
                 item(key = "header_agents") {
                     SectionHeader(
                         icon = Icons.Default.Groups,
-                        text = uiText("workspace.panel.agents", "Agent 列表"),
+                        text = stringResource(R.string.workspace_panel_agents),
                         countSuffix = agentCount,
                         fs = fs,
                         fontFamily = resolvedFontFamily
@@ -118,7 +120,7 @@ fun TeamTaskPanel(
                     Spacer(modifier = Modifier.height(4.dp))
                     SectionHeader(
                         icon = Icons.AutoMirrored.Filled.Assignment,
-                        text = uiText("workspace.panel.tasks", "任务列表"),
+                        text = stringResource(R.string.workspace_panel_tasks),
                         countSuffix = teamTasks.size,
                         fs = fs,
                         fontFamily = resolvedFontFamily
@@ -277,6 +279,7 @@ private fun TaskCard(
     fontFamily: androidx.compose.ui.text.font.FontFamily,
     onOwnerClick: (() -> Unit)?,
 ) {
+    val context = LocalContext.current
     val (badgeText, badgeColor) = taskStatusBadge(task.status)
     val ownerColorHex = task.owner?.let { LocalAgentColorLookup.current(it) }
 
@@ -348,7 +351,7 @@ private fun TaskCard(
         // 任务年龄
         meta.add {
             Text(
-                text = formatTaskAge(now - task.createdAt),
+                text = formatTaskAge(now - task.createdAt, context),
                 fontSize = (10 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontFamily = fontFamily
@@ -392,8 +395,7 @@ private fun TaskCard(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = uiText("workspace.task.blocked_by", "依赖：%s")
-                            .format(task.blockedBy.joinToString(", ")),
+                        text = stringResource(R.string.workspace_task_blocked_by, task.blockedBy.joinToString(", ")),
                         fontSize = (10 * fs).sp,
                         color = MaterialTheme.colorScheme.tertiary,
                         fontFamily = fontFamily,
@@ -409,13 +411,13 @@ private fun TaskCard(
 @Composable
 private fun taskStatusBadge(status: String): Pair<String, Color> {
     return when (status) {
-        "PENDING" -> uiText("workspace.task.status.pending", "等待") to
+        "PENDING" -> stringResource(R.string.workspace_task_status_pending) to
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        "IN_PROGRESS" -> uiText("workspace.task.status.in_progress", "执行中") to
+        "IN_PROGRESS" -> stringResource(R.string.workspace_task_status_in_progress) to
             MaterialTheme.colorScheme.primary
-        "COMPLETED" -> uiText("workspace.task.status.completed", "完成") to
+        "COMPLETED" -> stringResource(R.string.workspace_task_status_completed) to
             LocalCustomColors.current.success
-        "FAILED" -> uiText("workspace.task.status.failed", "失败") to
+        "FAILED" -> stringResource(R.string.workspace_task_status_failed) to
             MaterialTheme.colorScheme.error
         else -> status to MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -423,11 +425,11 @@ private fun taskStatusBadge(status: String): Pair<String, Color> {
 
 @Composable
 private fun statusLabel(status: AgentStatus): String = when (status) {
-    AgentStatus.IDLE -> uiText("workspace.agent.status.idle", "空闲")
-    AgentStatus.STREAMING -> uiText("workspace.agent.status.streaming", "输出中")
-    AgentStatus.WAITING_TOOL -> uiText("workspace.agent.status.tool", "工具中")
-    AgentStatus.COMPLETED -> uiText("workspace.agent.status.done", "完成")
-    AgentStatus.ERROR -> uiText("workspace.agent.status.error", "错误")
+    AgentStatus.IDLE -> stringResource(R.string.workspace_agent_status_idle)
+    AgentStatus.STREAMING -> stringResource(R.string.workspace_agent_status_streaming)
+    AgentStatus.WAITING_TOOL -> stringResource(R.string.workspace_agent_status_tool)
+    AgentStatus.COMPLETED -> stringResource(R.string.workspace_agent_status_done)
+    AgentStatus.ERROR -> stringResource(R.string.workspace_agent_status_error)
 }
 
 @Composable
@@ -438,12 +440,12 @@ private fun statusColor(status: AgentStatus): Color = when (status) {
     else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
 }
 
-private fun formatTaskAge(deltaMs: Long): String {
-    if (deltaMs < 0) return "刚刚"
+private fun formatTaskAge(deltaMs: Long, context: android.content.Context): String {
+    if (deltaMs < 0) return context.getString(R.string.time_just_now)
     return when {
-        deltaMs < 60_000 -> "${deltaMs / 1000}s 前"
-        deltaMs < 3_600_000 -> "${deltaMs / 60_000}m 前"
-        deltaMs < 86_400_000 -> "${deltaMs / 3_600_000}h 前"
-        else -> "${deltaMs / 86_400_000}d 前"
+        deltaMs < 60_000 -> context.getString(R.string.time_seconds_ago_short, (deltaMs / 1000).toInt())
+        deltaMs < 3_600_000 -> context.getString(R.string.time_minutes_ago_short, (deltaMs / 60_000).toInt())
+        deltaMs < 86_400_000 -> context.getString(R.string.time_hours_ago_short, (deltaMs / 3_600_000).toInt())
+        else -> context.getString(R.string.time_days_ago_short, (deltaMs / 86_400_000).toInt())
     }
 }

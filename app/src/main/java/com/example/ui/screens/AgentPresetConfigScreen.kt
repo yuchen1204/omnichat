@@ -21,12 +21,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
 import com.example.data.AgentPreset
 import com.example.data.ModelConfig
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.WorkspaceViewModel
+import androidx.compose.ui.res.stringResource
 
 /**
  * Agent 预设管理界面。
@@ -100,7 +101,7 @@ fun AgentPresetConfigScreen(
                 Icon(imageVector = Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = uiText("preset.button.new", "新建 Agent 预设"),
+                    text = stringResource(R.string.preset_button_new),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -126,7 +127,7 @@ fun AgentPresetConfigScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = uiText("preset.list.empty", "暂无预设。在工作区任务开始前，创建预设可以为特定的角色指定特定的 Prompt 和模型！"),
+                                    text = stringResource(R.string.preset_list_empty),
                                     fontSize = (12 * fs).sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -165,7 +166,7 @@ fun AgentPresetConfigScreen(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Edit,
-                                                contentDescription = uiText("preset.action.edit", "编辑"),
+                                                contentDescription = stringResource(R.string.preset_action_edit),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(16.dp)
                                             )
@@ -177,7 +178,7 @@ fun AgentPresetConfigScreen(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
-                                                contentDescription = uiText("preset.action.delete", "删除"),
+                                                contentDescription = stringResource(R.string.preset_action_delete),
                                                 tint = MaterialTheme.colorScheme.error,
                                                 modifier = Modifier.size(16.dp)
                                             )
@@ -201,7 +202,7 @@ fun AgentPresetConfigScreen(
                                 if (matchedModel != null) {
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = uiText("preset.model.tag", "指定模型: %s").format(matchedModel.name),
+                                        text = stringResource(R.string.preset_model_tag, matchedModel.name),
                                         fontSize = (11 * fs).sp,
                                         fontFamily = resolvedFontFamily,
                                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
@@ -222,7 +223,7 @@ fun AgentPresetConfigScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = if (editingPreset == null) uiText("preset.form.new.title", "新建 Agent 预设") else uiText("preset.form.edit.title", "编辑 Agent 预设"),
+                        text = if (editingPreset == null) stringResource(R.string.preset_form_new_title) else stringResource(R.string.preset_form_edit_title),
                         fontSize = (14 * fs).sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -236,7 +237,7 @@ fun AgentPresetConfigScreen(
                             nameInput = it
                             if (it.trim().isNotEmpty()) nameError = null
                         },
-                        label = { Text(uiText("preset.form.name", "预设角色名称 (如: 写诗专家) *"), fontSize = (12 * fs).sp) },
+                        label = { Text(stringResource(R.string.preset_form_name), fontSize = (12 * fs).sp) },
                         isError = nameError != null,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -255,7 +256,7 @@ fun AgentPresetConfigScreen(
                     OutlinedTextField(
                         value = descriptionInput,
                         onValueChange = { descriptionInput = it },
-                        label = { Text(uiText("preset.form.desc", "描述摘要 (选填)"), fontSize = (12 * fs).sp) },
+                        label = { Text(stringResource(R.string.preset_form_desc), fontSize = (12 * fs).sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -265,7 +266,7 @@ fun AgentPresetConfigScreen(
                     OutlinedTextField(
                         value = systemPromptInput,
                         onValueChange = { systemPromptInput = it },
-                        label = { Text(uiText("preset.form.system_prompt", "系统提示词 (System Prompt - 选填)"), fontSize = (12 * fs).sp) },
+                        label = { Text(stringResource(R.string.preset_form_system_prompt), fontSize = (12 * fs).sp) },
                         minLines = 4,
                         maxLines = 8,
                         modifier = Modifier.fillMaxWidth()
@@ -274,14 +275,14 @@ fun AgentPresetConfigScreen(
 
                     // 模型配置选择器 (下拉框)
                     val selectedModelName = modelConfigs.find { it.id == selectedModelId }?.name
-                        ?: uiText("preset.form.model.default", "不指定（使用工作区默认）")
+                        ?: stringResource(R.string.preset_form_model_default)
 
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = selectedModelName,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text(uiText("preset.form.model", "指定模型 (选填)"), fontSize = (12 * fs).sp) },
+                            label = { Text(stringResource(R.string.preset_form_model), fontSize = (12 * fs).sp) },
                             trailingIcon = {
                                 IconButton(onClick = { dropdownExpanded = !dropdownExpanded }) {
                                     Icon(imageVector = if (dropdownExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null)
@@ -297,7 +298,7 @@ fun AgentPresetConfigScreen(
                             modifier = Modifier.fillMaxWidth(0.9f)
                         ) {
                             DropdownMenuItem(
-                                text = { Text(uiText("preset.form.model.default", "不指定（使用工作区默认）")) },
+                                text = { Text(stringResource(R.string.preset_form_model_default)) },
                                 onClick = {
                                     selectedModelId = null
                                     dropdownExpanded = false
@@ -323,14 +324,15 @@ fun AgentPresetConfigScreen(
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = { showForm = false }) {
-                            Text(uiText("action.cancel", "取消"), fontSize = (13 * fs).sp)
+                            Text(stringResource(R.string.action_cancel), fontSize = (13 * fs).sp)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
+                        val presetNameEmptyError = stringResource(R.string.preset_name_empty_error)
                         Button(
                             onClick = {
                                 val trimmedName = nameInput.trim()
                                 if (trimmedName.isEmpty()) {
-                                    nameError = "名称不能为空"
+                                    nameError = presetNameEmptyError
                                 } else {
                                     val toSave = AgentPreset(
                                         id = editingPreset?.id ?: 0,
@@ -346,7 +348,7 @@ fun AgentPresetConfigScreen(
                             },
                             shape = RoundedCornerShape(8.dp * spacingMultiplier)
                         ) {
-                            Text(uiText("action.save", "保存"), fontSize = (13 * fs).sp)
+                            Text(stringResource(R.string.action_save), fontSize = (13 * fs).sp)
                         }
                     }
                 }
@@ -367,10 +369,10 @@ fun AgentPresetConfigScreen(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text(uiText("preset.dialog.delete.title", "删除预设")) },
+            title = { Text(stringResource(R.string.preset_dialog_delete_title)) },
             text = {
                 Text(
-                    text = uiText("preset.dialog.delete.body", "确定要删除预设「%s」吗？该操作不会修改任何现有的工作区历史记录。").format(preset.name),
+                    text = stringResource(R.string.preset_dialog_delete_body, preset.name),
                     fontSize = (14 * fs).sp,
                     lineHeight = (20 * fs).sp
                 )
@@ -384,7 +386,7 @@ fun AgentPresetConfigScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) {
-                    Text(uiText("action.delete", "删除"))
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
@@ -392,7 +394,7 @@ fun AgentPresetConfigScreen(
                     onClick = { showDeleteDialog = null },
                     shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) {
-                    Text(uiText("action.cancel", "取消"))
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

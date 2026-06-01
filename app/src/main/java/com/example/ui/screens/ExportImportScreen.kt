@@ -27,12 +27,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.R
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ExportImportStatus
 import com.example.ui.viewmodel.SettingsViewModel
+import androidx.compose.ui.res.stringResource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -147,13 +148,13 @@ fun ExportImportView(
 
         // ── 导出卡片 ──────────────────────────────────────────────────────
         SectionCard(
-            title = uiText("export.section.export", "导出配置"),
+            title = stringResource(R.string.export_section_export),
             icon = Icons.Default.Share,
             iconColor = MaterialTheme.colorScheme.primary,
             fs = fs
         ) {
             Text(
-                text = uiText("export.desc", "选择要导出的内容，保存为 JSON 文件，可用于备份或迁移到其他设备。"),
+                text = stringResource(R.string.export_desc),
                 fontSize = (12 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = (17 * fs).sp,
@@ -163,8 +164,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportProviders,
                 onCheckedChange = { exportProviders = it },
-                title = uiText("export.option.providers", "供应商配置"),
-                subtitle = uiText("export.option.providers.desc", "API 提供商、Endpoint、API Key、模型列表"),
+                title = stringResource(R.string.export_option_providers),
+                subtitle = stringResource(R.string.export_option_providers_desc),
                 icon = Icons.Default.Settings,
                 iconColor = MaterialTheme.colorScheme.primary,
                 fs = fs
@@ -172,8 +173,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportMcp,
                 onCheckedChange = { exportMcp = it },
-                title = uiText("export.option.mcp", "MCP 配置"),
-                subtitle = uiText("export.option.mcp.desc", "MCP 服务器列表、运行时配置、环境变量"),
+                title = stringResource(R.string.export_option_mcp),
+                subtitle = stringResource(R.string.export_option_mcp_desc),
                 icon = Icons.Default.Build,
                 iconColor = LocalCustomColors.current.warning,
                 fs = fs
@@ -181,8 +182,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportMemory,
                 onCheckedChange = { exportMemory = it },
-                title = uiText("export.option.memory", "长效记忆"),
-                subtitle = uiText("export.option.memory.desc", "跨会话记忆条目、系统 Prompt 模板"),
+                title = stringResource(R.string.export_option_memory),
+                subtitle = stringResource(R.string.export_option_memory_desc),
                 icon = Icons.Default.Info,
                 iconColor = LocalCustomColors.current.info,
                 fs = fs
@@ -190,8 +191,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportColorSchemes,
                 onCheckedChange = { exportColorSchemes = it },
-                title = uiText("export.option.colors", "配色方案"),
-                subtitle = uiText("export.option.colors.desc", "当前 UI 设置、配色方案预设（最多 5 个）"),
+                title = stringResource(R.string.export_option_colors),
+                subtitle = stringResource(R.string.export_option_colors_desc),
                 icon = Icons.Default.Star,
                 iconColor = LocalCustomColors.current.accent,
                 fs = fs
@@ -222,7 +223,7 @@ fun ExportImportView(
                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    uiText("export.btn", "选择保存位置并导出"),
+                    stringResource(R.string.export_btn),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -231,13 +232,13 @@ fun ExportImportView(
 
         // ── 导入卡片 ──────────────────────────────────────────────────────
         SectionCard(
-            title = uiText("import.section.import", "导入配置"),
+            title = stringResource(R.string.import_section_import),
             icon = Icons.Default.Add,
             iconColor = LocalCustomColors.current.success,
             fs = fs
         ) {
             Text(
-                text = uiText("import.desc", "从之前导出的 JSON 文件中恢复配置。选择要导入的内容类型。"),
+                text = stringResource(R.string.import_desc),
                 fontSize = (12 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = (17 * fs).sp,
@@ -247,8 +248,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importProviders,
                 onCheckedChange = { importProviders = it },
-                title = uiText("export.option.providers", "供应商配置"),
-                subtitle = uiText("import.option.providers.desc", "导入 API 提供商配置"),
+                title = stringResource(R.string.export_option_providers),
+                subtitle = stringResource(R.string.import_option_providers_desc),
                 icon = Icons.Default.Settings,
                 iconColor = MaterialTheme.colorScheme.primary,
                 fs = fs
@@ -256,8 +257,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importMcp,
                 onCheckedChange = { importMcp = it },
-                title = uiText("export.option.mcp", "MCP 配置"),
-                subtitle = uiText("import.option.mcp.desc", "导入 MCP 服务器配置"),
+                title = stringResource(R.string.export_option_mcp),
+                subtitle = stringResource(R.string.import_option_mcp_desc),
                 icon = Icons.Default.Build,
                 iconColor = LocalCustomColors.current.warning,
                 fs = fs
@@ -265,8 +266,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importMemory,
                 onCheckedChange = { importMemory = it },
-                title = uiText("export.option.memory", "长效记忆"),
-                subtitle = uiText("import.option.memory.desc", "导入记忆条目和 Prompt 模板"),
+                title = stringResource(R.string.export_option_memory),
+                subtitle = stringResource(R.string.import_option_memory_desc),
                 icon = Icons.Default.Info,
                 iconColor = LocalCustomColors.current.info,
                 fs = fs
@@ -274,8 +275,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importColorSchemes,
                 onCheckedChange = { importColorSchemes = it },
-                title = uiText("export.option.colors", "配色方案"),
-                subtitle = uiText("import.option.colors.desc", "导入 UI 设置和配色预设"),
+                title = stringResource(R.string.export_option_colors),
+                subtitle = stringResource(R.string.import_option_colors_desc),
                 icon = Icons.Default.Star,
                 iconColor = LocalCustomColors.current.accent,
                 fs = fs
@@ -298,13 +299,13 @@ fun ExportImportView(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
-                        text = uiText("import.replace.title", "覆盖现有数据"),
+                        text = stringResource(R.string.import_replace_title),
                         fontSize = (13 * fs).sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = uiText("import.replace.desc", "开启后将清空对应类型的现有数据再导入；关闭则追加"),
+                        text = stringResource(R.string.import_replace_desc),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = (15 * fs).sp
@@ -342,7 +343,7 @@ fun ExportImportView(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    uiText("import.btn", "选择 JSON 文件并导入"),
+                    stringResource(R.string.import_btn),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -370,10 +371,7 @@ fun ExportImportView(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = uiText(
-                        "export.note",
-                        "导出文件为标准 JSON 格式，包含所选配置的完整数据。API Key 会以明文保存在文件中，请妥善保管导出文件。导入时建议先备份现有配置。"
-                    ),
+                    text = stringResource(R.string.export_note),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     lineHeight = (16 * fs).sp
@@ -585,7 +583,7 @@ private fun ImportConfirmDialog(
         },
         title = {
             Text(
-                uiText("import.confirm.title", "确认导入"),
+                stringResource(R.string.import_confirm_title),
                 fontSize = (16 * fs).sp,
                 fontWeight = FontWeight.Bold
             )
@@ -593,15 +591,15 @@ private fun ImportConfirmDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = uiText("import.confirm.body", "即将导入以下内容："),
+                    text = stringResource(R.string.import_confirm_body),
                     fontSize = (13 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 val items = buildList {
-                    if (importProviders) add("• 供应商配置")
-                    if (importMcp) add("• MCP 配置")
-                    if (importMemory) add("• 长效记忆 & Prompt 模板")
-                    if (importColorSchemes) add("• 配色方案")
+                    if (importProviders) add(stringResource(R.string.export_option_providers))
+                    if (importMcp) add(stringResource(R.string.export_option_mcp))
+                    if (importMemory) add(stringResource(R.string.export_option_memory))
+                    if (importColorSchemes) add(stringResource(R.string.export_option_colors))
                 }
                 items.forEach { item ->
                     Text(
@@ -629,7 +627,7 @@ private fun ImportConfirmDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = uiText("import.confirm.replace_warning", "覆盖模式已开启，现有对应数据将被清空后替换，此操作不可撤销。"),
+                                text = stringResource(R.string.import_confirm_replace_warning),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.error,
                                 lineHeight = (15 * fs).sp
@@ -648,7 +646,7 @@ private fun ImportConfirmDialog(
                 else
                     ButtonDefaults.buttonColors()
             ) {
-                Text(uiText("import.confirm.ok", "确认导入"), fontSize = (13 * fs).sp)
+                Text(stringResource(R.string.import_confirm_ok), fontSize = (13 * fs).sp)
             }
         },
         dismissButton = {
@@ -656,7 +654,7 @@ private fun ImportConfirmDialog(
                 onClick = onDismiss,
                 shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
             ) {
-                Text(uiText("import.confirm.cancel", "取消"), fontSize = (13 * fs).sp)
+                Text(stringResource(R.string.import_confirm_cancel), fontSize = (13 * fs).sp)
             }
         }
     )

@@ -27,10 +27,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.R
 import com.example.data.ModelConfig
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -144,7 +145,7 @@ fun WorkspaceReadyView(
     val selectedModelName = if (selectedConfig != null) {
         "${selectedConfig.name} - ${selectedModelId ?: selectedConfig.selectedModelId}"
     } else {
-        uiText("workspace.setup.model.none", "选择模型")
+        stringResource(R.string.workspace_setup_model_none)
     }
 
     // 预处理数据以按 Provider 分组展示
@@ -185,7 +186,7 @@ fun WorkspaceReadyView(
                 }
                 Spacer(modifier = Modifier.height(16.dp * spacingMultiplier))
                 Text(
-                    text = uiText("workspace.ready.title", "准备好了"),
+                    text = stringResource(R.string.workspace_ready_title),
                     fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -193,7 +194,7 @@ fun WorkspaceReadyView(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = uiText("workspace.ready.hint", "描述你的任务，AI 将自动分析并派遣多个 Agent 协作完成"),
+                    text = stringResource(R.string.workspace_ready_hint),
                     fontSize = (13 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     fontFamily = resolvedFontFamily,
@@ -242,10 +243,7 @@ fun WorkspaceReadyView(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = uiText("chat.current.model", "当前模型: %s  ·  %s").format(
-                                    selectedModelId ?: "",
-                                    selectedConfig?.name ?: ""
-                                ),
+                                text = stringResource(R.string.chat_current_model, selectedModelId ?: "", selectedConfig?.name ?: ""),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
@@ -289,7 +287,7 @@ fun WorkspaceReadyView(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = uiText("chat.57841df8", "切换模型"),
+                                            text = stringResource(R.string.chat_switch_model),
                                             fontSize = (12 * fs).sp,
                                             fontWeight = FontWeight.Medium,
                                             color = MaterialTheme.colorScheme.primary
@@ -340,7 +338,7 @@ fun WorkspaceReadyView(
                                             DropdownMenuItem(
                                                 text = { 
                                                     Text(
-                                                        "  ${config.selectedModelId} (默认)", 
+                                                        "  " + stringResource(R.string.workspace_model_default_format, config.selectedModelId),
                                                         fontSize = (13 * fs).sp,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     ) 
@@ -378,7 +376,7 @@ fun WorkspaceReadyView(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = uiText("chat.select_image", "选择图片"),
+                                        text = stringResource(R.string.chat_select_image),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -412,7 +410,7 @@ fun WorkspaceReadyView(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = uiText("chat.take_photo", "拍照"),
+                                        text = stringResource(R.string.chat_take_photo),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -436,14 +434,14 @@ fun WorkspaceReadyView(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = uiText("workspace.sandbox.label", "工作目录（沙盒）"),
+                                text = stringResource(R.string.workspace_sandbox_label),
                                 fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (sandboxPath.isBlank()) uiText("workspace.sandbox.unset", "未设置（不限制）")
+                                text = if (sandboxPath.isBlank()) stringResource(R.string.workspace_sandbox_unset)
                                        else sandboxPath,
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -480,7 +478,7 @@ fun WorkspaceReadyView(
                                     onValueChange = { sandboxPath = it },
                                     placeholder = {
                                         Text(
-                                            uiText("workspace.sandbox.placeholder", "例如: /sdcard/OmniChat/workspace"),
+                                            stringResource(R.string.workspace_sandbox_placeholder),
                                             fontSize = (12 * fs).sp
                                         )
                                     },
@@ -503,7 +501,7 @@ fun WorkspaceReadyView(
                                             ) {
                                                 Icon(
                                                     Icons.Default.Close,
-                                                    contentDescription = uiText("workspace.sandbox.clear", "清除"),
+                                                    contentDescription = stringResource(R.string.workspace_sandbox_clear),
                                                     modifier = Modifier.size(14.dp)
                                                 )
                                             }
@@ -566,7 +564,7 @@ fun WorkspaceReadyView(
                             if (selectedImagePath != null || selectedImageUri != null) {
                                 AsyncImage(
                                     model = selectedImageUri ?: selectedImagePath,
-                                    contentDescription = uiText("chat.selected_image", "已选图片"),
+                                    contentDescription = stringResource(R.string.chat_selected_image),
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
@@ -576,7 +574,7 @@ fun WorkspaceReadyView(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = uiText("chat.image_attached", "已添加图片"),
+                            text = stringResource(R.string.chat_image_attached),
                             fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -593,7 +591,7 @@ fun WorkspaceReadyView(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = uiText("chat.remove_image", "移除图片"),
+                                contentDescription = stringResource(R.string.chat_remove_image),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -622,7 +620,7 @@ fun WorkspaceReadyView(
                     ) {
                         Icon(
                             imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", "收起") else uiText("chat.toolbar.expand", "展开工具"),
+                            contentDescription = if (showToolbar) stringResource(R.string.chat_toolbar_collapse) else stringResource(R.string.chat_toolbar_expand),
                             tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -637,9 +635,9 @@ fun WorkspaceReadyView(
                         onValueChange = { taskText = it },
                         placeholder = {
                             val hint = if (selectedImagePath != null || selectedImageUri != null) {
-                                uiText("chat.input.hint_with_image", "添加描述（可选）...")
+                                stringResource(R.string.chat_input_hint_with_image)
                             } else {
-                                uiText("workspace.setup.task_placeholder", "例如：请帮我写一段 Kotlin 代码，并创建子 Agent 进行 Code Review...")
+                                stringResource(R.string.workspace_setup_task_placeholder)
                             }
                             Text(hint, fontSize = (15 * fs).sp)
                         },
@@ -699,7 +697,7 @@ fun WorkspaceReadyView(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
-                            contentDescription = uiText("chat.send.contentDescription", "发送"),
+                            contentDescription = stringResource(R.string.chat_send_contentDescription),
                             tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)

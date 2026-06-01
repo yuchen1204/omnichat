@@ -34,13 +34,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.Session
 import com.example.data.WorkspaceSession
+import com.example.R
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalSidebarColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.WorkspaceViewModel
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -67,7 +68,7 @@ fun SessionSidebarPanel(
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     val cornerRadius = uiSettings.cornerRadiusDp.dp
 
-    val newSessionDefaultTitle = uiText("sidebar.new_session_default", "新会话")
+    val newSessionDefaultTitle = stringResource(R.string.sidebar_new_session_default)
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -118,7 +119,7 @@ fun SessionSidebarPanel(
             // ── 对话列表分区标题 ────────────────────────────────────────
             item {
                 SectionHeader(
-                    label = uiText("sidebar.chat_sessions", "对话"),
+                    label = stringResource(R.string.sidebar_chat_sessions),
                     fs = fs,
                     sidebarColors = sidebarColors,
                     actionIcon = null,
@@ -129,7 +130,7 @@ fun SessionSidebarPanel(
             if (sessions.isEmpty()) {
                 item {
                     EmptyHint(
-                        text = uiText("sidebar.no_sessions", "还没有对话，点击右上角新建"),
+                        text = stringResource(R.string.sidebar_no_sessions),
                         fs = fs,
                         sidebarColors = sidebarColors
                     )
@@ -181,7 +182,7 @@ fun SessionSidebarPanel(
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Icon(Icons.Default.Edit, null, modifier = Modifier.size(15.dp))
                                                 Spacer(Modifier.width(8.dp))
-                                                Text(uiText("sidebar.286eb70c", "重命名"), fontSize = (13 * fs).sp)
+                                                Text(stringResource(R.string.sidebar_rename), fontSize = (13 * fs).sp)
                                             }
                                         },
                                         onClick = {
@@ -197,7 +198,7 @@ fun SessionSidebarPanel(
                                                     modifier = Modifier.size(15.dp),
                                                     tint = MaterialTheme.colorScheme.error)
                                                 Spacer(Modifier.width(8.dp))
-                                                Text(uiText("sidebar.7c7e3e24", "删除"), fontSize = (13 * fs).sp,
+                                                Text(stringResource(R.string.sidebar_delete), fontSize = (13 * fs).sp,
                                                     color = MaterialTheme.colorScheme.error)
                                             }
                                         },
@@ -218,7 +219,7 @@ fun SessionSidebarPanel(
                 item {
                     Spacer(Modifier.height(8.dp))
                     SectionHeader(
-                        label = uiText("sidebar.workspaces", "多智能体工作区"),
+                        label = stringResource(R.string.sidebar_workspaces),
                         fs = fs,
                         sidebarColors = sidebarColors,
                         actionIcon = Icons.Default.Add,
@@ -236,7 +237,7 @@ fun SessionSidebarPanel(
                 if (workspaceSessions.isEmpty()) {
                     item {
                         EmptyHint(
-                            text = uiText("sidebar.no_workspace", "点击 + 新建工作区，让多个 AI 协同完成任务"),
+                            text = stringResource(R.string.sidebar_no_workspace),
                             fs = fs,
                             sidebarColors = sidebarColors
                         )
@@ -247,7 +248,7 @@ fun SessionSidebarPanel(
 
                         SessionListItem(
                             title = ws.title,
-                            subtitle = formatRelativeTime(ws.lastActiveAt),
+                            subtitle = formatRelativeTime(ws.lastActiveAt, context),
                             icon = Icons.Default.Hub,
                             isActive = isActive,
                             statusDot = if (ws.isActive) customColors.success else null,
@@ -293,7 +294,7 @@ fun SessionSidebarPanel(
                 versionClickCount++
                 if (versionClickCount >= 5 && !workspaceUnlocked) {
                     workspaceUnlocked = true
-                    android.widget.Toast.makeText(context, "已解锁多智能体工作区", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, context.getString(R.string.sidebar_workspace_unlocked), android.widget.Toast.LENGTH_SHORT).show()
                 }
             },
             context = context
@@ -307,10 +308,10 @@ fun SessionSidebarPanel(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(cornerRadius),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(uiText("dialog.delete.session.title", "删除会话"), fontFamily = resolvedFontFamily) },
+            title = { Text(stringResource(R.string.dialog_delete_session_title), fontFamily = resolvedFontFamily) },
             text = {
                 Text(
-                    text = uiText("dialog.delete.session.body", "确定要删除「%s」吗？\n该会话的所有消息记录将被永久清除，无法恢复。").format(session.title),
+                    text = stringResource(R.string.dialog_delete_session_body, session.title),
                     fontSize = (14 * fs).sp,
                     lineHeight = (20 * fs).sp,
                     fontFamily = resolvedFontFamily
@@ -321,13 +322,13 @@ fun SessionSidebarPanel(
                     onClick = { viewModel.deleteSession(session.id); deleteTargetSession = null },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("action.delete", "删除"), fontFamily = resolvedFontFamily) }
+                ) { Text(stringResource(R.string.action_delete), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { deleteTargetSession = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("action.cancel", "取消"), fontFamily = resolvedFontFamily) }
+                ) { Text(stringResource(R.string.action_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -337,12 +338,12 @@ fun SessionSidebarPanel(
             onDismissRequest = { renameTargetSession = null },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(cornerRadius),
-            title = { Text(uiText("sidebar.cf3487b0", "重命名会话"), fontFamily = resolvedFontFamily) },
+            title = { Text(stringResource(R.string.sidebar_rename_session), fontFamily = resolvedFontFamily) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = it },
-                    label = { Text(uiText("sidebar.e4ceeffb", "会话名称"), fontFamily = resolvedFontFamily) },
+                    label = { Text(stringResource(R.string.sidebar_session_name), fontFamily = resolvedFontFamily) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape((cornerRadius.value * 0.6f).coerceAtLeast(4f).dp)
@@ -353,13 +354,13 @@ fun SessionSidebarPanel(
                     onClick = { viewModel.renameSession(session.id, renameText); renameTargetSession = null },
                     enabled = renameText.isNotBlank(),
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("sidebar.d5e6dfc3", "确认"), fontFamily = resolvedFontFamily) }
+                ) { Text(stringResource(R.string.sidebar_confirm), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { renameTargetSession = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("sidebar.335fc2b7", "取消"), fontFamily = resolvedFontFamily) }
+                ) { Text(stringResource(R.string.sidebar_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -370,10 +371,10 @@ fun SessionSidebarPanel(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(cornerRadius),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(uiText("dialog.delete.workspace.title", "删除工作区"), fontFamily = resolvedFontFamily) },
+            title = { Text(stringResource(R.string.dialog_delete_workspace_title), fontFamily = resolvedFontFamily) },
             text = {
                 Text(
-                    text = uiText("dialog.delete.workspace.body", "确定要删除工作区「%s」吗？\n该工作区内的所有协作对话记录及实例元数据将被永久级联删除，无法恢复。").format(ws.title),
+                    text = stringResource(R.string.dialog_delete_workspace_body, ws.title),
                     fontSize = (14 * fs).sp,
                     lineHeight = (20 * fs).sp,
                     fontFamily = resolvedFontFamily
@@ -384,13 +385,13 @@ fun SessionSidebarPanel(
                     onClick = { workspaceViewModel.deleteWorkspaceSession(ws.id); deleteTargetWorkspace = null },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("action.delete", "删除"), fontFamily = resolvedFontFamily) }
+                ) { Text(stringResource(R.string.action_delete), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { deleteTargetWorkspace = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("action.cancel", "取消"), fontFamily = resolvedFontFamily) }
+                ) { Text(stringResource(R.string.action_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -441,14 +442,14 @@ private fun SidebarHeader(
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = uiText("sidebar.title", "OmniChat"),
+                    text = stringResource(R.string.sidebar_title),
                     fontSize = (15 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = resolvedFontFamily,
                     color = sidebarColors.onBackground
                 )
                 Text(
-                    text = uiText("sidebar.subtitle", "多模型 · 长效记忆 · 多智能体"),
+                    text = stringResource(R.string.sidebar_subtitle),
                     fontSize = (10 * fs).sp,
                     color = sidebarColors.onBackground.copy(alpha = 0.5f),
                     fontFamily = resolvedFontFamily
@@ -464,7 +465,7 @@ private fun SidebarHeader(
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = uiText("sidebar.aa75d46c", "新建会话"),
+                    contentDescription = stringResource(R.string.sidebar_new_session),
                     tint = sidebarColors.onBackground,
                     modifier = Modifier.size(18.dp)
                 )
@@ -694,7 +695,7 @@ private fun SidebarFooter(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = defaultProvider?.name ?: uiText("sidebar.not_set", "未配置模型"),
+                        text = defaultProvider?.name ?: stringResource(R.string.sidebar_not_set),
                         fontSize = (12 * fs).sp,
                         fontWeight = FontWeight.Medium,
                         fontFamily = resolvedFontFamily,
@@ -704,7 +705,7 @@ private fun SidebarFooter(
                     )
                     if (defaultProvider != null) {
                         Text(
-                            text = defaultProvider.selectedModelId.ifEmpty { "未选择模型" },
+                            text = defaultProvider.selectedModelId.ifEmpty { stringResource(R.string.sidebar_no_model_selected) },
                             fontSize = (10 * fs).sp,
                             color = sidebarColors.onBackground.copy(alpha = 0.55f),
                             maxLines = 1,
@@ -735,13 +736,13 @@ private fun SidebarFooter(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
-                        contentDescription = uiText("sidebar.settings", "设置"),
+                        contentDescription = stringResource(R.string.sidebar_settings),
                         tint = sidebarColors.onBackground.copy(alpha = 0.75f),
                         modifier = Modifier.size(17.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = uiText("sidebar.settings", "设置"),
+                        text = stringResource(R.string.sidebar_settings),
                         fontSize = (13 * fs).sp,
                         fontFamily = resolvedFontFamily,
                         color = sidebarColors.onBackground.copy(alpha = 0.85f)
@@ -765,7 +766,7 @@ private fun SidebarFooter(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = uiText("sidebar.7f62f6d8", "恢复默认配色"),
+                    contentDescription = stringResource(R.string.sidebar_reset_colors),
                     tint = sidebarColors.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
                 )
@@ -792,15 +793,15 @@ private fun SidebarFooter(
 
 // ── 时间格式化 ───────────────────────────────────────────────────────────────
 
-fun formatRelativeTime(timestamp: Long): String {
+fun formatRelativeTime(timestamp: Long, context: android.content.Context): String {
     val diff = System.currentTimeMillis() - timestamp
-    if (diff < 0) return "刚刚"
+    if (diff < 0) return context.getString(R.string.time_just_now)
     val diffSeconds = diff / 1000
-    if (diffSeconds < 60) return "刚刚"
+    if (diffSeconds < 60) return context.getString(R.string.time_just_now)
     val diffMinutes = diffSeconds / 60
-    if (diffMinutes < 60) return "${diffMinutes}分钟前"
+    if (diffMinutes < 60) return context.getString(R.string.time_minutes_ago, diffMinutes)
     val diffHours = diffMinutes / 60
-    if (diffHours < 24) return "${diffHours}小时前"
+    if (diffHours < 24) return context.getString(R.string.time_hours_ago, diffHours)
     val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
     return sdf.format(java.util.Date(timestamp))
 }
