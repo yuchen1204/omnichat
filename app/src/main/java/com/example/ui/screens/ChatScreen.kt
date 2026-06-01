@@ -280,23 +280,41 @@ fun ChatView(viewModel: ChatViewModel) {
         }
 
         // --- 聚合 Tool 消息展示逻辑并反转以适应 reverseLayout ---
-        val processedMessages = remember(messages) {
+        val processedMessages = remember(messages, uiSettings.silentToolCalls) {
             val list = mutableListOf<Any>()
             var currentToolGroup = mutableListOf<com.example.data.Message>()
-            
+            var silentToolCount = 0
+            var silentToolMessages = mutableListOf<com.example.data.Message>()
+
+            fun flushToolGroup() {
+                if (currentToolGroup.isNotEmpty()) {
+                    if (uiSettings.silentToolCalls) {
+                        silentToolCount += currentToolGroup.size
+                        silentToolMessages.addAll(currentToolGroup)
+                    } else {
+                        list.add(currentToolGroup.toList())
+                    }
+                    currentToolGroup.clear()
+                }
+            }
+
             messages.forEach { msg ->
                 if (msg.role == "tool") {
                     currentToolGroup.add(msg)
                 } else {
-                    if (currentToolGroup.isNotEmpty()) {
-                        list.add(currentToolGroup.toList())
-                        currentToolGroup.clear()
+                    flushToolGroup()
+                    // 静默模式：遇到非 tool 消息时，先输出之前累积的聚合指示器
+                    if (uiSettings.silentToolCalls && silentToolCount > 0) {
+                        list.add(com.example.ui.components.SilentToolAggregated(silentToolCount, silentToolMessages.map { it.toUIModel() }))
+                        silentToolCount = 0
+                        silentToolMessages = mutableListOf()
                     }
                     list.add(msg)
                 }
             }
-            if (currentToolGroup.isNotEmpty()) {
-                list.add(currentToolGroup.toList())
+            flushToolGroup()
+            if (uiSettings.silentToolCalls && silentToolCount > 0) {
+                list.add(com.example.ui.components.SilentToolAggregated(silentToolCount, silentToolMessages.map { it.toUIModel() }))
             }
             list.reversed()
         }
@@ -346,15 +364,15 @@ fun ChatView(viewModel: ChatViewModel) {
                             message = item,
                             onRetry = { viewModel.retryMessage(it) }
                         )
+                        is com.example.ui.components.SilentToolAggregated -> {
+                            SilentToolIndicator(totalCount = item.totalCount)
+                        }
                         is List<*> -> {
                             // 渲染工具调用聚合条
                             @Suppress("UNCHECKED_CAST")
                             val toolMsgs = (item as List<com.example.data.Message>).map { it.toUIModel() }
                             if (uiSettings.silentToolCalls) {
-                                SilentToolIndicator(
-                                    messages = toolMsgs,
-                                    allMessages = uiModelMessages
-                                )
+                                SilentToolIndicator(totalCount = toolMsgs.size)
                             } else {
                                 ToolGroupCard(
                                     messages = toolMsgs,

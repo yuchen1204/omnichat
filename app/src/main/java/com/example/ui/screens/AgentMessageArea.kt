@@ -51,23 +51,40 @@ fun AgentMessageArea(
     val fs = uiSettings.fontSizeScale
     val fontFamily = resolveFontFamily(uiSettings.fontFamily)
 
-    val processedMessages = remember(activeTab.messages) {
+    val processedMessages = remember(activeTab.messages, uiSettings.silentToolCalls) {
         val list = mutableListOf<Any>()
         var currentToolGroup = mutableListOf<com.example.workspace.AgentMessage>()
-        
+        var silentToolCount = 0
+        var silentToolMessages = mutableListOf<com.example.workspace.AgentMessage>()
+
+        fun flushToolGroup() {
+            if (currentToolGroup.isNotEmpty()) {
+                if (uiSettings.silentToolCalls) {
+                    silentToolCount += currentToolGroup.size
+                    silentToolMessages.addAll(currentToolGroup)
+                } else {
+                    list.add(currentToolGroup.toList())
+                }
+                currentToolGroup.clear()
+            }
+        }
+
         activeTab.messages.forEach { msg ->
             if (msg.role == "tool") {
                 currentToolGroup.add(msg)
             } else {
-                if (currentToolGroup.isNotEmpty()) {
-                    list.add(currentToolGroup.toList())
-                    currentToolGroup.clear()
+                flushToolGroup()
+                if (uiSettings.silentToolCalls && silentToolCount > 0) {
+                    list.add(com.example.ui.components.SilentToolAggregated(silentToolCount, silentToolMessages.map { it.toUIModel() }))
+                    silentToolCount = 0
+                    silentToolMessages = mutableListOf()
                 }
                 list.add(msg)
             }
         }
-        if (currentToolGroup.isNotEmpty()) {
-            list.add(currentToolGroup.toList())
+        flushToolGroup()
+        if (uiSettings.silentToolCalls && silentToolCount > 0) {
+            list.add(com.example.ui.components.SilentToolAggregated(silentToolCount, silentToolMessages.map { it.toUIModel() }))
         }
         list
     }
@@ -136,14 +153,14 @@ fun AgentMessageArea(
                 is com.example.workspace.AgentMessage -> {
                     AgentBubbleMessage(message = item)
                 }
+                is com.example.ui.components.SilentToolAggregated -> {
+                    SilentToolIndicator(totalCount = item.totalCount)
+                }
                 is List<*> -> {
                     @Suppress("UNCHECKED_CAST")
                     val toolMsgs = (item as List<com.example.workspace.AgentMessage>).map { it.toUIModel() }
                     if (uiSettings.silentToolCalls) {
-                        SilentToolIndicator(
-                            messages = toolMsgs,
-                            allMessages = uiModelMessages
-                        )
+                        SilentToolIndicator(totalCount = toolMsgs.size)
                     } else {
                         ToolGroupCard(
                             messages = toolMsgs,
