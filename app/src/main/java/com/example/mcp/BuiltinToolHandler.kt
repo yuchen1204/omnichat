@@ -261,7 +261,7 @@ object BuiltinToolHandler {
             java.time.ZoneId.systemDefault()
         }
         val now = ZonedDateTime.now(zone)
-        val fullFmt = DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm:ss (EEEE)", Locale.CHINESE)
+        val fullFmt = DateTimeFormatter.ofPattern(context.getString(R.string.tool_time_format_pattern), Locale.getDefault())
         val isoFmt = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         val result = buildString {
             appendLine("${str(context, R.string.tool_time_info)}：")
@@ -305,7 +305,7 @@ object BuiltinToolHandler {
                 if (presets.isEmpty()) {
                     return successResponse(str(context, R.string.tool_color_list_empty))
                 }
-                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINESE)
+                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
                 val text = buildString {
                     appendLine(str(context, R.string.tool_color_list_header, presets.size, ColorSchemePreset.MAX_PRESETS))
                     appendLine()
@@ -394,7 +394,7 @@ object BuiltinToolHandler {
             .sortedByDescending { it.score }
             .take(limit)
 
-        val filterDesc = if (tagFilter != null) "，标签过滤：$tagFilter" else ""
+        val filterDesc = if (tagFilter != null) context.getString(R.string.tool_memory_tag_filter, tagFilter) else ""
         val text = buildString {
             appendLine(str(context, R.string.tool_memory_search_results, query, filterDesc, totalCount, scored.size))
             appendLine()
@@ -831,7 +831,7 @@ object BuiltinToolHandler {
                 val matchLines = r.optJSONArray("matchLines")
                 if (matchLines != null && matchLines.length() > 0) {
                     val lines = (0 until matchLines.length()).map { matchLines.getInt(it) }
-                    append("  (匹配行: ${lines.joinToString(", ")})")
+                    append("  " + context.getString(R.string.tool_search_match_lines, lines.joinToString(", ")))
                 }
                 val contextSnippets = r.optJSONArray("contextSnippets")
                 if (contextSnippets != null && contextSnippets.length() > 0) {

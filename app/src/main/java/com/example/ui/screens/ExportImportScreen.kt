@@ -114,7 +114,7 @@ fun ExportImportView(
             when (status) {
                 is ExportImportStatus.Loading -> {
                     StatusBanner(
-                        message = "处理中...",
+                        message = stringResource(R.string.processing),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         icon = null,

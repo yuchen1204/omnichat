@@ -64,7 +64,7 @@ class AlarmReceiver : BroadcastReceiver() {
             try {
                 val db = AppDatabase.getDatabase(context)
                 val repository = AppRepository(db)
-                val content = "⏰ **定时提醒**\n\n${meta.message}"
+                val content = context.getString(R.string.alarm_timer_reminder, meta.message)
                 repository.insertMessage(
                     Message(
                         sessionId = meta.sessionId,
@@ -101,7 +101,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     TimerManager.NOTIFICATION_CHANNEL_NAME,
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "AI 助手创建的定时提醒"
+                    description = context.getString(R.string.alarm_notification_description)
                 }
                 notificationManager.createNotificationChannel(channel)
             }

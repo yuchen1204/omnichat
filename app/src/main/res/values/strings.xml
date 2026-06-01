@@ -606,4 +606,89 @@
     <string name="tool_ui_text_key_label">• Key: %s</string>
     <string name="tool_ui_text_default">  Default: \"%s\"</string>
     <string name="tool_ui_text_override">  Currently overridden to: \"%s\"</string>
+
+    <!-- ── ToolCallComponents: formatToolCallSummary ── -->
+    <string name="tool_call_root_directory">root directory</string>
+    <string name="tool_call_browsed_dir">Browsed directory: %s</string>
+    <string name="tool_call_read_file">Read file: %s</string>
+    <string name="tool_call_wrote_file">Wrote file: %s</string>
+    <string name="tool_call_appended_file">Appended file: %s</string>
+    <string name="tool_call_deleted_file">Deleted file/directory: %s</string>
+    <string name="tool_call_file_info">Viewed path info: %s</string>
+    <string name="tool_call_filename_match">Filename match: %s</string>
+    <string name="tool_call_content_match">Content match: %s</string>
+    <string name="tool_call_searched_dir">Searched directory %s</string>
+    <string name="tool_call_searched_memory">Searched memory: \"%s\"</string>
+    <string name="tool_call_adjusted_ui">Modified UI theme configuration</string>
+    <string name="tool_call_saved_scheme">Saved color scheme: %s</string>
+    <string name="tool_call_applied_scheme">Applied color scheme: %s</string>
+    <string name="tool_call_deleted_scheme">Deleted color scheme: %s</string>
+    <string name="tool_call_listed_schemes">Listed saved color schemes</string>
+    <string name="tool_call_scheme_action">Color scheme operation</string>
+    <string name="tool_call_delegated_agent">Delegated sub-agent: %s</string>
+    <string name="tool_call_sent_message">Sent message to %s</string>
+    <string name="tool_call_created_task">Created task: %s</string>
+    <string name="tool_call_updated_task">Updated task status: %s</string>
+    <string name="tool_call_got_time">Retrieved current system time</string>
+    <string name="tool_call_got_ui_caps">Retrieved UI configuration parameters</string>
+    <string name="tool_call_reset_ui">Reset UI to default</string>
+    <string name="tool_call_updated_texts">Updated UI custom text</string>
+    <string name="tool_call_listed_texts">Queried UI text labels</string>
+    <string name="tool_call_path_action">Performed operation on path \"%s\"</string>
+    <string name="tool_call_queried">Searched: \"%s\"</string>
+    <string name="tool_call_visited_url">Visited URL: %s</string>
+    <string name="tool_call_executed_cmd">Executed system command: %s</string>
+    <string name="tool_call_params">Parameters: %s</string>
+    <string name="tool_call_executed">Executed tool</string>
+    <string name="tool_call_called_tool">Called tool %1$s: %2$s</string>
+    <string name="tool_call_tool_name">Called tool %s</string>
+    <string name="tool_call_tool_id">Tool ID: %s</string>
+    <string name="tool_call_collapse_args">Collapse input parameters</string>
+    <string name="tool_call_expand_args">View input parameters</string>
+    <string name="tool_call_collapse_result">Collapse result</string>
+    <string name="tool_call_expand_result">View result</string>
+
+    <!-- ── WorkspaceViewModel: Log Export & Status ── -->
+    <string name="ws_create_failed">Failed to create workspace, please retry</string>
+    <string name="ws_delete_failed">Failed to delete workspace, please retry</string>
+    <string name="ws_log_export_success">Log exported successfully</string>
+    <string name="ws_log_export_failed">Export failed: %s</string>
+    <string name="ws_status_running">Running</string>
+    <string name="ws_status_completed">Completed</string>
+    <string name="ws_active">active</string>
+    <string name="ws_exec_multi_agent">Executing multi-agent collaboration: %s…</string>
+    <string name="ws_start_failed">Failed to start workspace execution, please retry</string>
+    <string name="ws_task_completed">Task completed: %s</string>
+    <string name="ws_log_header">OmniChat Workspace Log</string>
+    <string name="ws_log_info">Workspace Info</string>
+    <string name="ws_log_export_time">Export time: %s</string>
+    <string name="ws_log_session_id">Session ID: %s</string>
+    <string name="ws_log_title">Title: %s</string>
+    <string name="ws_log_status">Status: %s</string>
+    <string name="ws_log_created_at">Created at: %s</string>
+    <string name="ws_log_team_status">Team Status</string>
+    <string name="ws_log_team_name">Team name: %s</string>
+    <string name="ws_log_agent_count">Agent count: %d</string>
+    <string name="ws_log_messages_count">%d messages</string>
+    <string name="ws_log_created_at_time">Created at: %s</string>
+    <string name="ws_log_orchestrator_history">Orchestrator conversation history (%d messages)</string>
+    <string name="ws_log_end">End of log</string>
+    <string name="ws_log_intervention"> [User Intervention]</string>
+    <string name="ws_log_truncated">\n    … (truncated, %d characters total)</string>
+
+    <!-- ── ExportImportScreen ── -->
+    <string name="processing">Processing…</string>
+
+    <!-- ── McpRuntimeManager ── -->
+    <string name="builtin_server_name">Built-in Tools</string>
+    <string name="ws_no_model_configs">No model configs available</string>
+
+    <!-- ── BuiltinToolHandler ── -->
+    <string name="tool_time_format_pattern">MMMM d, yyyy HH:mm:ss (EEEE)</string>
+    <string name="tool_memory_tag_filter">, tag filter: %s</string>
+
+    <!-- ── AlarmReceiver ── -->
+    <string name="alarm_notification_description">Scheduled reminder created by AI assistant</string>
+    <string name="alarm_timer_reminder">⏰ **Reminder**\n\n%s</string>
+    <string name="tool_search_match_lines">  (matched lines: %s)</string>
 </resources>

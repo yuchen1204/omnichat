@@ -279,7 +279,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Inject current date/time to prevent AI temporal hallucinations
         val now = ZonedDateTime.now()
-        val dateTimeStr = now.format(DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm (EEEE, z)", Locale.CHINESE))
+        val dateTimeStr = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm (EEEE, z)", Locale.getDefault()))
         finalSystemPrompt += "\n\n<!-- SYSTEM TIME: " + getApplication<Application>().getString(R.string.ai_time_instruction, dateTimeStr) + " -->"
 
         // Hidden formatting instruction: always respond using Markdown

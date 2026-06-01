@@ -25,11 +25,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import com.example.R
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import com.example.ui.theme.uiText
@@ -96,76 +99,76 @@ fun getToolIcon(name: String): ImageVector {
     }
 }
 
-fun formatToolCallSummary(name: String, args: JSONObject): String {
+fun formatToolCallSummary(context: Context, name: String, args: JSONObject): String {
     return when (name) {
         "file_list" -> {
-            val path = args.optString("path").ifEmpty { "根目录" }
-            "浏览了目录: $path"
+            val path = args.optString("path").ifEmpty { context.getString(R.string.tool_call_root_directory) }
+            context.getString(R.string.tool_call_browsed_dir, path)
         }
         "file_read" -> {
             val path = args.optString("path")
-            "读取了文件: $path"
+            context.getString(R.string.tool_call_read_file, path)
         }
         "file_write" -> {
             val path = args.optString("path")
-            "写入了文件: $path"
+            context.getString(R.string.tool_call_wrote_file, path)
         }
         "file_append" -> {
             val path = args.optString("path")
-            "追加了文件: $path"
+            context.getString(R.string.tool_call_appended_file, path)
         }
         "file_delete" -> {
             val path = args.optString("path")
-            "删除了文件/目录: $path"
+            context.getString(R.string.tool_call_deleted_file, path)
         }
         "file_info" -> {
             val path = args.optString("path")
-            "查看了路径信息: $path"
+            context.getString(R.string.tool_call_file_info, path)
         }
         "file_search" -> {
-            val directory = args.optString("directory").ifEmpty { "根目录" }
+            val directory = args.optString("directory").ifEmpty { context.getString(R.string.tool_call_root_directory) }
             val namePattern = args.optString("namePattern")
             val contentQuery = args.optString("contentQuery")
             val details = mutableListOf<String>()
-            if (namePattern.isNotEmpty()) details.add("文件名匹配: $namePattern")
-            if (contentQuery.isNotEmpty()) details.add("内容匹配: $contentQuery")
-            "搜索了目录 $directory" + (if (details.isNotEmpty()) " (${details.joinToString(", ")})" else "")
+            if (namePattern.isNotEmpty()) details.add(context.getString(R.string.tool_call_filename_match, namePattern))
+            if (contentQuery.isNotEmpty()) details.add(context.getString(R.string.tool_call_content_match, contentQuery))
+            context.getString(R.string.tool_call_searched_dir, directory) + (if (details.isNotEmpty()) " (${details.joinToString(", ")})" else "")
         }
         "search_memory" -> {
             val query = args.optString("query")
-            "检索了记忆库: \"$query\""
+            context.getString(R.string.tool_call_searched_memory, query)
         }
-        "adjust_ui" -> "修改了界面 UI 样式配置"
+        "adjust_ui" -> context.getString(R.string.tool_call_adjusted_ui)
         "color_scheme" -> {
             when (args.optString("action")) {
-                "save" -> "保存了配色方案: ${args.optString("name")}"
-                "apply" -> "应用了配色方案: ${args.optString("schemeId")}"
-                "delete" -> "删除了配色方案: ${args.optString("schemeId")}"
-                "list" -> "列出了已保存的配色方案"
-                else -> "操作了配色方案"
+                "save" -> context.getString(R.string.tool_call_saved_scheme, args.optString("name"))
+                "apply" -> context.getString(R.string.tool_call_applied_scheme, args.optString("schemeId"))
+                "delete" -> context.getString(R.string.tool_call_deleted_scheme, args.optString("schemeId"))
+                "list" -> context.getString(R.string.tool_call_listed_schemes)
+                else -> context.getString(R.string.tool_call_scheme_action)
             }
         }
         "agent" -> {
             val description = args.optString("description")
-            "委派子 Agent: $description"
+            context.getString(R.string.tool_call_delegated_agent, description)
         }
         "send_message" -> {
             val to = args.optString("to")
-            "向 $to 发送了消息"
+            context.getString(R.string.tool_call_sent_message, to)
         }
         "task_create" -> {
             val subject = args.optString("subject")
-            "创建任务: $subject"
+            context.getString(R.string.tool_call_created_task, subject)
         }
         "task_update" -> {
             val status = args.optString("status")
-            "更新任务状态: $status"
+            context.getString(R.string.tool_call_updated_task, status)
         }
-        "get_current_time" -> "获取了当前系统时间"
-        "get_ui_capabilities" -> "获取了 UI 配置参数范围"
-        "reset_ui_to_default" -> "重置了 UI 界面为默认"
-        "set_ui_texts" -> "更新了 UI 界面自定义文本"
-        "list_ui_texts" -> "查询了 UI 文字标签列表"
+        "get_current_time" -> context.getString(R.string.tool_call_got_time)
+        "get_ui_capabilities" -> context.getString(R.string.tool_call_got_ui_caps)
+        "reset_ui_to_default" -> context.getString(R.string.tool_call_reset_ui)
+        "set_ui_texts" -> context.getString(R.string.tool_call_updated_texts)
+        "list_ui_texts" -> context.getString(R.string.tool_call_listed_texts)
         else -> {
             val path = args.optString("path").takeIf { it.isNotEmpty() }
                 ?: args.optString("file").takeIf { it.isNotEmpty() }
@@ -178,10 +181,10 @@ fun formatToolCallSummary(name: String, args: JSONObject): String {
             val cmd = args.optString("command").takeIf { it.isNotEmpty() }
             
             when {
-                path != null -> "对路径 \"$path\" 执行了操作"
-                query != null -> "检索了: \"$query\""
-                url != null -> "访问了 URL: $url"
-                cmd != null -> "执行了系统命令: $cmd"
+                path != null -> context.getString(R.string.tool_call_path_action, path)
+                query != null -> context.getString(R.string.tool_call_queried, query)
+                url != null -> context.getString(R.string.tool_call_visited_url, url)
+                cmd != null -> context.getString(R.string.tool_call_executed_cmd, cmd)
                 else -> {
                     val keys = args.keys()
                     val params = mutableListOf<String>()
@@ -196,9 +199,9 @@ fun formatToolCallSummary(name: String, args: JSONObject): String {
                         }
                     }
                     if (params.isNotEmpty()) {
-                        "参数: ${params.joinToString(", ")}"
+                        context.getString(R.string.tool_call_params, params.joinToString(", "))
                     } else {
-                        "执行了该工具"
+                        context.getString(R.string.tool_call_executed)
                     }
                 }
             }
@@ -216,6 +219,7 @@ fun ToolGroupCard(
     val fs = uiSettings.fontSizeScale
     val spacingMultiplier = uiSettings.spacingMultiplier
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val context = LocalContext.current
 
     val lookup = remember(allMessages) { buildToolCallLookup(allMessages) }
     val totalCount = messages.size
@@ -282,11 +286,11 @@ fun ToolGroupCard(
                         val info = lookup[msg.toolCallId]
                         val name = info?.name ?: "unknown"
                         val summaryText = if (info != null) {
-                            formatToolCallSummary(info.name, info.arguments)
+                            formatToolCallSummary(context, info.name, info.arguments)
                         } else {
-                            "工具 ID: ${msg.toolCallId?.take(8) ?: "unknown"}"
+                            context.getString(R.string.tool_call_tool_id, msg.toolCallId?.take(8) ?: "unknown")
                         }
-                        
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 4.dp)
@@ -299,7 +303,7 @@ fun ToolGroupCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "调用工具 $name: $summaryText",
+                                text = context.getString(R.string.tool_call_called_tool, name, summaryText),
                                 fontSize = (11.5f * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
                                 maxLines = 1,
@@ -327,9 +331,9 @@ fun ToolGroupCard(
                         val info = lookup[msg.toolCallId]
                         val name = info?.name ?: "unknown"
                         val summaryText = if (info != null) {
-                            formatToolCallSummary(info.name, info.arguments)
+                            formatToolCallSummary(context, info.name, info.arguments)
                         } else {
-                            "工具 ID: ${msg.toolCallId ?: "unknown"}"
+                            context.getString(R.string.tool_call_tool_id, msg.toolCallId ?: "unknown")
                         }
 
                         Column(
@@ -349,7 +353,7 @@ fun ToolGroupCard(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "调用工具 $name",
+                                    text = context.getString(R.string.tool_call_tool_name, name),
                                     fontSize = (12.5f * fs).sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -383,7 +387,7 @@ fun ToolGroupCard(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = if (showArgs) "收起输入参数" else "查看输入参数",
+                                        text = if (showArgs) context.getString(R.string.tool_call_collapse_args) else context.getString(R.string.tool_call_expand_args),
                                         fontSize = (10.5f * fs).sp,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Medium
@@ -424,7 +428,7 @@ fun ToolGroupCard(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (showResults) "收起执行结果" else "查看执行结果",
+                                    text = if (showResults) context.getString(R.string.tool_call_collapse_result) else context.getString(R.string.tool_call_expand_result),
                                     fontSize = (10.5f * fs).sp,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium

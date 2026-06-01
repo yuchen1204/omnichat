@@ -19,6 +19,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import com.example.R
 import com.example.mcp.ToolSchemaDsl.schema
 import com.example.workspace.AgentTool
 private const val TAG = "McpRuntimeManager"
@@ -344,6 +345,9 @@ private sealed class McpChannel {
  */
 class McpRuntimeManager private constructor(private val context: Context) {
 
+    /** Expose application context for string resource access */
+    fun getContext(): Context = context
+
     companion object {
         @Volatile
         private var INSTANCE: McpRuntimeManager? = null
@@ -361,12 +365,16 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    private val BUILTIN_SERVER_ID = -1L
+    private lateinit var BUILTIN_SERVER_NAME: String
+
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS) // SSE 需要长连接
         .build()
 
     init {
+        BUILTIN_SERVER_NAME = context.getString(R.string.builtin_server_name)
         Log.i(TAG, "McpRuntimeManager 单例创建")
     }
 
@@ -492,8 +500,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     // ── 内置工具服务器 ────────────────────────────────────────────────────
     // 使用负数 ID 避免与用户创建的 MCP server ID 冲突
-    private val BUILTIN_SERVER_ID = -1L
-    private val BUILTIN_SERVER_NAME = "内置工具"
 
     private val builtinTools = listOf(
         McpTool(

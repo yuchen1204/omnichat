@@ -21,6 +21,7 @@ import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.R
 import com.example.mcp.AskUserManager
 
 /**
@@ -226,11 +227,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 loadTeamTasks(teamNameForSession(newId))
                 newId
             } else {
-                _errorMessage.value = "创建工作区失败，请重试"
+                _errorMessage.value = getApplication<Application>().getString(R.string.ws_create_failed)
                 -1L
             }
         } catch (e: Exception) {
-            _errorMessage.value = "创建工作区失败，请重试"
+            _errorMessage.value = getApplication<Application>().getString(R.string.ws_create_failed)
             -1L
         }
     }
@@ -331,7 +332,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             } catch (e: Exception) {
                 Log.e("WorkspaceViewModel", "deleteWorkspaceSession failed", e)
-                _errorMessage.value = "删除工作区失败，请重试"
+                _errorMessage.value = getApplication<Application>().getString(R.string.ws_delete_failed)
             }
         }
     }
@@ -354,7 +355,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 val orchestratorConfig = repository.getConfigById(orchestratorModelConfigId)
                     ?: allConfigs.find { it.isDefaultProvider }
                     ?: allConfigs.firstOrNull()
-                    ?: throw IllegalStateException("No model configs available")
+                    ?: throw IllegalStateException(getApplication<Application>().getString(R.string.ws_no_model_configs))
 
                 // 重置状态
                 _agentStreamBuffers.value = emptyMap()
@@ -388,7 +389,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
                 WorkspaceForegroundService.start(
                     getApplication(),
-                    "正在执行多 Agent 协作：${task.take(30)}..."
+                    getApplication<Application>().getString(R.string.ws_exec_multi_agent, task.take(30))
                 )
 
                 teamManager?.startExecution(task, imagePath)
@@ -400,7 +401,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 teamManager = null
                 com.example.mcp.BuiltinToolHandler.teamManager = null
                 WorkspaceForegroundService.stop(getApplication())
-                _errorMessage.value = "启动工作区执行失败，请重试"
+                _errorMessage.value = getApplication<Application>().getString(R.string.ws_start_failed)
             }
         }
     }
@@ -510,10 +511,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                _exportLogStatus.value = ExportImportStatus.Success("日志导出成功")
+                _exportLogStatus.value = ExportImportStatus.Success(getApplication<Application>().getString(R.string.ws_log_export_success))
             } catch (e: Exception) {
                 Log.e("WorkspaceViewModel", "Failed to export workspace logs", e)
-                _exportLogStatus.value = ExportImportStatus.Error("导出失败: ${e.message}")
+                _exportLogStatus.value = ExportImportStatus.Error(getApplication<Application>().getString(R.string.ws_log_export_failed, e.message ?: ""))
             }
         }
     }
@@ -528,27 +529,28 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     ): String {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val now = dateFormat.format(Date())
+        val app = getApplication<Application>()
 
         return buildString {
             appendLine("═══════════════════════════════════════════════════════════════")
-            appendLine("  OmniChat 工作区日志")
+            appendLine("  ${app.getString(R.string.ws_log_header)}")
             appendLine("═══════════════════════════════════════════════════════════════")
             appendLine()
 
-            appendLine("【工作区信息】")
-            appendLine("  导出时间: $now")
+            appendLine("【${app.getString(R.string.ws_log_info)}】")
+            appendLine("  ${app.getString(R.string.ws_log_export_time, now)}")
             if (session != null) {
-                appendLine("  会话 ID: ${session.id}")
-                appendLine("  标题: ${session.title}")
-                appendLine("  状态: ${if (session.isActive) "运行中" else "已完成"}")
-                appendLine("  创建时间: ${dateFormat.format(Date(session.createdAt))}")
+                appendLine("  ${app.getString(R.string.ws_log_session_id, session.id)}")
+                appendLine("  ${app.getString(R.string.ws_log_title, session.title)}")
+                appendLine("  ${app.getString(R.string.ws_log_status, if (session.isActive) app.getString(R.string.ws_status_running) else app.getString(R.string.ws_status_completed))}")
+                appendLine("  ${app.getString(R.string.ws_log_created_at, dateFormat.format(Date(session.createdAt)))}")
             }
             appendLine()
 
             if (state != null) {
-                appendLine("【团队状态】")
-                appendLine("  团队名: ${state.teamName}")
-                appendLine("  Agent 数量: ${1 + state.activeSubAgents.size}")
+                appendLine("【${app.getString(R.string.ws_log_team_status)}】")
+                appendLine("  ${app.getString(R.string.ws_log_team_name, state.teamName)}")
+                appendLine("  ${app.getString(R.string.ws_log_agent_count, 1 + state.activeSubAgents.size)}")
                 appendLine("  - ${state.orchestratorName} (Orchestrator)")
                 for (sub in state.activeSubAgents) {
                     appendLine("  - ${sub.name} (Sub-Agent) [${sub.status}] ${sub.description}")
@@ -590,8 +592,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
                     appendLine()
                     appendLine("═══════════════════════════════════════════════════════════════")
-                    appendLine("  $roleLabel: ${instance.agentName} (${allMessages.size} 条消息)")
-                    appendLine("  创建时间: ${dateFormat.format(Date(instance.createdAt))}")
+                    appendLine("  $roleLabel: ${instance.agentName} (${app.getString(R.string.ws_log_messages_count, allMessages.size)})")
+                    appendLine("  ${app.getString(R.string.ws_log_created_at_time, dateFormat.format(Date(instance.createdAt)))}")
                     appendLine("═══════════════════════════════════════════════════════════════")
                     appendLine()
                     for ((index, msg) in allMessages.withIndex()) {
@@ -608,7 +610,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
             appendLine()
             appendLine("═══════════════════════════════════════════════════════════════")
-            appendLine("  日志结束")
+            appendLine("  ${app.getString(R.string.ws_log_end)}")
             appendLine("═══════════════════════════════════════════════════════════════")
         }
     }
@@ -620,11 +622,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         state: TeamState?,
         dateFormat: SimpleDateFormat
     ) {
+        val app = getApplication<Application>()
         val orchestratorHistory = teamManager?.getAgentHistory(ORCHESTRATOR_NAME)
         if (!orchestratorHistory.isNullOrEmpty()) {
             appendLine()
             appendLine("═══════════════════════════════════════════════════════════════")
-            appendLine("  Orchestrator 对话历史 (${orchestratorHistory.size} 条消息)")
+            appendLine("  ${app.getString(R.string.ws_log_orchestrator_history, orchestratorHistory.size)}")
             appendLine("═══════════════════════════════════════════════════════════════")
             appendLine()
             for ((index, msg) in orchestratorHistory.withIndex()) {
@@ -641,6 +644,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         msg: AgentMessage,
         dateFormat: SimpleDateFormat
     ) {
+        val app = getApplication<Application>()
         val time = dateFormat.format(Date(msg.timestamp))
         val roleLabel = when (msg.role) {
             "user" -> "USER"
@@ -650,7 +654,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             else -> msg.role.uppercase()
         }
 
-        val interventionTag = if (msg.isIntervention) " [用户干预]" else ""
+        val interventionTag = if (msg.isIntervention) app.getString(R.string.ws_log_intervention) else ""
         val toolCallTag = if (msg.toolCallId != null) " [tool_call_id=${msg.toolCallId?.take(8)}]" else ""
 
         appendLine("  [$index] $time $roleLabel$interventionTag$toolCallTag")
@@ -659,7 +663,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         if (content.isNotEmpty()) {
             val maxLen = 2000
             val truncated = if (content.length > maxLen) {
-                content.take(maxLen) + "\n    ... (截断，共 ${content.length} 字符)"
+                content.take(maxLen) + app.getString(R.string.ws_log_truncated, content.length)
             } else {
                 content
             }
@@ -1095,7 +1099,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
                             WorkspaceForegroundService.complete(
                                 getApplication(),
-                                "任务已完成：$title"
+                                getApplication<Application>().getString(R.string.ws_task_completed, title)
                             )
 
                             val completedManager = managerRef

@@ -606,4 +606,89 @@
     <string name="tool_ui_text_key_label">• Key: %s</string>
     <string name="tool_ui_text_default">  默认: \"%s\"</string>
     <string name="tool_ui_text_override">  当前已覆盖为: \"%s\"</string>
+
+    <!-- ── ToolCallComponents: formatToolCallSummary ── -->
+    <string name="tool_call_root_directory">根目录</string>
+    <string name="tool_call_browsed_dir">浏览了目录: %s</string>
+    <string name="tool_call_read_file">读取了文件: %s</string>
+    <string name="tool_call_wrote_file">写入了文件: %s</string>
+    <string name="tool_call_appended_file">追加了文件: %s</string>
+    <string name="tool_call_deleted_file">删除了文件/目录: %s</string>
+    <string name="tool_call_file_info">查看了路径信息: %s</string>
+    <string name="tool_call_filename_match">文件名匹配: %s</string>
+    <string name="tool_call_content_match">内容匹配: %s</string>
+    <string name="tool_call_searched_dir">搜索了目录 %s</string>
+    <string name="tool_call_searched_memory">检索了记忆库: \"%s\"</string>
+    <string name="tool_call_adjusted_ui">修改了界面 UI 样式配置</string>
+    <string name="tool_call_saved_scheme">保存了配色方案: %s</string>
+    <string name="tool_call_applied_scheme">应用了配色方案: %s</string>
+    <string name="tool_call_deleted_scheme">删除了配色方案: %s</string>
+    <string name="tool_call_listed_schemes">列出了已保存的配色方案</string>
+    <string name="tool_call_scheme_action">操作了配色方案</string>
+    <string name="tool_call_delegated_agent">委派子 Agent: %s</string>
+    <string name="tool_call_sent_message">向 %s 发送了消息</string>
+    <string name="tool_call_created_task">创建任务: %s</string>
+    <string name="tool_call_updated_task">更新任务状态: %s</string>
+    <string name="tool_call_got_time">获取了当前系统时间</string>
+    <string name="tool_call_got_ui_caps">获取了 UI 配置参数范围</string>
+    <string name="tool_call_reset_ui">重置了 UI 界面为默认</string>
+    <string name="tool_call_updated_texts">更新了 UI 界面自定义文本</string>
+    <string name="tool_call_listed_texts">查询了 UI 文字标签列表</string>
+    <string name="tool_call_path_action">对路径 \"%s\" 执行了操作</string>
+    <string name="tool_call_queried">检索了: \"%s\"</string>
+    <string name="tool_call_visited_url">访问了 URL: %s</string>
+    <string name="tool_call_executed_cmd">执行了系统命令: %s</string>
+    <string name="tool_call_params">参数: %s</string>
+    <string name="tool_call_executed">执行了该工具</string>
+    <string name="tool_call_called_tool">调用工具 %1$s: %2$s</string>
+    <string name="tool_call_tool_name">调用工具 %s</string>
+    <string name="tool_call_tool_id">工具 ID: %s</string>
+    <string name="tool_call_collapse_args">收起输入参数</string>
+    <string name="tool_call_expand_args">查看输入参数</string>
+    <string name="tool_call_collapse_result">收起执行结果</string>
+    <string name="tool_call_expand_result">查看执行结果</string>
+
+    <!-- ── WorkspaceViewModel: Log Export & Status ── -->
+    <string name="ws_create_failed">创建工作区失败，请重试</string>
+    <string name="ws_delete_failed">删除工作区失败，请重试</string>
+    <string name="ws_log_export_success">日志导出成功</string>
+    <string name="ws_log_export_failed">导出失败: %s</string>
+    <string name="ws_status_running">运行中</string>
+    <string name="ws_status_completed">已完成</string>
+    <string name="ws_active">活跃</string>
+    <string name="ws_exec_multi_agent">正在执行多 Agent 协作：%s…</string>
+    <string name="ws_start_failed">启动工作区执行失败，请重试</string>
+    <string name="ws_task_completed">任务已完成：%s</string>
+    <string name="ws_log_header">OmniChat 工作区日志</string>
+    <string name="ws_log_info">工作区信息</string>
+    <string name="ws_log_export_time">导出时间: %s</string>
+    <string name="ws_log_session_id">会话 ID: %s</string>
+    <string name="ws_log_title">标题: %s</string>
+    <string name="ws_log_status">状态: %s</string>
+    <string name="ws_log_created_at">创建时间: %s</string>
+    <string name="ws_log_team_status">团队状态</string>
+    <string name="ws_log_team_name">团队名: %s</string>
+    <string name="ws_log_agent_count">Agent 数量: %d</string>
+    <string name="ws_log_messages_count">%d 条消息</string>
+    <string name="ws_log_created_at_time">创建时间: %s</string>
+    <string name="ws_log_orchestrator_history">Orchestrator 对话历史 (%d 条消息)</string>
+    <string name="ws_log_end">日志结束</string>
+    <string name="ws_log_intervention"> [用户干预]</string>
+    <string name="ws_log_truncated">\n    ... (截断，共 %d 字符)</string>
+
+    <!-- ── ExportImportScreen ── -->
+    <string name="processing">处理中…</string>
+
+    <!-- ── McpRuntimeManager ── -->
+    <string name="builtin_server_name">内置工具</string>
+    <string name="ws_no_model_configs">No model configs available</string>
+
+    <!-- ── BuiltinToolHandler ── -->
+    <string name="tool_time_format_pattern">yyyy年MM月dd日 HH:mm:ss (EEEE)</string>
+    <string name="tool_memory_tag_filter">，标签过滤：%s</string>
+
+    <!-- ── AlarmReceiver ── -->
+    <string name="alarm_notification_description">AI 助手创建的定时提醒</string>
+    <string name="alarm_timer_reminder">⏰ **定时提醒**\n\n%s</string>
+    <string name="tool_search_match_lines">  (匹配行: %s)</string>
 </resources>
