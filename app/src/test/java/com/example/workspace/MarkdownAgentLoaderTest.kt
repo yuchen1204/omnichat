@@ -22,7 +22,7 @@ You are a test agent.
 
         val frontmatter = extractFrontmatterTest(content)
         assertNotNull(frontmatter)
-        assertEquals("test-agent", frontmatter["name"])
+        assertEquals("test-agent", frontmatter!!["name"])
         assertEquals("Test agent description", frontmatter["description"])
     }
 
@@ -78,7 +78,7 @@ omitClaudeMd: false
 
         val frontmatter = extractFrontmatterTest(content)
         assertNotNull(frontmatter)
-        assertEquals(true, frontmatter["background"])
+        assertEquals(true, frontmatter!!["background"])
         assertEquals(false, frontmatter["omitClaudeMd"])
     }
 
@@ -93,7 +93,7 @@ description: 'single-quoted'
 
         val frontmatter = extractFrontmatterTest(content)
         assertNotNull(frontmatter)
-        assertEquals("quoted-name", frontmatter["name"])
+        assertEquals("quoted-name", frontmatter!!["name"])
         assertEquals("single-quoted", frontmatter["description"])
     }
 
@@ -160,10 +160,11 @@ System prompt.
     private fun extractFrontmatterTest(content: String): Map<String, Any>? {
         val lines = content.lines()
         if (lines.isEmpty() || lines[0].trim() != "---") return null
-        val endIdx = lines.indexOf("---", 1)
+        val endIdx = lines.subList(1, lines.size).indexOf("---")
         if (endIdx == -1) return null
+        val adjustedEndIdx = endIdx + 1
 
-        val frontmatterLines = lines.subList(1, endIdx)
+        val frontmatterLines = lines.subList(1, adjustedEndIdx)
         val result = mutableMapOf<String, Any>()
         for (line in frontmatterLines) {
             val trimmed = line.trim()
@@ -191,8 +192,9 @@ System prompt.
 
     private fun extractBodyContentTest(content: String): String {
         val lines = content.lines()
-        val startIdx = lines.indexOf("---", 1)
+        val startIdx = lines.subList(1, lines.size).indexOf("---")
         if (startIdx == -1) return content.trim()
-        return lines.subList(startIdx + 1, lines.size).joinToString("\n").trim()
+        val adjustedStartIdx = startIdx + 1
+        return lines.subList(adjustedStartIdx + 1, lines.size).joinToString("\n").trim()
     }
 }

@@ -1,23 +1,42 @@
 package com.example.workspace
 
+import android.content.Context
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
-import org.json.JSONObject
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class AgentDefinitionTest {
 
+    private lateinit var context: Context
+
+    @Before
+    fun setup() {
+        context = mock(Context::class.java)
+        // Return resource name as the string value so tests can verify keys are used
+        `when`(context.getString(org.mockito.ArgumentMatchers.anyInt())).thenAnswer { invocation ->
+            "res_${invocation.arguments[0]}"
+        }
+        `when`(context.getString(org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
+            .thenAnswer { invocation ->
+                "res_${invocation.arguments[0]}"
+            }
+    }
+
     @Test
     fun testBuiltInAgentsExist() {
-        assertTrue(BuiltInAgents.ALL.isNotEmpty())
-        assertTrue(BuiltInAgents.ALL.any { it.agentType == "general-purpose" })
-        assertTrue(BuiltInAgents.ALL.any { it.agentType == "explore" })
-        assertTrue(BuiltInAgents.ALL.any { it.agentType == "plan" })
-        assertTrue(BuiltInAgents.ALL.any { it.agentType == "verification" })
+        val agents = BuiltInAgents.all(context)
+        assertTrue(agents.isNotEmpty())
+        assertTrue(agents.any { it.agentType == "general-purpose" })
+        assertTrue(agents.any { it.agentType == "explore" })
+        assertTrue(agents.any { it.agentType == "plan" })
+        assertTrue(agents.any { it.agentType == "verification" })
     }
 
     @Test
     fun testExploreAgentIsReadOnly() {
-        val explore = BuiltInAgents.EXPLORE
+        val explore = BuiltInAgents.explore(context)
         assertTrue(explore.disallowedTools?.contains("write_file") == true)
         assertTrue(explore.disallowedTools?.contains("edit_file") == true)
         assertTrue(explore.omitClaudeMd)
@@ -26,9 +45,10 @@ class AgentDefinitionTest {
 
     @Test
     fun testVerificationAgentHasCriticalReminder() {
-        val verification = BuiltInAgents.VERIFICATION
+        val verification = BuiltInAgents.verification(context)
         assertNotNull(verification.criticalSystemReminder)
-        assertTrue(verification.criticalSystemReminder!!.contains("VERDICT"))
+        // With mock context, the reminder is a resource reference — verify it's non-empty
+        assertTrue(verification.criticalSystemReminder!!.isNotEmpty())
     }
 
     @Test
