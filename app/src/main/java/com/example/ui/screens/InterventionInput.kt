@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalUISettings
 import com.example.workspace.ORCHESTRATOR_NAME
 import java.io.File
@@ -105,7 +106,7 @@ fun InterventionInputArea(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.workspace_intervention_target_prefix),
+                    text = uiText("workspace.intervention.target.prefix", R.string.workspace_intervention_target_prefix),
                     fontSize = (10 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
@@ -131,7 +132,7 @@ fun InterventionInputArea(
                 if (isStreaming) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = stringResource(R.string.workspace_intervention_queued_hint),
+                        text = uiText("workspace.intervention.queued.hint", R.string.workspace_intervention_queued_hint),
                         fontSize = (9.5f * fs).sp,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -178,7 +179,7 @@ fun InterventionInputArea(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.chat_select_image),
+                                text = uiText("chat.select.image", R.string.chat_select_image),
                                 fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary
@@ -212,14 +213,14 @@ fun InterventionInputArea(
                     ) {
                         AsyncImage(
                             model = selectedImageUri,
-                            contentDescription = stringResource(R.string.chat_selected_image),
+                            contentDescription = uiText("chat.selected.image", R.string.chat_selected_image),
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = stringResource(R.string.chat_image_attached),
+                        text = uiText("chat.image.attached", R.string.chat_image_attached),
                         fontSize = (12 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -233,7 +234,7 @@ fun InterventionInputArea(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = stringResource(R.string.chat_remove_image),
+                            contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(18.dp)
                         )
@@ -263,9 +264,9 @@ fun InterventionInputArea(
                     Icon(
                         imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
                         contentDescription = if (showToolbar)
-                            stringResource(R.string.chat_toolbar_collapse)
+                            uiText("chat.toolbar.collapse", R.string.chat_toolbar_collapse)
                         else
-                            stringResource(R.string.chat_toolbar_expand),
+                            uiText("chat.toolbar.expand", R.string.chat_toolbar_expand),
                         tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
@@ -276,9 +277,9 @@ fun InterventionInputArea(
 
                 // 输入框
                 val placeholder = if (isOrchestrator)
-                    stringResource(R.string.workspace_intervention_hint_orchestrator)
+                    uiText("workspace.intervention.hint.orchestrator", R.string.workspace_intervention_hint_orchestrator)
                 else
-                    stringResource(R.string.workspace_intervention_hint_sub, agentName)
+                    uiText("workspace.intervention.hint.sub", R.string.workspace_intervention_hint_sub).format(agentName)
 
                 OutlinedTextField(
                     value = textInput,
@@ -286,7 +287,7 @@ fun InterventionInputArea(
                     placeholder = {
                         Text(
                             if (selectedImagePath != null)
-                                stringResource(R.string.chat_input_hint_with_image)
+                                uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
                             else
                                 placeholder,
                             fontSize = (15 * fs).sp
@@ -333,7 +334,7 @@ fun InterventionInputArea(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = stringResource(R.string.action_send),
+                        contentDescription = uiText("action.send", R.string.action_send),
                         tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)

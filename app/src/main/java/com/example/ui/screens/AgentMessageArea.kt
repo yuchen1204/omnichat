@@ -19,6 +19,7 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.AgentTabState
 import com.example.workspace.AgentStatus
 import com.example.ui.components.ToolGroupCard
@@ -210,7 +211,7 @@ private fun EmptyAgentState(agentName: String, status: AgentStatus, fs: Float) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = stringResource(R.string.workspace_agent_thinking, agentName),
+                        text = uiText("workspace.agent.thinking", R.string.workspace_agent_thinking).format(agentName),
                         fontSize = (13 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -225,7 +226,7 @@ private fun EmptyAgentState(agentName: String, status: AgentStatus, fs: Float) {
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = stringResource(R.string.workspace_agent_empty, agentName),
+                        text = uiText("workspace.agent.empty", R.string.workspace_agent_empty).format(agentName),
                         fontSize = (13 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -257,7 +258,7 @@ private fun WaitingForToolPlaceholder(fs: Float) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = stringResource(R.string.workspace_agent_waiting_tool),
+                text = uiText("workspace.agent.waiting.tool", R.string.workspace_agent_waiting_tool),
                 fontSize = (12 * fs).sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
@@ -114,7 +115,7 @@ fun ExportImportView(
             when (status) {
                 is ExportImportStatus.Loading -> {
                     StatusBanner(
-                        message = stringResource(R.string.processing),
+                        message = uiText("processing", R.string.processing),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         icon = null,
@@ -148,13 +149,13 @@ fun ExportImportView(
 
         // ── 导出卡片 ──────────────────────────────────────────────────────
         SectionCard(
-            title = stringResource(R.string.export_section_export),
+            title = uiText("export.section.export", R.string.export_section_export),
             icon = Icons.Default.Share,
             iconColor = MaterialTheme.colorScheme.primary,
             fs = fs
         ) {
             Text(
-                text = stringResource(R.string.export_desc),
+                text = uiText("export.desc", R.string.export_desc),
                 fontSize = (12 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = (17 * fs).sp,
@@ -164,8 +165,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportProviders,
                 onCheckedChange = { exportProviders = it },
-                title = stringResource(R.string.export_option_providers),
-                subtitle = stringResource(R.string.export_option_providers_desc),
+                title = uiText("export.option.providers", R.string.export_option_providers),
+                subtitle = uiText("export.option.providers.desc", R.string.export_option_providers_desc),
                 icon = Icons.Default.Settings,
                 iconColor = MaterialTheme.colorScheme.primary,
                 fs = fs
@@ -173,8 +174,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportMcp,
                 onCheckedChange = { exportMcp = it },
-                title = stringResource(R.string.export_option_mcp),
-                subtitle = stringResource(R.string.export_option_mcp_desc),
+                title = uiText("export.option.mcp", R.string.export_option_mcp),
+                subtitle = uiText("export.option.mcp.desc", R.string.export_option_mcp_desc),
                 icon = Icons.Default.Build,
                 iconColor = LocalCustomColors.current.warning,
                 fs = fs
@@ -182,8 +183,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportMemory,
                 onCheckedChange = { exportMemory = it },
-                title = stringResource(R.string.export_option_memory),
-                subtitle = stringResource(R.string.export_option_memory_desc),
+                title = uiText("export.option.memory", R.string.export_option_memory),
+                subtitle = uiText("export.option.memory.desc", R.string.export_option_memory_desc),
                 icon = Icons.Default.Info,
                 iconColor = LocalCustomColors.current.info,
                 fs = fs
@@ -191,8 +192,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = exportColorSchemes,
                 onCheckedChange = { exportColorSchemes = it },
-                title = stringResource(R.string.export_option_colors),
-                subtitle = stringResource(R.string.export_option_colors_desc),
+                title = uiText("export.option.colors", R.string.export_option_colors),
+                subtitle = uiText("export.option.colors.desc", R.string.export_option_colors_desc),
                 icon = Icons.Default.Star,
                 iconColor = LocalCustomColors.current.accent,
                 fs = fs
@@ -223,7 +224,7 @@ fun ExportImportView(
                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    stringResource(R.string.export_btn),
+                    uiText("export.btn", R.string.export_btn),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -232,13 +233,13 @@ fun ExportImportView(
 
         // ── 导入卡片 ──────────────────────────────────────────────────────
         SectionCard(
-            title = stringResource(R.string.import_section_import),
+            title = uiText("import.section.import", R.string.import_section_import),
             icon = Icons.Default.Add,
             iconColor = LocalCustomColors.current.success,
             fs = fs
         ) {
             Text(
-                text = stringResource(R.string.import_desc),
+                text = uiText("import.desc", R.string.import_desc),
                 fontSize = (12 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = (17 * fs).sp,
@@ -248,8 +249,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importProviders,
                 onCheckedChange = { importProviders = it },
-                title = stringResource(R.string.export_option_providers),
-                subtitle = stringResource(R.string.import_option_providers_desc),
+                title = uiText("export.option.providers", R.string.export_option_providers),
+                subtitle = uiText("import.option.providers.desc", R.string.import_option_providers_desc),
                 icon = Icons.Default.Settings,
                 iconColor = MaterialTheme.colorScheme.primary,
                 fs = fs
@@ -257,8 +258,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importMcp,
                 onCheckedChange = { importMcp = it },
-                title = stringResource(R.string.export_option_mcp),
-                subtitle = stringResource(R.string.import_option_mcp_desc),
+                title = uiText("export.option.mcp", R.string.export_option_mcp),
+                subtitle = uiText("import.option.mcp.desc", R.string.import_option_mcp_desc),
                 icon = Icons.Default.Build,
                 iconColor = LocalCustomColors.current.warning,
                 fs = fs
@@ -266,8 +267,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importMemory,
                 onCheckedChange = { importMemory = it },
-                title = stringResource(R.string.export_option_memory),
-                subtitle = stringResource(R.string.import_option_memory_desc),
+                title = uiText("export.option.memory", R.string.export_option_memory),
+                subtitle = uiText("import.option.memory.desc", R.string.import_option_memory_desc),
                 icon = Icons.Default.Info,
                 iconColor = LocalCustomColors.current.info,
                 fs = fs
@@ -275,8 +276,8 @@ fun ExportImportView(
             ExportOptionToggle(
                 checked = importColorSchemes,
                 onCheckedChange = { importColorSchemes = it },
-                title = stringResource(R.string.export_option_colors),
-                subtitle = stringResource(R.string.import_option_colors_desc),
+                title = uiText("export.option.colors", R.string.export_option_colors),
+                subtitle = uiText("import.option.colors.desc", R.string.import_option_colors_desc),
                 icon = Icons.Default.Star,
                 iconColor = LocalCustomColors.current.accent,
                 fs = fs
@@ -299,13 +300,13 @@ fun ExportImportView(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
-                        text = stringResource(R.string.import_replace_title),
+                        text = uiText("import.replace.title", R.string.import_replace_title),
                         fontSize = (13 * fs).sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = stringResource(R.string.import_replace_desc),
+                        text = uiText("import.replace.desc", R.string.import_replace_desc),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = (15 * fs).sp
@@ -343,7 +344,7 @@ fun ExportImportView(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    stringResource(R.string.import_btn),
+                    uiText("import.btn", R.string.import_btn),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -371,7 +372,7 @@ fun ExportImportView(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(R.string.export_note),
+                    text = uiText("export.note", R.string.export_note),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     lineHeight = (16 * fs).sp
@@ -583,7 +584,7 @@ private fun ImportConfirmDialog(
         },
         title = {
             Text(
-                stringResource(R.string.import_confirm_title),
+                uiText("import.confirm.title", R.string.import_confirm_title),
                 fontSize = (16 * fs).sp,
                 fontWeight = FontWeight.Bold
             )
@@ -591,15 +592,15 @@ private fun ImportConfirmDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = stringResource(R.string.import_confirm_body),
+                    text = uiText("import.confirm.body", R.string.import_confirm_body),
                     fontSize = (13 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 val items = buildList {
-                    if (importProviders) add(stringResource(R.string.export_option_providers))
-                    if (importMcp) add(stringResource(R.string.export_option_mcp))
-                    if (importMemory) add(stringResource(R.string.export_option_memory))
-                    if (importColorSchemes) add(stringResource(R.string.export_option_colors))
+                    if (importProviders) add(uiText("export.option.providers", R.string.export_option_providers))
+                    if (importMcp) add(uiText("export.option.mcp", R.string.export_option_mcp))
+                    if (importMemory) add(uiText("export.option.memory", R.string.export_option_memory))
+                    if (importColorSchemes) add(uiText("export.option.colors", R.string.export_option_colors))
                 }
                 items.forEach { item ->
                     Text(
@@ -627,7 +628,7 @@ private fun ImportConfirmDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.import_confirm_replace_warning),
+                                text = uiText("import.confirm.replace.warning", R.string.import_confirm_replace_warning),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.error,
                                 lineHeight = (15 * fs).sp
@@ -646,7 +647,7 @@ private fun ImportConfirmDialog(
                 else
                     ButtonDefaults.buttonColors()
             ) {
-                Text(stringResource(R.string.import_confirm_ok), fontSize = (13 * fs).sp)
+                Text(uiText("import.confirm.ok", R.string.import_confirm_ok), fontSize = (13 * fs).sp)
             }
         },
         dismissButton = {
@@ -654,7 +655,7 @@ private fun ImportConfirmDialog(
                 onClick = onDismiss,
                 shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
             ) {
-                Text(stringResource(R.string.import_confirm_cancel), fontSize = (13 * fs).sp)
+                Text(uiText("import.confirm.cancel", R.string.import_confirm_cancel), fontSize = (13 * fs).sp)
             }
         }
     )

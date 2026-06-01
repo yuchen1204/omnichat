@@ -36,6 +36,7 @@ import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 
@@ -94,9 +95,9 @@ fun McpConfigScreen(
                 val runningCount = serverStates.values.count { it.status == McpServerStatus.RUNNING }
                 val toolCount = allTools.size
 
-                StatChip(label = stringResource(R.string.mcp_stat_servers), value = "${servers.size}", color = MaterialTheme.colorScheme.primary)
-                StatChip(label = stringResource(R.string.mcp_stat_running_servers), value = "$runningCount", color = com.example.ui.theme.LocalCustomColors.current.success)
-                StatChip(label = stringResource(R.string.mcp_stat_tools_count), value = "$toolCount", color = com.example.ui.theme.LocalCustomColors.current.warning)
+                StatChip(label = uiText("mcp.stat.servers", R.string.mcp_stat_servers), value = "${servers.size}", color = MaterialTheme.colorScheme.primary)
+                StatChip(label = uiText("mcp.stat.running.servers", R.string.mcp_stat_running_servers), value = "$runningCount", color = com.example.ui.theme.LocalCustomColors.current.success)
+                StatChip(label = uiText("mcp.stat.tools.count", R.string.mcp_stat_tools_count), value = "$toolCount", color = com.example.ui.theme.LocalCustomColors.current.warning)
 
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -107,7 +108,7 @@ fun McpConfigScreen(
                 ) {
                     Icon(
                         Icons.Default.Share,
-                        contentDescription = stringResource(R.string.mcp_import_json),
+                        contentDescription = uiText("mcp.b03db521", R.string.mcp_import_json),
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -121,7 +122,7 @@ fun McpConfigScreen(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.mcp_add_service), fontSize = (13 * LocalUISettings.current.fontSizeScale).sp)
+                    Text(uiText("mcp.d42727b5", R.string.mcp_add_service), fontSize = (13 * LocalUISettings.current.fontSizeScale).sp)
                 }
             }
         }
@@ -153,14 +154,14 @@ fun McpConfigScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = stringResource(R.string.mcp_empty_title),
+                        text = uiText("mcp.empty.title", R.string.mcp_empty_title),
                         fontSize = (18 * LocalUISettings.current.fontSizeScale).sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.mcp_empty_desc),
+                        text = uiText("mcp.empty.desc", R.string.mcp_empty_desc),
                         fontSize = (13 * LocalUISettings.current.fontSizeScale).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -168,7 +169,7 @@ fun McpConfigScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     // 快速添加示例
                     Text(
-                        text = stringResource(R.string.mcp_examples_title),
+                        text = uiText("mcp.examples.title", R.string.mcp_examples_title),
                         fontSize = (12 * LocalUISettings.current.fontSizeScale).sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
@@ -235,7 +236,7 @@ fun McpConfigScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.mcp_add_dialog_title))
+                        Text(uiText("mcp.df5b1865", R.string.mcp_add_dialog_title))
                     }
                 }
             }
@@ -295,8 +296,8 @@ fun McpConfigScreen(
     // ── 工具列表弹窗 ──────────────────────────────────────────────────────
     showToolsFor?.let { serverId ->
         val tools = allTools.filter { it.serverId == serverId }
-        val serverName = if (serverId == -1L) stringResource(R.string.mcp_builtin_title)
-                         else servers.find { it.id == serverId }?.name ?: stringResource(R.string.mcp_unknown)
+        val serverName = if (serverId == -1L) uiText("mcp.builtin.title", R.string.mcp_builtin_title)
+                         else servers.find { it.id == serverId }?.name ?: uiText("mcp.unknown", R.string.mcp_unknown)
         McpToolsDialog(
             serverName = serverName,
             tools = tools,
@@ -332,10 +333,10 @@ private fun McpServerCard(
         McpServerStatus.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     }
     val statusLabel = when (status) {
-        McpServerStatus.RUNNING -> stringResource(R.string.mcp_status_running)
-        McpServerStatus.STARTING -> stringResource(R.string.mcp_status_starting)
-        McpServerStatus.ERROR -> stringResource(R.string.mcp_status_error)
-        McpServerStatus.STOPPED -> stringResource(R.string.mcp_status_stopped)
+        McpServerStatus.RUNNING -> uiText("mcp.status.running", R.string.mcp_status_running)
+        McpServerStatus.STARTING -> uiText("mcp.status.starting", R.string.mcp_status_starting)
+        McpServerStatus.ERROR -> uiText("mcp.status.error", R.string.mcp_status_error)
+        McpServerStatus.STOPPED -> uiText("mcp.status.stopped", R.string.mcp_status_stopped)
     }
 
     var showMenu by remember { mutableStateOf(false) }
@@ -404,24 +405,24 @@ private fun McpServerCard(
                     IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Default.MoreVert,
-                            contentDescription = stringResource(R.string.mcp_more),
+                            contentDescription = uiText("mcp.2ba645d8", R.string.mcp_more),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp)) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.mcp_edit_config)) },
+                            text = { Text(uiText("mcp.67aac8d1", R.string.mcp_edit_config)) },
                             leadingIcon = { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)) },
                             onClick = { showMenu = false; onEdit() }
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.mcp_restart_service)) },
+                            text = { Text(uiText("mcp.5bd26de1", R.string.mcp_restart_service)) },
                             leadingIcon = { Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp)) },
                             onClick = { showMenu = false; onRestart() }
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.mcp_delete), color = MaterialTheme.colorScheme.error) },
+                            text = { Text(uiText("mcp.cd8498ff", R.string.mcp_delete), color = MaterialTheme.colorScheme.error) },
                             leadingIcon = {
                                 Icon(
                                     Icons.Default.Delete, null,
@@ -480,7 +481,7 @@ private fun McpServerCard(
                     ) {
                         Icon(Icons.Default.List, null, modifier = Modifier.size(13.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(R.string.mcp_tools_count_label, toolCount), fontSize = (11 * fs).sp)
+                        Text(uiText("mcp.tools.count.label", R.string.mcp_tools_count_label).format(toolCount), fontSize = (11 * fs).sp)
                     }
                 }
 
@@ -489,7 +490,7 @@ private fun McpServerCard(
                 // 启用/禁用开关
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (server.isEnabled) stringResource(R.string.mcp_enabled) else stringResource(R.string.mcp_disabled),
+                        text = if (server.isEnabled) uiText("mcp.enabled", R.string.mcp_enabled) else uiText("mcp.disabled", R.string.mcp_disabled),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -512,20 +513,20 @@ private fun McpServerCard(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(uiSettings.cornerRadiusDp.dp),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(stringResource(R.string.mcp_delete_title)) },
-            text = { Text(stringResource(R.string.mcp_delete_confirm_body, server.name)) },
+            title = { Text(uiText("mcp.203904cd", R.string.mcp_delete_title)) },
+            text = { Text(uiText("mcp.delete.confirm.body", R.string.mcp_delete_confirm_body).format(server.name)) },
             confirmButton = {
                 Button(
                     onClick = { onDelete(); showDeleteConfirm = false },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                ) { Text(stringResource(R.string.mcp_delete)) }
+                ) { Text(uiText("mcp.cd8498ff", R.string.mcp_delete)) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showDeleteConfirm = false },
                     shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                ) { Text(stringResource(R.string.mcp_cancel)) }
+                ) { Text(uiText("mcp.40ebbe7b", R.string.mcp_cancel)) }
             }
         )
     }
@@ -538,12 +539,12 @@ private fun McpBuiltinGroupsCard(
 ) {
     val fs = LocalUISettings.current.fontSizeScale
     val groups = listOf(
-        "memory" to stringResource(R.string.mcp_group_memory),
-        "ui_appearance" to stringResource(R.string.mcp_group_ui_appearance),
-        "efficiency" to stringResource(R.string.mcp_group_efficiency),
-        "ui_text" to stringResource(R.string.mcp_group_ui_text),
-        "files" to stringResource(R.string.mcp_group_files),
-        "documents" to stringResource(R.string.mcp_group_documents)
+        "memory" to uiText("mcp.group.memory", R.string.mcp_group_memory),
+        "ui_appearance" to uiText("mcp.group.ui.appearance", R.string.mcp_group_ui_appearance),
+        "efficiency" to uiText("mcp.group.efficiency", R.string.mcp_group_efficiency),
+        "ui_text" to uiText("mcp.group.ui.text", R.string.mcp_group_ui_text),
+        "files" to uiText("mcp.group.files", R.string.mcp_group_files),
+        "documents" to uiText("mcp.group.documents", R.string.mcp_group_documents)
     )
     val enabledSet = enabledGroups.split(",").toSet()
 
@@ -555,14 +556,14 @@ private fun McpBuiltinGroupsCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
-                text = stringResource(R.string.mcp_builtin_groups_title),
+                text = uiText("mcp.builtin.groups.title", R.string.mcp_builtin_groups_title),
                 fontSize = (14 * fs).sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.mcp_builtin_groups_desc),
+                text = uiText("mcp.builtin.groups.desc", R.string.mcp_builtin_groups_desc),
                 fontSize = (11 * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -828,13 +829,13 @@ private fun BuiltinToolsCard(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.mcp_builtin_title),
+                    text = uiText("mcp.builtin.title", R.string.mcp_builtin_title),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.SemiBold,
                     color = onSurface
                 )
                 Text(
-                    text = stringResource(R.string.mcp_builtin_desc, tools.size),
+                    text = uiText("mcp.builtin.desc", R.string.mcp_builtin_desc).format(tools.size),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -849,7 +850,7 @@ private fun BuiltinToolsCard(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = stringResource(R.string.mcp_builtin_status),
+                    text = uiText("mcp.builtin.status", R.string.mcp_builtin_status),
                     fontSize = (11 * fs).sp,
                     color = com.example.ui.theme.LocalCustomColors.current.success,
                     fontWeight = FontWeight.Medium
@@ -862,7 +863,7 @@ private fun BuiltinToolsCard(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.mcp_view_tools),
+                    text = uiText("mcp.view.tools", R.string.mcp_view_tools),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.primary
                 )

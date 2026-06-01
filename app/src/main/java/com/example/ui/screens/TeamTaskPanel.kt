@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.data.TeamTask
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
@@ -75,7 +76,7 @@ fun TeamTaskPanel(
                 item(key = "header_agents") {
                     SectionHeader(
                         icon = Icons.Default.Groups,
-                        text = stringResource(R.string.workspace_panel_agents),
+                        text = uiText("workspace.panel.agents", R.string.workspace_panel_agents),
                         countSuffix = agentCount,
                         fs = fs,
                         fontFamily = resolvedFontFamily
@@ -120,7 +121,7 @@ fun TeamTaskPanel(
                     Spacer(modifier = Modifier.height(4.dp))
                     SectionHeader(
                         icon = Icons.AutoMirrored.Filled.Assignment,
-                        text = stringResource(R.string.workspace_panel_tasks),
+                        text = uiText("workspace.panel.tasks", R.string.workspace_panel_tasks),
                         countSuffix = teamTasks.size,
                         fs = fs,
                         fontFamily = resolvedFontFamily
@@ -395,7 +396,7 @@ private fun TaskCard(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = stringResource(R.string.workspace_task_blocked_by, task.blockedBy.joinToString(", ")),
+                        text = uiText("workspace.task.blocked.by", R.string.workspace_task_blocked_by).format(task.blockedBy.joinToString(", ")),
                         fontSize = (10 * fs).sp,
                         color = MaterialTheme.colorScheme.tertiary,
                         fontFamily = fontFamily,
@@ -411,13 +412,13 @@ private fun TaskCard(
 @Composable
 private fun taskStatusBadge(status: String): Pair<String, Color> {
     return when (status) {
-        "PENDING" -> stringResource(R.string.workspace_task_status_pending) to
+        "PENDING" -> uiText("workspace.task.status.pending", R.string.workspace_task_status_pending) to
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        "IN_PROGRESS" -> stringResource(R.string.workspace_task_status_in_progress) to
+        "IN_PROGRESS" -> uiText("workspace.task.status.in.progress", R.string.workspace_task_status_in_progress) to
             MaterialTheme.colorScheme.primary
-        "COMPLETED" -> stringResource(R.string.workspace_task_status_completed) to
+        "COMPLETED" -> uiText("workspace.task.status.completed", R.string.workspace_task_status_completed) to
             LocalCustomColors.current.success
-        "FAILED" -> stringResource(R.string.workspace_task_status_failed) to
+        "FAILED" -> uiText("workspace.task.status.failed", R.string.workspace_task_status_failed) to
             MaterialTheme.colorScheme.error
         else -> status to MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -425,11 +426,11 @@ private fun taskStatusBadge(status: String): Pair<String, Color> {
 
 @Composable
 private fun statusLabel(status: AgentStatus): String = when (status) {
-    AgentStatus.IDLE -> stringResource(R.string.workspace_agent_status_idle)
-    AgentStatus.STREAMING -> stringResource(R.string.workspace_agent_status_streaming)
-    AgentStatus.WAITING_TOOL -> stringResource(R.string.workspace_agent_status_tool)
-    AgentStatus.COMPLETED -> stringResource(R.string.workspace_agent_status_done)
-    AgentStatus.ERROR -> stringResource(R.string.workspace_agent_status_error)
+    AgentStatus.IDLE -> uiText("workspace.agent.status.idle", R.string.workspace_agent_status_idle)
+    AgentStatus.STREAMING -> uiText("workspace.agent.status.streaming", R.string.workspace_agent_status_streaming)
+    AgentStatus.WAITING_TOOL -> uiText("workspace.agent.status.tool", R.string.workspace_agent_status_tool)
+    AgentStatus.COMPLETED -> uiText("workspace.agent.status.done", R.string.workspace_agent_status_done)
+    AgentStatus.ERROR -> uiText("workspace.agent.status.error", R.string.workspace_agent_status_error)
 }
 
 @Composable

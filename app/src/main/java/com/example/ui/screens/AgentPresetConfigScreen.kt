@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.data.AgentPreset
 import com.example.data.ModelConfig
 import com.example.ui.theme.LocalUISettings
@@ -101,7 +102,7 @@ fun AgentPresetConfigScreen(
                 Icon(imageVector = Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(R.string.preset_button_new),
+                    text = uiText("preset.button.new", R.string.preset_button_new),
                     fontSize = (14 * fs).sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -127,7 +128,7 @@ fun AgentPresetConfigScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = stringResource(R.string.preset_list_empty),
+                                    text = uiText("preset.list.empty", R.string.preset_list_empty),
                                     fontSize = (12 * fs).sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -166,7 +167,7 @@ fun AgentPresetConfigScreen(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Edit,
-                                                contentDescription = stringResource(R.string.preset_action_edit),
+                                                contentDescription = uiText("preset.action.edit", R.string.preset_action_edit),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(16.dp)
                                             )
@@ -178,7 +179,7 @@ fun AgentPresetConfigScreen(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
-                                                contentDescription = stringResource(R.string.preset_action_delete),
+                                                contentDescription = uiText("preset.action.delete", R.string.preset_action_delete),
                                                 tint = MaterialTheme.colorScheme.error,
                                                 modifier = Modifier.size(16.dp)
                                             )
@@ -202,7 +203,7 @@ fun AgentPresetConfigScreen(
                                 if (matchedModel != null) {
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = stringResource(R.string.preset_model_tag, matchedModel.name),
+                                        text = uiText("preset.model.tag", R.string.preset_model_tag).format(matchedModel.name),
                                         fontSize = (11 * fs).sp,
                                         fontFamily = resolvedFontFamily,
                                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
@@ -223,7 +224,7 @@ fun AgentPresetConfigScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = if (editingPreset == null) stringResource(R.string.preset_form_new_title) else stringResource(R.string.preset_form_edit_title),
+                        text = if (editingPreset == null) uiText("preset.form.new.title", R.string.preset_form_new_title) else uiText("preset.form.edit.title", R.string.preset_form_edit_title),
                         fontSize = (14 * fs).sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -237,7 +238,7 @@ fun AgentPresetConfigScreen(
                             nameInput = it
                             if (it.trim().isNotEmpty()) nameError = null
                         },
-                        label = { Text(stringResource(R.string.preset_form_name), fontSize = (12 * fs).sp) },
+                        label = { Text(uiText("preset.form.name", R.string.preset_form_name), fontSize = (12 * fs).sp) },
                         isError = nameError != null,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -256,7 +257,7 @@ fun AgentPresetConfigScreen(
                     OutlinedTextField(
                         value = descriptionInput,
                         onValueChange = { descriptionInput = it },
-                        label = { Text(stringResource(R.string.preset_form_desc), fontSize = (12 * fs).sp) },
+                        label = { Text(uiText("preset.form.desc", R.string.preset_form_desc), fontSize = (12 * fs).sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -266,7 +267,7 @@ fun AgentPresetConfigScreen(
                     OutlinedTextField(
                         value = systemPromptInput,
                         onValueChange = { systemPromptInput = it },
-                        label = { Text(stringResource(R.string.preset_form_system_prompt), fontSize = (12 * fs).sp) },
+                        label = { Text(uiText("preset.form.system.prompt", R.string.preset_form_system_prompt), fontSize = (12 * fs).sp) },
                         minLines = 4,
                         maxLines = 8,
                         modifier = Modifier.fillMaxWidth()
@@ -275,14 +276,14 @@ fun AgentPresetConfigScreen(
 
                     // 模型配置选择器 (下拉框)
                     val selectedModelName = modelConfigs.find { it.id == selectedModelId }?.name
-                        ?: stringResource(R.string.preset_form_model_default)
+                        ?: uiText("preset.form.model.default", R.string.preset_form_model_default)
 
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = selectedModelName,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text(stringResource(R.string.preset_form_model), fontSize = (12 * fs).sp) },
+                            label = { Text(uiText("preset.form.model", R.string.preset_form_model), fontSize = (12 * fs).sp) },
                             trailingIcon = {
                                 IconButton(onClick = { dropdownExpanded = !dropdownExpanded }) {
                                     Icon(imageVector = if (dropdownExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null)
@@ -298,7 +299,7 @@ fun AgentPresetConfigScreen(
                             modifier = Modifier.fillMaxWidth(0.9f)
                         ) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.preset_form_model_default)) },
+                                text = { Text(uiText("preset.form.model.default", R.string.preset_form_model_default)) },
                                 onClick = {
                                     selectedModelId = null
                                     dropdownExpanded = false
@@ -324,10 +325,10 @@ fun AgentPresetConfigScreen(
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = { showForm = false }) {
-                            Text(stringResource(R.string.action_cancel), fontSize = (13 * fs).sp)
+                            Text(uiText("action.cancel", R.string.action_cancel), fontSize = (13 * fs).sp)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        val presetNameEmptyError = stringResource(R.string.preset_name_empty_error)
+                        val presetNameEmptyError = uiText("preset.name.empty.error", R.string.preset_name_empty_error)
                         Button(
                             onClick = {
                                 val trimmedName = nameInput.trim()
@@ -348,7 +349,7 @@ fun AgentPresetConfigScreen(
                             },
                             shape = RoundedCornerShape(8.dp * spacingMultiplier)
                         ) {
-                            Text(stringResource(R.string.action_save), fontSize = (13 * fs).sp)
+                            Text(uiText("action.save", R.string.action_save), fontSize = (13 * fs).sp)
                         }
                     }
                 }
@@ -369,10 +370,10 @@ fun AgentPresetConfigScreen(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text(stringResource(R.string.preset_dialog_delete_title)) },
+            title = { Text(uiText("preset.dialog.delete.title", R.string.preset_dialog_delete_title)) },
             text = {
                 Text(
-                    text = stringResource(R.string.preset_dialog_delete_body, preset.name),
+                    text = uiText("preset.dialog.delete.body", R.string.preset_dialog_delete_body).format(preset.name),
                     fontSize = (14 * fs).sp,
                     lineHeight = (20 * fs).sp
                 )
@@ -386,7 +387,7 @@ fun AgentPresetConfigScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) {
-                    Text(stringResource(R.string.action_delete))
+                    Text(uiText("action.delete", R.string.action_delete))
                 }
             },
             dismissButton = {
@@ -394,7 +395,7 @@ fun AgentPresetConfigScreen(
                     onClick = { showDeleteDialog = null },
                     shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                 ) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(uiText("action.cancel", R.string.action_cancel))
                 }
             }
         )

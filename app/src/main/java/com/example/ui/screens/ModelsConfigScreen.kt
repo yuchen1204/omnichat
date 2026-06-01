@@ -34,6 +34,7 @@ import com.example.data.ModelConfig
 import com.example.data.FetchedModel
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
@@ -63,7 +64,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.models_provider_library),
+                    text = uiText("models.7b387e08", R.string.models_provider_library),
                     fontSize = (16 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = resolvedFontFamily,
@@ -73,9 +74,9 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                     onClick = { isAddingNew = true },
                     modifier = Modifier.testTag("add_config_btn")
                 ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = stringResource(R.string.models_add_provider))
+                    Icon(imageVector = Icons.Default.Add, contentDescription = uiText("models.add.provider", R.string.models_add_provider))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(stringResource(R.string.models_add_provider), fontSize = (13 * fs).sp)
+                    Text(uiText("models.add.provider", R.string.models_add_provider), fontSize = (13 * fs).sp)
                 }
             }
 
@@ -87,7 +88,7 @@ fun ModelsConfigView(viewModel: ChatViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.models_empty_hint),
+                        text = uiText("models.empty.hint", R.string.models_empty_hint),
                         textAlign = TextAlign.Center,
                         fontSize = (13 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -207,7 +208,7 @@ fun ModelConfigCard(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = stringResource(R.string.models_default_badge),
+                                text = uiText("models.default.badge", R.string.models_default_badge),
                                 fontSize = (10 * fs).sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -217,7 +218,7 @@ fun ModelConfigCard(
 
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (isExpanded) stringResource(R.string.models_collapse) else stringResource(R.string.models_expand),
+                        contentDescription = if (isExpanded) uiText("models.collapse", R.string.models_collapse) else uiText("models.expand", R.string.models_expand),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -234,7 +235,7 @@ fun ModelConfigCard(
                     // Endpoint display
                     Row {
                         Text(
-                            text = stringResource(R.string.models_endpoint_label_colon),
+                            text = uiText("models.endpoint.label.colon", R.string.models_endpoint_label_colon),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -252,7 +253,7 @@ fun ModelConfigCard(
                     // Masked API Key display
                     Row {
                         Text(
-                            text = stringResource(R.string.models_api_key_label_colon),
+                            text = uiText("models.api.key.label.colon", R.string.models_api_key_label_colon),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -279,13 +280,13 @@ fun ModelConfigCard(
                         Spacer(modifier = Modifier.height(4.dp))
                         Row {
                             Text(
-                                text = stringResource(R.string.models_custom_headers_label),
+                                text = uiText("models.feba7752", R.string.models_custom_headers_label),
                                 fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = stringResource(R.string.models_headers_count, headerCount),
+                                text = uiText("models.headers.count", R.string.models_headers_count).format(headerCount),
                                 fontSize = (12 * fs).sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -323,13 +324,13 @@ fun ModelConfigCard(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = stringResource(R.string.models_set_default_title),
+                                        text = uiText("models.set.default.title", R.string.models_set_default_title),
                                         fontSize = (14 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = stringResource(R.string.models_set_default_desc),
+                                        text = uiText("models.set.default.desc", R.string.models_set_default_desc),
                                         fontSize = (11 * fs).sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
@@ -367,7 +368,7 @@ fun ModelConfigCard(
                         ) {
                             Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(stringResource(R.string.models_edit), fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
+                            Text(uiText("models.e7367561", R.string.models_edit), fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))
@@ -378,7 +379,7 @@ fun ModelConfigCard(
                         ) {
                             Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(stringResource(R.string.models_delete), fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
+                            Text(uiText("models.f8fc9ef5", R.string.models_delete), fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -462,7 +463,7 @@ fun ModelConfigDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = if (config == null) stringResource(R.string.models_add_provider_config) else stringResource(R.string.models_edit_provider_config),
+                    text = if (config == null) uiText("models.add.provider.config", R.string.models_add_provider_config) else uiText("models.edit.provider.config", R.string.models_edit_provider_config),
                     fontSize = (17 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -473,8 +474,8 @@ fun ModelConfigDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.models_provider_id)) },
-                    placeholder = { Text(stringResource(R.string.models_provider_id_hint)) },
+                    label = { Text(uiText("models.429a2a78", R.string.models_provider_id)) },
+                    placeholder = { Text(uiText("models.d1b95709", R.string.models_provider_id_hint)) },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -485,8 +486,8 @@ fun ModelConfigDialog(
                 OutlinedTextField(
                     value = endpoint,
                     onValueChange = { endpoint = it },
-                    label = { Text(stringResource(R.string.models_endpoint_label)) },
-                    placeholder = { Text(stringResource(R.string.models_endpoint_hint)) },
+                    label = { Text(uiText("models.5d14ad6b", R.string.models_endpoint_label)) },
+                    placeholder = { Text(uiText("models.17347aa3", R.string.models_endpoint_hint)) },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -497,14 +498,14 @@ fun ModelConfigDialog(
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it },
-                    label = { Text(stringResource(R.string.models_api_key_label)) },
+                    label = { Text(uiText("models.api.key.label", R.string.models_api_key_label)) },
                     singleLine = true,
                     visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
                             Icon(
                                 imageVector = if (isApiKeyVisible) Icons.Default.Info else Icons.Default.Lock,
-                                contentDescription = if (isApiKeyVisible) stringResource(R.string.models_hide_key) else stringResource(R.string.models_show_key)
+                                contentDescription = if (isApiKeyVisible) uiText("models.hide.key", R.string.models_hide_key) else uiText("models.show.key", R.string.models_show_key)
                             )
                         }
                     },
@@ -524,7 +525,7 @@ fun ModelConfigDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.models_custom_headers_title),
+                        text = uiText("models.4000c92f", R.string.models_custom_headers_title),
                         fontWeight = FontWeight.Bold,
                         fontSize = (12.5f * fs).sp,
                         color = MaterialTheme.colorScheme.onSurface
@@ -535,13 +536,13 @@ fun ModelConfigDialog(
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(2.dp))
-                        Text(stringResource(R.string.models_add), fontSize = (12 * fs).sp)
+                        Text(uiText("models.f1db767a", R.string.models_add), fontSize = (12 * fs).sp)
                     }
                 }
 
                 if (headerPairs.isEmpty()) {
                     Text(
-                        text = stringResource(R.string.models_no_custom_headers),
+                        text = uiText("models.bcd68a28", R.string.models_no_custom_headers),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -568,7 +569,7 @@ fun ModelConfigDialog(
                                         updated[index] = newKey to hVal
                                         headerPairs = updated
                                     },
-                                    label = { Text(stringResource(R.string.models_header_name), fontSize = (10 * fs).sp) },
+                                    label = { Text(uiText("models.7326ae72", R.string.models_header_name), fontSize = (10 * fs).sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
                                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = (12 * fs).sp)
@@ -580,7 +581,7 @@ fun ModelConfigDialog(
                                         updated[index] = hKey to newVal
                                         headerPairs = updated
                                     },
-                                    label = { Text(stringResource(R.string.models_header_value), fontSize = (10 * fs).sp) },
+                                    label = { Text(uiText("models.4aa0ac0e", R.string.models_header_value), fontSize = (10 * fs).sp) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
                                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = (12 * fs).sp)
@@ -595,7 +596,7 @@ fun ModelConfigDialog(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = stringResource(R.string.models_delete),
+                                        contentDescription = uiText("models.f8fc9ef5", R.string.models_delete),
                                         tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -609,7 +610,7 @@ fun ModelConfigDialog(
 
                 // Auto-fetching section
                 Text(
-                    text = stringResource(R.string.models_auto_fetch),
+                    text = uiText("models.d67d7eff", R.string.models_auto_fetch),
                     fontWeight = FontWeight.Bold,
                     fontSize = (12.5f * fs).sp,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -637,15 +638,15 @@ fun ModelConfigDialog(
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.models_fetching), fontSize = (12 * fs).sp)
+                        Text(uiText("models.6ff76247", R.string.models_fetching), fontSize = (12 * fs).sp)
                     } else {
-                        Text(stringResource(R.string.models_fetch_button), fontSize = (12 * fs).sp)
+                        Text(uiText("models.43d27d4e", R.string.models_fetch_button), fontSize = (12 * fs).sp)
                     }
                 }
 
                 if (fetchError != null) {
                     Text(
-                        text = stringResource(R.string.models_fetch_error, fetchError),
+                        text = uiText("models.fetch.error", R.string.models_fetch_error).format(fetchError),
                         color = MaterialTheme.colorScheme.error,
                         fontSize = (11 * fs).sp,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -656,7 +657,7 @@ fun ModelConfigDialog(
                 if (dialogModels.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = stringResource(R.string.models_available_list_title),
+                        text = uiText("models.e17ad608", R.string.models_available_list_title),
                         fontSize = (11.5f * fs).sp,
                         fontWeight = FontWeight.Bold,
                         color = LocalCustomColors.current.success,
@@ -714,7 +715,7 @@ fun ModelConfigDialog(
                                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
                                             Text(
-                                                text = stringResource(R.string.models_context_size_format, m.contextSize),
+                                                text = uiText("models.context.size.format", R.string.models_context_size_format).format(m.contextSize),
                                                 fontSize = (9.5f * fs).sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isSelected) 
@@ -733,7 +734,7 @@ fun ModelConfigDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         InteractiveCapabilityBadge(
-                                            text = stringResource(R.string.models_thinking_badge_emoji),
+                                            text = uiText("models.5471a253", R.string.models_thinking_badge_emoji),
                                             enabled = m.hasThinking,
                                             color = LocalCustomColors.current.success,
                                             onClick = {
@@ -746,7 +747,7 @@ fun ModelConfigDialog(
                                             }
                                         )
                                         InteractiveCapabilityBadge(
-                                            text = stringResource(R.string.models_vision_badge_emoji),
+                                            text = uiText("models.cdebf46c", R.string.models_vision_badge_emoji),
                                             enabled = m.hasVision,
                                             color = MaterialTheme.colorScheme.primary,
                                             onClick = {
@@ -759,7 +760,7 @@ fun ModelConfigDialog(
                                             }
                                         )
                                         InteractiveCapabilityBadge(
-                                            text = stringResource(R.string.models_tool_badge_emoji),
+                                            text = uiText("models.7f72b5df", R.string.models_tool_badge_emoji),
                                             enabled = m.hasToolUse,
                                             color = LocalCustomColors.current.warning,
                                             onClick = {
@@ -786,7 +787,7 @@ fun ModelConfigDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.models_cancel))
+                        Text(uiText("models.f48d4e43", R.string.models_cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
@@ -814,7 +815,7 @@ fun ModelConfigDialog(
                             )
                         }
                     ) {
-                        Text(stringResource(R.string.models_save))
+                        Text(uiText("models.9d94aa46", R.string.models_save))
                     }
                 }
             }
@@ -945,7 +946,7 @@ fun ProviderModelPicker(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ArrowBack,
-                                contentDescription = stringResource(R.string.models_back),
+                                contentDescription = uiText("models.38b198e3", R.string.models_back),
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -954,7 +955,7 @@ fun ProviderModelPicker(
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (step == 0) stringResource(R.string.models_select_provider_title) else stringResource(R.string.models_select_model_title),
+                            text = if (step == 0) uiText("models.select.provider.title", R.string.models_select_provider_title) else uiText("models.select.model.title", R.string.models_select_model_title),
                             fontSize = (16 * fs).sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -970,7 +971,7 @@ fun ProviderModelPicker(
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = stringResource(R.string.models_close),
+                            contentDescription = uiText("models.8c51094d", R.string.models_close),
                             tint = mutedTextColor,
                             modifier = Modifier.size(18.dp)
                         )
@@ -1027,7 +1028,7 @@ fun ProviderModelPicker(
                                             if (config.isDefaultProvider) {
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
-                                                    text = stringResource(R.string.models_default_short),
+                                                    text = uiText("models.38f845e5", R.string.models_default_short),
                                                     fontSize = (9 * fs).sp,
                                                     color = successColor,
                                                     modifier = Modifier
@@ -1071,13 +1072,13 @@ fun ProviderModelPicker(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = stringResource(R.string.models_no_saved_models),
+                                    text = uiText("models.455c9a7e", R.string.models_no_saved_models),
                                     fontSize = (13 * fs).sp,
                                     color = mutedTextColor,
                                     textAlign = TextAlign.Center
                                 )
                                 Text(
-                                    text = stringResource(R.string.models_fetch_first),
+                                    text = uiText("models.a7ecea12", R.string.models_fetch_first),
                                     fontSize = (11 * fs).sp,
                                     color = mutedTextColor,
                                     textAlign = TextAlign.Center
@@ -1133,15 +1134,15 @@ fun ProviderModelPicker(
                                                         .padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasThinking) Text(
-                                                    stringResource(R.string.models_thinking_badge), fontSize = (9 * fs).sp, color = successColor,
+                                                    uiText("models.thinking.badge", R.string.models_thinking_badge), fontSize = (9 * fs).sp, color = successColor,
                                                     modifier = Modifier.background(successColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasVision) Text(
-                                                    stringResource(R.string.models_vision_badge), fontSize = (9 * fs).sp, color = infoColor,
+                                                    uiText("models.vision.badge", R.string.models_vision_badge), fontSize = (9 * fs).sp, color = infoColor,
                                                     modifier = Modifier.background(infoColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                                 if (model.hasToolUse) Text(
-                                                    stringResource(R.string.models_tool_badge), fontSize = (9 * fs).sp, color = accentColor,
+                                                    uiText("models.tool.badge", R.string.models_tool_badge), fontSize = (9 * fs).sp, color = accentColor,
                                                     modifier = Modifier.background(accentColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
                                                 )
                                             }
@@ -1149,7 +1150,7 @@ fun ProviderModelPicker(
                                         if (isSelected) {
                                             Icon(
                                                 imageVector = Icons.Default.Check,
-                                                contentDescription = stringResource(R.string.models_selected),
+                                                contentDescription = uiText("models.2365b61d", R.string.models_selected),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -1171,7 +1172,7 @@ fun ProviderModelPicker(
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = onDismiss) { Text(stringResource(R.string.models_cancel)) }
+                        TextButton(onClick = onDismiss) { Text(uiText("models.f48d4e43", R.string.models_cancel)) }
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
@@ -1181,7 +1182,7 @@ fun ProviderModelPicker(
                             },
                             enabled = pickedProvider != null && pickedModelId.isNotBlank()
                         ) {
-                            Text(stringResource(R.string.models_confirm_select))
+                            Text(uiText("models.020bc2db", R.string.models_confirm_select))
                         }
                     }
                 }
@@ -1214,7 +1215,7 @@ fun MemoryModelSelectorCard(
 
     // 找到副模型所属的 Provider 名称
     val memoryProviderName = if (currentMemoryProviderId > 0L) {
-        allConfigs.find { it.id == currentMemoryProviderId }?.name ?: stringResource(R.string.models_unknown_provider)
+        allConfigs.find { it.id == currentMemoryProviderId }?.name ?: uiText("models.unknown.provider", R.string.models_unknown_provider)
     } else {
         defaultProvider?.name ?: allConfigs.firstOrNull()?.name ?: ""
     }
@@ -1258,12 +1259,12 @@ fun MemoryModelSelectorCard(
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.models_secondary_config), fontSize = (14 * fs).sp, fontWeight = FontWeight.SemiBold, color = onSurface)
-                    Text(stringResource(R.string.models_secondary_desc), fontSize = (11 * fs).sp, color = onSurface.copy(alpha = 0.6f))
+                    Text(uiText("models.b9ea1610", R.string.models_secondary_config), fontSize = (14 * fs).sp, fontWeight = FontWeight.SemiBold, color = onSurface)
+                    Text(uiText("models.8d492673", R.string.models_secondary_desc), fontSize = (11 * fs).sp, color = onSurface.copy(alpha = 0.6f))
                 }
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) stringResource(R.string.models_collapse) else stringResource(R.string.models_expand),
+                    contentDescription = if (isExpanded) uiText("models.collapse", R.string.models_collapse) else uiText("models.expand", R.string.models_expand),
                     tint = onSurface.copy(alpha = 0.6f)
                 )
             }
@@ -1287,10 +1288,10 @@ fun MemoryModelSelectorCard(
                         ) {
                             Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.models_add_provider_first), fontSize = (12 * fs).sp, color = MaterialTheme.colorScheme.error)
+                            Text(uiText("models.5e59ab74", R.string.models_add_provider_first), fontSize = (12 * fs).sp, color = MaterialTheme.colorScheme.error)
                         }
                     } else {
-                        Text(stringResource(R.string.models_current_secondary), fontSize = (11 * fs).sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
+                        Text(uiText("models.957abc40", R.string.models_current_secondary), fontSize = (11 * fs).sp, color = onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 4.dp))
 
                         // 当前选择展示 + 点击打开选择器
                         OutlinedCard(
@@ -1310,7 +1311,7 @@ fun MemoryModelSelectorCard(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     if (currentMemoryModelId.isBlank()) {
-                                        Text(stringResource(R.string.models_secondary_none), fontSize = (13 * fs).sp, color = onSurface.copy(alpha = 0.5f))
+                                        Text(uiText("models.a2aeee4c", R.string.models_secondary_none), fontSize = (13 * fs).sp, color = onSurface.copy(alpha = 0.5f))
                                     } else {
                                         Text(
                                             text = currentMemoryModelId,
@@ -1346,13 +1347,13 @@ fun MemoryModelSelectorCard(
                                         }
                                     }
                                 }
-                                Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.models_select), tint = primaryColor, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Edit, contentDescription = uiText("models.b8b09615", R.string.models_select), tint = primaryColor, modifier = Modifier.size(16.dp))
                             }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = stringResource(R.string.models_secondary_explanation),
+                            text = uiText("models.111b8427", R.string.models_secondary_explanation),
                             fontSize = (11 * fs).sp,
                             color = onSurface.copy(alpha = 0.6f),
                             lineHeight = (15 * fs).sp

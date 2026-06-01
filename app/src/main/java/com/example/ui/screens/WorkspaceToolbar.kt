@@ -26,6 +26,7 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ExportImportStatus
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -85,7 +86,7 @@ fun WorkspaceToolbar(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = stringResource(R.string.workspace_agents_count, agentCount),
+                        text = uiText("workspace.agents.count", R.string.workspace_agents_count).format(agentCount),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         fontFamily = resolvedFontFamily
@@ -98,7 +99,7 @@ fun WorkspaceToolbar(
             IconButton(onClick = onExportLog, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.FileDownload,
-                    contentDescription = stringResource(R.string.workspace_export_log),
+                    contentDescription = uiText("workspace.export.log", R.string.workspace_export_log),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
@@ -130,7 +131,7 @@ fun WorkspaceToolbar(
                 IconButton(onClick = onToggleTaskPanel, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = if (showTaskPanel) Icons.AutoMirrored.Filled.ViewSidebar else Icons.Default.Dashboard,
-                        contentDescription = stringResource(R.string.workspace_toggle_task_panel),
+                        contentDescription = uiText("workspace.toggle.task.panel", R.string.workspace_toggle_task_panel),
                         tint = if (showTaskPanel) MaterialTheme.colorScheme.primary
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
@@ -160,31 +161,31 @@ private fun WorkflowPhasePill(
     val customColors = LocalCustomColors.current
     val (label, icon, color, isLive) = when (phase) {
         WorkflowPhase.PLANNING -> WorkflowPhaseStyle(
-            label = stringResource(R.string.workspace_phase_planning),
+            label = uiText("workspace.phase.planning", R.string.workspace_phase_planning),
             icon = Icons.Default.Lightbulb,
             color = MaterialTheme.colorScheme.primary,
             isLive = true,
         )
         WorkflowPhase.WORKING -> WorkflowPhaseStyle(
-            label = stringResource(R.string.workspace_phase_working),
+            label = uiText("workspace.phase.working", R.string.workspace_phase_working),
             icon = Icons.Default.AutoAwesome,
             color = customColors.success,
             isLive = true,
         )
         WorkflowPhase.SYNTHESIZING -> WorkflowPhaseStyle(
-            label = stringResource(R.string.workspace_phase_synthesizing),
+            label = uiText("workspace.phase.synthesizing", R.string.workspace_phase_synthesizing),
             icon = Icons.Default.AutoAwesomeMosaic,
             color = MaterialTheme.colorScheme.tertiary,
             isLive = true,
         )
         WorkflowPhase.AWAITING_USER -> WorkflowPhaseStyle(
-            label = stringResource(R.string.workspace_phase_awaiting),
+            label = uiText("workspace.phase.awaiting", R.string.workspace_phase_awaiting),
             icon = Icons.Default.Schedule,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             isLive = false,
         )
         WorkflowPhase.COMPLETED -> WorkflowPhaseStyle(
-            label = stringResource(R.string.workspace_status_completed),
+            label = uiText("workspace.status.completed", R.string.workspace_status_completed),
             icon = Icons.Default.CheckCircle,
             color = MaterialTheme.colorScheme.primary,
             isLive = false,

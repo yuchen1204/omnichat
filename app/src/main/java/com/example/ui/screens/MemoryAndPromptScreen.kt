@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.PromptTemplate
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import com.example.ui.viewmodel.ChatViewModel
@@ -59,10 +60,10 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
             Tab(selected = activeSubTab == "memory", onClick = { activeSubTab = "memory" }) {
-                Text(stringResource(R.string.memory_tab_memory_library, memories.size), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
+                Text(uiText("memory.tab.memory.library", R.string.memory_tab_memory_library).format(memories.size), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
             Tab(selected = activeSubTab == "prompts", onClick = { activeSubTab = "prompts" }) {
-                Text(stringResource(R.string.memory_system_prompt_templates), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
+                Text(uiText("memory.bbbf4e03", R.string.memory_system_prompt_templates), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
         }
 
@@ -100,7 +101,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = stringResource(R.string.memory_manual_input_title),
+                                    text = uiText("memory.manual.input.title", R.string.memory_manual_input_title),
                                     fontSize = (12 * fs).sp,
                                     fontWeight = FontWeight.SemiBold,
                                     fontFamily = resolvedFontFamily,
@@ -124,7 +125,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     OutlinedTextField(
                                         value = manualMemoryText,
                                         onValueChange = { manualMemoryText = it },
-                                        placeholder = { Text(stringResource(R.string.memory_input_hint), fontSize = (12 * fs).sp) },
+                                        placeholder = { Text(uiText("memory.eaea8fbf", R.string.memory_input_hint), fontSize = (12 * fs).sp) },
                                         minLines = 2,
                                         maxLines = 4,
                                         modifier = Modifier.fillMaxWidth(),
@@ -150,7 +151,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                             },
                                             shape = RoundedCornerShape(8.dp * spacingMultiplier)
                                         ) {
-                                            Text(stringResource(R.string.memory_add_preference), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
+                                            Text(uiText("memory.51c52a46", R.string.memory_add_preference), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
                                         }
                                     }
                                 }
@@ -164,7 +165,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     val untaggedCount = memories.count { it.tags.isBlank() }
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = stringResource(R.string.memory_list_title, memories.size),
+                            text = uiText("memory.list.title", R.string.memory_list_title).format(memories.size),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -187,7 +188,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                     }
                                     Text(
-                                        stringResource(R.string.memory_backfill_tags, untaggedCount),
+                                        uiText("memory.backfill.tags", R.string.memory_backfill_tags).format(untaggedCount),
                                         fontSize = (12 * fs).sp
                                     )
                                 }
@@ -197,7 +198,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     onClick = { viewModel.clearAllMemories() },
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                 ) {
-                                    Text(stringResource(R.string.memory_clear_all), fontSize = (12 * fs).sp)
+                                    Text(uiText("memory.7c4e09ff", R.string.memory_clear_all), fontSize = (12 * fs).sp)
                                 }
                             }
                         }
@@ -220,7 +221,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = stringResource(R.string.memory_empty_hint),
+                                    text = uiText("memory.empty.hint", R.string.memory_empty_hint),
                                     textAlign = TextAlign.Center,
                                     fontSize = (12 * fs).sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -304,9 +305,9 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         Icon(
                                             imageVector = if (memory.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
                                             contentDescription = if (memory.pinned)
-                                                stringResource(R.string.memory_unpin)
+                                                uiText("memory.unpin", R.string.memory_unpin)
                                             else
-                                                stringResource(R.string.memory_pin),
+                                                uiText("memory.pin", R.string.memory_pin),
                                             tint = if (memory.pinned)
                                                 MaterialTheme.colorScheme.primary
                                             else
@@ -320,7 +321,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
-                                            contentDescription = stringResource(R.string.memory_delete),
+                                            contentDescription = uiText("memory.63e4284a", R.string.memory_delete),
                                             tint = MaterialTheme.colorScheme.error.copy(
                                                 alpha = if (memory.pinned) 0.3f else 0.7f
                                             ),
@@ -347,12 +348,12 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(stringResource(R.string.memory_create_template), fontWeight = FontWeight.Bold, fontSize = (14 * fs).sp, fontFamily = resolvedFontFamily)
+                        Text(uiText("memory.d1ce90a9", R.string.memory_create_template), fontWeight = FontWeight.Bold, fontSize = (14 * fs).sp, fontFamily = resolvedFontFamily)
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedTextField(
                             value = newTemplateName,
                             onValueChange = { newTemplateName = it },
-                            label = { Text(stringResource(R.string.memory_template_title_hint)) },
+                            label = { Text(uiText("memory.1866d6dc", R.string.memory_template_title_hint)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -360,8 +361,8 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         OutlinedTextField(
                             value = newTemplateText,
                             onValueChange = { newTemplateText = it },
-                            label = { Text(stringResource(R.string.memory_template_prompt_text)) },
-                            placeholder = { Text(stringResource(R.string.memory_template_placeholder_hint)) },
+                            label = { Text(uiText("memory.8278e828", R.string.memory_template_prompt_text)) },
+                            placeholder = { Text(uiText("memory.20754aa0", R.string.memory_template_placeholder_hint)) },
                             maxLines = 6,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -371,7 +372,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                             horizontalArrangement = Arrangement.End
                         ) {
                             TextButton(onClick = { isCreatingTemp = false }) {
-                                Text(stringResource(R.string.memory_cancel))
+                                Text(uiText("memory.b9716387", R.string.memory_cancel))
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
@@ -389,7 +390,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     }
                                 }
                             ) {
-                                Text(stringResource(R.string.memory_save_template))
+                                Text(uiText("memory.f489c32f", R.string.memory_save_template))
                             }
                         }
                     }
@@ -404,9 +405,9 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = stringResource(R.string.memory_add))
+                    Icon(imageVector = Icons.Default.Add, contentDescription = uiText("memory.3f63a83c", R.string.memory_add))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(stringResource(R.string.memory_add_system_template), fontSize = (13 * fs).sp)
+                    Text(uiText("memory.8bed6b57", R.string.memory_add_system_template), fontSize = (13 * fs).sp)
                 }
             }
 
@@ -453,7 +454,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Delete,
-                                            contentDescription = stringResource(R.string.memory_delete),
+                                            contentDescription = uiText("memory.63e4284a", R.string.memory_delete),
                                             tint = MaterialTheme.colorScheme.error,
                                             modifier = Modifier.size(16.dp)
                                         )

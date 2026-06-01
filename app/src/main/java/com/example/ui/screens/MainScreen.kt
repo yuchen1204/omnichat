@@ -22,6 +22,7 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -101,14 +102,14 @@ fun MainScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = stringResource(R.string.dialog_permission_title),
+                                text = uiText("dialog.permission.title", R.string.dialog_permission_title),
                                 fontSize = (16 * fsPerm).sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = resolvedFontFamilyPerm,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = stringResource(R.string.dialog_permission_subtitle),
+                                text = uiText("dialog.permission.subtitle", R.string.dialog_permission_subtitle),
                                 fontSize = (11 * fsPerm).sp,
                                 fontFamily = resolvedFontFamilyPerm,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -122,7 +123,7 @@ fun MainScreen(
 
                     // 路径展示
                     Text(
-                        text = stringResource(R.string.dialog_permission_desc),
+                        text = uiText("dialog.permission.desc", R.string.dialog_permission_desc),
                         fontSize = (13 * fsPerm).sp,
                         fontFamily = resolvedFontFamilyPerm,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -157,7 +158,7 @@ fun MainScreen(
                         ) {
                             Icon(Icons.Default.LockOpen, null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(stringResource(R.string.dialog_permission_allow_always), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
+                            Text(uiText("dialog.permission.allow.always", R.string.dialog_permission_allow_always), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
                         }
                         OutlinedButton(
                             onClick = { permissionRequest?.onResult?.invoke(PermissionResult.ALLOW_ONCE) },
@@ -166,7 +167,7 @@ fun MainScreen(
                         ) {
                             Icon(Icons.Default.Check, null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(stringResource(R.string.dialog_permission_allow_once), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
+                            Text(uiText("dialog.permission.allow.once", R.string.dialog_permission_allow_once), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             TextButton(
@@ -174,14 +175,14 @@ fun MainScreen(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
                             ) {
-                                Text(stringResource(R.string.dialog_permission_dont_ask), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(uiText("dialog.permission.dont.ask", R.string.dialog_permission_dont_ask), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             TextButton(
                                 onClick = { permissionRequest?.onResult?.invoke(PermissionResult.DENY) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
                             ) {
-                                Text(stringResource(R.string.dialog_permission_deny), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.error)
+                                Text(uiText("dialog.permission.deny", R.string.dialog_permission_deny), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -260,11 +261,11 @@ fun SettingsView(
 ) {
     var selectedSubTab by remember { mutableStateOf(0) }
     val tabs = listOf(
-        stringResource(R.string.tab_settings_models),
-        stringResource(R.string.tab_settings_mcp),
-        stringResource(R.string.tab_settings_memory),
-        stringResource(R.string.tab_settings_presets),
-        stringResource(R.string.tab_settings_data)
+        uiText("tab.settings.models", R.string.tab_settings_models),
+        uiText("tab.settings.mcp", R.string.tab_settings_mcp),
+        uiText("tab.settings.memory", R.string.tab_settings_memory),
+        uiText("tab.settings.presets", R.string.tab_settings_presets),
+        uiText("tab.settings.data", R.string.tab_settings_data)
     )
     val settingsViewModel: SettingsViewModel = viewModel()
 
@@ -329,9 +330,9 @@ fun MainTopAppBar(
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
 
     val titleText = when (currentTab) {
-        "chat" -> activeSession?.title ?: stringResource(R.string.topbar_title_chat)
-        "workspace" -> activeWsSession?.title ?: stringResource(R.string.topbar_title_workspace)
-        "settings" -> stringResource(R.string.topbar_title_settings)
+        "chat" -> activeSession?.title ?: uiText("topbar.title.chat", R.string.topbar_title_chat)
+        "workspace" -> activeWsSession?.title ?: uiText("topbar.title.workspace", R.string.topbar_title_workspace)
+        "settings" -> uiText("topbar.title.settings", R.string.topbar_title_settings)
         else -> "AI"
     }
 
@@ -354,7 +355,7 @@ fun MainTopAppBar(
                     )
                     if (currentTab == "chat" && defaultProvider != null) {
                         Text(
-                            text = stringResource(R.string.topbar_provider_prefix) + defaultProvider.name,
+                            text = uiText("topbar.provider.prefix", R.string.topbar_provider_prefix) + defaultProvider.name,
                             fontSize = (11 * fs).sp,
                             fontFamily = resolvedFontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -367,7 +368,7 @@ fun MainTopAppBar(
                 IconButton(onClick = onOpenDrawer) {
                     Icon(
                         imageVector = Icons.Default.Menu,
-                        contentDescription = stringResource(R.string.topbar_menu_open),
+                        contentDescription = uiText("topbar.menu.open", R.string.topbar_menu_open),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -396,7 +397,7 @@ fun MainTopAppBar(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = stringResource(R.string.topbar_memory_syncing),
+                            text = uiText("topbar.memory.syncing", R.string.topbar_memory_syncing),
                             fontSize = (11 * fs).sp,
                             color = com.example.ui.theme.LocalCustomColors.current.success
                         )
@@ -405,7 +406,7 @@ fun MainTopAppBar(
                     IconButton(onClick = { viewModel.triggerMemorySync(force = true) }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.topbar_memory_sync),
+                            contentDescription = uiText("topbar.memory.sync", R.string.topbar_memory_sync),
                             tint = MaterialTheme.colorScheme.primary // Material style
                         )
                     }

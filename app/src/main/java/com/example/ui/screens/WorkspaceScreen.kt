@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.WorkspaceViewModel
 import com.example.workspace.AgentStatus
 import com.example.workspace.ORCHESTRATOR_NAME
@@ -77,7 +78,7 @@ fun WorkspaceScreen(
     if (currentSession == null) {
         Box(modifier = Modifier.fillMaxSize()) {
             Text(
-                text = stringResource(R.string.workspace_select_hint),
+                text = uiText("workspace.select.hint", R.string.workspace_select_hint),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }

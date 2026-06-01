@@ -32,6 +32,7 @@ import com.example.mcp.McpTool
 import com.example.mcp.McpViewModel
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 
@@ -62,7 +63,7 @@ fun McpToolsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.mcp_dialog_tools_title, serverName),
+                        text = uiText("mcp.dialog.tools.title", R.string.mcp_dialog_tools_title).format(serverName),
                         fontSize = (16 * fs).sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = resolvedFontFamily,
@@ -82,7 +83,7 @@ fun McpToolsDialog(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(stringResource(R.string.mcp_dialog_no_tools), fontFamily = resolvedFontFamily, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(uiText("mcp.dialog.2df0bd31", R.string.mcp_dialog_no_tools), fontFamily = resolvedFontFamily, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -157,7 +158,7 @@ fun McpImportDialog(
                     .fillMaxSize()
             ) {
                 Text(
-                    text = stringResource(R.string.mcp_dialog_import_title),
+                    text = uiText("mcp.dialog.ea4cb678", R.string.mcp_dialog_import_title),
                     fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = resolvedFontFamily
@@ -165,7 +166,7 @@ fun McpImportDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Text(
-                    text = stringResource(R.string.mcp_dialog_import_desc),
+                    text = uiText("mcp.dialog.79180a54", R.string.mcp_dialog_import_desc),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -194,7 +195,7 @@ fun McpImportDialog(
                     ),
                     isError = isError,
                     supportingText = if (isError) {
-                        { Text(stringResource(R.string.mcp_dialog_invalid_json), fontFamily = resolvedFontFamily) }
+                        { Text(uiText("mcp.dialog.23cc670c", R.string.mcp_dialog_invalid_json), fontFamily = resolvedFontFamily) }
                     } else null
                 )
                 
@@ -208,7 +209,7 @@ fun McpImportDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                    ) { Text(stringResource(R.string.mcp_dialog_cancel), fontFamily = resolvedFontFamily) }
+                    ) { Text(uiText("mcp.dialog.e972261b", R.string.mcp_dialog_cancel), fontFamily = resolvedFontFamily) }
 
                     Button(
                         onClick = {
@@ -226,7 +227,7 @@ fun McpImportDialog(
                         modifier = Modifier.weight(1f),
                         enabled = jsonText.isNotBlank(),
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                    ) { Text(stringResource(R.string.mcp_dialog_confirm_import), fontFamily = resolvedFontFamily) }
+                    ) { Text(uiText("mcp.dialog.521cea1b", R.string.mcp_dialog_confirm_import), fontFamily = resolvedFontFamily) }
                 }
             }
         }
@@ -276,7 +277,7 @@ fun McpServerEditDialog(
             ) {
                 // 标题
                 Text(
-                    text = if (isEdit) stringResource(R.string.mcp_dialog_edit_title) else stringResource(R.string.mcp_dialog_add_title),
+                    text = if (isEdit) uiText("mcp.dialog.edit.title", R.string.mcp_dialog_edit_title) else uiText("mcp.dialog.add.title", R.string.mcp_dialog_add_title),
                     fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = resolvedFontFamily
@@ -287,8 +288,8 @@ fun McpServerEditDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.mcp_dialog_service_name), fontFamily = resolvedFontFamily) },
-                    placeholder = { Text(stringResource(R.string.mcp_dialog_service_name_hint), fontFamily = resolvedFontFamily) },
+                    label = { Text(uiText("mcp.dialog.a9c7eb71", R.string.mcp_dialog_service_name), fontFamily = resolvedFontFamily) },
+                    placeholder = { Text(uiText("mcp.dialog.53eae47f", R.string.mcp_dialog_service_name_hint), fontFamily = resolvedFontFamily) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = resolvedFontFamily)
@@ -297,7 +298,7 @@ fun McpServerEditDialog(
 
                 // 运行时选择
                 Text(
-                    text = stringResource(R.string.mcp_dialog_runtime),
+                    text = uiText("mcp.dialog.8436d4b3", R.string.mcp_dialog_runtime),
                     fontSize = (13 * fs).sp,
                     fontWeight = FontWeight.Medium,
                     fontFamily = resolvedFontFamily,
@@ -334,11 +335,11 @@ fun McpServerEditDialog(
                         args = it
                         argsError = !isValidJsonArray(it)
                     },
-                    label = { Text(stringResource(R.string.mcp_dialog_params), fontFamily = resolvedFontFamily) },
+                    label = { Text(uiText("mcp.dialog.4eee8fef", R.string.mcp_dialog_params), fontFamily = resolvedFontFamily) },
                     placeholder = { Text("[\"--port\", \"3000\"]", fontFamily = resolvedFontFamily) },
                     isError = argsError,
                     supportingText = if (argsError) {
-                        { Text(stringResource(R.string.mcp_dialog_invalid_json_array), fontFamily = resolvedFontFamily) }
+                        { Text(uiText("mcp.dialog.invalid.json.array", R.string.mcp_dialog_invalid_json_array), fontFamily = resolvedFontFamily) }
                     } else null,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -355,8 +356,8 @@ fun McpServerEditDialog(
                     },
                     label = {
                         Text(
-                            text = if (runtime == "remote_http") stringResource(R.string.mcp_dialog_custom_headers)
-                                   else stringResource(R.string.mcp_dialog_env_vars),
+                            text = if (runtime == "remote_http") uiText("mcp.dialog.custom.headers", R.string.mcp_dialog_custom_headers)
+                                   else uiText("mcp.dialog.env.vars", R.string.mcp_dialog_env_vars),
                             fontFamily = resolvedFontFamily
                         )
                     },
@@ -369,7 +370,7 @@ fun McpServerEditDialog(
                     },
                     isError = envError,
                     supportingText = if (envError) {
-                        { Text(stringResource(R.string.mcp_dialog_invalid_json_object), fontFamily = resolvedFontFamily) }
+                        { Text(uiText("mcp.dialog.invalid.json.object", R.string.mcp_dialog_invalid_json_object), fontFamily = resolvedFontFamily) }
                     } else null,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
@@ -383,7 +384,7 @@ fun McpServerEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.mcp_dialog_auto_start),
+                        text = uiText("mcp.dialog.500fbcfe", R.string.mcp_dialog_auto_start),
                         fontSize = (14 * fs).sp,
                         fontFamily = resolvedFontFamily,
                         modifier = Modifier.weight(1f)
@@ -402,7 +403,7 @@ fun McpServerEditDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                    ) { Text(stringResource(R.string.mcp_dialog_cancel), fontFamily = resolvedFontFamily) }
+                    ) { Text(uiText("mcp.dialog.e972261b", R.string.mcp_dialog_cancel), fontFamily = resolvedFontFamily) }
 
                     Button(
                         onClick = {
@@ -421,7 +422,7 @@ fun McpServerEditDialog(
                         modifier = Modifier.weight(1f),
                         enabled = name.isNotBlank() && command.isNotBlank() && !argsError && !envError,
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                    ) { Text(if (isEdit) stringResource(R.string.action_save) else stringResource(R.string.action_add), fontFamily = resolvedFontFamily) }
+                    ) { Text(if (isEdit) uiText("action.save", R.string.action_save) else uiText("action.add", R.string.action_add), fontFamily = resolvedFontFamily) }
                 }
             }
         }
@@ -437,9 +438,9 @@ fun RuntimeSelector(
     onSelect: (String) -> Unit
 ) {
     val options = listOf(
-        Triple("node", stringResource(R.string.mcp_dialog_runtime_node), stringResource(R.string.mcp_dialog_runtime_node_desc)),
-        Triple("python", stringResource(R.string.mcp_dialog_runtime_python), stringResource(R.string.mcp_dialog_runtime_python_desc)),
-        Triple("remote_http", stringResource(R.string.mcp_dialog_runtime_remote_http), stringResource(R.string.mcp_dialog_runtime_remote_http_desc))
+        Triple("node", uiText("mcp.dialog.runtime.node", R.string.mcp_dialog_runtime_node), uiText("mcp.dialog.runtime.node.desc", R.string.mcp_dialog_runtime_node_desc)),
+        Triple("python", uiText("mcp.dialog.runtime.python", R.string.mcp_dialog_runtime_python), uiText("mcp.dialog.runtime.python.desc", R.string.mcp_dialog_runtime_python_desc)),
+        Triple("remote_http", uiText("mcp.dialog.runtime.remote.http", R.string.mcp_dialog_runtime_remote_http), uiText("mcp.dialog.runtime.remote.http.desc", R.string.mcp_dialog_runtime_remote_http_desc))
     )
     val fs = LocalUISettings.current.fontSizeScale
     Row(
@@ -525,14 +526,14 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 
     val examples = listOf(
         McpServer(
-            name = stringResource(R.string.mcp_example_fetch),
+            name = uiText("mcp.example.fetch", R.string.mcp_example_fetch),
             runtime = "node",
             command = "mcp_fetch.js",
             args = "[]",
             env = "{}"
         ),
         McpServer(
-            name = stringResource(R.string.mcp_example_remote),
+            name = uiText("mcp.example.remote", R.string.mcp_example_remote),
             runtime = "remote_http",
             command = "https://mcp-server-example.vercel.app/sse",
             args = "[]",
@@ -571,18 +572,18 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 
 @Composable
 fun commandLabel(runtime: String) = when (runtime) {
-    "node" -> stringResource(R.string.mcp_dialog_command_label_node)
-    "python" -> stringResource(R.string.mcp_dialog_command_label_python)
-    "remote_http" -> stringResource(R.string.mcp_dialog_command_label_remote_http)
-    else -> stringResource(R.string.mcp_dialog_command_label_default)
+    "node" -> uiText("mcp.dialog.command.label.node", R.string.mcp_dialog_command_label_node)
+    "python" -> uiText("mcp.dialog.command.label.python", R.string.mcp_dialog_command_label_python)
+    "remote_http" -> uiText("mcp.dialog.command.label.remote.http", R.string.mcp_dialog_command_label_remote_http)
+    else -> uiText("mcp.dialog.command.label.default", R.string.mcp_dialog_command_label_default)
 }
 
 @Composable
 fun commandPlaceholder(runtime: String) = when (runtime) {
-    "node" -> stringResource(R.string.mcp_dialog_command_placeholder_node)
-    "python" -> stringResource(R.string.mcp_dialog_command_placeholder_python)
-    "remote_http" -> stringResource(R.string.mcp_dialog_command_placeholder_remote_http)
-    else -> stringResource(R.string.mcp_dialog_command_placeholder_default)
+    "node" -> uiText("mcp.dialog.command.placeholder.node", R.string.mcp_dialog_command_placeholder_node)
+    "python" -> uiText("mcp.dialog.command.placeholder.python", R.string.mcp_dialog_command_placeholder_python)
+    "remote_http" -> uiText("mcp.dialog.command.placeholder.remote.http", R.string.mcp_dialog_command_placeholder_remote_http)
+    else -> uiText("mcp.dialog.command.placeholder.default", R.string.mcp_dialog_command_placeholder_default)
 }
 
 fun isValidJsonArray(s: String): Boolean {
@@ -635,7 +636,7 @@ fun RuntimeInfoDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.mcp_dialog_runtime_details_title),
+                        text = uiText("mcp.dialog.runtime.details.title", R.string.mcp_dialog_runtime_details_title),
                         fontSize = (17 * fs).sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = resolvedFontFamily,
@@ -649,13 +650,13 @@ fun RuntimeInfoDialog(
 
                 // Node.js 状态
                 RuntimeInfoSection(
-                    title = stringResource(R.string.mcp_dialog_node_title),
+                    title = uiText("mcp.dialog.node.title", R.string.mcp_dialog_node_title),
                     isReady = isNodeAvailable,
                     isEnabled = isNodeEnabled,
-                    statusText = if (!isNodeEnabled) stringResource(R.string.mcp_dialog_node_disabled)
-                                 else if (isNodeAvailable) stringResource(R.string.mcp_dialog_node_ok)
-                                 else stringResource(R.string.mcp_dialog_node_missing),
-                    instructions = if (!isNodeAvailable && isNodeEnabled) stringResource(R.string.mcp_dialog_node_instructions) else null,
+                    statusText = if (!isNodeEnabled) uiText("mcp.dialog.node.disabled", R.string.mcp_dialog_node_disabled)
+                                 else if (isNodeAvailable) uiText("mcp.dialog.node.ok", R.string.mcp_dialog_node_ok)
+                                 else uiText("mcp.dialog.node.missing", R.string.mcp_dialog_node_missing),
+                    instructions = if (!isNodeAvailable && isNodeEnabled) uiText("mcp.dialog.node.instructions", R.string.mcp_dialog_node_instructions) else null,
                     resolvedFontFamily = resolvedFontFamily
                 )
 
@@ -663,11 +664,11 @@ fun RuntimeInfoDialog(
 
                 // Python 状态
                 RuntimeInfoSection(
-                    title = stringResource(R.string.mcp_dialog_python_title),
+                    title = uiText("mcp.dialog.python.title", R.string.mcp_dialog_python_title),
                     isReady = isPythonReady,
                     isEnabled = isPythonEnabled,
-                    statusText = if (!isPythonEnabled) stringResource(R.string.mcp_dialog_python_disabled) else pythonStatus,
-                    instructions = if (!isPythonReady && isPythonEnabled) stringResource(R.string.mcp_dialog_python_instructions) else null,
+                    statusText = if (!isPythonEnabled) uiText("mcp.dialog.python.disabled", R.string.mcp_dialog_python_disabled) else pythonStatus,
+                    instructions = if (!isPythonReady && isPythonEnabled) uiText("mcp.dialog.python.instructions", R.string.mcp_dialog_python_instructions) else null,
                     resolvedFontFamily = resolvedFontFamily
                 )
 
@@ -675,10 +676,10 @@ fun RuntimeInfoDialog(
 
                 // 远程 HTTP 状态
                 RuntimeInfoSection(
-                    title = stringResource(R.string.mcp_dialog_remote_http_title),
+                    title = uiText("mcp.dialog.remote.http.title", R.string.mcp_dialog_remote_http_title),
                     isReady = true,
-                    statusText = stringResource(R.string.mcp_dialog_remote_http_status),
-                    instructions = stringResource(R.string.mcp_dialog_remote_http_instructions),
+                    statusText = uiText("mcp.dialog.remote.http.status", R.string.mcp_dialog_remote_http_status),
+                    instructions = uiText("mcp.dialog.remote.http.instructions", R.string.mcp_dialog_remote_http_instructions),
                     resolvedFontFamily = resolvedFontFamily
                 )
 
@@ -687,7 +688,7 @@ fun RuntimeInfoDialog(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                ) { Text(stringResource(R.string.mcp_dialog_got_it), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("mcp.dialog.c0fd3fa0", R.string.mcp_dialog_got_it), fontFamily = resolvedFontFamily) }
             }
         }
     }
@@ -754,7 +755,7 @@ fun RuntimeInfoSection(
             HorizontalDivider(color = color.copy(alpha = 0.2f))
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                stringResource(R.string.mcp_dialog_install_steps),
+                uiText("mcp.dialog.install.steps", R.string.mcp_dialog_install_steps),
                 fontSize = (11 * fs).sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

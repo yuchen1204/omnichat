@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.data.ModelConfig
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
@@ -145,7 +146,7 @@ fun WorkspaceReadyView(
     val selectedModelName = if (selectedConfig != null) {
         "${selectedConfig.name} - ${selectedModelId ?: selectedConfig.selectedModelId}"
     } else {
-        stringResource(R.string.workspace_setup_model_none)
+        uiText("workspace.setup.model.none", R.string.workspace_setup_model_none)
     }
 
     // 预处理数据以按 Provider 分组展示
@@ -186,7 +187,7 @@ fun WorkspaceReadyView(
                 }
                 Spacer(modifier = Modifier.height(16.dp * spacingMultiplier))
                 Text(
-                    text = stringResource(R.string.workspace_ready_title),
+                    text = uiText("workspace.ready.title", R.string.workspace_ready_title),
                     fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -194,7 +195,7 @@ fun WorkspaceReadyView(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = stringResource(R.string.workspace_ready_hint),
+                    text = uiText("workspace.ready.hint", R.string.workspace_ready_hint),
                     fontSize = (13 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     fontFamily = resolvedFontFamily,
@@ -243,7 +244,7 @@ fun WorkspaceReadyView(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.chat_current_model, selectedModelId ?: "", selectedConfig?.name ?: ""),
+                                text = uiText("chat.current.model", R.string.chat_current_model).format(selectedModelId ?: "", selectedConfig?.name ?: ""),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
@@ -287,7 +288,7 @@ fun WorkspaceReadyView(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = stringResource(R.string.chat_switch_model),
+                                            text = uiText("chat.57841df8", R.string.chat_switch_model),
                                             fontSize = (12 * fs).sp,
                                             fontWeight = FontWeight.Medium,
                                             color = MaterialTheme.colorScheme.primary
@@ -338,7 +339,7 @@ fun WorkspaceReadyView(
                                             DropdownMenuItem(
                                                 text = { 
                                                     Text(
-                                                        "  " + stringResource(R.string.workspace_model_default_format, config.selectedModelId),
+                                                        "  " + uiText("workspace.model.default.format", R.string.workspace_model_default_format).format(config.selectedModelId),
                                                         fontSize = (13 * fs).sp,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     ) 
@@ -376,7 +377,7 @@ fun WorkspaceReadyView(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = stringResource(R.string.chat_select_image),
+                                        text = uiText("chat.select.image", R.string.chat_select_image),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -410,7 +411,7 @@ fun WorkspaceReadyView(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = stringResource(R.string.chat_take_photo),
+                                        text = uiText("chat.take.photo", R.string.chat_take_photo),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -434,14 +435,14 @@ fun WorkspaceReadyView(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.workspace_sandbox_label),
+                                text = uiText("workspace.sandbox.label", R.string.workspace_sandbox_label),
                                 fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (sandboxPath.isBlank()) stringResource(R.string.workspace_sandbox_unset)
+                                text = if (sandboxPath.isBlank()) uiText("workspace.sandbox.unset", R.string.workspace_sandbox_unset)
                                        else sandboxPath,
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -478,7 +479,7 @@ fun WorkspaceReadyView(
                                     onValueChange = { sandboxPath = it },
                                     placeholder = {
                                         Text(
-                                            stringResource(R.string.workspace_sandbox_placeholder),
+                                            uiText("workspace.sandbox.placeholder", R.string.workspace_sandbox_placeholder),
                                             fontSize = (12 * fs).sp
                                         )
                                     },
@@ -501,7 +502,7 @@ fun WorkspaceReadyView(
                                             ) {
                                                 Icon(
                                                     Icons.Default.Close,
-                                                    contentDescription = stringResource(R.string.workspace_sandbox_clear),
+                                                    contentDescription = uiText("workspace.sandbox.clear", R.string.workspace_sandbox_clear),
                                                     modifier = Modifier.size(14.dp)
                                                 )
                                             }
@@ -564,7 +565,7 @@ fun WorkspaceReadyView(
                             if (selectedImagePath != null || selectedImageUri != null) {
                                 AsyncImage(
                                     model = selectedImageUri ?: selectedImagePath,
-                                    contentDescription = stringResource(R.string.chat_selected_image),
+                                    contentDescription = uiText("chat.selected.image", R.string.chat_selected_image),
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
@@ -574,7 +575,7 @@ fun WorkspaceReadyView(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = stringResource(R.string.chat_image_attached),
+                            text = uiText("chat.image.attached", R.string.chat_image_attached),
                             fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -591,7 +592,7 @@ fun WorkspaceReadyView(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(R.string.chat_remove_image),
+                                contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -620,7 +621,7 @@ fun WorkspaceReadyView(
                     ) {
                         Icon(
                             imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (showToolbar) stringResource(R.string.chat_toolbar_collapse) else stringResource(R.string.chat_toolbar_expand),
+                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", R.string.chat_toolbar_collapse) else uiText("chat.toolbar.expand", R.string.chat_toolbar_expand),
                             tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -635,9 +636,9 @@ fun WorkspaceReadyView(
                         onValueChange = { taskText = it },
                         placeholder = {
                             val hint = if (selectedImagePath != null || selectedImageUri != null) {
-                                stringResource(R.string.chat_input_hint_with_image)
+                                uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
                             } else {
-                                stringResource(R.string.workspace_setup_task_placeholder)
+                                uiText("workspace.setup.task.placeholder", R.string.workspace_setup_task_placeholder)
                             }
                             Text(hint, fontSize = (15 * fs).sp)
                         },
@@ -697,7 +698,7 @@ fun WorkspaceReadyView(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
-                            contentDescription = stringResource(R.string.chat_send_contentDescription),
+                            contentDescription = uiText("chat.send.contentDescription", R.string.chat_send_contentDescription),
                             tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)

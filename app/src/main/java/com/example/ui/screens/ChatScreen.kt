@@ -62,6 +62,7 @@ import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
 import androidx.compose.ui.res.stringResource
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -191,7 +192,7 @@ fun ChatView(viewModel: ChatViewModel) {
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
     // 当前实际使用的 Provider 和模型
-    val activeProviderName = defaultProvider?.name ?: stringResource(R.string.chat_not_set)
+    val activeProviderName = defaultProvider?.name ?: uiText("chat.not.set", R.string.chat_not_set)
     val activeModelId = defaultProvider?.selectedModelId ?: ""
 
     Column(
@@ -211,13 +212,13 @@ fun ChatView(viewModel: ChatViewModel) {
                 if (defaultProvider == null) {
                     Icon(
                         imageVector = Icons.Default.Info,
-                        contentDescription = stringResource(R.string.chat_reminder),
+                        contentDescription = uiText("chat.4c423b81", R.string.chat_reminder),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = stringResource(R.string.chat_no_provider_warning),
+                        text = uiText("chat.no.provider.warning", R.string.chat_no_provider_warning),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
@@ -225,13 +226,13 @@ fun ChatView(viewModel: ChatViewModel) {
                 } else {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = stringResource(R.string.chat_memory),
+                        contentDescription = uiText("chat.b489ee1d", R.string.chat_memory),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = stringResource(R.string.chat_memory_injected, memories.size),
+                        text = uiText("chat.memory.injected", R.string.chat_memory_injected).format(memories.size),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -267,9 +268,7 @@ fun ChatView(viewModel: ChatViewModel) {
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = stringResource(R.string.chat_mcp_loading,
-                        startingServers.joinToString(stringResource(R.string.chat_separator)) { it.server.name }
-                    ),
+                    text = uiText("chat.mcp.loading", R.string.chat_mcp_loading).format(startingServers.joinToString(uiText("chat.separator", R.string.chat_separator)) { it.server.name }),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -412,7 +411,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = stringResource(R.string.chat_scroll_to_bottom),
+                            contentDescription = uiText("chat.scroll.to.bottom", R.string.chat_scroll_to_bottom),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -459,7 +458,7 @@ fun ChatView(viewModel: ChatViewModel) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.chat_current_model, activeModelId, activeProviderName),
+                                text = uiText("chat.current.model", R.string.chat_current_model).format(activeModelId, activeProviderName),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
@@ -502,7 +501,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = stringResource(R.string.chat_switch_model),
+                                        text = uiText("chat.57841df8", R.string.chat_switch_model),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -534,7 +533,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = stringResource(R.string.chat_select_image),
+                                        text = uiText("chat.select.image", R.string.chat_select_image),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -568,7 +567,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = stringResource(R.string.chat_take_photo),
+                                        text = uiText("chat.take.photo", R.string.chat_take_photo),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -605,7 +604,7 @@ fun ChatView(viewModel: ChatViewModel) {
                             if (selectedImagePath != null) {
                                 AsyncImage(
                                     model = selectedImageUri ?: selectedImagePath,
-                                    contentDescription = stringResource(R.string.chat_selected_image),
+                                    contentDescription = uiText("chat.selected.image", R.string.chat_selected_image),
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
@@ -615,7 +614,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = stringResource(R.string.chat_image_attached),
+                            text = uiText("chat.image.attached", R.string.chat_image_attached),
                             fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -632,7 +631,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(R.string.chat_remove_image),
+                                contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -661,7 +660,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (showToolbar) stringResource(R.string.chat_toolbar_collapse) else stringResource(R.string.chat_toolbar_expand),
+                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", R.string.chat_toolbar_collapse) else uiText("chat.toolbar.expand", R.string.chat_toolbar_expand),
                             tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -676,9 +675,9 @@ fun ChatView(viewModel: ChatViewModel) {
                         onValueChange = { textInput = it },
                         placeholder = {
                             val hint = if (selectedImagePath != null) {
-                                stringResource(R.string.chat_input_hint_with_image)
+                                uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
                             } else {
-                                stringResource(R.string.chat_input_hint)
+                                uiText("chat.input.hint", R.string.chat_input_hint)
                             }
                             Text(hint, fontSize = (15 * fs).sp)
                         },
@@ -740,7 +739,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
-                            contentDescription = stringResource(R.string.chat_send_contentDescription),
+                            contentDescription = uiText("chat.send.contentDescription", R.string.chat_send_contentDescription),
                             tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -782,7 +781,7 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
     ) {
         Icon(
             imageVector = Icons.Default.Check,
-            contentDescription = stringResource(R.string.chat_ai_ready),
+            contentDescription = uiText("chat.17bbe99c", R.string.chat_ai_ready),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .size(64.dp)
@@ -794,7 +793,7 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = stringResource(R.string.chat_welcome_title),
+            text = uiText("chat.1fda5871", R.string.chat_welcome_title),
             fontSize = (18 * fs).sp,
             fontWeight = FontWeight.Bold,
             fontFamily = resolvedFontFamily,
@@ -802,7 +801,7 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = stringResource(R.string.chat_welcome_desc),
+            text = uiText("chat.aa2781f8", R.string.chat_welcome_desc),
             fontSize = (13 * fs).sp,
             fontFamily = resolvedFontFamily,
             textAlign = TextAlign.Center,
@@ -816,17 +815,17 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.chat_status_overview), fontWeight = FontWeight.Bold, fontSize = (13 * fs).sp, fontFamily = resolvedFontFamily)
+                Text(uiText("chat.4d810ed0", R.string.chat_status_overview), fontWeight = FontWeight.Bold, fontSize = (13 * fs).sp, fontFamily = resolvedFontFamily)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = if (config != null) stringResource(R.string.chat_status_provider_ok, config.name) else stringResource(R.string.chat_status_provider_empty),
+                    text = if (config != null) uiText("chat.status.provider.ok", R.string.chat_status_provider_ok).format(config.name) else uiText("chat.status.provider.empty", R.string.chat_status_provider_empty),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily,
                     color = if (config != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = stringResource(R.string.chat_status_memories_count, memories.size),
+                    text = uiText("chat.status.memories.count", R.string.chat_status_memories_count).format(memories.size),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily
                 )
@@ -933,7 +932,7 @@ fun ThinkingProcessPanel(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (!isThinkingFinished) stringResource(R.string.chat_thinking_in_progress) else stringResource(R.string.chat_thinking_folded),
+                    text = if (!isThinkingFinished) uiText("chat.thinking.in.progress", R.string.chat_thinking_in_progress) else uiText("chat.thinking.folded", R.string.chat_thinking_folded),
                     fontSize = (12 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -941,7 +940,7 @@ fun ThinkingProcessPanel(
             }
             Icon(
                 imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (isExpanded) stringResource(R.string.chat_action_fold) else stringResource(R.string.chat_action_unfold),
+                contentDescription = if (isExpanded) uiText("chat.action.fold", R.string.chat_action_fold) else uiText("chat.action.unfold", R.string.chat_action_unfold),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(18.dp)
             )
@@ -1069,7 +1068,7 @@ fun BubbleMessage(
                                 ) {
                                     AsyncImage(
                                         model = imagePath,
-                                        contentDescription = stringResource(R.string.chat_image),
+                                        contentDescription = uiText("chat.image", R.string.chat_image),
                                         modifier = Modifier.fillMaxWidth(),
                                         contentScale = ContentScale.Fit
                                     )
@@ -1095,7 +1094,7 @@ fun BubbleMessage(
                         shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_copy_content)) },
+                            text = { Text(uiText("chat.403a6bf8", R.string.chat_copy_content)) },
                             onClick = {
                                 showMenu = false
                                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1114,7 +1113,7 @@ fun BubbleMessage(
                 ) {
                     if (parsed.thinking != null) {
                         ThinkingProcessPanel(
-                            thinkingText = parsed.thinking.ifEmpty { stringResource(R.string.chat_thinking_default) },
+                            thinkingText = parsed.thinking.ifEmpty { uiText("chat.thinking.default", R.string.chat_thinking_default) },
                             isThinkingFinished = parsed.isThinkingFinished
                         )
                     }
@@ -1161,7 +1160,7 @@ fun BubbleMessage(
                                 shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_retry)) },
+                                    text = { Text(uiText("chat.7a875b8c", R.string.chat_retry)) },
                                     onClick = {
                                         showMenu = false
                                         onRetry(message)
@@ -1169,7 +1168,7 @@ fun BubbleMessage(
                                     leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_copy_content)) },
+                                    text = { Text(uiText("chat.403a6bf8", R.string.chat_copy_content)) },
                                     onClick = {
                                         showMenu = false
                                         val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1211,7 +1210,7 @@ fun StreamingBubble(
         Column(modifier = Modifier.widthIn(max = 290.dp)) {
             if (isThinkingFallback) {
                 ThinkingProcessPanel(
-                    thinkingText = stringResource(R.string.chat_thinking_start),
+                    thinkingText = uiText("chat.thinking.start", R.string.chat_thinking_start),
                     isThinkingFinished = false
                 )
             } else {
@@ -1224,7 +1223,7 @@ fun StreamingBubble(
                     }
                     if (bodyText.isNotEmpty() || !isThinkingFinished) {
                         val displayText = bodyText.ifEmpty { 
-                            if (!isThinkingFinished) "" else stringResource(R.string.chat_thinking_reply_plan)
+                            if (!isThinkingFinished) "" else uiText("chat.thinking.reply.plan", R.string.chat_thinking_reply_plan)
                         }
                         if (displayText.isNotEmpty()) {
                             Surface(
@@ -1271,7 +1270,7 @@ fun StreamingBubble(
                 }
             }
             Text(
-                text = stringResource(R.string.chat_assistant_typing),
+                text = uiText("chat.32423845", R.string.chat_assistant_typing),
                 fontSize = (10 * fs).sp,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

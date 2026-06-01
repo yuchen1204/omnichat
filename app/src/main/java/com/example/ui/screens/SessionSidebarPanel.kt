@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.Session
 import com.example.data.WorkspaceSession
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalSidebarColors
 import com.example.ui.theme.LocalUISettings
@@ -68,7 +69,7 @@ fun SessionSidebarPanel(
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     val cornerRadius = uiSettings.cornerRadiusDp.dp
 
-    val newSessionDefaultTitle = stringResource(R.string.sidebar_new_session_default)
+    val newSessionDefaultTitle = uiText("sidebar.new.session.default", R.string.sidebar_new_session_default)
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -119,7 +120,7 @@ fun SessionSidebarPanel(
             // ── 对话列表分区标题 ────────────────────────────────────────
             item {
                 SectionHeader(
-                    label = stringResource(R.string.sidebar_chat_sessions),
+                    label = uiText("sidebar.chat.sessions", R.string.sidebar_chat_sessions),
                     fs = fs,
                     sidebarColors = sidebarColors,
                     actionIcon = null,
@@ -130,7 +131,7 @@ fun SessionSidebarPanel(
             if (sessions.isEmpty()) {
                 item {
                     EmptyHint(
-                        text = stringResource(R.string.sidebar_no_sessions),
+                        text = uiText("sidebar.no.sessions", R.string.sidebar_no_sessions),
                         fs = fs,
                         sidebarColors = sidebarColors
                     )
@@ -182,7 +183,7 @@ fun SessionSidebarPanel(
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Icon(Icons.Default.Edit, null, modifier = Modifier.size(15.dp))
                                                 Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.sidebar_rename), fontSize = (13 * fs).sp)
+                                                Text(uiText("sidebar.286eb70c", R.string.sidebar_rename), fontSize = (13 * fs).sp)
                                             }
                                         },
                                         onClick = {
@@ -198,7 +199,7 @@ fun SessionSidebarPanel(
                                                     modifier = Modifier.size(15.dp),
                                                     tint = MaterialTheme.colorScheme.error)
                                                 Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.sidebar_delete), fontSize = (13 * fs).sp,
+                                                Text(uiText("sidebar.7c7e3e24", R.string.sidebar_delete), fontSize = (13 * fs).sp,
                                                     color = MaterialTheme.colorScheme.error)
                                             }
                                         },
@@ -219,7 +220,7 @@ fun SessionSidebarPanel(
                 item {
                     Spacer(Modifier.height(8.dp))
                     SectionHeader(
-                        label = stringResource(R.string.sidebar_workspaces),
+                        label = uiText("sidebar.workspaces", R.string.sidebar_workspaces),
                         fs = fs,
                         sidebarColors = sidebarColors,
                         actionIcon = Icons.Default.Add,
@@ -237,7 +238,7 @@ fun SessionSidebarPanel(
                 if (workspaceSessions.isEmpty()) {
                     item {
                         EmptyHint(
-                            text = stringResource(R.string.sidebar_no_workspace),
+                            text = uiText("sidebar.no.workspace", R.string.sidebar_no_workspace),
                             fs = fs,
                             sidebarColors = sidebarColors
                         )
@@ -308,10 +309,10 @@ fun SessionSidebarPanel(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(cornerRadius),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(stringResource(R.string.dialog_delete_session_title), fontFamily = resolvedFontFamily) },
+            title = { Text(uiText("dialog.delete.session.title", R.string.dialog_delete_session_title), fontFamily = resolvedFontFamily) },
             text = {
                 Text(
-                    text = stringResource(R.string.dialog_delete_session_body, session.title),
+                    text = uiText("dialog.delete.session.body", R.string.dialog_delete_session_body).format(session.title),
                     fontSize = (14 * fs).sp,
                     lineHeight = (20 * fs).sp,
                     fontFamily = resolvedFontFamily
@@ -322,13 +323,13 @@ fun SessionSidebarPanel(
                     onClick = { viewModel.deleteSession(session.id); deleteTargetSession = null },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(stringResource(R.string.action_delete), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("action.delete", R.string.action_delete), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { deleteTargetSession = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(stringResource(R.string.action_cancel), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("action.cancel", R.string.action_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -338,12 +339,12 @@ fun SessionSidebarPanel(
             onDismissRequest = { renameTargetSession = null },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(cornerRadius),
-            title = { Text(stringResource(R.string.sidebar_rename_session), fontFamily = resolvedFontFamily) },
+            title = { Text(uiText("sidebar.cf3487b0", R.string.sidebar_rename_session), fontFamily = resolvedFontFamily) },
             text = {
                 OutlinedTextField(
                     value = renameText,
                     onValueChange = { renameText = it },
-                    label = { Text(stringResource(R.string.sidebar_session_name), fontFamily = resolvedFontFamily) },
+                    label = { Text(uiText("sidebar.e4ceeffb", R.string.sidebar_session_name), fontFamily = resolvedFontFamily) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape((cornerRadius.value * 0.6f).coerceAtLeast(4f).dp)
@@ -354,13 +355,13 @@ fun SessionSidebarPanel(
                     onClick = { viewModel.renameSession(session.id, renameText); renameTargetSession = null },
                     enabled = renameText.isNotBlank(),
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(stringResource(R.string.sidebar_confirm), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("sidebar.d5e6dfc3", R.string.sidebar_confirm), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { renameTargetSession = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(stringResource(R.string.sidebar_cancel), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("sidebar.335fc2b7", R.string.sidebar_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -371,10 +372,10 @@ fun SessionSidebarPanel(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(cornerRadius),
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(stringResource(R.string.dialog_delete_workspace_title), fontFamily = resolvedFontFamily) },
+            title = { Text(uiText("dialog.delete.workspace.title", R.string.dialog_delete_workspace_title), fontFamily = resolvedFontFamily) },
             text = {
                 Text(
-                    text = stringResource(R.string.dialog_delete_workspace_body, ws.title),
+                    text = uiText("dialog.delete.workspace.body", R.string.dialog_delete_workspace_body).format(ws.title),
                     fontSize = (14 * fs).sp,
                     lineHeight = (20 * fs).sp,
                     fontFamily = resolvedFontFamily
@@ -385,13 +386,13 @@ fun SessionSidebarPanel(
                     onClick = { workspaceViewModel.deleteWorkspaceSession(ws.id); deleteTargetWorkspace = null },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(stringResource(R.string.action_delete), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("action.delete", R.string.action_delete), fontFamily = resolvedFontFamily) }
             },
             dismissButton = {
                 TextButton(
                     onClick = { deleteTargetWorkspace = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(stringResource(R.string.action_cancel), fontFamily = resolvedFontFamily) }
+                ) { Text(uiText("action.cancel", R.string.action_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -442,14 +443,14 @@ private fun SidebarHeader(
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.sidebar_title),
+                    text = uiText("sidebar.title", R.string.sidebar_title),
                     fontSize = (15 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = resolvedFontFamily,
                     color = sidebarColors.onBackground
                 )
                 Text(
-                    text = stringResource(R.string.sidebar_subtitle),
+                    text = uiText("sidebar.subtitle", R.string.sidebar_subtitle),
                     fontSize = (10 * fs).sp,
                     color = sidebarColors.onBackground.copy(alpha = 0.5f),
                     fontFamily = resolvedFontFamily
@@ -465,7 +466,7 @@ private fun SidebarHeader(
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = stringResource(R.string.sidebar_new_session),
+                    contentDescription = uiText("sidebar.aa75d46c", R.string.sidebar_new_session),
                     tint = sidebarColors.onBackground,
                     modifier = Modifier.size(18.dp)
                 )
@@ -695,7 +696,7 @@ private fun SidebarFooter(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = defaultProvider?.name ?: stringResource(R.string.sidebar_not_set),
+                        text = defaultProvider?.name ?: uiText("sidebar.not.set", R.string.sidebar_not_set),
                         fontSize = (12 * fs).sp,
                         fontWeight = FontWeight.Medium,
                         fontFamily = resolvedFontFamily,
@@ -705,7 +706,7 @@ private fun SidebarFooter(
                     )
                     if (defaultProvider != null) {
                         Text(
-                            text = defaultProvider.selectedModelId.ifEmpty { stringResource(R.string.sidebar_no_model_selected) },
+                            text = defaultProvider.selectedModelId.ifEmpty { uiText("sidebar.no.model.selected", R.string.sidebar_no_model_selected) },
                             fontSize = (10 * fs).sp,
                             color = sidebarColors.onBackground.copy(alpha = 0.55f),
                             maxLines = 1,
@@ -736,13 +737,13 @@ private fun SidebarFooter(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
-                        contentDescription = stringResource(R.string.sidebar_settings),
+                        contentDescription = uiText("sidebar.settings", R.string.sidebar_settings),
                         tint = sidebarColors.onBackground.copy(alpha = 0.75f),
                         modifier = Modifier.size(17.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = stringResource(R.string.sidebar_settings),
+                        text = uiText("sidebar.settings", R.string.sidebar_settings),
                         fontSize = (13 * fs).sp,
                         fontFamily = resolvedFontFamily,
                         color = sidebarColors.onBackground.copy(alpha = 0.85f)
@@ -766,7 +767,7 @@ private fun SidebarFooter(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = stringResource(R.string.sidebar_reset_colors),
+                    contentDescription = uiText("sidebar.7f62f6d8", R.string.sidebar_reset_colors),
                     tint = sidebarColors.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
                 )

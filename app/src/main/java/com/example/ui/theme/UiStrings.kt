@@ -1,8 +1,10 @@
 package com.example.ui.theme
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.res.stringResource
 import org.json.JSONObject
 
 /**
@@ -91,6 +93,27 @@ fun resolveUiString(value: String, resolveResName: (String) -> String): String {
     return value
 }
 
+/**
+ * Compose 中获取一个 UI 文本，支持 AI 覆盖和 Android i18n。
+ *
+ * 查找顺序：AI 覆盖 → Android string resource → 代码中的默认值。
+ *
+ * @param key AI 覆盖系统的 key（dot-notation，如 "topbar.title.chat"）
+ * @param resId Android string resource ID（如 R.string.topbar_title_chat）
+ * @param default 兜底默认值（正常情况下不会用到，因为 resId 已经有中英文版本）
+ */
+@Composable
+@ReadOnlyComposable
+fun uiText(key: String, @StringRes resId: Int, default: String = ""): String {
+    val override = LocalUiStrings.current.overrides[key]
+    if (override != null) return override
+    return stringResource(resId)
+}
+
+/**
+ * 无 resId 的简化版本，仅用于 AI 覆盖系统（无 Android i18n 回退）。
+ * 适用于纯装饰性/动态生成的字符串。
+ */
 @Composable
 @ReadOnlyComposable
 fun uiText(key: String, default: String): String =

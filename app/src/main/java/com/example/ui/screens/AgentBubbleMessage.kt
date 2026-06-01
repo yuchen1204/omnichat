@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.ui.theme.uiText
 import com.example.ui.components.ChunkedStreamingText
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
@@ -108,7 +109,7 @@ fun AgentBubbleMessage(message: AgentMessage) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.workspace_tool_called, message.toolCallId?.take(8) ?: "unknown"),
+                                text = uiText("workspace.tool.called", R.string.workspace_tool_called).format(message.toolCallId?.take(8) ?: "unknown"),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Medium
@@ -170,7 +171,7 @@ fun AgentBubbleMessage(message: AgentMessage) {
                     // 标签行
                     if (message.isIntervention) {
                         Text(
-                            text = stringResource(R.string.workspace_intervention_label),
+                            text = uiText("workspace.intervention.label", R.string.workspace_intervention_label),
                             fontSize = (10 * fs).sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -178,7 +179,7 @@ fun AgentBubbleMessage(message: AgentMessage) {
                         )
                     } else if (isOrchestratorInjected) {
                         Text(
-                            text = stringResource(R.string.workspace_orchestrator_injected),
+                            text = uiText("workspace.orchestrator.injected", R.string.workspace_orchestrator_injected),
                             fontSize = (10 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.tertiary,
@@ -387,7 +388,7 @@ private fun FormattedSubAgentReport(
                     }
                     if (parsed.toolUses > 0) {
                         Text(
-                            text = stringResource(R.string.workspace_tool_calls_count, parsed.toolUses),
+                            text = uiText("workspace.tool.calls.count", R.string.workspace_tool_calls_count).format(parsed.toolUses),
                             fontSize = (10 * fs).sp,
                             color = textColor.copy(alpha = 0.5f),
                             fontFamily = resolvedFontFamily
