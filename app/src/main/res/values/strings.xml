@@ -692,6 +692,8 @@
     <!-- ── BuiltinToolHandler ── -->
     <string name="tool_time_format_pattern">MMMM d, yyyy HH:mm:ss (EEEE)</string>
     <string name="tool_memory_tag_filter">, tag filter: %s</string>
+    <string name="tool_memory_assoc_expansion_header">--- Association Expansion (depth=%d) ---</string>
+    <string name="tool_memory_assoc_entry">[assoc: %s] #%d (confidence=%.2f) %s</string>
 
     <!-- ── AlarmReceiver ── -->
     <string name="alarm_notification_description">Scheduled reminder created by AI assistant</string>

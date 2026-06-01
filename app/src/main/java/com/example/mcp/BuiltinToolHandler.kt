@@ -395,6 +395,39 @@ object BuiltinToolHandler {
             .sortedByDescending { it.score }
             .take(limit)
 
+        // Association expansion via BFS
+        val depth = arguments.optInt("depth", 3).coerceIn(1, 5)
+        val maxExpand = 10
+        val expandedMemories = mutableListOf<Triple<com.example.data.MemoryItem, String, Int>>()  // memory, label, depth
+        val visited = scored.map { it.memory.id }.toMutableSet()
+
+        val queue: java.util.LinkedList<Pair<Long, Int>> = java.util.LinkedList()  // memoryId, currentDepth
+        for (sm in scored) {
+            queue.add(sm.memory.id to 0)
+        }
+
+        while (queue.isNotEmpty() && expandedMemories.size < maxExpand) {
+            val (currentId, currentDepth) = queue.poll()
+            if (currentDepth >= depth) continue
+
+            val associations = repository.getAssociationsFor(currentId)
+            for (assoc in associations) {
+                val relatedId = when {
+                    assoc.direction == "bidirectional" -> {
+                        if (assoc.fromMemoryId == currentId) assoc.toMemoryId else assoc.fromMemoryId
+                    }
+                    assoc.fromMemoryId == currentId -> assoc.toMemoryId
+                    else -> continue
+                }
+                if (relatedId in visited) continue
+                visited.add(relatedId)
+
+                val relatedMem = repository.getMemoryById(relatedId) ?: continue
+                expandedMemories.add(Triple(relatedMem, assoc.relationLabel, currentDepth + 1))
+                queue.add(relatedId to currentDepth + 1)
+            }
+        }
+
         val filterDesc = if (tagFilter != null) context.getString(R.string.tool_memory_tag_filter, tagFilter) else ""
         val text = buildString {
             appendLine(str(context, R.string.tool_memory_search_results, query, filterDesc, totalCount, scored.size))
@@ -408,6 +441,14 @@ object BuiltinToolHandler {
                     val tagsDisplay = if (sm.memory.tags.isNotBlank()) " [${sm.memory.tags}]" else ""
                     appendLine(str(context, R.string.tool_memory_entry_format, i + 1, sm.memory.id, sm.memory.confidence, sm.score, pinnedTag, tagsDisplay))
                     appendLine("   ${sm.memory.content}")
+                }
+            }
+            if (expandedMemories.isNotEmpty()) {
+                appendLine()
+                appendLine(str(context, R.string.tool_memory_assoc_expansion_header, depth))
+                expandedMemories.forEachIndexed { i, (mem, label, d) ->
+                    val pinnedTag = if (mem.pinned) str(context, R.string.tool_memory_pinned_tag) else ""
+                    appendLine(str(context, R.string.tool_memory_assoc_entry, label, mem.id, mem.confidence.toFloat(), mem.content))
                 }
             }
         }
