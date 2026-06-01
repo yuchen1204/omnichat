@@ -33,7 +33,7 @@ object McpPermissionManager {
      * Checks if the given path is inside the app's private sandbox.
      * If it is, no permission is needed.
      *
-     * 注意：相对路径不能直接放行——mcp_filesystem.js 会把相对路径 resolve 到
+     * 注意：相对路径不能直接放行——外部 MCP 工具（如 Node.js 脚本）会把相对路径 resolve 到
      * rootDir（默认 /sdcard），实际访问的是外部存储，必须走权限弹窗。
      * 这里将相对路径视为"不在沙盒内"，让调用方触发权限请求。
      */

@@ -83,6 +83,8 @@ object BuiltinToolHandler {
             "file_search" -> handleFileSearch(context, arguments)
             "file_info" -> handleFileInfo(context, arguments)
             "file_move" -> handleFileMove(context, arguments)
+            "file_copy" -> handleFileCopy(context, arguments)
+            "file_mkdir" -> handleFileMkdir(context, arguments)
             "create_document" -> handleCreateDocument(context, arguments)
             "ask_user" -> handleAskUser(context, arguments, sessionId)
             "create_timer" -> handleCreateTimer(context, arguments, sessionId)
@@ -623,13 +625,13 @@ object BuiltinToolHandler {
 
     // ── 文件系统工具 ────────────────────────────────────────────────────────
 
-    private fun handleFileWrite(context: Context, arguments: JSONObject): JSONObject {
-        val relativePath = arguments.optString("path").trim()
+    private suspend fun handleFileWrite(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path").trim()
         val content = arguments.optString("content")
         val encoding = arguments.optString("encoding", "utf8")
-        if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
-        val file = resolveSafePath(context, relativePath)
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        val file = resolvePath(context, path)
+            ?: return errorResponse("路径无效或权限被拒绝：$path")
         return try {
             file.parentFile?.mkdirs()
             if (encoding == "base64") {
@@ -644,40 +646,65 @@ object BuiltinToolHandler {
         }
     }
 
-    private fun handleFileRead(context: Context, arguments: JSONObject): JSONObject {
-        val relativePath = arguments.optString("path").trim()
+    private suspend fun handleFileRead(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path").trim()
         val encoding = arguments.optString("encoding", "utf8")
         val maxBytes = arguments.optInt("maxBytes", 1024 * 1024).coerceIn(1, 10 * 1024 * 1024)
-        if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
-        val file = resolveSafePath(context, relativePath)
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
-        if (!file.exists()) return errorResponse("文件不存在：$relativePath")
-        if (!file.isFile) return errorResponse("路径指向的不是文件：$relativePath")
+        val startLine = arguments.optInt("startLine", 0)
+        val endLine = arguments.optInt("endLine", 0)
+        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        val file = resolvePath(context, path)
+            ?: return errorResponse("路径无效或权限被拒绝：$path")
+        if (!file.exists()) return errorResponse("文件不存在：$path")
+        if (!file.isFile) return errorResponse("路径指向的不是文件：$path")
         return try {
-            val bytes = file.inputStream().use { stream ->
-                val buf = ByteArray(maxBytes)
-                val read = stream.read(buf)
-                if (read <= 0) ByteArray(0) else buf.copyOf(read)
-            }
-            val truncated = file.length() > maxBytes
-            val resultText = if (encoding == "base64") {
-                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            if (encoding == "base64") {
+                // base64 模式：按字节读取
+                val bytes = file.inputStream().use { stream ->
+                    val buf = ByteArray(maxBytes)
+                    val read = stream.read(buf)
+                    if (read <= 0) ByteArray(0) else buf.copyOf(read)
+                }
+                val truncated = file.length() > maxBytes
+                val resultText = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                val suffix = if (truncated) "\n\n[文件已截断，仅显示前 $maxBytes 字节，完整大小：${file.length()} 字节]" else ""
+                successResponse(resultText + suffix)
+            } else if (startLine > 0 || endLine > 0) {
+                // 按行范围读取
+                val lines = file.readLines(Charsets.UTF_8)
+                val from = (startLine - 1).coerceIn(0, lines.size)
+                val to = if (endLine > 0) endLine.coerceIn(from, lines.size) else lines.size
+                val selected = lines.subList(from, to)
+                val text = selected.joinToString("\n")
+                val byteSize = text.toByteArray(Charsets.UTF_8).size
+                if (byteSize > maxBytes) {
+                    successResponse(text.take(maxBytes) + "\n\n[内容已截断，超过 $maxBytes 字节限制]")
+                } else {
+                    successResponse(text)
+                }
             } else {
-                String(bytes, Charsets.UTF_8)
+                // 按字节读取（默认）
+                val bytes = file.inputStream().use { stream ->
+                    val buf = ByteArray(maxBytes)
+                    val read = stream.read(buf)
+                    if (read <= 0) ByteArray(0) else buf.copyOf(read)
+                }
+                val truncated = file.length() > maxBytes
+                val resultText = String(bytes, Charsets.UTF_8)
+                val suffix = if (truncated) "\n\n[文件已截断，仅显示前 $maxBytes 字节，完整大小：${file.length()} 字节]" else ""
+                successResponse(resultText + suffix)
             }
-            val suffix = if (truncated) "\n\n[文件已截断，仅显示前 $maxBytes 字节，完整大小：${file.length()} 字节]" else ""
-            successResponse(resultText + suffix)
         } catch (e: Exception) {
             errorResponse("读取文件失败：${e.localizedMessage}")
         }
     }
 
-    private fun handleFileAppend(context: Context, arguments: JSONObject): JSONObject {
-        val relativePath = arguments.optString("path").trim()
+    private suspend fun handleFileAppend(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path").trim()
         val content = arguments.optString("content")
-        if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
-        val file = resolveSafePath(context, relativePath)
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        val file = resolvePath(context, path)
+            ?: return errorResponse("路径无效或权限被拒绝：$path")
         return try {
             file.parentFile?.mkdirs()
             val needsNewline = if (file.exists() && file.length() > 0) {
@@ -695,13 +722,13 @@ object BuiltinToolHandler {
         }
     }
 
-    private fun handleFileDelete(context: Context, arguments: JSONObject): JSONObject {
-        val relativePath = arguments.optString("path").trim()
+    private suspend fun handleFileDelete(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path").trim()
         val recursive = arguments.optBoolean("recursive", false)
-        if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
-        val file = resolveSafePath(context, relativePath)
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
-        if (!file.exists()) return errorResponse("路径不存在：$relativePath")
+        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        val file = resolvePath(context, path)
+            ?: return errorResponse("路径无效或权限被拒绝：$path")
+        if (!file.exists()) return errorResponse("路径不存在：$path")
         return try {
             val success = if (recursive) deleteRecursive(file) else file.delete()
             if (success) successResponse("已删除：${file.absolutePath}")
@@ -711,77 +738,101 @@ object BuiltinToolHandler {
         }
     }
 
-    private fun handleFileList(context: Context, arguments: JSONObject): JSONObject {
-        val relativePath = arguments.optString("path", "").trim()
+    private suspend fun handleFileList(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path", "").trim()
         val showHidden = arguments.optBoolean("showHidden", false)
-        val dir = resolveSafePath(context, relativePath.ifEmpty { "." })
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
-        if (!dir.exists()) return errorResponse("目录不存在：${relativePath.ifEmpty { "(根目录)" }}")
-        if (!dir.isDirectory) return errorResponse("路径指向的不是目录：$relativePath")
-        val entries = dir.listFiles()
-            ?.filter { showHidden || !it.name.startsWith(".") }
-            ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-            ?: emptyList()
+        val recursive = arguments.optBoolean("recursive", false)
+        val maxDepth = arguments.optInt("maxDepth", 3).coerceIn(1, 10)
+        val dir = resolvePath(context, path.ifEmpty { "." })
+            ?: return errorResponse("路径无效或权限被拒绝：${path.ifEmpty { "/" }}")
+        if (!dir.exists()) return errorResponse("目录不存在：${path.ifEmpty { "/" }}")
+        if (!dir.isDirectory) return errorResponse("路径指向的不是目录：$path")
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        val text = buildString {
-            appendLine("目录：${dir.absolutePath}")
-            appendLine("共 ${entries.size} 项")
-            appendLine()
-            if (entries.isEmpty()) {
-                appendLine("（空目录）")
-            } else {
+
+        fun listDir(d: File, depth: Int): String {
+            val entries = d.listFiles()
+                ?.filter { showHidden || !it.name.startsWith(".") }
+                ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                ?: emptyList()
+            return buildString {
                 entries.forEach { entry ->
+                    val indent = "  ".repeat(depth)
                     val type = if (entry.isDirectory) "📁" else "📄"
                     val size = if (entry.isFile) " (${entry.length()} B)" else ""
                     val modified = sdf.format(Date(entry.lastModified()))
-                    appendLine("$type ${entry.name}$size  [$modified]")
+                    appendLine("$indent$type ${entry.name}$size  [$modified]")
+                    if (recursive && entry.isDirectory && depth + 1 < maxDepth) {
+                        append(listDir(entry, depth + 1))
+                    }
                 }
             }
+        }
+
+        val listing = listDir(dir, 0)
+        val text = buildString {
+            appendLine("目录：${dir.absolutePath}")
+            if (recursive) appendLine("（递归，最大深度 $maxDepth）")
+            appendLine()
+            if (listing.isEmpty()) appendLine("（空目录）")
+            else append(listing.trimEnd())
         }
         return successResponse(text.trimEnd())
     }
 
-    private fun handleFileSearch(context: Context, arguments: JSONObject): JSONObject {
+    private suspend fun handleFileSearch(context: Context, arguments: JSONObject): JSONObject {
         val namePattern = arguments.optString("namePattern").trim().ifEmpty { null }
         val contentQuery = arguments.optString("contentQuery").trim().ifEmpty { null }
         val directory = arguments.optString("directory").trim()
         val maxResults = arguments.optInt("maxResults", 20).coerceIn(1, 100)
+        val isRegex = arguments.optBoolean("isRegex", false)
+        val contextLines = arguments.optInt("contextLines", 0).coerceIn(0, 10)
         if (namePattern == null && contentQuery == null) {
             return errorResponse("请至少提供 namePattern 或 contentQuery 之一。")
         }
-        val searchRoot = resolveSafePath(context, directory.ifEmpty { "." })
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
-        if (!searchRoot.exists()) return errorResponse("搜索目录不存在：${directory.ifEmpty { "(根目录)" }}")
+        val searchRoot = resolvePath(context, directory.ifEmpty { "." })
+            ?: return errorResponse("路径无效或权限被拒绝：${directory.ifEmpty { "/" }}")
+        if (!searchRoot.exists()) return errorResponse("搜索目录不存在：${directory.ifEmpty { "/" }}")
+        val contentRegex = if (contentQuery != null && isRegex) {
+            try { Regex(contentQuery, RegexOption.IGNORE_CASE) } catch (e: Exception) {
+                return errorResponse("无效的正则表达式：${e.message}")
+            }
+        } else null
         val results = mutableListOf<JSONObject>()
-        searchFiles(searchRoot, namePattern, contentQuery, results, maxResults)
-        val filesRoot = getFilesRoot(context)
+        searchFiles(searchRoot, namePattern, contentQuery, contentRegex, contextLines, results, maxResults)
         val text = buildString {
             appendLine("搜索范围：${searchRoot.absolutePath}")
             if (namePattern != null) appendLine("文件名模式：$namePattern")
-            if (contentQuery != null) appendLine("内容关键词：$contentQuery")
+            if (contentQuery != null) appendLine("内容关键词：$contentQuery${if (isRegex) " (正则)" else ""}")
             appendLine("找到 ${results.size} 个结果${if (results.size >= maxResults) "（已达上限 $maxResults）" else ""}：")
             appendLine()
             results.forEach { r ->
                 val absPath = r.optString("path")
-                val relPath = try { File(absPath).relativeTo(filesRoot).path } catch (_: Exception) { absPath }
-                append("• $relPath")
+                append("• $absPath")
                 val matchLines = r.optJSONArray("matchLines")
                 if (matchLines != null && matchLines.length() > 0) {
                     val lines = (0 until matchLines.length()).map { matchLines.getInt(it) }
                     append("  (匹配行: ${lines.joinToString(", ")})")
                 }
-                appendLine()
+                val contextSnippets = r.optJSONArray("contextSnippets")
+                if (contextSnippets != null && contextSnippets.length() > 0) {
+                    appendLine()
+                    for (i in 0 until contextSnippets.length()) {
+                        appendLine("    ${contextSnippets.getString(i)}")
+                    }
+                } else {
+                    appendLine()
+                }
             }
         }
         return successResponse(text.trimEnd())
     }
 
-    private fun handleFileInfo(context: Context, arguments: JSONObject): JSONObject {
-        val relativePath = arguments.optString("path").trim()
-        if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
-        val file = resolveSafePath(context, relativePath)
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
-        if (!file.exists()) return errorResponse("路径不存在：$relativePath")
+    private suspend fun handleFileInfo(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path").trim()
+        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        val file = resolvePath(context, path)
+            ?: return errorResponse("路径无效或权限被拒绝：$path")
+        if (!file.exists()) return errorResponse("路径不存在：$path")
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val ext = file.extension.lowercase()
         val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
@@ -802,16 +853,16 @@ object BuiltinToolHandler {
         return successResponse(text.trimEnd())
     }
 
-    private fun handleFileMove(context: Context, arguments: JSONObject): JSONObject {
+    private suspend fun handleFileMove(context: Context, arguments: JSONObject): JSONObject {
         val srcPath = arguments.optString("sourcePath").trim()
         val dstPath = arguments.optString("destinationPath").trim()
         val overwrite = arguments.optBoolean("overwrite", false)
         if (srcPath.isEmpty()) return errorResponse("参数 'sourcePath' 不能为空。")
         if (dstPath.isEmpty()) return errorResponse("参数 'destinationPath' 不能为空。")
-        val src = resolveSafePath(context, srcPath)
-            ?: return errorResponse("非法源路径：路径不能包含 '..' 或超出沙盒范围。")
-        val dst = resolveSafePath(context, dstPath)
-            ?: return errorResponse("非法目标路径：路径不能包含 '..' 或超出沙盒范围。")
+        val src = resolvePath(context, srcPath)
+            ?: return errorResponse("源路径无效或权限被拒绝：$srcPath")
+        val dst = resolvePath(context, dstPath)
+            ?: return errorResponse("目标路径无效或权限被拒绝：$dstPath")
         if (!src.exists()) return errorResponse("源路径不存在：$srcPath")
         if (dst.exists() && !overwrite) return errorResponse("目标路径已存在：$dstPath（如需覆盖请传 overwrite=true）。")
         return try {
@@ -831,9 +882,53 @@ object BuiltinToolHandler {
         }
     }
 
+    private suspend fun handleFileCopy(context: Context, arguments: JSONObject): JSONObject {
+        val srcPath = arguments.optString("sourcePath").trim()
+        val dstPath = arguments.optString("destinationPath").trim()
+        val overwrite = arguments.optBoolean("overwrite", false)
+        if (srcPath.isEmpty()) return errorResponse("参数 'sourcePath' 不能为空。")
+        if (dstPath.isEmpty()) return errorResponse("参数 'destinationPath' 不能为空。")
+        val src = resolvePath(context, srcPath)
+            ?: return errorResponse("源路径无效或权限被拒绝：$srcPath")
+        val dst = resolvePath(context, dstPath)
+            ?: return errorResponse("目标路径无效或权限被拒绝：$dstPath")
+        if (!src.exists()) return errorResponse("源路径不存在：$srcPath")
+        if (dst.exists() && !overwrite) return errorResponse("目标路径已存在：$dstPath（如需覆盖请传 overwrite=true）。")
+        return try {
+            dst.parentFile?.mkdirs()
+            if (src.isDirectory) {
+                src.copyRecursively(dst, overwrite = overwrite)
+            } else {
+                src.copyTo(dst, overwrite = overwrite)
+            }
+            successResponse("已复制：\n  从：${src.absolutePath}\n  到：${dst.absolutePath}")
+        } catch (e: Exception) {
+            errorResponse("复制失败：${e.localizedMessage}")
+        }
+    }
+
+    private suspend fun handleFileMkdir(context: Context, arguments: JSONObject): JSONObject {
+        val path = arguments.optString("path").trim()
+        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        val file = resolvePath(context, path)
+            ?: return errorResponse("路径无效或权限被拒绝：$path")
+        return try {
+            if (file.exists()) {
+                if (file.isDirectory) successResponse("目录已存在：${file.absolutePath}")
+                else errorResponse("路径已存在且不是目录：$path")
+            } else if (file.mkdirs()) {
+                successResponse("目录已创建：${file.absolutePath}")
+            } else {
+                errorResponse("创建目录失败：$path")
+            }
+        } catch (e: Exception) {
+            errorResponse("创建目录失败：${e.localizedMessage}")
+        }
+    }
+
     // ── 文档创建工具 ────────────────────────────────────────────────────────
 
-    private fun handleCreateDocument(context: Context, arguments: JSONObject): JSONObject {
+    private suspend fun handleCreateDocument(context: Context, arguments: JSONObject): JSONObject {
         val relativePath = arguments.optString("path").trim()
         val format = arguments.optString("format").trim().lowercase()
         val title = arguments.optString("title", "").trim()
@@ -886,8 +981,8 @@ object BuiltinToolHandler {
             return errorResponse("参数 'format' 必须是 pdf、xlsx、docx 或 pptx 之一。")
         }
 
-        val file = resolveSafePath(context, relativePath)
-            ?: return errorResponse("非法路径：路径不能包含 '..' 或超出沙盒范围。")
+        val file = resolvePath(context, relativePath)
+            ?: return errorResponse("路径无效或权限被拒绝：$relativePath")
 
         return try {
             file.parentFile?.mkdirs()
@@ -1078,7 +1173,7 @@ object BuiltinToolHandler {
     }
 
     /** 创建 PDF 文档（使用 Android 原生 PdfDocument API） */
-    private fun createPdfDocument(
+    private suspend fun createPdfDocument(
         file: File,
         title: String,
         sections: List<DocSection>,
@@ -1188,7 +1283,7 @@ object BuiltinToolHandler {
                     y += 10f
                 }
                 "image" -> {
-                    val imgFile = resolveSafePath(context, section.content)
+                    val imgFile = resolvePath(context, section.content)
                     if (imgFile?.exists() == true) {
                         val bitmap = android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath)
                         if (bitmap != null) {
@@ -1260,7 +1355,7 @@ object BuiltinToolHandler {
     }
 
     /** 创建 Excel (.xlsx) 文档 */
-    private fun createXlsxDocument(
+    private suspend fun createXlsxDocument(
         file: File,
         title: String,
         sections: List<DocSection>,
@@ -1348,7 +1443,7 @@ object BuiltinToolHandler {
     private fun bytearrayOf(vararg bytes: Byte) = bytes
 
     /** 创建 Word (.docx) 文档 */
-    private fun createDocxDocument(
+    private suspend fun createDocxDocument(
         file: File,
         title: String,
         sections: List<DocSection>,
@@ -1388,7 +1483,7 @@ object BuiltinToolHandler {
                     r.fontSize = 11
                 }
                 "image" -> {
-                    val imgFile = resolveSafePath(context, section.content)
+                    val imgFile = resolvePath(context, section.content)
                     if (imgFile?.exists() == true) {
                         imgFile.inputStream().use { stream ->
                             val p = doc.createParagraph()
@@ -1438,7 +1533,7 @@ object BuiltinToolHandler {
     }
 
     /** 创建 PowerPoint (.pptx) 文档 */
-    private fun createPptxDocument(
+    private suspend fun createPptxDocument(
         file: File,
         title: String,
         sections: List<DocSection>,
@@ -1477,7 +1572,7 @@ object BuiltinToolHandler {
                 }
                 "image" -> {
                     if (currentSlide == null) currentSlide = ppt.createSlide(contentLayout)
-                    val imgFile = resolveSafePath(context, section.content)
+                    val imgFile = resolvePath(context, section.content)
                     if (imgFile?.exists() == true) {
                         val data = imgFile.readBytes()
                         val format = if (section.content.endsWith(".png", true)) org.apache.poi.sl.usermodel.PictureData.PictureType.PNG else org.apache.poi.sl.usermodel.PictureData.PictureType.JPEG
@@ -1527,47 +1622,38 @@ object BuiltinToolHandler {
     }
 
     /**
-     * 返回 OmniChat/files/ 根目录，并确保它存在。
-     * 所有文件工具的路径都相对于此目录。
+     * 返回外部存储根目录 (/sdcard)。
+     * 相对路径基于此目录解析。
      */
     private fun getFilesRoot(context: Context): File {
-        val externalDir = Environment.getExternalStorageDirectory()
-        val root = File(externalDir, "OmniChat/files")
-        if (!root.exists()) root.mkdirs()
-        return root
+        return Environment.getExternalStorageDirectory()
     }
 
     /**
-     * 将用户提供的路径解析为绝对路径，并验证它在沙盒内。
-     * - 相对路径：resolve 到 OmniChat/files/ 下，并检查不越界
-     * - 绝对路径：必须在沙盒白名单内（OmniChat/files/ 或 OmniChat/mcp/），否则拒绝
-     *   注意：沙盒外的绝对路径访问应通过 McpFilePermissionHook 在调用前弹窗授权，
-     *   但 resolveSafePath 本身不做异步弹窗，只做最终的安全兜底。
-     * @return 解析后的 File，或 null（路径非法时）
+     * 将用户提供的路径解析为绝对路径，并通过 McpPermissionManager 进行权限检查。
+     * - 相对路径：resolve 到 /sdcard/ 下
+     * - 绝对路径：直接使用
+     * - 拒绝 '..' 路径穿越
+     * - 通过权限弹窗授权沙盒外路径访问
+     * @return 解析后的 File，或 null（路径非法或权限被拒绝时）
      */
-    private fun resolveSafePath(context: Context, path: String): File? {
+    private suspend fun resolvePath(context: Context, path: String): File? {
         if (path.contains("..")) return null
 
+        val root = getFilesRoot(context)
         val file = File(path)
-        if (file.isAbsolute) {
-            // 绝对路径：只允许访问沙盒白名单目录
-            val canonical = try { file.canonicalPath } catch (_: Exception) { return null }
-            val externalDir = Environment.getExternalStorageDirectory()
-            val allowedRoots = listOf(
-                File(externalDir, "OmniChat/files").canonicalPath,
-                File(externalDir, "OmniChat/mcp").canonicalPath,
-                context.filesDir.canonicalPath,
-                context.cacheDir.canonicalPath
-            )
-            val inSandbox = allowedRoots.any { canonical.startsWith(it) }
-            return if (inSandbox) file.canonicalFile else null
+        val resolved = if (file.isAbsolute) {
+            file.canonicalFile
+        } else {
+            File(root, path.ifEmpty { "." }).canonicalFile
         }
 
-        val root = getFilesRoot(context)
-        val normalized = path.ifEmpty { "." }
-        val resolved = File(root, normalized).canonicalFile
-        // 确保解析后的相对路径仍在沙盒内
-        return if (resolved.canonicalPath.startsWith(root.canonicalPath)) resolved else null
+        val canonicalPath = try {
+            resolved.canonicalPath
+        } catch (_: Exception) { return null }
+
+        val allowed = McpPermissionManager.checkAndRequestPermission(context, canonicalPath)
+        return if (allowed) resolved else null
     }
 
     /** 递归删除目录 */
@@ -1583,6 +1669,8 @@ object BuiltinToolHandler {
         dir: File,
         namePattern: String?,
         contentQuery: String?,
+        contentRegex: Regex?,
+        contextLines: Int,
         results: MutableList<JSONObject>,
         maxResults: Int
     ) {
@@ -1591,24 +1679,43 @@ object BuiltinToolHandler {
         for (entry in entries) {
             if (results.size >= maxResults) break
             if (entry.isDirectory) {
-                searchFiles(entry, namePattern, contentQuery, results, maxResults)
+                searchFiles(entry, namePattern, contentQuery, contentRegex, contextLines, results, maxResults)
             } else {
                 val nameMatch = namePattern == null || matchesGlob(entry.name, namePattern)
                 if (!nameMatch) continue
-                if (contentQuery != null) {
+                if (contentQuery != null || contentRegex != null) {
                     // 只搜索文本文件（< 2MB）
                     if (entry.length() > 2 * 1024 * 1024) continue
                     val text = try { entry.readText(Charsets.UTF_8) } catch (_: Exception) { continue }
-                    if (!text.contains(contentQuery, ignoreCase = true)) continue
-                    // 找到匹配行
                     val lines = text.lines()
-                    val matchLines = lines.mapIndexedNotNull { idx, line ->
-                        if (line.contains(contentQuery, ignoreCase = true)) idx + 1 else null
-                    }.take(3)
-                    results.add(JSONObject().apply {
+                    val matchedIndices = if (contentRegex != null) {
+                        lines.mapIndexedNotNull { idx, line ->
+                            if (contentRegex.containsMatchIn(line)) idx else null
+                        }
+                    } else {
+                        lines.mapIndexedNotNull { idx, line ->
+                            if (line.contains(contentQuery!!, ignoreCase = true)) idx else null
+                        }
+                    }
+                    if (matchedIndices.isEmpty()) continue
+                    val matchLines = matchedIndices.take(3).map { it + 1 }
+                    val result = JSONObject().apply {
                         put("path", entry.path)
                         put("matchLines", JSONArray(matchLines))
-                    })
+                    }
+                    if (contextLines > 0) {
+                        val snippets = JSONArray()
+                        for (matchIdx in matchedIndices.take(3)) {
+                            val from = (matchIdx - contextLines).coerceAtLeast(0)
+                            val to = (matchIdx + contextLines + 1).coerceAtMost(lines.size)
+                            for (i in from until to) {
+                                val marker = if (i == matchIdx) "→" else " "
+                                snippets.put("$marker ${i + 1}: ${lines[i]}")
+                            }
+                        }
+                        result.put("contextSnippets", snippets)
+                    }
+                    results.add(result)
                 } else {
                     results.add(JSONObject().apply { put("path", entry.path) })
                 }

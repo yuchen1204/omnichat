@@ -590,9 +590,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_write",
-            description = "Write content to a file in the OmniChat/files/ directory on external storage. Creates the file (and any missing parent directories) if it does not exist, or overwrites it if it does. Use this to save notes, generated code, configuration snippets, or any text data the user wants to persist.\n\n**Path rules**: Provide a relative path such as `notes/todo.txt` or `output.json`. Absolute paths and `..` traversal are rejected for safety. The resolved absolute path is returned on success.",
+            description = "Write content to a file on device storage. Creates the file (and any missing parent directories) if it does not exist, or overwrites it if it does. Use this to save notes, generated code, configuration snippets, or any text data the user wants to persist.\n\n**Path rules**: Relative paths (e.g. `notes/todo.txt`) resolve under /sdcard. Absolute paths (e.g. `/sdcard/Documents/file.txt`) are also accepted. A permission popup may appear for paths outside the app sandbox.",
             inputSchema = schema {
-                prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\" or \"data/result.json\". Parent directories are created automatically.")
+                prop("path", "string", "File path. Relative paths resolve under /sdcard. Absolute paths accepted. Parent directories are created automatically.")
                 prop("content", "string", "Text content to write. The file is saved as UTF-8.")
                 prop("encoding", "string", "Content encoding. \"utf8\" (default) writes the string as-is; \"base64\" decodes the string first (useful for binary files).") {
                     enum("utf8", "base64")
@@ -604,13 +604,15 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_read",
-            description = "Read the content of a file from the OmniChat/files/ directory. Returns the file content as a UTF-8 string (or Base64 if `encoding` is set to \"base64\"). Optionally limit the output to a specific byte range for large files.\n\n**Path rules**: Relative paths only; `..` traversal is rejected.",
+            description = "Read the content of a file from device storage. Returns the file content as a UTF-8 string (or Base64 if encoding is \"base64\"). Supports byte-based truncation and line-range reading.\n\n**Path rules**: Relative paths resolve under /sdcard. Absolute paths accepted. A permission popup may appear for paths outside the app sandbox.",
             inputSchema = schema {
-                prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
+                prop("path", "string", "File path. Relative paths resolve under /sdcard.")
                 prop("encoding", "string", "\"utf8\" (default) returns the content as a plain string; \"base64\" returns Base64-encoded bytes (useful for binary files).") {
                     enum("utf8", "base64")
                 }
                 prop("maxBytes", "integer", "Optional. Maximum number of bytes to read from the start of the file. Useful for previewing large files. Default: read the entire file (up to 1 MB).")
+                prop("startLine", "integer", "Optional. Start line number (1-based, inclusive). When provided with or without endLine, reads by line range instead of bytes.")
+                prop("endLine", "integer", "Optional. End line number (1-based, inclusive). If omitted with startLine, reads to end of file.")
                 required("path")
             }
         ),
@@ -618,9 +620,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_append",
-            description = "Append text to the end of an existing file in OmniChat/files/. If the file does not exist it is created. A newline is automatically inserted before the appended content when the file already has content and does not end with a newline.",
+            description = "Append text to the end of an existing file on device storage. If the file does not exist it is created. A newline is automatically inserted before the appended content when the file already has content and does not end with a newline.",
             inputSchema = schema {
-                prop("path", "string", "Relative file path inside OmniChat/files/.")
+                prop("path", "string", "File path. Relative paths resolve under /sdcard.")
                 prop("content", "string", "Text to append. Saved as UTF-8.")
                 required("path", "content")
             }
@@ -629,9 +631,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_delete",
-            description = "Delete a file or an empty directory from OmniChat/files/. To delete a directory and all its contents recursively, set `recursive` to true.\n\n**Safety**: `..` traversal is rejected. Deletion is permanent.",
+            description = "Delete a file or an empty directory from device storage. To delete a directory and all its contents recursively, set recursive to true.\n\n**Safety**: Deletion is permanent.",
             inputSchema = schema {
-                prop("path", "string", "Relative path of the file or directory to delete inside OmniChat/files/.")
+                prop("path", "string", "Path of the file or directory to delete.")
                 prop("recursive", "boolean", "If true, delete the directory and all its contents recursively. Default false (only deletes empty directories or files).")
                 required("path")
             }
@@ -640,31 +642,35 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_list",
-            description = "List the contents of a directory inside OmniChat/files/. Returns file names, types (file/directory), sizes, and last-modified timestamps. Pass an empty string or \".\" to list the root OmniChat/files/ directory.",
+            description = "List the contents of a directory on device storage. Returns file names, types, sizes, and last-modified timestamps. Supports recursive listing with configurable depth. Pass an empty string or \".\" to list /sdcard root.",
             inputSchema = schema {
-                prop("path", "string", "Relative directory path inside OmniChat/files/. Use \"\" or \".\" for the root. E.g. \"notes\" or \"data/exports\".")
+                prop("path", "string", "Directory path. Use \"\" or \".\" for /sdcard root. Relative paths resolve under /sdcard.")
                 prop("showHidden", "boolean", "Include entries whose names start with a dot. Default false.")
+                prop("recursive", "boolean", "List subdirectories recursively. Default false.")
+                prop("maxDepth", "integer", "Maximum recursion depth (1-10). Default 3. Only effective when recursive=true.")
             }
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_search",
-            description = "Search for files by name pattern or by text content within OmniChat/files/. Supports glob-style name matching (e.g. `*.txt`, `report_*`) and optional full-text content search. Returns matching file paths with optional context lines around content matches.",
+            description = "Search for files by name pattern or by text/regex content within device storage. Supports glob-style name matching and full-text or regex content search with context lines.",
             inputSchema = schema {
-                prop("namePattern", "string", "Optional. Glob-style filename pattern, e.g. \"*.txt\", \"report_*\", \"*.json\". Matches against the file name only (not the full path). If omitted, all files are candidates.")
-                prop("contentQuery", "string", "Optional. Search string to look for inside file contents. Case-insensitive plain-text match. Only text files are searched.")
-                prop("directory", "string", "Optional. Relative directory to restrict the search to, e.g. \"notes\". Defaults to the root OmniChat/files/ directory (recursive).")
+                prop("namePattern", "string", "Optional. Glob-style filename pattern, e.g. \"*.txt\", \"report_*\", \"*.json\". Matches against the file name only.")
+                prop("contentQuery", "string", "Optional. Search string or regex to look for inside file contents. Case-insensitive by default.")
+                prop("directory", "string", "Optional. Directory to restrict the search to. Defaults to /sdcard root (recursive).")
                 prop("maxResults", "integer", "Maximum number of results to return. Default 20, max 100.")
+                prop("isRegex", "boolean", "Treat contentQuery as a regular expression. Default false.")
+                prop("contextLines", "integer", "Number of lines to show before and after each match. Default 0, max 10.")
             }
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_info",
-            description = "Get metadata for a file or directory inside OmniChat/files/: absolute path, size in bytes, last-modified timestamp, MIME type guess, whether it is readable/writable, and (for directories) the number of direct children.",
+            description = "Get metadata for a file or directory on device storage: absolute path, size in bytes, last-modified timestamp, MIME type guess, whether it is readable/writable, and (for directories) the number of direct children.",
             inputSchema = schema {
-                prop("path", "string", "Relative path inside OmniChat/files/, e.g. \"notes/todo.txt\".")
+                prop("path", "string", "File or directory path.")
                 required("path")
             }
         ),
@@ -672,12 +678,34 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "file_move",
-            description = "Move or rename a file or directory inside OmniChat/files/. The destination parent directory is created automatically if it does not exist. Both source and destination must be within OmniChat/files/.",
+            description = "Move or rename a file or directory on device storage. The destination parent directory is created automatically if it does not exist.",
             inputSchema = schema {
-                prop("sourcePath", "string", "Relative source path inside OmniChat/files/, e.g. \"drafts/note.txt\".")
-                prop("destinationPath", "string", "Relative destination path inside OmniChat/files/, e.g. \"archive/note_2024.txt\".")
+                prop("sourcePath", "string", "Source path.")
+                prop("destinationPath", "string", "Destination path.")
                 prop("overwrite", "boolean", "If true, overwrite the destination if it already exists. Default false (returns an error if destination exists).")
                 required("sourcePath", "destinationPath")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_copy",
+            description = "Copy a file or directory on device storage. Directories are copied recursively. The destination parent directory is created automatically if it does not exist.",
+            inputSchema = schema {
+                prop("sourcePath", "string", "Source path.")
+                prop("destinationPath", "string", "Destination path.")
+                prop("overwrite", "boolean", "If true, overwrite the destination if it already exists. Default false.")
+                required("sourcePath", "destinationPath")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "file_mkdir",
+            description = "Create a directory (and any missing parent directories) on device storage. Returns an error if the path exists and is not a directory.",
+            inputSchema = schema {
+                prop("path", "string", "Directory path to create.")
+                required("path")
             }
         ),
         // ── 文档创建工具 ──────────────────────────────────────────────────
@@ -892,6 +920,8 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "file_search" to "files",
         "file_info" to "files",
         "file_move" to "files",
+        "file_copy" to "files",
+        "file_mkdir" to "files",
         "create_document" to "documents",
         "ask_user" to "core",
         "create_timer" to "efficiency",
@@ -1600,7 +1630,6 @@ exec(open('$escapedScriptPath').read())
                     "找不到脚本文件: ${server.command}\n\n" +
                     "请将 .js 脚本放入 MCP 工作目录：\n$mcpDirPath\n\n" +
                     "内置脚本（已自动部署）：\n" +
-                    "  • mcp_filesystem.js — 文件系统访问（读/写/追加/复制/移动/删除/搜索内容）\n" +
                     "  • mcp_fetch.js      — HTTP 请求\n" +
                     "  • mcp_pkg_manager.js — 包管理器"
                 )

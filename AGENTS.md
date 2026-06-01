@@ -98,7 +98,7 @@ Room database `ai_chat_memory_db` (version 30) with 16 entities. See `app/src/ma
 - **Node.js**: `libnode.so` (nodejs-mobile) 鈫?`NodeJsBridge` (JNI) 鈫?TCP socket bridge 鈫?MCP JSON-RPC
 - **Python**: `libpython3.14.so` (dlopen via `PythonRuntime`) 鈫?`ProcessBuilder` 鈫?stdin/stdout MCP JSON-RPC
 - **Remote HTTP**: Direct HTTP/HTTPS connection to remote MCP servers (no native runtime needed)
-- Node.js scripts go in `app/src/main/assets/node/`; `McpScriptManager` deploys built-in scripts (`mcp_filesystem.js`, `mcp_fetch.js`, `mcp_socket_bridge.js`, `mcp_multi_bridge.js`, `mcp_pkg_manager.js`) to `OmniChat/mcp/` on external storage
+- Node.js scripts go in `app/src/main/assets/node/`; `McpScriptManager` deploys built-in scripts (`mcp_fetch.js`, `mcp_socket_bridge.js`, `mcp_multi_bridge.js`, `mcp_pkg_manager.js`) to `OmniChat/mcp/` on external storage
 - Python stdlib in `assets/python/stdlib.zip`; `PythonRuntime` handles extraction, dlopen, and `Py_Initialize` lifecycle
 - **Constraint**: Node.js can start only once per process (nodejs-mobile limitation) 鈥?merge multiple servers into one entry script
 - Native runtimes are optional; app degrades gracefully without them
