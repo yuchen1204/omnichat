@@ -213,6 +213,7 @@
   "memory.eaea8fbf": "例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼...",
   "memory.51c52a46": "添加偏好",
   "memory.list.title": "AI 自我反省提炼的长效记忆 (%d):",
+  "memory.backfill_tags": "补打标签 (%d)",
   "memory.7c4e09ff": "清空全部",
   "memory.empty.hint": "暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！",
   "memory.unpin": "取消锁定",

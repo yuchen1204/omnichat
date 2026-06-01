@@ -788,11 +788,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "create_timer",
-            description = "Create a one-shot timer that fires after a specified delay. When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Use this when the user asks to be reminded about something after a delay (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\").\n\nReturns a `timerId` that can be used with `cancel_timer` to cancel the timer before it fires.",
+            description = "Create a timer that fires at a precise time (supports one-shot and repeating). When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Timers survive app restarts and device reboots.\n\nUse this when the user asks to be reminded about something (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\", \"remind me every 2 hours to drink water\").\n\nTime precision: seconds, minutes, hours. You can specify exact combinations like 1 hour 30 minutes 15 seconds.\n\nReturns a `timerId` that can be used with `cancel_timer`.",
             inputSchema = schema {
-                prop("delay_seconds", "integer", "Delay in seconds before the timer fires. Range: 1 to 86400 (24 hours). Examples: 60 = 1 minute, 1800 = 30 minutes, 3600 = 1 hour.")
-                prop("message", "string", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable, e.g. \"Time to take a break!\", \"Check the oven\", \"Meeting starts now\".")
+                prop("delay_seconds", "integer", "Delay in seconds before the first fire. Must be ≥ 1. No upper limit. Examples: 30 (30 seconds), 90 (1 min 30 sec), 3600 (1 hour), 5400 (1 hour 30 min). Combine: hours×3600 + minutes×60 + seconds.")
+                prop("message", "string", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable.")
                 prop("label", "string", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
+                prop("repeat_interval_seconds", "integer", "If provided (≥ 1), the timer repeats at this interval in seconds. Omit or set to 0 for a one-shot timer. Examples: 3600 (every hour), 7200 (every 2 hours), 1800 (every 30 minutes).")
                 required("delay_seconds", "message")
             }
         ),
