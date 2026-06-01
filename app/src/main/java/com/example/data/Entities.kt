@@ -505,6 +505,13 @@ data class UISettings(
      */
     val enabledMcpGroups: String = "core,ui_appearance,efficiency,memory",
 
+    /**
+     * 静默工具调用显示模式。
+     * true = 工具调用以紧凑的"工作中..."指示器显示，不展开详情卡片。
+     * AI 通过 set_tool_display_mode 工具控制。
+     */
+    val silentToolCalls: Boolean = false,
+
     val updatedAt: Long = System.currentTimeMillis(),
 
     /**

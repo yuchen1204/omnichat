@@ -827,6 +827,16 @@ class McpRuntimeManager private constructor(private val context: Context) {
             description = "List all entries in the shared scratchpad. Returns each entry's agent name, key, content preview, and last modified time. Use this to discover what data other agents have shared.",
             inputSchema = schema {}
         ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "set_tool_display_mode",
+            description = "Control how tool call results are displayed in the chat. When silent=true, tool calls show a compact \"Working...\" indicator instead of detailed cards. The user can still tap to expand for details. Use this when performing multiple sequential tool calls to avoid flooding the screen. Call set_tool_display_mode(silent=false) to restore the normal detailed display.",
+            inputSchema = schema {
+                prop("silent", "boolean", "true = show compact indicator, false = show full tool call cards (default).")
+                required("silent")
+            }
+        ),
         // ── 运行时工具组管理 ──────────────────────────────────────────────
         McpTool(
             serverId = BUILTIN_SERVER_ID,

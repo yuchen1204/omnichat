@@ -460,3 +460,66 @@ fun ToolGroupCard(
         }
     }
 }
+
+@Composable
+fun SilentToolIndicator(
+    messages: List<UIModelToolMessage>,
+    allMessages: List<UIModelToolMessage>,
+    modifier: Modifier = Modifier
+) {
+    val uiSettings = LocalUISettings.current
+    val fs = uiSettings.fontSizeScale
+    val spacingMultiplier = uiSettings.spacingMultiplier
+
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Compact indicator
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+            shape = RoundedCornerShape(uiSettings.cornerRadiusDp.dp),
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp * spacingMultiplier)
+                .clickable { isExpanded = !isExpanded }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Build,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = uiText("chat.tools_working", "工作中... (已调用 %d 个工具)").format(messages.size),
+                    fontSize = (11.5f * fs).sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+
+        // Expanded: show full ToolGroupCard
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            ToolGroupCard(
+                messages = messages,
+                allMessages = allMessages
+            )
+        }
+    }
+}

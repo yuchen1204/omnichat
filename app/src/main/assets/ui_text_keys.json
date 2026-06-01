@@ -1,6 +1,7 @@
 {
   "chat.tools_used_count": "已调用 %d 个工具",
   "chat.tool_used": "已调用工具",
+  "chat.tools_working": "工作中... (已调用 %d 个工具)",
   "workspace.tool.called": "工具执行结果 (ID: %s)",
   "workspace.intervention.label": "【用户干预】",
   "workspace.orchestrator.injected": "来自主控 Agent",
