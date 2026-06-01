@@ -91,8 +91,8 @@ object BuiltinToolHandler {
             "create_document" -> handleCreateDocument(context, arguments)
             "ask_user" -> handleAskUser(context, arguments, sessionId)
             "create_timer" -> handleCreateTimer(context, arguments, sessionId)
-            "cancel_timer" -> handleCancelTimer(arguments)
-            "list_timers" -> handleListTimers()
+            "cancel_timer" -> handleCancelTimer(context, arguments)
+            "list_timers" -> handleListTimers(context)
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "agent" -> handleAgentTool(arguments)
@@ -333,6 +333,9 @@ object BuiltinToolHandler {
         val query = arguments.optString("query").trim()
         if (query.isBlank()) {
             return errorResponse("搜索失败：query 不能为空。")
+        }
+        if (query.any { it.code > 127 }) {
+            return errorResponse("search_memory only supports English queries. Please search using English keywords.")
         }
         val tagFilter = arguments.optString("tag").trim().lowercase().takeIf { it.isNotBlank() }
         val limit = arguments.optInt("limit", 10).coerceIn(1, 50)
@@ -982,9 +985,16 @@ object BuiltinToolHandler {
         val message = arguments.optString("message").trim()
         val label = arguments.optString("label", "AI 定时提醒").trim()
             .take(30).ifEmpty { "AI 定时提醒" }
+        val repeatIntervalSec = arguments.optLong("repeat_interval_seconds", 0L)
 
-        if (delaySeconds < 1 || delaySeconds > 86400) {
-            return errorResponse("参数 'delay_seconds' 必须在 1 到 86400（24小时）之间。")
+        if (delaySeconds < 1) {
+            return errorResponse("参数 'delay_seconds' 必须 ≥ 1。")
+        }
+        if (repeatIntervalSec < 0) {
+            return errorResponse("参数 'repeat_interval_seconds' 不能为负数。")
+        }
+        if (repeatIntervalSec > 0 && repeatIntervalSec < 1) {
+            return errorResponse("参数 'repeat_interval_seconds' 如提供则必须 ≥ 1。")
         }
         if (message.isEmpty()) {
             return errorResponse("参数 'message' 不能为空。")
@@ -998,33 +1008,34 @@ object BuiltinToolHandler {
             sessionId = sessionId,
             delaySeconds = delaySeconds,
             message = message,
-            label = label
+            label = label,
+            repeatIntervalSec = repeatIntervalSec
         )
 
-        val minutes = delaySeconds / 60
-        val seconds = delaySeconds % 60
-        val humanDelay = when {
-            minutes >= 60 -> "${minutes / 60} 小时 ${minutes % 60} 分钟"
-            minutes > 0 -> "${minutes} 分钟 ${if (seconds > 0) "${seconds} 秒" else ""}"
-            else -> "${seconds} 秒"
-        }.trim()
+        val humanDelay = formatDuration(delaySeconds)
+
+        val repeatInfo = if (repeatIntervalSec > 0) {
+            "\n• 重复间隔：每 ${formatDuration(repeatIntervalSec)}"
+        } else ""
 
         return successResponse(
             "✅ 定时器已创建！\n\n" +
             "• 定时器 ID：`$timerId`\n" +
-            "• 触发时间：$humanDelay 后\n" +
+            "• 触发时间：$humanDelay 后" +
+            repeatInfo + "\n" +
             "• 提醒内容：$message\n\n" +
             "到时间后会在聊天中插入提醒消息，并发送系统通知。\n" +
+            "定时器在应用关闭或设备重启后仍然有效。\n" +
             "如需取消，请调用 cancel_timer 并传入 timer_id: \"$timerId\""
         )
     }
 
-    private fun handleCancelTimer(arguments: JSONObject): JSONObject {
+    private fun handleCancelTimer(context: Context, arguments: JSONObject): JSONObject {
         val timerId = arguments.optString("timer_id").trim()
         if (timerId.isEmpty()) {
             return errorResponse("参数 'timer_id' 不能为空。请先调用 list_timers 查看当前待触发的定时器。")
         }
-        val cancelled = TimerManager.cancelTimer(timerId)
+        val cancelled = TimerManager.cancelTimer(context, timerId)
         return if (cancelled) {
             successResponse("✅ 定时器 `$timerId` 已成功取消。")
         } else {
@@ -1032,31 +1043,40 @@ object BuiltinToolHandler {
         }
     }
 
-    private fun handleListTimers(): JSONObject {
-        val timers = TimerManager.listTimers()
+    private fun handleListTimers(context: Context): JSONObject {
+        val timers = TimerManager.listTimers(context)
         if (timers.isEmpty()) {
             return successResponse("当前没有待触发的定时器。")
         }
         val now = System.currentTimeMillis()
+        val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
         val text = buildString {
             appendLine("当前待触发的定时器（共 ${timers.size} 个）：")
             appendLine()
             timers.forEachIndexed { i, t ->
                 val remainingMs = (t.fireAtMs - now).coerceAtLeast(0L)
                 val remainingSec = remainingMs / 1000
-                val remainingMin = remainingSec / 60
-                val humanRemaining = when {
-                    remainingMin >= 60 -> "${remainingMin / 60} 小时 ${remainingMin % 60} 分钟"
-                    remainingMin > 0 -> "${remainingMin} 分钟 ${remainingSec % 60} 秒"
-                    else -> "${remainingSec} 秒"
-                }.trim()
-                appendLine("${i + 1}. ID: `${t.timerId}`")
+                val humanRemaining = formatDuration(remainingSec)
+                val fireTime = sdf.format(java.util.Date(t.fireAtMs))
+                val type = if (t.repeatIntervalMs > 0) "🔁 重复(每 ${formatDuration(t.repeatIntervalMs / 1000)})" else "⏳ 单次"
+                appendLine("${i + 1}. ID: `${t.timerId}` [$type]")
                 appendLine("   标签：${t.label}")
                 appendLine("   内容：${t.message}")
-                appendLine("   剩余：$humanRemaining")
+                appendLine("   剩余：$humanRemaining（$fireTime 触发）")
             }
         }
         return successResponse(text.trimEnd())
+    }
+
+    private fun formatDuration(totalSeconds: Long): String {
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return buildString {
+            if (hours > 0) append("${hours} 小时 ")
+            if (minutes > 0) append("${minutes} 分钟 ")
+            if (seconds > 0 || isEmpty()) append("${seconds} 秒")
+        }.trim()
     }
 
     // ── 文件系统工具辅助函数 ────────────────────────────────────────────────

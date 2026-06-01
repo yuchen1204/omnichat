@@ -11,6 +11,8 @@
 
     <!-- 通知权限：Android 13+ 需要运行时请求 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 精确闹钟权限：Android 12+ 需要声明，保证定时提醒即使进程死亡也能触发 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- 前台服务权限：保持工作区任务在后台运行 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -52,6 +54,20 @@
             android:name=".service.WorkspaceForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 定时提醒：AlarmManager 触发的 BroadcastReceiver，进程死亡后仍可被唤起 -->
+        <receiver
+            android:name=".mcp.AlarmReceiver"
+            android:exported="false" />
+
+        <!-- 定时提醒：设备重启后恢复所有待触发的定时器 -->
+        <receiver
+            android:name=".mcp.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

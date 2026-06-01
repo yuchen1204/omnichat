@@ -57,6 +57,8 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
         // 初始化定时器通知 Channel
         TimerManager.initNotificationChannel(applicationContext)
+        // 从磁盘恢复待触发的定时器（进程重启后不丢失）
+        TimerManager.restoreFromDisk(applicationContext)
         
         // 注册全局 Hook 示例
         com.example.hooks.LoggingHooks.registerAll()
