@@ -517,50 +517,36 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "adjust_ui",
-            description = "Adjust the app's complete color scheme and layout. Covers the full Material 3 color palette (primary / secondary / tertiary + their container and on-colors), surface and outline colors, error / success / warning / info / accent colors, as well as corner radius and spacing multiplier.\n\n**Important**: Call get_ui_capabilities first to see the current values and constraints for all adjustable fields. All colors must be in #RRGGBB or #RRGGBBAA format. Fields not provided will retain their current values (incremental update). Changes take effect immediately across the entire app without a restart.",
-            // 颜色字段使用 UiFieldRegistry + colorProp（带 HEX pattern 约束）
+            description = "Adjust the app's complete visual theme in a single call — color scheme, layout, and font settings.\n\n**Covers:** Material 3 color palette (primary / secondary / tertiary + their container and on-colors), surface and outline colors, error / success / warning / info / accent colors, corner radius, spacing multiplier, global font size scale, chat font size scale, and font family.\n\n**Important:** Call get_ui_capabilities first to see current values and constraints. All colors must be #RRGGBB or #RRGGBBAA. Fields not provided retain their current values (incremental update). Pass resetToDefault=true to restore everything to defaults. Changes take effect immediately without restart.",
             inputSchema = schema {
                 for (f in UiFieldRegistry.colorFields) {
                     put(f.key, colorProp(f.desc))
                 }
                 prop("cornerRadiusDp", "integer", "Global corner radius in dp, range 0–32. Affects cards, buttons, and other rounded elements.")
                 prop("spacingMultiplier", "number", "Global spacing multiplier, range 0.5–2.0. 1.0 is the default; >1 is more spacious, <1 is more compact.")
-                prop("resetToDefault", "boolean", "Pass true to immediately reset all UI to defaults (other fields are ignored).")
+                for (f in UiFieldRegistry.fontFields) {
+                    put(f.key, f.toSchemaProp())
+                }
+                prop("resetToDefault", "boolean", "Pass true to immediately reset ALL UI settings (colors, layout, font) to defaults. Other fields are ignored.")
             }
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
-            name = "reset_ui_to_default",
-            description = "Reset all UI settings — colors, layout, corner radius, etc. — to their system defaults. Call this tool when the user asks to reset the interface, restore the original look, or when you have made a mess of the color scheme.",
-            inputSchema = schema {}
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "save_color_scheme",
-            description = "Save the current app color scheme as a named preset for easy restoration later. Up to ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets can be saved; if the limit is reached an error is returned — call delete_color_scheme to free up a slot first. Returns the unique schemeId of the newly saved preset.",
+            name = "color_scheme",
+            description = "Manage saved color scheme presets: save the current theme, list presets, apply a preset, or delete one.\n\n" +
+                "• **save** — Save current UI settings as a named preset (name + description required). Up to ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets allowed.\n" +
+                "• **list** — List all saved presets with their schemeId, name, description, and preview colors.\n" +
+                "• **apply** — Apply a preset by schemeId; takes effect immediately.\n" +
+                "• **delete** — Delete a preset by schemeId to free up a slot.",
             inputSchema = schema {
-                prop("name", "string", "Preset name — short and memorable, e.g. \"Deep Ocean Blue\" or \"Minimal White\". Max 30 characters.")
-                prop("description", "string", "Preset summary describing the color style or use case, e.g. \"An immersive dark night theme with deep blue as the primary color\". Max 100 characters.")
-                required("name", "description")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "list_color_schemes",
-            description = "List all saved color scheme presets, returning each preset's schemeId, name, description, save time, and a preview of the primary and background colors. Call this tool before applying or deleting a preset to obtain the schemeId.",
-            inputSchema = schema {}
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "apply_color_scheme",
-            description = "Apply a saved color scheme preset by its schemeId as the current theme, taking effect immediately. Call list_color_schemes first to obtain the available schemeIds.",
-            inputSchema = schema {
-                prop("schemeId", "string", "The ID of the preset to apply (returned by save_color_scheme or listed by list_color_schemes).")
-                required("schemeId")
+                prop("action", "string", "Operation to perform.") {
+                    enum("save", "list", "apply", "delete")
+                }
+                prop("name", "string", "Preset name (max 30 chars). Required for 'save'.")
+                prop("description", "string", "Preset description (max 100 chars). Required for 'save'.")
+                prop("schemeId", "string", "Preset ID (from list). Required for 'apply' and 'delete'.")
+                required("action")
             }
         ),
         McpTool(
@@ -574,37 +560,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 prop("limit", "integer", "Maximum number of results to return. Default 10, max 50.")
                 required("query")
             }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "delete_color_scheme",
-            description = "Delete a saved color scheme preset by its schemeId. Use this when ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets are already saved and you need to free up a slot.",
-            inputSchema = schema {
-                prop("schemeId", "string", "The ID of the preset to delete (listed by list_color_schemes).")
-                required("schemeId")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "adjust_font",
-            description = "Adjust the app's font settings, including global font size scale, chat bubble font size scale, and font family. Changes take effect globally and immediately without a restart.\n\n**Adjustable fields:**\n• fontSizeScale — Global UI font size scale (0.75–1.5, default 1.0)\n• chatFontSizeScale — Chat bubble body font size scale (0.75–1.5, default 1.0)\n• fontFamily — Font family (\"default\" / \"serif\" / \"monospace\" / \"cursive\")\n\nFields not provided retain their current values (incremental update).",
-            // 使用 UiFieldRegistry.fontFields 消除重复定义
-            inputSchema = schema {
-                for (f in UiFieldRegistry.fontFields) {
-                    prop(f.key, f.type, f.desc) {
-                        if (f.enumValues != null) enum(*f.enumValues.toTypedArray())
-                    }
-                }
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "reset_font_to_default",
-            description = "Reset all font settings (font size scale, chat font scale, and font family) to their default values. Call this tool when the user asks to restore the default font or when you have made a mess of the font configuration.",
-            inputSchema = schema {}
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
@@ -926,13 +881,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "search_memory" to "memory",
         "get_ui_capabilities" to "ui_appearance",
         "adjust_ui" to "ui_appearance",
-        "reset_ui_to_default" to "ui_appearance",
-        "save_color_scheme" to "ui_appearance",
-        "list_color_schemes" to "ui_appearance",
-        "apply_color_scheme" to "ui_appearance",
-        "delete_color_scheme" to "ui_appearance",
-        "adjust_font" to "ui_appearance",
-        "reset_font_to_default" to "ui_appearance",
+        "color_scheme" to "ui_appearance",
         "list_ui_texts" to "ui_text",
         "set_ui_texts" to "ui_text",
         "file_write" to "files",

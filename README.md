@@ -17,8 +17,8 @@
 - **🧠 嵌入式 MCP 运行时** — 在 Android 设备上本地运行 Node.js / Python MCP 服务器，AI 可直接调用本地工具
 - **🤖 多 Agent 工作区** — 编排模式的多 Agent 协作系统，支持团队管理、任务分配和 Agent 间通信
 - **💾 跨会话记忆系统** — 15 分钟滚动摘要 + 长期记忆项（带置信度评分），AI 真正"记住"你的偏好
-- **🎨 AI 可调整 UI** — AI 可通过 MCP 工具实时修改应用主题、颜色、字体、布局
-- **📷 多媒体能力** — 相机拍照、图片选取、文档生成（docx/xlsx）、定时器
+- **🎨 AI 可调整 UI** — Apple 风格色彩方案，AI 可通过 MCP 工具实时修改应用主题、颜色、字体、布局
+- **📷 多媒体能力** — 相机拍照、图片选取、文档生成（docx/xlsx）、AlarmManager 定时器（支持重复任务）
 - **🔄 多模型支持** — OpenAI 兼容 API，支持 Gemini、OpenAI、DeepSeek、本地模型等
 - **📡 SSE 流式输出** — 实时流式响应，打字机效果，支持 Thinking/Reasoning 模式
 - **🔌 Hook 系统** — 可扩展的 Hook 机制，支持日志记录、文件权限控制等
@@ -41,7 +41,7 @@
 ├─────────┴─────────────────┴───────────────────┴────────────┤
 │                 Data / Repository Layer                      │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │              AppRepository (Room DB v30 · 16 tables)   │  │
+│  │              AppRepository (Room DB v32 · 20 tables)   │  │
 │  └───────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │                   MCP Runtime Layer                          │
@@ -54,6 +54,9 @@
 │  ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
 │  │TeamManager│  │TaskTools │  │AgentTool │  │AgentRunner│  │
 │  └───────────┘  └──────────┘  └──────────┘  └───────────┘  │
+│  ┌───────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ToolOrchestratr│  │ AgentRegistry│  │MarkdownAgentLdr │  │
+│  └───────────────┘  └──────────────┘  └─────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -106,9 +109,9 @@ omnichat/
 ├── app/src/main/java/com/example/
 │   ├── MainActivity.kt              # 入口 Activity
 │   ├── data/                        # 数据层
-│   │   ├── Entities.kt              # Room 实体定义 (16 个表)
+│   │   ├── Entities.kt              # Room 实体定义 (20 个表)
 │   │   ├── Daos.kt                  # DAO 接口
-│   │   ├── AppDatabase.kt           # 数据库配置 (v30, 26 次迁移)
+│   │   ├── AppDatabase.kt           # 数据库配置 (v32, 28 次迁移)
 │   │   └── Repository.kt            # 数据仓库 (AppRepository)
 │   ├── mcp/                         # MCP 运行时
 │   │   ├── McpRuntimeManager.kt     # 运行时管理器
@@ -126,18 +129,26 @@ omnichat/
 │   ├── network/
 │   │   └── ApiClient.kt            # OpenAI 兼容 API 客户端 (SSE)
 │   ├── workspace/                   # 多 Agent 工作区
-│   │   ├── TeamManager.kt           # 团队管理
+│   │   ├── TeamManager.kt           # 团队管理（编排器）
 │   │   ├── AgentRunner.kt           # Agent 执行器
-│   │   ├── TaskTools.kt             # 任务管理
-│   │   ├── AgentTool.kt             # SubAgent 创建
+│   │   ├── AgentRegistry.kt         # Agent 注册与发现
 │   │   ├── AgentDefinition.kt       # Agent 类型定义
-│   │   └── SendMessageTool.kt       # Agent 间通信
+│   │   ├── AgentContext.kt          # Agent 执行上下文
+│   │   ├── AgentTool.kt             # SubAgent 创建
+│   │   ├── AgentToolFilter.kt       # 工具过滤
+│   │   ├── ToolOrchestrator.kt      # 工具路由编排
+│   │   ├── TaskTools.kt             # 任务管理
+│   │   ├── SendMessageTool.kt       # Agent 间通信
+│   │   ├── StructuredMessage.kt     # 结构化消息格式
+│   │   ├── MemorySnapshot.kt        # Agent 记忆快照
+│   │   ├── MarkdownAgentLoader.kt   # Markdown Agent 定义加载器
+│   │   └── WorkspaceModels.kt       # 工作区数据模型
 │   ├── ui/
 │   │   ├── screens/                 # Compose 界面
 │   │   ├── viewmodel/               # ViewModel 层
 │   │   ├── components/              # 可复用组件
 │   │   └── theme/                   # Material 3 主题系统
-│   └── TimerManager.kt             # 定时器管理
+│   └── TimerManager.kt             # 定时器管理 (AlarmManager)
 ├── app/src/main/cpp/                # C++ JNI 代码
 ├── app/src/main/assets/
 │   ├── node/                        # Node.js MCP 脚本
@@ -151,10 +162,14 @@ omnichat/
 |------|------|
 | 语言 | Kotlin 2.2.10, C++17 (JNI) |
 | UI | Jetpack Compose (Material 3) |
-| 数据库 | Room v2.7.0 (v30, 16 个实体, 26 次迁移) |
-| 网络 | OkHttp + SSE |
+| 数据库 | Room v2.7.0 (v32, 20 个实体, 28 次迁移) |
+| 网络 | OkHttp + SSE + Retrofit 2.12.0 |
+| 序列化 | Moshi 1.15.2 |
+| Firebase | Firebase BOM 34.12.0 |
 | 构建 | AGP 9.1.1, KSP 2.2.10-2.0.2, CMake 3.22.1 |
 | 原生运行时 | nodejs-mobile (libnode.so), Python 3.14 (dlopen) |
+| 文档生成 | Apache POI 5.5.1 |
+| 权限管理 | Accompanist Permissions 0.37.3 |
 | 图片加载 | Coil 2.7.0 |
 | 相机 | CameraX 1.5.0 |
 | Markdown | compose-markdown 0.7.2 |
@@ -162,7 +177,7 @@ omnichat/
 | CI/CD | GitHub Actions (自动 Release 构建) |
 | ABI | arm64-v8a, x86_64 |
 
-## 📊 数据库表结构 (v30 · 16 个实体)
+## 📊 数据库表结构 (v32 · 20 个实体)
 
 | 实体 | 表名 | 用途 |
 |------|------|------|
@@ -178,14 +193,18 @@ omnichat/
 | `ColorSchemePreset` | `color_scheme_presets` | 颜色方案快照 (最多 5 个) |
 | `AgentPreset` | `agent_presets` | Agent 预设配置 |
 | `WorkspaceSession` | `workspace_sessions` | 工作区会话 |
+| `WorkspaceTeam` | `workspace_teams` | 工作区团队 |
 | `AgentInstance` | `agent_instances` | 运行中的 Agent 实例 |
+| `AgentDefinitionEntity` | `agent_definitions` | Agent 类型定义（含 Claude Code 对齐字段） |
 | `WorkspaceMessage` | `workspace_messages` | 工作区消息 |
+| `MailboxMessage` | `mailbox_messages` | Agent 间邮箱消息 |
+| `AgentStateSnapshot` | `agent_state_snapshots` | Agent 状态快照 |
 | `TeamTask` | `team_tasks` | 团队任务 (状态/阻塞管理) |
 | `McpFilePermission` | `mcp_file_permissions` | MCP 文件访问权限 |
 
 ## 🔧 MCP 工具扩展
 
-### 内置工具 (34 个)
+### 内置工具 (35 个)
 
 | 工具 | 说明 |
 |------|------|
@@ -215,14 +234,21 @@ omnichat/
 
 ## 🤖 多 Agent 工作区
 
-编排模式的多 Agent 协作系统：
+编排模式的多 Agent 协作系统，支持 Claude Code 风格的 Agent 定义：
 
 - **TeamManager** — 管理队友和整体工作流
+- **AgentRegistry** — Agent 注册与发现
+- **AgentDefinition** — Agent 类型定义（内置 + 自定义 Markdown 定义）
+- **MarkdownAgentLoader** — 从 Markdown 文件加载 Agent 定义
 - **AgentTool** — 创建隔离的 SubAgent 执行任务
+- **AgentToolFilter** — 按 Agent 类型过滤可用工具
+- **ToolOrchestrator** — 工具路由编排
 - **TaskTools** — 任务 CRUD、状态跟踪、阻塞依赖
 - **AgentRunner** — Agent 执行循环（含 MCP 工具调用）
 - **SendMessageTool** — Agent 间异步消息通信
-- **TeammateContext** — 协程上下文隔离
+- **StructuredMessage** — 结构化消息格式
+- **MemorySnapshot** — Agent 记忆快照
+- **AgentContext** — 协程上下文隔离
 
 ## 📦 Release 构建
 

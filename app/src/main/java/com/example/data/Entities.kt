@@ -287,7 +287,7 @@ data class McpServer(
 /**
  * 配色方案预设快照。
  *
- * 每次 AI 调用 save_color_scheme 时，将当前 [UISettings] 的全部颜色 + 布局参数
+ * 每次 AI 调用 color_scheme(action="save") 时，将当前 [UISettings] 的全部颜色 + 布局参数
  * 序列化为一行记录。最多保存 [MAX_PRESETS] 条，超出时拒绝保存并提示 AI 先删除旧方案。
  *
  * [schemeId] 使用 UUID 字符串，保证跨设备唯一，便于未来同步。

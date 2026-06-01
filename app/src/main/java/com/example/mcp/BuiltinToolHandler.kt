@@ -68,16 +68,11 @@ object BuiltinToolHandler {
     suspend fun handleBuiltinTool(context: Context, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject {
         return when (toolName) {
             "get_ui_capabilities" -> handleGetUiCapabilities(context)
-            "reset_ui_to_default" -> handleResetUiToDefault(context)
+            "reset_ui_to_default" -> handleAdjustUi(context, JSONObject().apply { put("resetToDefault", true) })
             "adjust_ui" -> handleAdjustUi(context, arguments)
             "get_current_time" -> handleGetCurrentTime(arguments)
-            "save_color_scheme" -> handleSaveColorScheme(context, arguments)
-            "list_color_schemes" -> handleListColorSchemes(context)
-            "apply_color_scheme" -> handleApplyColorScheme(context, arguments)
-            "delete_color_scheme" -> handleDeleteColorScheme(context, arguments)
+            "color_scheme" -> handleColorScheme(context, arguments)
             "search_memory" -> handleSearchMemory(context, arguments)
-            "adjust_font" -> handleAdjustFont(context, arguments)
-            "reset_font_to_default" -> handleResetFontToDefault(context)
             "list_ui_texts" -> handleListUiTexts(context, arguments)
             "set_ui_texts" -> handleSetUiTexts(context, arguments)
             "file_write" -> handleFileWrite(context, arguments)
@@ -179,12 +174,6 @@ object BuiltinToolHandler {
         return buildUiCapabilitiesResponse(current)
     }
 
-    private suspend fun handleResetUiToDefault(context: Context): JSONObject {
-        val repository = getRepository(context)
-        repository.upsertUISettings(UISettings())
-        return successResponse("UI 设置已成功恢复为默认。")
-    }
-
     // 使用 UiFieldRegistry 循环处理颜色字段，消除 30 行重复的 hex() 调用和变更检测
     private suspend fun handleAdjustUi(context: Context, arguments: JSONObject): JSONObject {
         val repository = getRepository(context)
@@ -222,6 +211,33 @@ object BuiltinToolHandler {
             }
         }
 
+        // ── 字体字段（原 adjust_font 合并至此） ─────────────────────────────
+        val validFontFamilies = setOf("default", "serif", "monospace", "cursive")
+
+        if (arguments.has("fontSizeScale")) {
+            val fs = arguments.optDouble("fontSizeScale", current.fontSizeScale.toDouble())
+                .toFloat().coerceIn(0.75f, 1.5f)
+            if (fs != current.fontSizeScale) {
+                next = next.copy(fontSizeScale = fs)
+                changed += "fontSizeScale"
+            }
+        }
+        if (arguments.has("chatFontSizeScale")) {
+            val cfs = arguments.optDouble("chatFontSizeScale", current.chatFontSizeScale.toDouble())
+                .toFloat().coerceIn(0.75f, 1.5f)
+            if (cfs != current.chatFontSizeScale) {
+                next = next.copy(chatFontSizeScale = cfs)
+                changed += "chatFontSizeScale"
+            }
+        }
+        if (arguments.has("fontFamily")) {
+            val ff = arguments.optString("fontFamily", "").trim().lowercase()
+            if (ff.isNotEmpty() && ff in validFontFamilies && ff != current.fontFamily) {
+                next = next.copy(fontFamily = ff)
+                changed += "fontFamily"
+            }
+        }
+
         repository.upsertUISettings(next.copy(updatedAt = System.currentTimeMillis()))
 
         val summary = if (changed.isEmpty()) "未检测到任何字段变化（输入可能为空或全部无效）。"
@@ -251,80 +267,69 @@ object BuiltinToolHandler {
 
     // ── 配色方案工具 ────────────────────────────────────────────────────────
 
-    private suspend fun handleSaveColorScheme(context: Context, arguments: JSONObject): JSONObject {
-        val name = arguments.optString("name").trim()
-        val desc = arguments.optString("description").trim()
-        if (name.isBlank()) {
-            return errorResponse("保存失败：name 不能为空。")
+    private suspend fun handleColorScheme(context: Context, arguments: JSONObject): JSONObject {
+        val action = arguments.optString("action").trim().lowercase()
+        if (action !in listOf("save", "list", "apply", "delete")) {
+            return errorResponse("参数 'action' 必须是 save、list、apply 或 delete 之一。")
         }
-        val repository = getRepository(context)
-        val count = repository.getColorSchemePresetCount()
-        if (count >= ColorSchemePreset.MAX_PRESETS) {
-            val existing = repository.getAllColorSchemePresets()
-            val list = existing.joinToString("\n") { "• [${it.schemeId}] ${it.name}" }
-            return errorResponse("保存失败：已达到最多 ${ColorSchemePreset.MAX_PRESETS} 个方案的上限。\n\n当前已保存的方案：\n$list\n\n请先调用 delete_color_scheme 删除一个不需要的方案，再重试。")
-        }
-        val current = repository.getUISettings() ?: UISettings()
-        val schemeId = UUID.randomUUID().toString()
-        val preset = ColorSchemePreset.fromUISettings(
-            schemeId = schemeId,
-            name = name.take(30),
-            description = desc.take(100),
-            s = current
-        )
-        repository.insertColorSchemePreset(preset)
-        return successResponse("配色方案「${preset.name}」已保存。\nschemeId: $schemeId\n当前已保存 ${count + 1}/${ColorSchemePreset.MAX_PRESETS} 个方案。")
-    }
 
-    private suspend fun handleListColorSchemes(context: Context): JSONObject {
         val repository = getRepository(context)
-        val presets = repository.getAllColorSchemePresets()
-        if (presets.isEmpty()) {
-            return successResponse("当前没有已保存的配色方案。可以先用 adjust_ui 调整配色，再调用 save_color_scheme 保存。")
-        }
-        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINESE)
-        val text = buildString {
-            appendLine("已保存的配色方案（${presets.size}/${ColorSchemePreset.MAX_PRESETS}）：")
-            appendLine()
-            presets.forEachIndexed { i, p ->
-                appendLine("${i + 1}. 「${p.name}」")
-                appendLine("   schemeId:    ${p.schemeId}")
-                appendLine("   概述:        ${p.description}")
-                appendLine("   保存时间:    ${sdf.format(Date(p.createdAt))}")
-                appendLine("   主色:        ${p.primaryColor}  背景色: ${p.backgroundColor}")
-                appendLine("   成功色:      ${p.successColor}  圆角: ${p.cornerRadiusDp}dp  间距: ${p.spacingMultiplier}x")
+
+        return when (action) {
+            "save" -> {
+                val name = arguments.optString("name").trim()
+                val desc = arguments.optString("description").trim()
+                if (name.isBlank()) return errorResponse("保存失败：name 不能为空。")
+                val count = repository.getColorSchemePresetCount()
+                if (count >= ColorSchemePreset.MAX_PRESETS) {
+                    val existing = repository.getAllColorSchemePresets()
+                    val list = existing.joinToString("\n") { "• [${it.schemeId}] ${it.name}" }
+                    return errorResponse("保存失败：已达到最多 ${ColorSchemePreset.MAX_PRESETS} 个方案上限。\n\n当前已保存：\n$list\n\n请先用 action=\"delete\" 删除一个方案。")
+                }
+                val current = repository.getUISettings() ?: UISettings()
+                val schemeId = UUID.randomUUID().toString()
+                val preset = ColorSchemePreset.fromUISettings(schemeId, name.take(30), desc.take(100), current)
+                repository.insertColorSchemePreset(preset)
+                successResponse("配色方案「${preset.name}」已保存。\nschemeId: $schemeId\n当前已保存 ${count + 1}/${ColorSchemePreset.MAX_PRESETS} 个方案。")
+            }
+            "list" -> {
+                val presets = repository.getAllColorSchemePresets()
+                if (presets.isEmpty()) {
+                    return successResponse("当前没有已保存的配色方案。可以先用 adjust_ui 调整配色，再用 color_scheme(action=\"save\") 保存。")
+                }
+                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINESE)
+                val text = buildString {
+                    appendLine("已保存的配色方案（${presets.size}/${ColorSchemePreset.MAX_PRESETS}）：")
+                    appendLine()
+                    presets.forEachIndexed { i, p ->
+                        appendLine("${i + 1}. 「${p.name}」")
+                        appendLine("   schemeId:    ${p.schemeId}")
+                        appendLine("   概述:        ${p.description}")
+                        appendLine("   保存时间:    ${sdf.format(Date(p.createdAt))}")
+                        appendLine("   主色:        ${p.primaryColor}  背景色: ${p.backgroundColor}")
+                        appendLine("   成功色:      ${p.successColor}  圆角: ${p.cornerRadiusDp}dp  间距: ${p.spacingMultiplier}x")
+                    }
+                }
+                successResponse(text.trimEnd())
+            }
+            "apply" -> {
+                val schemeId = arguments.optString("schemeId").trim()
+                if (schemeId.isBlank()) return errorResponse("应用失败：schemeId 不能为空。请先用 action=\"list\" 获取可用的 schemeId。")
+                val preset = repository.getColorSchemePresetById(schemeId)
+                    ?: return errorResponse("应用失败：找不到 schemeId=$schemeId 的方案。请用 action=\"list\" 确认可用的 schemeId。")
+                repository.upsertUISettings(preset.toUISettings())
+                successResponse("配色方案「${preset.name}」已应用，界面立即生效。\n概述：${preset.description}")
+            }
+            else -> { // delete
+                val schemeId = arguments.optString("schemeId").trim()
+                if (schemeId.isBlank()) return errorResponse("删除失败：schemeId 不能为空。")
+                val preset = repository.getColorSchemePresetById(schemeId)
+                    ?: return errorResponse("删除失败：找不到 schemeId=$schemeId 的方案。")
+                repository.deleteColorSchemePreset(schemeId)
+                val remaining = repository.getColorSchemePresetCount()
+                successResponse("配色方案「${preset.name}」已删除。当前剩余 $remaining/${ColorSchemePreset.MAX_PRESETS} 个方案。")
             }
         }
-        return successResponse(text.trimEnd())
-    }
-
-    private suspend fun handleApplyColorScheme(context: Context, arguments: JSONObject): JSONObject {
-        val schemeId = arguments.optString("schemeId").trim()
-        if (schemeId.isBlank()) {
-            return errorResponse("应用失败：schemeId 不能为空。请先调用 list_color_schemes 获取可用的 schemeId。")
-        }
-        val repository = getRepository(context)
-        val preset = repository.getColorSchemePresetById(schemeId)
-        if (preset == null) {
-            return errorResponse("应用失败：找不到 schemeId=$schemeId 的方案。请调用 list_color_schemes 确认可用的 schemeId。")
-        }
-        repository.upsertUISettings(preset.toUISettings())
-        return successResponse("配色方案「${preset.name}」已应用，界面立即生效。\n概述：${preset.description}")
-    }
-
-    private suspend fun handleDeleteColorScheme(context: Context, arguments: JSONObject): JSONObject {
-        val schemeId = arguments.optString("schemeId").trim()
-        if (schemeId.isBlank()) {
-            return errorResponse("删除失败：schemeId 不能为空。")
-        }
-        val repository = getRepository(context)
-        val preset = repository.getColorSchemePresetById(schemeId)
-        if (preset == null) {
-            return errorResponse("删除失败：找不到 schemeId=$schemeId 的方案。")
-        }
-        repository.deleteColorSchemePreset(schemeId)
-        val remaining = repository.getColorSchemePresetCount()
-        return successResponse("配色方案「${preset.name}」已删除。当前剩余 $remaining/${ColorSchemePreset.MAX_PRESETS} 个方案。")
     }
 
     // ── 记忆工具 ────────────────────────────────────────────────────────────
@@ -398,62 +403,6 @@ object BuiltinToolHandler {
             }
         }
         return successResponse(text.trimEnd())
-    }
-
-    // ── 字体工具 ────────────────────────────────────────────────────────────
-
-    private suspend fun handleAdjustFont(context: Context, arguments: JSONObject): JSONObject {
-        val repository = getRepository(context)
-        val current = repository.getUISettings() ?: UISettings()
-
-        val validFontFamilies = setOf("default", "serif", "monospace", "cursive")
-
-        val newFontSizeScale = if (arguments.has("fontSizeScale")) {
-            arguments.optDouble("fontSizeScale", current.fontSizeScale.toDouble())
-                .toFloat().coerceIn(0.75f, 1.5f)
-        } else current.fontSizeScale
-
-        val newChatFontSizeScale = if (arguments.has("chatFontSizeScale")) {
-            arguments.optDouble("chatFontSizeScale", current.chatFontSizeScale.toDouble())
-                .toFloat().coerceIn(0.75f, 1.5f)
-        } else current.chatFontSizeScale
-
-        val newFontFamily = arguments.optString("fontFamily").trim().lowercase().let {
-            if (it.isNotEmpty() && it in validFontFamilies) it else current.fontFamily
-        }
-
-        val next = current.copy(
-            fontSizeScale = newFontSizeScale,
-            chatFontSizeScale = newChatFontSizeScale,
-            fontFamily = newFontFamily,
-            updatedAt = System.currentTimeMillis()
-        )
-        repository.upsertUISettings(next)
-
-        val changed = mutableListOf<String>()
-        if (next.fontSizeScale != current.fontSizeScale) changed += "fontSizeScale: ${current.fontSizeScale} → ${next.fontSizeScale}"
-        if (next.chatFontSizeScale != current.chatFontSizeScale) changed += "chatFontSizeScale: ${current.chatFontSizeScale} → ${next.chatFontSizeScale}"
-        if (next.fontFamily != current.fontFamily) changed += "fontFamily: \"${current.fontFamily}\" → \"${next.fontFamily}\""
-
-        val summary = if (changed.isEmpty()) {
-            "未检测到任何字段变化（输入可能为空或超出范围）。\n当前值：fontSizeScale=${current.fontSizeScale}, chatFontSizeScale=${current.chatFontSizeScale}, fontFamily=\"${current.fontFamily}\""
-        } else {
-            "已更新 ${changed.size} 项：\n${changed.joinToString("\n")}"
-        }
-        return successResponse("字体设置已应用。$summary")
-    }
-
-    private suspend fun handleResetFontToDefault(context: Context): JSONObject {
-        val repository = getRepository(context)
-        val current = repository.getUISettings() ?: UISettings()
-        val next = current.copy(
-            fontSizeScale = 1.0f,
-            chatFontSizeScale = 1.0f,
-            fontFamily = "default",
-            updatedAt = System.currentTimeMillis()
-        )
-        repository.upsertUISettings(next)
-        return successResponse("字体设置已恢复为默认：fontSizeScale=1.0，chatFontSizeScale=1.0，fontFamily=\"default\"。")
     }
 
     // ── UI 文字工具 ─────────────────────────────────────────────────────────
@@ -1727,51 +1676,6 @@ object BuiltinToolHandler {
             }, f.purpose, f.constraint)
         }
 
-        val text = buildString {
-            appendLine("=== 应用 UI 主题能力清单（用于配合 adjust_ui 工具使用）===")
-            appendLine()
-            appendLine("总览：当前主题已被自定义=${current.updatedAt > 0}，最后修改时间戳=${current.updatedAt}")
-            appendLine("用法：调用 adjust_ui 时只需要传想改的字段；未传字段保持当前值。")
-            appendLine()
-            appendLine("== 颜色字段（共 ${colorFields.size} 个） ==")
-            colorFields.forEach { f ->
-                appendLine("• ${f.name}")
-                appendLine("    当前值: ${f.currentValue}")
-                appendLine("    用途:   ${f.purpose}")
-                appendLine("    约束:   ${f.constraint}")
-            }
-            appendLine()
-            appendLine("== 布局字段（共 ${layoutFields.size} 个） ==")
-            layoutFields.forEach { f ->
-                appendLine("• ${f.name}")
-                appendLine("    当前值: ${f.currentValue}")
-                appendLine("    用途:   ${f.purpose}")
-                appendLine("    约束:   ${f.constraint}")
-            }
-            appendLine()
-            appendLine("== 字体字段（共 ${fontFields.size} 个，通过 adjust_font / reset_font_to_default 工具修改） ==")
-            fontFields.forEach { f ->
-                appendLine("• ${f.name}")
-                appendLine("    当前值: ${f.currentValue}")
-                appendLine("    用途:   ${f.purpose}")
-                appendLine("    约束:   ${f.constraint}")
-            }
-            appendLine()
-            appendLine("== 重置 ==")
-            appendLine("调用 reset_ui_to_default 或在 adjust_ui 中传 resetToDefault=true 可还原所有颜色/布局字段为默认。")
-            appendLine("调用 reset_font_to_default 可单独还原字体设置为默认。")
-            appendLine()
-            appendLine("== 推荐做法 ==")
-            appendLine("1. 修改 primary 时，记得同步更新 onPrimary（保证文字可读）。primaryContainer / onPrimaryContainer 同理成对调整。")
-            appendLine("2. 浅色主题：background/surface 用接近 #FFFFFF 的浅色，onBackground/onSurface 用近黑色。")
-            appendLine("   深色主题：background/surface 用接近 #121212 的深色，onBackground/onSurface 用近白色。")
-            appendLine("3. surfaceVariant 应介于 surface 和 background 之间，用作次级容器。")
-            appendLine("4. 状态色（success/warning/info/accent）建议保持高饱和度，无须配套 'on*' 颜色（系统会用图标着色）。")
-            appendLine("5. 一次调整可同时传多个字段，避免分多次调用。")
-            appendLine("6. 字体调整建议：fontSizeScale 和 chatFontSizeScale 超过 1.3 可能导致部分 UI 文字截断，建议先小幅调整。")
-        }
-
-        // 同时把结构化数据放在 JSON 中，便于 AI 程序化解析
         val structured = JSONObject().apply {
             put("hasUserOverride", current.updatedAt > 0)
             put("updatedAt", current.updatedAt)
@@ -1811,7 +1715,7 @@ object BuiltinToolHandler {
             put("content", JSONArray().apply {
                 put(JSONObject().apply {
                     put("type", "text")
-                    put("text", text.trimEnd())
+                    put("text", "UI 主题能力清单。使用 adjust_ui 传入想改的字段即可，未传字段保持当前值。传 resetToDefault=true 可还原全部设置。")
                 })
                 put(JSONObject().apply {
                     put("type", "text")
