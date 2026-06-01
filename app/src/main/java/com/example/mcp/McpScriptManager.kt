@@ -11,7 +11,6 @@ private const val TAG = "McpScriptManager"
 object McpScriptManager {
 
     private val BUILTIN_SCRIPTS = mapOf(
-        "node/mcp_filesystem.js" to "mcp_filesystem.js",
         "node/mcp_fetch.js" to "mcp_fetch.js",
         "node/mcp_socket_bridge.js" to "mcp_socket_bridge.js",
         "node/mcp_multi_bridge.js" to "mcp_multi_bridge.js",

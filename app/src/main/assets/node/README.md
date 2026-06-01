@@ -82,7 +82,6 @@ Python、npx、uvx 类型的 server 支持随时动态添加。
 
 ## 📂 内置脚本（自动部署）
 
-- `mcp_filesystem.js` — 文件系统访问（读写 /sdcard 下的文件）
 - `mcp_fetch.js` — HTTP/HTTPS 请求
 - `mcp_pkg_manager.js` — 包管理器（自动安装依赖）
 - `mcp_socket_bridge.js` — 单 server TCP bridge（内部使用）

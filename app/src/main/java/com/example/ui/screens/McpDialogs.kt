@@ -465,7 +465,7 @@ fun RuntimeHint(
 ) {
     val nodeHint = uiText(
         "mcp.dialog.node_hint",
-        "使用 app 内嵌的 Node.js 运行时执行 JS MCP server，无需设备安装 Node.js。\n内置脚本已自动部署到：\n%s\ncommand 填文件名（如 mcp_filesystem.js）或绝对路径均可。"
+        "使用 app 内嵌的 Node.js 运行时执行 JS MCP server，无需设备安装 Node.js。\n内置脚本已自动部署到：\n%s\ncommand 填文件名或绝对路径均可。"
     ).format(mcpWorkDir)
     val pythonHint = uiText(
         "mcp.dialog.python_hint",
@@ -526,13 +526,6 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 
     val examples = listOf(
         McpServer(
-            name = uiText("mcp.example.filesystem", "文件系统"),
-            runtime = "node",
-            command = "mcp_filesystem.js",
-            args = "[\"/sdcard\"]",
-            env = "{}"
-        ),
-        McpServer(
             name = uiText("mcp.example.fetch", "HTTP Fetch"),
             runtime = "node",
             command = "mcp_fetch.js",
@@ -587,7 +580,7 @@ fun commandLabel(runtime: String) = when (runtime) {
 
 @Composable
 fun commandPlaceholder(runtime: String) = when (runtime) {
-    "node" -> uiText("mcp.dialog.command_placeholder.node", "mcp_filesystem.js  （或绝对路径）")
+    "node" -> uiText("mcp.dialog.command_placeholder.node", "mcp_fetch.js  （或绝对路径）")
     "python" -> uiText("mcp.dialog.command_placeholder.python", "/sdcard/OmniChat/mcp/my_server.py")
     "remote_http" -> uiText("mcp.dialog.command_placeholder.remote_http", "https://example.com/mcp/sse")
     else -> uiText("mcp.dialog.command_placeholder.default", "命令或路径")

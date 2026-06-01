@@ -17,9 +17,9 @@ class WorkspaceSandboxHook(val sandboxPath: String) : McpHook {
         private const val TAG = "WorkspaceSandboxHook"
         private val FILE_TOOLS = setOf(
             "read_file", "write_file", "file_read", "file_write", "file_append", "file_delete",
-            "file_list", "file_search", "file_info", "file_move", "list_directory",
-            "create_directory", "delete_file", "move_file", "get_file_info", "search_files",
-            "append_file", "copy_file", "search_content", "get_working_directory"
+            "file_list", "file_search", "file_info", "file_move", "file_copy", "file_mkdir",
+            "list_directory", "create_directory", "delete_file", "move_file", "get_file_info",
+            "search_files", "append_file", "copy_file", "search_content", "get_working_directory"
         )
         private val PATH_KEYS = listOf(
             "path", "source", "destination", "sourcePath", "destinationPath", "directory"
@@ -57,7 +57,7 @@ class WorkspaceSandboxHook(val sandboxPath: String) : McpHook {
     private fun isPathInsideSandbox(path: String): Boolean {
         try {
             val file = File(path)
-            // 相对路径：mcp_filesystem.js 会 resolve 到 rootDir（/sdcard），
+            // 相对路径：外部 MCP 工具会 resolve 到 rootDir（/sdcard），
             // 我们无法在此处确定最终路径，保守放行（由 McpFilePermissionHook 兜底）
             if (!file.isAbsolute) return true
 

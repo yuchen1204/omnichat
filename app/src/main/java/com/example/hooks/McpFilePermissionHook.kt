@@ -7,9 +7,9 @@ import org.json.JSONObject
 
 class McpFilePermissionHook(private val context: Context) : McpHook {
     private val fileTools = setOf(
-        "read_file", "write_file", "file_read", "file_write", "file_append", "file_delete",
-        "file_list", "file_search", "file_info", "file_move", "list_directory", 
-        "create_directory", "delete_file", "move_file", "get_file_info", "search_files"
+        "read_file", "write_file", "list_directory",
+        "create_directory", "delete_file", "move_file", "get_file_info", "search_files",
+        "append_file", "copy_file", "search_content", "get_working_directory"
     )
 
     override suspend fun onBeforeToolExecute(toolName: String, args: JSONObject): JSONObject? {
