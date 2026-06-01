@@ -76,26 +76,30 @@
 
     <!-- ── ui_text_keys.json: Export / Import ── -->
     <string name="export_section_export">Export Configuration</string>
-    <string name="export_desc">Select content to export and save as a JSON file for backup or migration to other devices.</string>
+    <string name="export_desc">Select content to export and save as an .omniconfig file for backup or migration to other devices.</string>
     <string name="export_option_providers">Provider Configuration</string>
     <string name="export_option_providers_desc">API providers, endpoints, API keys, model lists</string>
     <string name="export_option_mcp">MCP Configuration</string>
-    <string name="export_option_mcp_desc">MCP server list, runtime configuration, environment variables</string>
+    <string name="export_option_mcp_desc">MCP server list, runtime configuration, environment variables, file permissions</string>
     <string name="export_option_memory">Long-term Memory</string>
     <string name="export_option_memory_desc">Cross-session memory entries, system prompt templates</string>
     <string name="export_option_colors">Color Scheme</string>
     <string name="export_option_colors_desc">Current UI settings, color scheme presets (up to 5)</string>
+    <string name="export_option_agents">Agent Configuration</string>
+    <string name="export_option_agents_desc">Agent presets, agent definitions</string>
     <string name="export_btn">Choose save location and export</string>
     <string name="import_section_import">Import Configuration</string>
-    <string name="import_desc">Restore configuration from a previously exported JSON file. Select the content types to import.</string>
+    <string name="import_desc">Restore configuration from a previously exported .omniconfig file. Select the content types to import.</string>
     <string name="import_option_providers_desc">Import API provider configuration</string>
-    <string name="import_option_mcp_desc">Import MCP server configuration</string>
+    <string name="import_option_mcp_desc">Import MCP server configuration and file permissions</string>
     <string name="import_option_memory_desc">Import memory entries and prompt templates</string>
     <string name="import_option_colors_desc">Import UI settings and color presets</string>
+    <string name="import_option_agents_desc">Import agent presets and definitions</string>
     <string name="import_replace_title">Overwrite Existing Data</string>
     <string name="import_replace_desc">When enabled, existing data of the corresponding type will be cleared before importing; when disabled, data will be appended</string>
-    <string name="import_btn">Choose JSON file and import</string>
-    <string name="export_note">Exported file is in standard JSON format containing complete data of selected configurations. API keys are stored in plaintext in the file, please keep the exported file safe. It is recommended to back up existing configuration before importing.</string>
+    <string name="import_btn">Choose .omniconfig file and import</string>
+    <string name="export_note">Exported file uses .omniconfig format (JSON-based) containing complete data of selected configurations. API keys are stored in plaintext in the file, please keep the exported file safe. It is recommended to back up existing configuration before importing.</string>
+    <string name="import_invalid_file">Please select an .omniconfig file</string>
     <string name="import_confirm_title">Confirm Import</string>
     <string name="import_confirm_body">About to import the following content:</string>
     <string name="import_confirm_replace_warning">Overwrite mode is enabled. Existing corresponding data will be cleared and replaced. This action cannot be undone.</string>
@@ -112,6 +116,8 @@
     <!-- ── ui_text_keys.json: Permission dialog ── -->
     <string name="dialog_permission_title">File Access Permission Request</string>
     <string name="dialog_permission_subtitle">MCP Tool Request</string>
+    <string name="dialog_permission_subtitle_read">Read Access Request</string>
+    <string name="dialog_permission_subtitle_write">Write / Delete Access Request</string>
     <string name="dialog_permission_desc">AI assistant wants to access files outside the sandbox:</string>
     <string name="dialog_permission_allow_always">Always Allow</string>
     <string name="dialog_permission_allow_once">Allow Once</string>

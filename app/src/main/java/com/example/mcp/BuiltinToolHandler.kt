@@ -8,6 +8,7 @@ import android.util.Base64
 import android.webkit.MimeTypeMap
 import com.example.data.AppDatabase
 import com.example.data.AppRepository
+import com.example.data.FileAccessType
 import com.example.data.UISettings
 import com.example.data.ColorSchemePreset
 import com.example.data.ColorSchemePreset.Companion.toUISettings
@@ -650,7 +651,7 @@ object BuiltinToolHandler {
         val content = arguments.optString("content")
         val encoding = arguments.optString("encoding", "utf8")
         if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
-        val file = resolvePath(context, path)
+        val file = resolvePath(context, path, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             file.parentFile?.mkdirs()
@@ -723,7 +724,7 @@ object BuiltinToolHandler {
         val path = arguments.optString("path").trim()
         val content = arguments.optString("content")
         if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
-        val file = resolvePath(context, path)
+        val file = resolvePath(context, path, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             file.parentFile?.mkdirs()
@@ -746,7 +747,7 @@ object BuiltinToolHandler {
         val path = arguments.optString("path").trim()
         val recursive = arguments.optBoolean("recursive", false)
         if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
-        val file = resolvePath(context, path)
+        val file = resolvePath(context, path, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         if (!file.exists()) return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
@@ -879,9 +880,9 @@ object BuiltinToolHandler {
         val overwrite = arguments.optBoolean("overwrite", false)
         if (srcPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_source_path_empty))
         if (dstPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_dest_path_empty))
-        val src = resolvePath(context, srcPath)
+        val src = resolvePath(context, srcPath, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, srcPath))
-        val dst = resolvePath(context, dstPath)
+        val dst = resolvePath(context, dstPath, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, dstPath))
         if (!src.exists()) return errorResponse(str(context, R.string.tool_file_source_not_exists, srcPath))
         if (dst.exists() && !overwrite) return errorResponse(str(context, R.string.tool_file_dest_exists, dstPath))
@@ -908,9 +909,9 @@ object BuiltinToolHandler {
         val overwrite = arguments.optBoolean("overwrite", false)
         if (srcPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_source_path_empty))
         if (dstPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_dest_path_empty))
-        val src = resolvePath(context, srcPath)
+        val src = resolvePath(context, srcPath, FileAccessType.READ)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, srcPath))
-        val dst = resolvePath(context, dstPath)
+        val dst = resolvePath(context, dstPath, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, dstPath))
         if (!src.exists()) return errorResponse(str(context, R.string.tool_file_source_not_exists, srcPath))
         if (dst.exists() && !overwrite) return errorResponse(str(context, R.string.tool_file_dest_exists, dstPath))
@@ -930,7 +931,7 @@ object BuiltinToolHandler {
     private suspend fun handleFileMkdir(context: Context, arguments: JSONObject): JSONObject {
         val path = arguments.optString("path").trim()
         if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
-        val file = resolvePath(context, path)
+        val file = resolvePath(context, path, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             if (file.exists()) {
@@ -1001,7 +1002,7 @@ object BuiltinToolHandler {
             return errorResponse(str(context, R.string.tool_doc_format_invalid))
         }
 
-        val file = resolvePath(context, relativePath)
+        val file = resolvePath(context, relativePath, FileAccessType.WRITE)
             ?: return errorResponse(str(context, R.string.tool_file_path_invalid, relativePath))
 
         return try {
@@ -1647,10 +1648,15 @@ object BuiltinToolHandler {
      * - 相对路径：resolve 到 /sdcard/ 下
      * - 绝对路径：直接使用
      * - 拒绝 '..' 路径穿越
-     * - 通过权限弹窗授权沙盒外路径访问
+     * - READ 操作只需 read 权限，WRITE 操作需要 write 权限
+     * @param accessType FileAccessType.READ 或 FileAccessType.WRITE
      * @return 解析后的 File，或 null（路径非法或权限被拒绝时）
      */
-    private suspend fun resolvePath(context: Context, path: String): File? {
+    private suspend fun resolvePath(
+        context: Context,
+        path: String,
+        accessType: com.example.data.FileAccessType = com.example.data.FileAccessType.READ
+    ): File? {
         if (path.contains("..")) return null
 
         val root = getFilesRoot(context)
@@ -1665,7 +1671,7 @@ object BuiltinToolHandler {
             resolved.canonicalPath
         } catch (_: Exception) { return null }
 
-        val allowed = McpPermissionManager.checkAndRequestPermission(context, canonicalPath)
+        val allowed = McpPermissionManager.checkAndRequestPermission(context, canonicalPath, accessType)
         return if (allowed) resolved else null
     }
 

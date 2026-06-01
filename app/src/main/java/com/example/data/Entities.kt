@@ -586,11 +586,20 @@ enum class TaskStatus {
  * - true: "Allow always"
  * - false: "Don't ask again" (Deny always)
  */
+/**
+ * 文件权限访问类型。
+ * READ: 查看/读取（file_read, file_list, file_info, file_search 等）
+ * WRITE: 修改/删除/创建（file_write, file_delete, file_move, file_copy, file_mkdir 等）
+ */
+enum class FileAccessType { READ, WRITE }
+
 @Entity(tableName = "mcp_file_permissions")
 data class McpFilePermission(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val path: String,
     val isAllowed: Boolean,
+    /** 权限类型：read = 只读访问，write = 读写访问 */
+    val permissionType: String = "read",
     val createdAt: Long = System.currentTimeMillis()
 )
 

@@ -2,22 +2,30 @@ package com.example.hooks
 
 import android.content.Context
 import android.util.Log
+import com.example.data.FileAccessType
 import com.example.mcp.McpPermissionManager
 import org.json.JSONObject
 
 class McpFilePermissionHook(private val context: Context) : McpHook {
-    private val fileTools = setOf(
-        "read_file", "write_file", "list_directory",
-        "create_directory", "delete_file", "move_file", "get_file_info", "search_files",
-        "append_file", "copy_file", "search_content", "get_working_directory"
+    /** 只读操作：查看/读取 */
+    private val readTools = setOf(
+        "read_file", "list_directory", "get_file_info", "search_files",
+        "search_content", "get_working_directory"
+    )
+
+    /** 写操作：修改/删除/创建 */
+    private val writeTools = setOf(
+        "write_file", "append_file", "delete_file", "move_file",
+        "copy_file", "create_directory"
     )
 
     override suspend fun onBeforeToolExecute(toolName: String, args: JSONObject): JSONObject? {
-        if (toolName !in fileTools) {
-            return args
+        val accessType = when (toolName) {
+            in readTools -> FileAccessType.READ
+            in writeTools -> FileAccessType.WRITE
+            else -> return args // 不是文件工具，直接放行
         }
 
-        // 提取所有可能包含路径的参数（内置工具和外部工具的参数名不同）
         val pathsToCheck = mutableListOf<String>()
         for (key in listOf("path", "source", "destination", "sourcePath", "destinationPath", "directory")) {
             if (args.has(key)) {
@@ -27,10 +35,9 @@ class McpFilePermissionHook(private val context: Context) : McpHook {
         }
 
         for (path in pathsToCheck) {
-            val isAllowed = McpPermissionManager.checkAndRequestPermission(context, path)
+            val isAllowed = McpPermissionManager.checkAndRequestPermission(context, path, accessType)
             if (!isAllowed) {
-                Log.w("McpFilePermissionHook", "Access denied to path: $path")
-                // Return null to block execution
+                Log.w("McpFilePermissionHook", "Access denied to path: $path (type=$accessType)")
                 return null
             }
         }
