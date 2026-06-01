@@ -75,6 +75,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isMemorySyncing by mutableStateOf(false)
         private set
 
+    var isBackfillingTags by mutableStateOf(false)
+        private set
+
     // BUG-016: 使用 Mutex 替代非原子的 boolean 检查，防止并发 triggerMemorySync
     private val memorySyncMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -1043,6 +1046,75 @@ Rules:
     fun clearAllMemories() {
         viewModelScope.launch {
             repository.deleteAllUnpinnedMemories()
+        }
+    }
+
+    /**
+     * 为没有标签的记忆批量补打标签。
+     * 调用 memory 模型对 untagged memories 进行分类，然后更新数据库。
+     */
+    fun manualBackfillTags() {
+        if (isBackfillingTags) return
+        viewModelScope.launch {
+            isBackfillingTags = true
+            try {
+                val untagged = repository.getAllMemories().filter { it.tags.isBlank() }
+                if (untagged.isEmpty()) return@launch
+
+                val defaultProvider = repository.getDefaultProvider() ?: return@launch
+                val memoryConfig = run {
+                    val memoryProviderId = defaultProvider.memoryProviderId
+                    val memoryProvider = if (memoryProviderId > 0L) {
+                        repository.getConfigById(memoryProviderId) ?: defaultProvider
+                    } else {
+                        defaultProvider
+                    }
+                    memoryProvider.copy(
+                        selectedModelId = defaultProvider.memoryModelId.takeIf { it.isNotBlank() }
+                            ?: defaultProvider.selectedModelId
+                    )
+                }
+
+                val validTags = setOf("preference", "fact", "instruction", "habit", "context")
+                val tagVocab = validTags.joinToString(", ")
+
+                // 分批处理，每批最多 20 条，避免上下文过长
+                for (batch in untagged.chunked(20)) {
+                    val itemsText = batch.joinToString("\n") { "${it.id}. ${it.content}" }
+                    val prompt = """Classify each memory item into 1-2 tags.
+Tags: $tagVocab
+
+Items:
+$itemsText
+
+Output a JSON array where each element is {"id": <number>, "tags": ["tag1", ...]}.
+Only output the JSON array, nothing else."""
+
+                    val response = ApiClient.executeCompletion(memoryConfig, "You are a memory tag classifier.", prompt)
+                        ?.trim() ?: continue
+
+                    val cleaned = response.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+                    try {
+                        val arr = org.json.JSONArray(cleaned)
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.optJSONObject(i) ?: continue
+                            val id = obj.optLong("id", 0)
+                            if (id <= 0) continue
+                            val tags = parseTagsFromJson(obj.optJSONArray("tags"))
+                            if (tags.isNotBlank()) {
+                                val existing = batch.find { it.id == id }
+                                if (existing != null) {
+                                    repository.updateMemory(existing.copy(tags = tags))
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // 解析失败跳过此批次
+                    }
+                }
+            } finally {
+                isBackfillingTags = false
+            }
         }
     }
 

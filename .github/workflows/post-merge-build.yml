@@ -1,0 +1,77 @@
+name: Post-Merge Build Check
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-revert-on-failure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if merge commit
+        id: check
+        run: |
+          PARENTS=$(git rev-list --count --merges HEAD^..HEAD)
+          if [ "$PARENTS" -gt 0 ]; then
+            echo "is_merge=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_merge=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up JDK 17
+        if: steps.check.outputs.is_merge == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        if: steps.check.outputs.is_merge == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install CMake & NDK
+        if: steps.check.outputs.is_merge == 'true'
+        run: sdkmanager --install "cmake;3.22.1" "ndk;27.0.12077973"
+
+      - name: Cache Gradle packages
+        if: steps.check.outputs.is_merge == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      - name: Create local.properties for CI
+        if: steps.check.outputs.is_merge == 'true'
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Grant execute permission for gradlew
+        if: steps.check.outputs.is_merge == 'true'
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        if: steps.check.outputs.is_merge == 'true'
+        run: ./gradlew assembleDebug
+
+      - name: Revert merge on failure
+        if: failure() && steps.check.outputs.is_merge == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git revert HEAD --no-edit
+          git push origin main
+          echo "::warning::Build failed after merge. The merge commit has been reverted."

@@ -22,7 +22,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
-    private val client = OkHttpClient.Builder()
+    internal val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
