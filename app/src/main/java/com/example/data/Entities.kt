@@ -234,7 +234,8 @@ data class MemoryItem(
     tableName = "memory_associations",
     indices = [
         Index(value = ["fromMemoryId"]),
-        Index(value = ["toMemoryId"])
+        Index(value = ["toMemoryId"]),
+        Index(value = ["fromMemoryId", "toMemoryId"], unique = true)
     ],
     foreignKeys = [
         ForeignKey(
