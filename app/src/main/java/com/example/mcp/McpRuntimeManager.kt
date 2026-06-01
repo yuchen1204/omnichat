@@ -559,11 +559,12 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "search_memory",
-            description = "Search the long-term memory store for entries related to a keyword. Call this tool when you need to recall a specific user preference, habit, or historical detail that is not present in the current context. The system automatically injects the top 30 highest-confidence memories; all other memories must be retrieved proactively via this tool.",
+            description = "Search the long-term memory store for entries related to a keyword. Call this tool when you need to recall a specific user preference, habit, or historical detail that is not present in the current context. The system automatically injects the top 30 highest-confidence memories; all other memories must be retrieved proactively via this tool. Results include automatic traversal of the memory association network (controlled by the 'depth' parameter).",
             inputSchema = schema {
                 prop("query", "string", "Search keywords; multiple words are supported (space-separated), e.g. \"programming language Kotlin\" or \"dietary preference\". The search performs fuzzy matching against memory content.")
                 prop("tag", "string", "Optional tag filter. Valid values: preference, fact, instruction, habit, context. When provided, only memories with this tag are searched.")
                 prop("limit", "integer", "Maximum number of results to return. Default 10, max 50.")
+                prop("depth", "integer", "Association traversal depth (1-5). Default 3. When set, the tool traverses the memory association network to find related memories beyond direct keyword matches.")
                 required("query")
             }
         ),
