@@ -109,7 +109,10 @@ fun MainScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = uiText("dialog.permission.subtitle", R.string.dialog_permission_subtitle),
+                                text = if (permissionRequest?.accessType == com.example.data.FileAccessType.WRITE)
+                                    uiText("dialog.permission.subtitle.write", R.string.dialog_permission_subtitle_write)
+                                else
+                                    uiText("dialog.permission.subtitle.read", R.string.dialog_permission_subtitle_read),
                                 fontSize = (11 * fsPerm).sp,
                                 fontFamily = resolvedFontFamilyPerm,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

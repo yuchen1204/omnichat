@@ -62,7 +62,7 @@ class Converters {
         // Agent 定义
         AgentDefinitionEntity::class,
     ],
-    version = 33,
+    version = 34,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -600,6 +600,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v33→v34：mcp_file_permissions 增加 permissionType 字段，区分 read/write 权限 */
+        private val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE mcp_file_permissions ADD COLUMN permissionType TEXT NOT NULL DEFAULT 'read'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -636,7 +643,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_29_30,
                         MIGRATION_30_31,
                         MIGRATION_31_32,
-                        MIGRATION_32_33
+                        MIGRATION_32_33,
+                        MIGRATION_33_34
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。
