@@ -302,7 +302,8 @@ class WorkspaceCoreTest {
 
     @Test
     fun testCompletionMarkerisContainedInOrchestratorPrompt() {
-        val prompt = buildOrchestratorSystemPrompt(BuiltInAgents.ALL)
+        val agents = BuiltInAgents.all(context)
+        val prompt = buildOrchestratorSystemPrompt(agents)
         assertTrue("Orchestrator prompt should reference completion marker",
             prompt.contains(COMPLETION_MARKER))
     }

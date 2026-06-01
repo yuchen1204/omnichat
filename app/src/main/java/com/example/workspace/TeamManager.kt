@@ -164,7 +164,7 @@ class TeamManager(
 
         // Wire AgentTool for orchestrator's sub-agent spawning
         this.sandboxPath = sandboxPath
-        val agentDefinitions = loadAgentDefinitions(repository)
+        val agentDefinitions = loadAgentDefinitions(repository, mcpRuntimeManager.getContext())
         this.agentTool = AgentTool(
             mcpRuntimeManager = mcpRuntimeManager,
             agentRegistry = agentRegistry,
@@ -262,7 +262,7 @@ class TeamManager(
         _teamState.update { it?.copy(isRunning = true) }
 
         // Load agent definitions and build system prompt
-        val agentDefinitions = loadAgentDefinitions(repository)
+        val agentDefinitions = loadAgentDefinitions(repository, mcpRuntimeManager.getContext())
         val cachedModels = run {
             if (cachedAvailableModelsStr.isEmpty()) {
                 val allConfigs = repository.getAllConfigs()

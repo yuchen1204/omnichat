@@ -1,6 +1,7 @@
 package com.example.workspace
 
 import android.util.Log
+import com.example.R
 import com.example.data.MailboxMessage
 import com.example.data.Message
 import com.example.data.ModelConfig
@@ -189,7 +190,7 @@ class AgentRunner(
                         context.messages.add(
                             AgentMessage(
                                 role = "system",
-                                content = "已达到最大工具调用次数限制 ($maxToolIterations)，强制结束本轮对话。"
+                                content = mcpRuntimeManager.getContext().getString(R.string.agent_tool_iteration_limit, maxToolIterations)
                             )
                         )
                         onMessageAdded(context.agentName, context.messages.last())
@@ -399,7 +400,7 @@ class AgentRunner(
                                 context.messages.add(
                                     AgentMessage(
                                         role = "system",
-                                        content = "连续工具调用失败 $MAX_CONSECUTIVE_TOOL_FAILURES 次，强制结束本轮对话。请检查工具是否可用或参数是否正确。"
+                                        content = mcpRuntimeManager.getContext().getString(R.string.agent_consecutive_failures, MAX_CONSECUTIVE_TOOL_FAILURES)
                                     )
                                 )
                                 onMessageAdded(context.agentName, context.messages.last())
@@ -721,7 +722,7 @@ class AgentRunner(
         val kept = oldMessages.drop(safeDropIndex) + recentMessages
 
         val summary = buildString {
-            appendLine("（以上对话已压缩，共 $oldCount 条消息。以下是早期关键信息摘要）")
+            appendLine(mcpRuntimeManager.getContext().getString(R.string.agent_context_compacted, oldCount))
             var userMessageCount = 0
             var assistantMessageCount = 0
             val maxUserMessages = 2
@@ -731,24 +732,24 @@ class AgentRunner(
             for (msg in toCompress) {
                 when (msg.role) {
                     "system" -> {
-                        appendLine("[系统] ${msg.content.take(200)}")
+                        appendLine("${mcpRuntimeManager.getContext().getString(R.string.role_system)} ${msg.content.take(200)}")
                     }
                     "user" -> {
                         if (userMessageCount < maxUserMessages) {
-                            appendLine("[用户] ${msg.content.take(300)}")
+                            appendLine("${mcpRuntimeManager.getContext().getString(R.string.role_user)} ${msg.content.take(300)}")
                             userMessageCount++
                         }
                     }
                     "assistant" -> {
                         if (msg.content.isNotBlank() && assistantMessageCount < maxAssistantMessages) {
-                            appendLine("[助手] ${msg.content.take(300)}")
+                            appendLine("${mcpRuntimeManager.getContext().getString(R.string.role_assistant)} ${msg.content.take(300)}")
                             assistantMessageCount++
                         }
                     }
                     "tool" -> {
                         if (maxToolResults > 0) {
                             val contentPreview = if (msg.content.length > 100) msg.content.take(100) + "..." else msg.content
-                            appendLine("[工具结果] $contentPreview")
+                            appendLine("${mcpRuntimeManager.getContext().getString(R.string.role_tool_result)} $contentPreview")
                             maxToolResults--
                         }
                     }
@@ -766,7 +767,7 @@ class AgentRunner(
                 val msg = newMessages[i]
                 if (msg.role == "tool" && msg.content.length > 2000) {
                     val oldLen = msg.content.length
-                    val truncatedContent = msg.content.take(1000) + "\n\n...[输出过长已由系统截断]...\n\n" + msg.content.takeLast(500)
+                    val truncatedContent = msg.content.take(1000) + "\n\n...${mcpRuntimeManager.getContext().getString(R.string.agent_output_truncated)}...\n\n" + msg.content.takeLast(500)
                     newMessages[i] = msg.copy(content = truncatedContent)
                     truncated = true
                     currentChars -= (oldLen - truncatedContent.length)
