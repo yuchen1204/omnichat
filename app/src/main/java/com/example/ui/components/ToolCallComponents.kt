@@ -91,7 +91,7 @@ fun getToolIcon(name: String): ImageVector {
         "file_delete" -> Icons.Default.Delete
         "file_search" -> Icons.Default.Search
         "search_memory" -> Icons.Default.Storage
-        "adjust_ui", "adjust_font", "apply_color_scheme", "save_color_scheme", "delete_color_scheme" -> Icons.Default.Settings
+        "adjust_ui", "color_scheme" -> Icons.Default.Settings
         else -> Icons.Default.Build
     }
 }
@@ -136,10 +136,15 @@ fun formatToolCallSummary(name: String, args: JSONObject): String {
             "检索了记忆库: \"$query\""
         }
         "adjust_ui" -> "修改了界面 UI 样式配置"
-        "adjust_font" -> "调整了界面字体和字号"
-        "apply_color_scheme" -> "应用了配色方案: ${args.optString("schemeId")}"
-        "save_color_scheme" -> "保存了配色方案: ${args.optString("name")}"
-        "delete_color_scheme" -> "删除了配色方案: ${args.optString("schemeId")}"
+        "color_scheme" -> {
+            when (args.optString("action")) {
+                "save" -> "保存了配色方案: ${args.optString("name")}"
+                "apply" -> "应用了配色方案: ${args.optString("schemeId")}"
+                "delete" -> "删除了配色方案: ${args.optString("schemeId")}"
+                "list" -> "列出了已保存的配色方案"
+                else -> "操作了配色方案"
+            }
+        }
         "agent" -> {
             val description = args.optString("description")
             "委派子 Agent: $description"
@@ -158,9 +163,7 @@ fun formatToolCallSummary(name: String, args: JSONObject): String {
         }
         "get_current_time" -> "获取了当前系统时间"
         "get_ui_capabilities" -> "获取了 UI 配置参数范围"
-        "reset_ui_to_default" -> "重置了 UI 界面配色为默认"
-        "reset_font_to_default" -> "重置了字体设置为默认"
-        "list_color_schemes" -> "列出了已保存的配色方案"
+        "reset_ui_to_default" -> "重置了 UI 界面为默认"
         "set_ui_texts" -> "更新了 UI 界面自定义文本"
         "list_ui_texts" -> "查询了 UI 文字标签列表"
         else -> {

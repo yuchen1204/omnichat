@@ -1,6 +1,8 @@
 package com.example.mcp
 
 import com.example.data.UISettings
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 集中定义所有 UI 可调整字段的元数据。
@@ -31,7 +33,13 @@ object UiFieldRegistry {
         val purpose: String,
         val constraint: String,
         val enumValues: List<String>? = null,
-    )
+    ) {
+        fun toSchemaProp(): JSONObject = JSONObject().apply {
+            put("type", type)
+            put("description", desc)
+            enumValues?.let { put("enum", org.json.JSONArray(it)) }
+        }
+    }
 
     val colorFields = listOf(
         ColorField("primaryColor", { it.primaryColor }, { s, v -> s.copy(primaryColor = v) },
