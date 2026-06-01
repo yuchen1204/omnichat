@@ -1,6 +1,8 @@
-# OmniChat 🤖💬
+[中文版](README_zh.md)
 
-> 嵌入式 MCP Agent 运行时的 Android AI 助手 — 让 AI 真正掌控你的设备
+# OmniChat
+
+> Android AI Assistant with Embedded MCP Agent Runtime -- Let AI truly control your device
 
 <div align="center">
 
@@ -12,280 +14,280 @@
 
 </div>
 
-## ✨ 核心特性
+## Core Features
 
-- **🧠 嵌入式 MCP 运行时** — 在 Android 设备上本地运行 Node.js / Python MCP 服务器，AI 可直接调用本地工具
-- **🤖 多 Agent 工作区** — 编排模式的多 Agent 协作系统，支持团队管理、任务分配和 Agent 间通信
-- **💾 跨会话记忆系统** — 15 分钟滚动摘要 + 长期记忆项（带置信度评分），AI 真正"记住"你的偏好
-- **🎨 AI 可调整 UI** — Apple 风格色彩方案，AI 可通过 MCP 工具实时修改应用主题、颜色、字体、布局
-- **📷 多媒体能力** — 相机拍照、图片选取、文档生成（docx/xlsx）、AlarmManager 定时器（支持重复任务）
-- **🔄 多模型支持** — OpenAI 兼容 API，支持 Gemini、OpenAI、DeepSeek、本地模型等
-- **📡 SSE 流式输出** — 实时流式响应，打字机效果，支持 Thinking/Reasoning 模式
-- **🔌 Hook 系统** — 可扩展的 Hook 机制，支持日志记录、文件权限控制等
-- **🔐 自定义 Headers** — 每个模型提供商可配置自定义 HTTP 头
+- **Embedded MCP Runtime** -- Run Node.js / Python MCP servers locally on Android, enabling AI to directly invoke on-device tools
+- **Multi-Agent Workspace** -- Orchestrator-pattern multi-agent collaboration with team management, task assignment, and inter-agent communication
+- **Cross-Session Memory System** -- 15-minute rolling summaries + long-term memory items (with confidence scoring), so AI truly "remembers" your preferences
+- **AI-Adjustable UI** -- Apple-inspired color schemes; AI can modify app themes, colors, fonts, and layouts in real time via MCP tools
+- **Multimedia Capabilities** -- Camera capture, image picker, document generation (docx/xlsx), AlarmManager timers (with repeating tasks)
+- **Multi-Model Support** -- OpenAI-compatible API; supports Gemini, OpenAI, DeepSeek, local models, and more
+- **SSE Streaming Output** -- Real-time streaming responses with typewriter effect; supports Thinking/Reasoning mode
+- **Hook System** -- Extensible hook mechanism for logging, file permission control, and more
+- **Custom Headers** -- Configurable custom HTTP headers per model provider
 
-## 📱 应用架构
+## App Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Compose UI Layer                         │
-│  ┌──────────┐  ┌───────────┐  ┌────────────┐  ┌─────────┐  │
-│  │ChatScreen│  │Workspace  │  │  Settings  │  │ Sidebar │  │
-│  │          │  │  Screen   │  │   (5 tabs) │  │  Drawer │  │
-│  └────┬─────┘  └─────┬─────┘  └─────┬──────┘  └────┬────┘  │
-├───────┴───────────────┴──────────────┴──────────────┴───────┤
-│                     ViewModel Layer                          │
-│  ┌──────────────┐  ┌────────────────┐  ┌───────────────┐   │
-│  │ ChatViewModel│  │WorkspaceVM     │  │SettingsVM     │   │
-│  └──────┬───────┘  └───────┬────────┘  └───────┬───────┘   │
-├─────────┴─────────────────┴───────────────────┴────────────┤
-│                 Data / Repository Layer                      │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │              AppRepository (Room DB v32 · 20 tables)   │  │
-│  └───────────────────────────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                   MCP Runtime Layer                          │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
-│  │  NodeJsBridge │  │ PythonBridge  │  │ Remote HTTP   │   │
-│  │   (JNI/TCP)   │  │  (JNI/dlopen) │  │  (SSE+Stream) │   │
-│  └───────────────┘  └───────────────┘  └───────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                  Workspace (Multi-Agent)                     │
-│  ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │TeamManager│  │TaskTools │  │AgentTool │  │AgentRunner│  │
-│  └───────────┘  └──────────┘  └──────────┘  └───────────┘  │
-│  ┌───────────────┐  ┌──────────────┐  ┌─────────────────┐  │
-│  │ToolOrchestratr│  │ AgentRegistry│  │MarkdownAgentLdr │  │
-│  └───────────────┘  └──────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------+
+|                     Compose UI Layer                         |
+|  +----------+  +-----------+  +------------+  +---------+   |
+|  |ChatScreen|  |Workspace  |  |  Settings  |  | Sidebar |   |
+|  |          |  |  Screen   |  |   (5 tabs) |  |  Drawer |   |
+|  +----+-----+  +-----+-----+  +-----+------+  +----+----+   |
++-------+--------------+--------------+--------------+---------+
+|                     ViewModel Layer                          |
+|  +--------------+  +----------------+  +---------------+    |
+|  | ChatViewModel|  |WorkspaceVM     |  |SettingsVM     |    |
+|  +------+-------+  +-------+--------+  +-------+-------+    |
++---------+-------------------+--------------------+-----------+
+|                 Data / Repository Layer                      |
+|  +---------------------------------------------------------+ |
+|  |              AppRepository (Room DB v32 - 20 tables)     | |
+|  +---------------------------------------------------------+ |
++---------------------------------------------------------------+
+|                   MCP Runtime Layer                          |
+|  +---------------+  +---------------+  +---------------+    |
+|  |  NodeJsBridge |  | PythonBridge  |  | Remote HTTP   |    |
+|  |   (JNI/TCP)   |  |  (JNI/dlopen) |  |  (SSE+Stream) |    |
+|  +---------------+  +---------------+  +---------------+    |
++---------------------------------------------------------------+
+|                  Workspace (Multi-Agent)                     |
+|  +-----------+  +----------+  +----------+  +-----------+   |
+|  |TeamManager|  |TaskTools |  |AgentTool |  |AgentRunner|   |
+|  +-----------+  +----------+  +----------+  +-----------+   |
+|  +---------------+  +--------------+  +-----------------+   |
+|  |ToolOrchestratr|  | AgentRegistry|  |MarkdownAgentLdr |   |
+|  +---------------+  +--------------+  +-----------------+   |
++---------------------------------------------------------------+
 ```
 
-单 Activity 架构（`MainActivity`），三个顶层视图：聊天、工作区、设置（含 5 个子标签页）。
+Single Activity architecture (`MainActivity`), three top-level views: Chat, Workspace, Settings (with 5 sub-tabs).
 
-## 🚀 快速开始
+## Quick Start
 
-### 环境要求
+### Requirements
 
-- Android Studio Hedgehog 或更新版本
+- Android Studio Hedgehog or later
 - JDK 17+
 - Android SDK 36
 - CMake 3.22.1 + NDK 27.0.12077973
 
-### 安装步骤
+### Install
 
 ```bash
-# 1. 克隆仓库
+# 1. Clone the repository
 git clone https://github.com/yuchen1204/omnichat.git
 cd omnichat
 
-# 2. 构建并安装 Debug 版本
+# 2. Build and install the Debug build
 ./gradlew assembleDebug
 ./gradlew installDebug
 ```
 
-### 运行测试
+### Running Tests
 
 ```bash
-# 单元测试
+# Unit tests
 ./gradlew testDebugUnitTest
 
-# 单个测试类
+# Single test class
 ./gradlew testDebugUnitTest --tests "com.example.YourTestClass"
 
-# Android 仪器测试（需要设备/模拟器）
+# Android instrumented tests (requires device/emulator)
 ./gradlew connectedDebugAndroidTest
 
-# 截图测试 (Roborazzi)
+# Screenshot tests (Roborazzi)
 ./gradlew verifyRoborazziDebug
 
-# 重新生成 UI 文本键（通常自动运行）
+# Regenerate UI text keys (usually runs automatically)
 ./gradlew generateUiTextKeys
 ```
 
-## 📂 项目结构
+## Project Structure
 
 ```
 omnichat/
-├── app/src/main/java/com/example/
-│   ├── MainActivity.kt              # 入口 Activity
-│   ├── data/                        # 数据层
-│   │   ├── Entities.kt              # Room 实体定义 (20 个表)
-│   │   ├── Daos.kt                  # DAO 接口
-│   │   ├── AppDatabase.kt           # 数据库配置 (v32, 28 次迁移)
-│   │   └── Repository.kt            # 数据仓库 (AppRepository)
-│   ├── mcp/                         # MCP 运行时
-│   │   ├── McpRuntimeManager.kt     # 运行时管理器
-│   │   ├── McpScriptManager.kt      # 脚本部署管理
-│   │   ├── McpPermissionManager.kt  # MCP 权限管理
-│   │   ├── NodeJsBridge.kt          # Node.js JNI 桥接 (TCP)
-│   │   ├── PythonBridge.kt          # Python 桥接 (stdin/stdout)
-│   │   ├── PythonRuntime.kt         # Python 运行时 (dlopen)
-│   │   └── BuiltinToolHandler.kt    # 内置工具处理
-│   ├── hooks/                       # Hook 系统
-│   │   ├── HookManager.kt           # Hook 管理器
-│   │   ├── HookInterfaces.kt        # Hook 接口定义
-│   │   ├── LoggingHooks.kt          # 日志 Hook
-│   │   └── McpFilePermissionHook.kt # 文件权限 Hook
-│   ├── network/
-│   │   └── ApiClient.kt            # OpenAI 兼容 API 客户端 (SSE)
-│   ├── workspace/                   # 多 Agent 工作区
-│   │   ├── TeamManager.kt           # 团队管理（编排器）
-│   │   ├── AgentRunner.kt           # Agent 执行器
-│   │   ├── AgentRegistry.kt         # Agent 注册与发现
-│   │   ├── AgentDefinition.kt       # Agent 类型定义
-│   │   ├── AgentContext.kt          # Agent 执行上下文
-│   │   ├── AgentTool.kt             # SubAgent 创建
-│   │   ├── AgentToolFilter.kt       # 工具过滤
-│   │   ├── ToolOrchestrator.kt      # 工具路由编排
-│   │   ├── TaskTools.kt             # 任务管理
-│   │   ├── SendMessageTool.kt       # Agent 间通信
-│   │   ├── StructuredMessage.kt     # 结构化消息格式
-│   │   ├── MemorySnapshot.kt        # Agent 记忆快照
-│   │   ├── MarkdownAgentLoader.kt   # Markdown Agent 定义加载器
-│   │   └── WorkspaceModels.kt       # 工作区数据模型
-│   ├── ui/
-│   │   ├── screens/                 # Compose 界面
-│   │   ├── viewmodel/               # ViewModel 层
-│   │   ├── components/              # 可复用组件
-│   │   └── theme/                   # Material 3 主题系统
-│   └── TimerManager.kt             # 定时器管理 (AlarmManager)
-├── app/src/main/cpp/                # C++ JNI 代码
-├── app/src/main/assets/
-│   ├── node/                        # Node.js MCP 脚本
-│   └── python/                      # Python stdlib
-└── scripts/                         # 工具脚本
++-- app/src/main/java/com/example/
+|   +-- MainActivity.kt              # Entry Activity
+|   +-- data/                        # Data layer
+|   |   +-- Entities.kt              # Room entity definitions (20 tables)
+|   |   +-- Daos.kt                  # DAO interfaces
+|   |   +-- AppDatabase.kt           # Database config (v32, 28 migrations)
+|   |   +-- Repository.kt            # Repository (AppRepository)
+|   +-- mcp/                         # MCP runtime
+|   |   +-- McpRuntimeManager.kt     # Runtime manager
+|   |   +-- McpScriptManager.kt      # Script deployment manager
+|   |   +-- McpPermissionManager.kt  # MCP permission manager
+|   |   +-- NodeJsBridge.kt          # Node.js JNI bridge (TCP)
+|   |   +-- PythonBridge.kt          # Python bridge (stdin/stdout)
+|   |   +-- PythonRuntime.kt         # Python runtime (dlopen)
+|   |   +-- BuiltinToolHandler.kt    # Built-in tool handler
+|   +-- hooks/                       # Hook system
+|   |   +-- HookManager.kt           # Hook manager
+|   |   +-- HookInterfaces.kt        # Hook interface definitions
+|   |   +-- LoggingHooks.kt          # Logging hooks
+|   |   +-- McpFilePermissionHook.kt # File permission hook
+|   +-- network/
+|   |   +-- ApiClient.kt            # OpenAI-compatible API client (SSE)
+|   +-- workspace/                   # Multi-agent workspace
+|   |   +-- TeamManager.kt           # Team manager (orchestrator)
+|   |   +-- AgentRunner.kt           # Agent executor
+|   |   +-- AgentRegistry.kt         # Agent registration and discovery
+|   |   +-- AgentDefinition.kt       # Agent type definitions
+|   |   +-- AgentContext.kt          # Agent execution context
+|   |   +-- AgentTool.kt             # SubAgent creation
+|   |   +-- AgentToolFilter.kt       # Tool filtering
+|   |   +-- ToolOrchestrator.kt      # Tool routing and orchestration
+|   |   +-- TaskTools.kt             # Task management
+|   |   +-- SendMessageTool.kt       # Inter-agent communication
+|   |   +-- StructuredMessage.kt     # Structured message format
+|   |   +-- MemorySnapshot.kt        # Agent memory snapshot
+|   |   +-- MarkdownAgentLoader.kt   # Markdown agent definition loader
+|   |   +-- WorkspaceModels.kt       # Workspace data models
+|   +-- ui/
+|   |   +-- screens/                 # Compose screens
+|   |   +-- viewmodel/               # ViewModel layer
+|   |   +-- components/              # Reusable components
+|   |   +-- theme/                   # Material 3 theme system
+|   +-- TimerManager.kt             # Timer manager (AlarmManager)
++-- app/src/main/cpp/                # C++ JNI code
++-- app/src/main/assets/
+|   +-- node/                        # Node.js MCP scripts
+|   +-- python/                      # Python stdlib
++-- scripts/                         # Utility scripts
 ```
 
-## 🛠️ 技术栈
+## Tech Stack
 
-| 类别 | 技术 |
-|------|------|
-| 语言 | Kotlin 2.2.10, C++17 (JNI) |
+| Category | Technology |
+|----------|-----------|
+| Language | Kotlin 2.2.10, C++17 (JNI) |
 | UI | Jetpack Compose (Material 3) |
-| 数据库 | Room v2.7.0 (v32, 20 个实体, 28 次迁移) |
-| 网络 | OkHttp + SSE + Retrofit 2.12.0 |
-| 序列化 | Moshi 1.15.2 |
+| Database | Room v2.7.0 (v32, 20 entities, 28 migrations) |
+| Networking | OkHttp + SSE + Retrofit 2.12.0 |
+| Serialization | Moshi 1.15.2 |
 | Firebase | Firebase BOM 34.12.0 |
-| 构建 | AGP 9.1.1, KSP 2.2.10-2.0.2, CMake 3.22.1 |
-| 原生运行时 | nodejs-mobile (libnode.so), Python 3.14 (dlopen) |
-| 文档生成 | Apache POI 5.5.1 |
-| 权限管理 | Accompanist Permissions 0.37.3 |
-| 图片加载 | Coil 2.7.0 |
-| 相机 | CameraX 1.5.0 |
+| Build | AGP 9.1.1, KSP 2.2.10-2.0.2, CMake 3.22.1 |
+| Native Runtimes | nodejs-mobile (libnode.so), Python 3.14 (dlopen) |
+| Document Generation | Apache POI 5.5.1 |
+| Permissions | Accompanist Permissions 0.37.3 |
+| Image Loading | Coil 2.7.0 |
+| Camera | CameraX 1.5.0 |
 | Markdown | compose-markdown 0.7.2 |
-| 测试 | JUnit, Robolectric, Roborazzi 1.59.0 |
-| CI/CD | GitHub Actions (自动 Release 构建) |
+| Testing | JUnit, Robolectric, Roborazzi 1.59.0 |
+| CI/CD | GitHub Actions (automated release builds) |
 | ABI | arm64-v8a, x86_64 |
 
-## 📊 数据库表结构 (v32 · 20 个实体)
+## Database Schema (v32, 20 Entities)
 
-| 实体 | 表名 | 用途 |
-|------|------|------|
-| `ModelConfig` | `model_configs` | API 提供商 / 模型配置 |
-| `Session` | `sessions` | 聊天会话 |
-| `Message` | `messages` | 聊天消息 (user/assistant/tool) |
-| `MemoryItem` | `memory_items` | 跨会话记忆 (带置信度评分) |
-| `PromptTemplate` | `prompt_templates` | 系统提示词模板 |
-| `FetchedModel` | `fetched_models` | 模型列表缓存 |
-| `SessionSummary` | `session_summaries` | 15 分钟滚动会话摘要 |
-| `McpServer` | `mcp_servers` | MCP 服务器配置 |
-| `UISettings` | `ui_settings` | AI 可调整的全局 UI 设置 |
-| `ColorSchemePreset` | `color_scheme_presets` | 颜色方案快照 (最多 5 个) |
-| `AgentPreset` | `agent_presets` | Agent 预设配置 |
-| `WorkspaceSession` | `workspace_sessions` | 工作区会话 |
-| `WorkspaceTeam` | `workspace_teams` | 工作区团队 |
-| `AgentInstance` | `agent_instances` | 运行中的 Agent 实例 |
-| `AgentDefinitionEntity` | `agent_definitions` | Agent 类型定义（含 Claude Code 对齐字段） |
-| `WorkspaceMessage` | `workspace_messages` | 工作区消息 |
-| `MailboxMessage` | `mailbox_messages` | Agent 间邮箱消息 |
-| `AgentStateSnapshot` | `agent_state_snapshots` | Agent 状态快照 |
-| `TeamTask` | `team_tasks` | 团队任务 (状态/阻塞管理) |
-| `McpFilePermission` | `mcp_file_permissions` | MCP 文件访问权限 |
+| Entity | Table | Purpose |
+|--------|-------|---------|
+| `ModelConfig` | `model_configs` | API provider / model configuration |
+| `Session` | `sessions` | Chat sessions |
+| `Message` | `messages` | Chat messages (user/assistant/tool) |
+| `MemoryItem` | `memory_items` | Cross-session memory (with confidence scoring) |
+| `PromptTemplate` | `prompt_templates` | System prompt templates |
+| `FetchedModel` | `fetched_models` | Model list cache |
+| `SessionSummary` | `session_summaries` | 15-minute rolling session summaries |
+| `McpServer` | `mcp_servers` | MCP server configuration |
+| `UISettings` | `ui_settings` | AI-adjustable global UI settings |
+| `ColorSchemePreset` | `color_scheme_presets` | Color scheme snapshots (up to 5) |
+| `AgentPreset` | `agent_presets` | Agent preset configurations |
+| `WorkspaceSession` | `workspace_sessions` | Workspace sessions |
+| `WorkspaceTeam` | `workspace_teams` | Workspace teams |
+| `AgentInstance` | `agent_instances` | Running agent instances |
+| `AgentDefinitionEntity` | `agent_definitions` | Agent type definitions (with Claude Code-aligned fields) |
+| `WorkspaceMessage` | `workspace_messages` | Workspace messages |
+| `MailboxMessage` | `mailbox_messages` | Inter-agent mailbox messages |
+| `AgentStateSnapshot` | `agent_state_snapshots` | Agent state snapshots |
+| `TeamTask` | `team_tasks` | Team tasks (status / blocking management) |
+| `McpFilePermission` | `mcp_file_permissions` | MCP file access permissions |
 
-## 🔧 MCP 工具扩展
+## MCP Tool Extension
 
-### 内置工具 (35 个)
+### Built-in Tools (35)
 
-| 工具 | 说明 |
-|------|------|
-| 文件系统 | 读写本地文件和目录管理 |
-| 网络请求 | HTTP/HTTPS 抓取 |
-| UI 定制 | 动态调整主题颜色、圆角、字体、间距 |
-| 颜色方案 | 保存 / 加载 / 切换主题预设 |
-| UI 文案 | 调整界面文本内容 |
-| 文档生成 | 生成 Word (.docx) 和 Excel (.xlsx) 文件 |
-| 相机拍照 | 调用设备相机拍照并保存 |
-| 图片选取 | 从相册选取图片 |
-| 定时器 | 创建和管理倒计时 / 秒表 |
-| Agent 管理 | 创建/管理多 Agent 工作区 |
-| 任务管理 | 任务 CRUD、状态跟踪、阻塞依赖 |
-| 记忆搜索 | 搜索跨会话记忆 |
+| Tool | Description |
+|------|-------------|
+| File System | Read/write local files and directory management |
+| Network Requests | HTTP/HTTPS fetching |
+| UI Customization | Dynamically adjust theme colors, corner radius, fonts, spacing |
+| Color Schemes | Save / load / switch theme presets |
+| UI Text | Adjust interface text content |
+| Document Generation | Generate Word (.docx) and Excel (.xlsx) files |
+| Camera Capture | Invoke device camera to take and save photos |
+| Image Picker | Select images from the gallery |
+| Timers | Create and manage countdown / stopwatch timers |
+| Agent Management | Create / manage multi-agent workspace |
+| Task Management | Task CRUD, status tracking, blocking dependencies |
+| Memory Search | Search cross-session memories |
 
-### 添加自定义 MCP 服务器
+### Adding Custom MCP Servers
 
-1. 在 **设置 → MCP 工具** 标签页点击 **添加**
-2. 配置服务器信息：
-   - **Node.js**: 指定 `.js` 文件路径
-   - **Python**: 指定 `.py` 文件路径
-   - **远程 HTTP**: 填入服务器 URL（支持 SSE 2024-11-05 和 Streamable HTTP 2025-03-26）
-3. 支持标准 `mcpServers` JSON 格式导入
+1. Go to **Settings -> MCP Tools** tab and tap **Add**
+2. Configure the server:
+   - **Node.js**: Specify the `.js` file path
+   - **Python**: Specify the `.py` file path
+   - **Remote HTTP**: Enter the server URL (supports SSE 2024-11-05 and Streamable HTTP 2025-03-26)
+3. Supports standard `mcpServers` JSON format import
 
-> ⚠️ Node.js 在每个进程中只能启动一次（nodejs-mobile 限制），多个服务器会合并到一个入口脚本中。
+> Node.js can only start once per process (nodejs-mobile limitation) -- multiple servers are merged into a single entry script.
 
-## 🤖 多 Agent 工作区
+## Multi-Agent Workspace
 
-编排模式的多 Agent 协作系统，支持 Claude Code 风格的 Agent 定义：
+Orchestrator-pattern multi-agent collaboration system with Claude Code-style agent definitions:
 
-- **TeamManager** — 管理队友和整体工作流
-- **AgentRegistry** — Agent 注册与发现
-- **AgentDefinition** — Agent 类型定义（内置 + 自定义 Markdown 定义）
-- **MarkdownAgentLoader** — 从 Markdown 文件加载 Agent 定义
-- **AgentTool** — 创建隔离的 SubAgent 执行任务
-- **AgentToolFilter** — 按 Agent 类型过滤可用工具
-- **ToolOrchestrator** — 工具路由编排
-- **TaskTools** — 任务 CRUD、状态跟踪、阻塞依赖
-- **AgentRunner** — Agent 执行循环（含 MCP 工具调用）
-- **SendMessageTool** — Agent 间异步消息通信
-- **StructuredMessage** — 结构化消息格式
-- **MemorySnapshot** — Agent 记忆快照
-- **AgentContext** — 协程上下文隔离
+- **TeamManager** -- Manages teammates and overall workflow
+- **AgentRegistry** -- Agent registration and discovery
+- **AgentDefinition** -- Agent type definitions (built-in + custom Markdown definitions)
+- **MarkdownAgentLoader** -- Loads agent definitions from Markdown files
+- **AgentTool** -- Creates isolated SubAgents to execute tasks
+- **AgentToolFilter** -- Filters available tools by agent type
+- **ToolOrchestrator** -- Tool routing and orchestration
+- **TaskTools** -- Task CRUD, status tracking, blocking dependencies
+- **AgentRunner** -- Agent execution loop (with MCP tool calls)
+- **SendMessageTool** -- Asynchronous inter-agent messaging
+- **StructuredMessage** -- Structured message format
+- **MemorySnapshot** -- Agent memory snapshots
+- **AgentContext** -- Coroutine context isolation
 
-## 📦 Release 构建
+## Release Build
 
-推送到 `Release-V*.*` 标签会自动触发 GitHub Actions 构建 Release APK：
+Pushing a `Release-V*.*` tag automatically triggers a GitHub Actions release APK build:
 
 ```bash
 git tag Release-V0.5
 git push origin main --tags
 ```
 
-产物自动发布到 [GitHub Releases](https://github.com/yuchen1204/omnichat/releases)。
+Artifacts are published to [GitHub Releases](https://github.com/yuchen1204/omnichat/releases).
 
-## 🤝 贡献指南
+## Contribution Guide
 
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-### 代码规范
+### Code Conventions
 
-- Room 迁移规则：**只加列 / 加表，绝不删数据**
-- 中文 UI 字符串直接硬编码在 Compose 中
-- AI 可调整的字符串使用 `uiText("namespace.key", "默认中文")` 模式
-- 使用 `CompositionLocal` 传递主题和配置：`LocalUISettings`, `LocalCustomColors`, `LocalUiStrings`
+- Room migration rule: **only add columns / tables, never delete data**
+- UI strings use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`)
+- AI-adjustable decorative strings use `uiText("namespace.key", "English default")` pattern
+- Use `CompositionLocal` for theme and config: `LocalUISettings`, `LocalCustomColors`, `LocalUiStrings`
 
-## 📄 许可证
+## License
 
-本项目采用 MIT 许可证 — 详见 [LICENSE](LICENSE) 文件
+This project is licensed under the MIT License -- see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-**用 ❤️ 和 Kotlin 构建**
+**Built with love and Kotlin**
 
-[报告问题](https://github.com/yuchen1204/omnichat/issues) · [功能请求](https://github.com/yuchen1204/omnichat/issues/new)
+[Report Issues](https://github.com/yuchen1204/omnichat/issues) · [Request Features](https://github.com/yuchen1204/omnichat/issues/new)
 
 </div>
