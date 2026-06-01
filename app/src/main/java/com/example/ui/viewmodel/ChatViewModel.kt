@@ -958,7 +958,7 @@ Rules:
             try {
                 val list = ApiClient.fetchOpenAIModels(endpoint, apiKey, customHeaders)
                 if (list.isEmpty()) {
-                    modelFetchError = "未获取到模型列表。"
+                    modelFetchError = getApplication<Application>().getString(R.string.error_model_fetch_failed)
                 } else {
                     val parsedList = list.map { json -> 
                         val id = json.optString("id")
@@ -1144,7 +1144,7 @@ Only output the JSON array, nothing else."""
         if (templates.isEmpty()) {
             repository.insertTemplate(
                 PromptTemplate(
-                    name = "智能助手 (Default Assistant)",
+                    name = getApplication<Application>().getString(R.string.default_assistant_name),
                     templateText = "You are a friendly, highly intelligent assistant. Adopt a constructive tone and tailor responses precisely to the user's context.\n\n" +
                             "Use the historical facts & preferences below (Cross-Session Memory) to personalize your replies:\n" +
                             "[CROSS_SESSION_MEMORY]\n\n" +

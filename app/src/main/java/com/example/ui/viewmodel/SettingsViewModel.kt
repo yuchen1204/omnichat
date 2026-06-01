@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.R
 import com.example.data.AppDatabase
 import com.example.data.AppRepository
 import com.example.data.ColorSchemePreset
@@ -170,9 +171,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         out.write(json.toByteArray(Charsets.UTF_8))
                     }
                 }
-                exportImportStatus = ExportImportStatus.Success("导出成功")
+                exportImportStatus = ExportImportStatus.Success(getApplication<Application>().getString(R.string.export_success))
             } catch (e: Exception) {
-                exportImportStatus = ExportImportStatus.Error("导出失败: ${e.message}")
+                exportImportStatus = ExportImportStatus.Error(getApplication<Application>().getString(R.string.export_failed, e.message ?: ""))
             }
         }
     }
@@ -194,7 +195,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 val json = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { inp ->
                         inp.readBytes().toString(Charsets.UTF_8)
-                    } ?: throw Exception("无法读取文件")
+                    } ?: throw Exception(getApplication<Application>().getString(R.string.import_file_unreadable))
                 }
                 val root = JSONObject(json)
                 val version = root.optInt("version", 1)
@@ -312,9 +313,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
 
-                exportImportStatus = ExportImportStatus.Success("导入成功，共处理 $importedCount 条记录")
+                exportImportStatus = ExportImportStatus.Success(getApplication<Application>().getString(R.string.import_success, importedCount))
             } catch (e: Exception) {
-                exportImportStatus = ExportImportStatus.Error("导入失败: ${e.message}")
+                exportImportStatus = ExportImportStatus.Error(getApplication<Application>().getString(R.string.import_failed, e.message ?: ""))
             }
         }
     }
@@ -453,7 +454,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val defaults = UISettings()
         return ColorSchemePreset(
             schemeId = obj.optString("schemeId", java.util.UUID.randomUUID().toString()),
-            name = obj.optString("name", "导入方案"),
+            name = obj.optString("name", getApplication<Application>().getString(R.string.imported_scheme_name)),
             description = obj.optString("description", ""),
             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
             primaryColor = obj.optString("primaryColor", defaults.primaryColor),
