@@ -594,4 +594,16 @@
     <string name="tool_fileinfo_recursive">(Recursive, max depth %d)</string>
     <string name="tool_fileinfo_yes">Yes</string>
     <string name="tool_fileinfo_no">No</string>
+
+    <!-- ── BuiltinToolHandler: Additional Keys ── -->
+    <string name="tool_ui_applied_no_changes">UI settings applied. No field changes detected.</string>
+    <string name="tool_duration_hours">%d hours </string>
+    <string name="tool_duration_minutes">%d minutes </string>
+    <string name="tool_duration_seconds">%d seconds</string>
+    <string name="tool_doc_pptx_table_fallback_android">[Table data (table rendering not directly supported)]:</string>
+    <string name="tool_timer_type_repeat">🔁 Repeat (every %s)</string>
+    <string name="tool_timer_type_once">⏳ One-time</string>
+    <string name="tool_ui_text_key_label">• Key: %s</string>
+    <string name="tool_ui_text_default">  Default: \"%s\"</string>
+    <string name="tool_ui_text_override">  Currently overridden to: \"%s\"</string>
 </resources>

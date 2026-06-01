@@ -594,4 +594,16 @@
     <string name="tool_fileinfo_recursive">（递归，最大深度 %d）</string>
     <string name="tool_fileinfo_yes">是</string>
     <string name="tool_fileinfo_no">否</string>
+
+    <!-- ── BuiltinToolHandler: Additional Keys ── -->
+    <string name="tool_ui_applied_no_changes">UI 设置已应用。未检测到任何字段变化。</string>
+    <string name="tool_duration_hours">%d 小时 </string>
+    <string name="tool_duration_minutes">%d 分钟 </string>
+    <string name="tool_duration_seconds">%d 秒</string>
+    <string name="tool_doc_pptx_table_fallback_android">[表格数据 (暂不支持直接渲染表格)]:</string>
+    <string name="tool_timer_type_repeat">🔁 重复(每 %s)</string>
+    <string name="tool_timer_type_once">⏳ 单次</string>
+    <string name="tool_ui_text_key_label">• Key: %s</string>
+    <string name="tool_ui_text_default">  默认: \"%s\"</string>
+    <string name="tool_ui_text_override">  当前已覆盖为: \"%s\"</string>
 </resources>
