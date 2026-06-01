@@ -1078,7 +1078,6 @@ Rules:
                 val validTags = setOf("preference", "fact", "instruction", "habit", "context")
                 val tagVocab = validTags.joinToString(", ")
 
-                // 分批处理，每批最多 20 条，避免上下文过长
                 for (batch in untagged.chunked(20)) {
                     val itemsText = batch.joinToString("\n") { "${it.id}. ${it.content}" }
                     val prompt = """Classify each memory item into 1-2 tags.
