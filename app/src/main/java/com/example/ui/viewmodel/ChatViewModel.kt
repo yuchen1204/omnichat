@@ -703,6 +703,40 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
                 // 解析并 apply CRUD ops（解析失败则整体放弃，旧记忆不受影响）
                 applyMemoryCrudOps(crudJson, currentMemories, now)
 
+                // ── Step 2.5：冷启动补关联 — 为无关联边的记忆生成关联 ──────────────
+                try {
+                    val unassociated = repository.getUnassociatedMemories(COLD_START_ASSOC_LIMIT)
+                    if (unassociated.size >= 2) {
+                        val candidatesFormatted = unassociated.joinToString("\n") { mem ->
+                            "${mem.id}. (confidence=${mem.confidence}) ${mem.content}"
+                        }
+                        val backfillSystemPrompt = """
+You are a memory graph builder. Given a list of facts, identify meaningful connections between them.
+Output a JSON object with an "associations" array:
+  {"from": <id>, "to": <id>, "label": "<label>"}
+Label vocabulary: related, causes, part_of, contrasts, belongs_to, implies.
+- "related": general semantic connection
+- "causes": one fact leads to or results from another
+- "part_of": one fact is a component/detail of another
+- "contrasts": facts that oppose or conflict
+- "belongs_to": one fact categorizes or contextualizes another
+- "implies": one fact logically implies another
+Only link facts with genuine semantic connections. If none qualify, return {"associations": []}.
+Return ONLY the raw JSON object, no markdown fences, no commentary.
+""".trimIndent()
+
+                        val backfillQuery = "Facts:\n###\n$candidatesFormatted\n###\n\nOutput associations JSON now."
+                        val backfillJson = ApiClient.executeCompletion(memoryConfig, backfillSystemPrompt, backfillQuery)
+                            ?.trim()
+
+                        if (backfillJson != null) {
+                            applyAssociationsFromJson(backfillJson, unassociated.map { it.id }.toSet())
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
