@@ -692,6 +692,8 @@
     <!-- ── BuiltinToolHandler ── -->
     <string name="tool_time_format_pattern">yyyy年MM月dd日 HH:mm:ss (EEEE)</string>
     <string name="tool_memory_tag_filter">，标签过滤：%s</string>
+    <string name="tool_memory_assoc_expansion_header">--- 关联网络展开（深度=%d）---</string>
+    <string name="tool_memory_assoc_entry">[关联: %s] #%d（置信度=%.2f）%s</string>
 
     <!-- ── AlarmReceiver ── -->
     <string name="alarm_notification_description">AI 助手创建的定时提醒</string>
