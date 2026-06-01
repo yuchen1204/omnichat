@@ -15,7 +15,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.ui.viewmodel.WorkspaceViewModel
 import com.example.workspace.AgentStatus
 import com.example.workspace.ORCHESTRATOR_NAME
@@ -76,7 +77,7 @@ fun WorkspaceScreen(
     if (currentSession == null) {
         Box(modifier = Modifier.fillMaxSize()) {
             Text(
-                text = uiText("workspace.select.hint", "请在侧边栏选择或新建一个工作区开始协作"),
+                text = stringResource(R.string.workspace_select_hint),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }

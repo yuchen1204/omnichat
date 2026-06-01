@@ -20,7 +20,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mcp.McpViewModel
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -100,14 +101,14 @@ fun MainScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = uiText("dialog.permission.title", "文件访问权限请求"),
+                                text = stringResource(R.string.dialog_permission_title),
                                 fontSize = (16 * fsPerm).sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = resolvedFontFamilyPerm,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = uiText("dialog.permission.subtitle", "MCP 工具请求"),
+                                text = stringResource(R.string.dialog_permission_subtitle),
                                 fontSize = (11 * fsPerm).sp,
                                 fontFamily = resolvedFontFamilyPerm,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -121,7 +122,7 @@ fun MainScreen(
 
                     // 路径展示
                     Text(
-                        text = uiText("dialog.permission.desc", "AI 助手想要访问沙盒外的文件："),
+                        text = stringResource(R.string.dialog_permission_desc),
                         fontSize = (13 * fsPerm).sp,
                         fontFamily = resolvedFontFamilyPerm,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -156,7 +157,7 @@ fun MainScreen(
                         ) {
                             Icon(Icons.Default.LockOpen, null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(uiText("dialog.permission.allow_always", "始终允许"), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
+                            Text(stringResource(R.string.dialog_permission_allow_always), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
                         }
                         OutlinedButton(
                             onClick = { permissionRequest?.onResult?.invoke(PermissionResult.ALLOW_ONCE) },
@@ -165,7 +166,7 @@ fun MainScreen(
                         ) {
                             Icon(Icons.Default.Check, null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(uiText("dialog.permission.allow_once", "允许一次"), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
+                            Text(stringResource(R.string.dialog_permission_allow_once), fontFamily = resolvedFontFamilyPerm, fontSize = (13 * fsPerm).sp)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             TextButton(
@@ -173,14 +174,14 @@ fun MainScreen(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
                             ) {
-                                Text(uiText("dialog.permission.dont_ask", "不再询问"), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.dialog_permission_dont_ask), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             TextButton(
                                 onClick = { permissionRequest?.onResult?.invoke(PermissionResult.DENY) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape((cornerPerm.value - 2).coerceAtLeast(0f).dp)
                             ) {
-                                Text(uiText("dialog.permission.deny", "拒绝"), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.error)
+                                Text(stringResource(R.string.dialog_permission_deny), fontFamily = resolvedFontFamilyPerm, fontSize = (12 * fsPerm).sp, color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -259,11 +260,11 @@ fun SettingsView(
 ) {
     var selectedSubTab by remember { mutableStateOf(0) }
     val tabs = listOf(
-        uiText("tab.settings.models", "模型配置"),
-        uiText("tab.settings.mcp", "MCP工具"),
-        uiText("tab.settings.memory", "长效记忆"),
-        uiText("tab.settings.presets", "Agent 预设"),
-        uiText("tab.settings.data", "数据管理")
+        stringResource(R.string.tab_settings_models),
+        stringResource(R.string.tab_settings_mcp),
+        stringResource(R.string.tab_settings_memory),
+        stringResource(R.string.tab_settings_presets),
+        stringResource(R.string.tab_settings_data)
     )
     val settingsViewModel: SettingsViewModel = viewModel()
 
@@ -328,9 +329,9 @@ fun MainTopAppBar(
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
 
     val titleText = when (currentTab) {
-        "chat" -> activeSession?.title ?: uiText("topbar.title.chat", "会话")
-        "workspace" -> activeWsSession?.title ?: uiText("topbar.title.workspace", "工作区")
-        "settings" -> uiText("topbar.title.settings", "设置")
+        "chat" -> activeSession?.title ?: stringResource(R.string.topbar_title_chat)
+        "workspace" -> activeWsSession?.title ?: stringResource(R.string.topbar_title_workspace)
+        "settings" -> stringResource(R.string.topbar_title_settings)
         else -> "AI"
     }
 
@@ -353,7 +354,7 @@ fun MainTopAppBar(
                     )
                     if (currentTab == "chat" && defaultProvider != null) {
                         Text(
-                            text = "${uiText("topbar.provider.prefix", "提供商: ")}${defaultProvider.name}",
+                            text = stringResource(R.string.topbar_provider_prefix) + defaultProvider.name,
                             fontSize = (11 * fs).sp,
                             fontFamily = resolvedFontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -366,7 +367,7 @@ fun MainTopAppBar(
                 IconButton(onClick = onOpenDrawer) {
                     Icon(
                         imageVector = Icons.Default.Menu,
-                        contentDescription = uiText("topbar.menu.open", "打开菜单"),
+                        contentDescription = stringResource(R.string.topbar_menu_open),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -395,7 +396,7 @@ fun MainTopAppBar(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = uiText("topbar.memory.syncing", "记忆同步中"),
+                            text = stringResource(R.string.topbar_memory_syncing),
                             fontSize = (11 * fs).sp,
                             color = com.example.ui.theme.LocalCustomColors.current.success
                         )
@@ -404,7 +405,7 @@ fun MainTopAppBar(
                     IconButton(onClick = { viewModel.triggerMemorySync(force = true) }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = uiText("topbar.memory.sync", "同步记忆"),
+                            contentDescription = stringResource(R.string.topbar_memory_sync),
                             tint = MaterialTheme.colorScheme.primary // Material style
                         )
                     }
