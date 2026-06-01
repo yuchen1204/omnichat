@@ -15,12 +15,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.components.ChunkedStreamingText
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
 import com.example.workspace.AgentMessage
+import androidx.compose.ui.res.stringResource
 import java.io.File
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -107,7 +108,7 @@ fun AgentBubbleMessage(message: AgentMessage) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = uiText("workspace.tool.called", "工具执行结果 (ID: %s)").format(message.toolCallId?.take(8) ?: "unknown"),
+                                text = stringResource(R.string.workspace_tool_called, message.toolCallId?.take(8) ?: "unknown"),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Medium
@@ -169,7 +170,7 @@ fun AgentBubbleMessage(message: AgentMessage) {
                     // 标签行
                     if (message.isIntervention) {
                         Text(
-                            text = uiText("workspace.intervention.label", "【用户干预】"),
+                            text = stringResource(R.string.workspace_intervention_label),
                             fontSize = (10 * fs).sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -177,7 +178,7 @@ fun AgentBubbleMessage(message: AgentMessage) {
                         )
                     } else if (isOrchestratorInjected) {
                         Text(
-                            text = uiText("workspace.orchestrator.injected", "来自主控 Agent"),
+                            text = stringResource(R.string.workspace_orchestrator_injected),
                             fontSize = (10 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.tertiary,
@@ -386,7 +387,7 @@ private fun FormattedSubAgentReport(
                     }
                     if (parsed.toolUses > 0) {
                         Text(
-                            text = "${parsed.toolUses} 次工具调用",
+                            text = stringResource(R.string.workspace_tool_calls_count, parsed.toolUses),
                             fontSize = (10 * fs).sp,
                             color = textColor.copy(alpha = 0.5f),
                             fontFamily = resolvedFontFamily

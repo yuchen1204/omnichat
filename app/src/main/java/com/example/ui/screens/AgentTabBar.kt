@@ -17,7 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.ui.viewmodel.AgentTabState
 import com.example.workspace.AgentStatus
 import com.example.workspace.TeamState
@@ -74,7 +75,7 @@ fun AgentTabBar(
                         if (tab.isOrchestrator) {
                             Icon(
                                 imageVector = Icons.Default.WorkspacePremium,
-                                contentDescription = uiText("workspace.tab.orchestrator", "主控 Agent"),
+                                contentDescription = stringResource(R.string.workspace_tab_orchestrator),
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(15.dp)
                             )

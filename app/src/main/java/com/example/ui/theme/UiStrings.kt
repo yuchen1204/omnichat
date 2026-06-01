@@ -77,6 +77,20 @@ val LocalUiStrings = staticCompositionLocalOf { UiStrings.Default }
  *   hint.*      占位提示
  *   icon.*      图标 contentDescription
  */
+/**
+ * Resolve a display string that may be a literal or a __res: prefixed resource key.
+ * Used for DB entity defaults that need i18n.
+ *
+ * If value starts with "__res:", the suffix is treated as a string resource name
+ * and resolved via the provided resolveResName lambda. Otherwise returns the literal value.
+ */
+fun resolveUiString(value: String, resolveResName: (String) -> String): String {
+    if (value.startsWith("__res:")) {
+        return resolveResName(value.removePrefix("__res:"))
+    }
+    return value
+}
+
 @Composable
 @ReadOnlyComposable
 fun uiText(key: String, default: String): String =

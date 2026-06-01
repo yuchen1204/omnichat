@@ -25,9 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.PromptTemplate
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
 import com.example.ui.viewmodel.ChatViewModel
 
 @Composable
@@ -58,10 +59,10 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
             Tab(selected = activeSubTab == "memory", onClick = { activeSubTab = "memory" }) {
-                Text(uiText("memory.tab.memory_library", "长效对话记忆库 (%d)").format(memories.size), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
+                Text(stringResource(R.string.memory_tab_memory_library, memories.size), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
             Tab(selected = activeSubTab == "prompts", onClick = { activeSubTab = "prompts" }) {
-                Text(uiText("memory.bbbf4e03", "系统Prompt模板"), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
+                Text(stringResource(R.string.memory_system_prompt_templates), modifier = Modifier.padding(12.dp), fontSize = (14 * fs).sp)
             }
         }
 
@@ -99,7 +100,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = uiText("memory.manual.input.title", "手动录入长效记忆 / 用户首选项偏好"),
+                                    text = stringResource(R.string.memory_manual_input_title),
                                     fontSize = (12 * fs).sp,
                                     fontWeight = FontWeight.SemiBold,
                                     fontFamily = resolvedFontFamily,
@@ -123,7 +124,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     OutlinedTextField(
                                         value = manualMemoryText,
                                         onValueChange = { manualMemoryText = it },
-                                        placeholder = { Text(uiText("memory.eaea8fbf", "例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼..."), fontSize = (12 * fs).sp) },
+                                        placeholder = { Text(stringResource(R.string.memory_input_hint), fontSize = (12 * fs).sp) },
                                         minLines = 2,
                                         maxLines = 4,
                                         modifier = Modifier.fillMaxWidth(),
@@ -149,7 +150,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                             },
                                             shape = RoundedCornerShape(8.dp * spacingMultiplier)
                                         ) {
-                                            Text(uiText("memory.51c52a46", "添加偏好"), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
+                                            Text(stringResource(R.string.memory_add_preference), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
                                         }
                                     }
                                 }
@@ -163,7 +164,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     val untaggedCount = memories.count { it.tags.isBlank() }
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = uiText("memory.list.title", "AI 自我反省提炼的长效记忆 (%d):").format(memories.size),
+                            text = stringResource(R.string.memory_list_title, memories.size),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -186,7 +187,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                     }
                                     Text(
-                                        uiText("memory.backfill_tags", "补打标签 (%d)").format(untaggedCount),
+                                        stringResource(R.string.memory_backfill_tags, untaggedCount),
                                         fontSize = (12 * fs).sp
                                     )
                                 }
@@ -196,7 +197,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     onClick = { viewModel.clearAllMemories() },
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                 ) {
-                                    Text(uiText("memory.7c4e09ff", "清空全部"), fontSize = (12 * fs).sp)
+                                    Text(stringResource(R.string.memory_clear_all), fontSize = (12 * fs).sp)
                                 }
                             }
                         }
@@ -219,7 +220,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = uiText("memory.empty.hint", "暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！"),
+                                    text = stringResource(R.string.memory_empty_hint),
                                     textAlign = TextAlign.Center,
                                     fontSize = (12 * fs).sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -303,9 +304,9 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         Icon(
                                             imageVector = if (memory.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
                                             contentDescription = if (memory.pinned)
-                                                uiText("memory.unpin", "取消锁定")
+                                                stringResource(R.string.memory_unpin)
                                             else
-                                                uiText("memory.pin", "锁定"),
+                                                stringResource(R.string.memory_pin),
                                             tint = if (memory.pinned)
                                                 MaterialTheme.colorScheme.primary
                                             else
@@ -319,7 +320,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
-                                            contentDescription = uiText("memory.63e4284a", "删除"),
+                                            contentDescription = stringResource(R.string.memory_delete),
                                             tint = MaterialTheme.colorScheme.error.copy(
                                                 alpha = if (memory.pinned) 0.3f else 0.7f
                                             ),
@@ -346,12 +347,12 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(uiText("memory.d1ce90a9", "创建自定义 System 模板"), fontWeight = FontWeight.Bold, fontSize = (14 * fs).sp, fontFamily = resolvedFontFamily)
+                        Text(stringResource(R.string.memory_create_template), fontWeight = FontWeight.Bold, fontSize = (14 * fs).sp, fontFamily = resolvedFontFamily)
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedTextField(
                             value = newTemplateName,
                             onValueChange = { newTemplateName = it },
-                            label = { Text(uiText("memory.1866d6dc", "模版说明/标题 (如: Kotlin 写法大师)")) },
+                            label = { Text(stringResource(R.string.memory_template_title_hint)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -359,8 +360,8 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         OutlinedTextField(
                             value = newTemplateText,
                             onValueChange = { newTemplateText = it },
-                            label = { Text(uiText("memory.8278e828", "System Prompt 文字")) },
-                            placeholder = { Text(uiText("memory.20754aa0", "必须包含占位符 [CROSS_SESSION_MEMORY] 自动编排记忆数据")) },
+                            label = { Text(stringResource(R.string.memory_template_prompt_text)) },
+                            placeholder = { Text(stringResource(R.string.memory_template_placeholder_hint)) },
                             maxLines = 6,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -370,7 +371,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                             horizontalArrangement = Arrangement.End
                         ) {
                             TextButton(onClick = { isCreatingTemp = false }) {
-                                Text(uiText("memory.b9716387", "取消"))
+                                Text(stringResource(R.string.memory_cancel))
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
@@ -388,7 +389,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     }
                                 }
                             ) {
-                                Text(uiText("memory.f489c32f", "保存模板"))
+                                Text(stringResource(R.string.memory_save_template))
                             }
                         }
                     }
@@ -403,9 +404,9 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = uiText("memory.3f63a83c", "新增"))
+                    Icon(imageVector = Icons.Default.Add, contentDescription = stringResource(R.string.memory_add))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(uiText("memory.8bed6b57", "新增 System 模版"), fontSize = (13 * fs).sp)
+                    Text(stringResource(R.string.memory_add_system_template), fontSize = (13 * fs).sp)
                 }
             }
 
@@ -452,7 +453,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Delete,
-                                            contentDescription = uiText("memory.63e4284a", "删除"),
+                                            contentDescription = stringResource(R.string.memory_delete),
                                             tint = MaterialTheme.colorScheme.error,
                                             modifier = Modifier.size(16.dp)
                                         )

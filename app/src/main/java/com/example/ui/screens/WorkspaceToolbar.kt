@@ -24,7 +24,8 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.LocalCustomColors
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.ui.viewmodel.ExportImportStatus
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -84,7 +85,7 @@ fun WorkspaceToolbar(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = uiText("workspace.agents.count", "%d 个 Agent").format(agentCount),
+                        text = stringResource(R.string.workspace_agents_count, agentCount),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         fontFamily = resolvedFontFamily
@@ -97,7 +98,7 @@ fun WorkspaceToolbar(
             IconButton(onClick = onExportLog, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.FileDownload,
-                    contentDescription = uiText("workspace.export_log", "导出日志"),
+                    contentDescription = stringResource(R.string.workspace_export_log),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
@@ -129,7 +130,7 @@ fun WorkspaceToolbar(
                 IconButton(onClick = onToggleTaskPanel, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = if (showTaskPanel) Icons.AutoMirrored.Filled.ViewSidebar else Icons.Default.Dashboard,
-                        contentDescription = uiText("workspace.toggle_task_panel", "任务面板"),
+                        contentDescription = stringResource(R.string.workspace_toggle_task_panel),
                         tint = if (showTaskPanel) MaterialTheme.colorScheme.primary
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
@@ -159,31 +160,31 @@ private fun WorkflowPhasePill(
     val customColors = LocalCustomColors.current
     val (label, icon, color, isLive) = when (phase) {
         WorkflowPhase.PLANNING -> WorkflowPhaseStyle(
-            label = uiText("workspace.phase.planning", "正在规划"),
+            label = stringResource(R.string.workspace_phase_planning),
             icon = Icons.Default.Lightbulb,
             color = MaterialTheme.colorScheme.primary,
             isLive = true,
         )
         WorkflowPhase.WORKING -> WorkflowPhaseStyle(
-            label = uiText("workspace.phase.working", "Agent 执行中"),
+            label = stringResource(R.string.workspace_phase_working),
             icon = Icons.Default.AutoAwesome,
             color = customColors.success,
             isLive = true,
         )
         WorkflowPhase.SYNTHESIZING -> WorkflowPhaseStyle(
-            label = uiText("workspace.phase.synthesizing", "汇总结果"),
+            label = stringResource(R.string.workspace_phase_synthesizing),
             icon = Icons.Default.AutoAwesomeMosaic,
             color = MaterialTheme.colorScheme.tertiary,
             isLive = true,
         )
         WorkflowPhase.AWAITING_USER -> WorkflowPhaseStyle(
-            label = uiText("workspace.phase.awaiting", "等待中"),
+            label = stringResource(R.string.workspace_phase_awaiting),
             icon = Icons.Default.Schedule,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             isLive = false,
         )
         WorkflowPhase.COMPLETED -> WorkflowPhaseStyle(
-            label = uiText("workspace.status.completed", "已完成"),
+            label = stringResource(R.string.workspace_status_completed),
             icon = Icons.Default.CheckCircle,
             color = MaterialTheme.colorScheme.primary,
             isLive = false,

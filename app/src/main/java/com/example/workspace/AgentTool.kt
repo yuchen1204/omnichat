@@ -28,7 +28,7 @@ class AgentTool(
     private val agentRegistry: AgentRegistry,
     private val mailboxService: MailboxService,
     // 支持 AgentDefinition 注入，使 subagent_type 参数可解析到对应的 Agent 定义
-    private val agentDefinitions: List<AgentDefinition> = BuiltInAgents.ALL,
+    private val agentDefinitions: List<AgentDefinition>,
     private val onSubAgentCreated: (name: String, description: String) -> Unit = { _, _ -> },
     private val onSubAgentStreamChunk: (name: String, chunk: String) -> Unit = { _, _ -> },
     private val onSubAgentCompleted: (name: String, messages: List<AgentMessage>) -> Unit = { _, _ -> },
@@ -108,7 +108,7 @@ class AgentTool(
      * Falls back to GENERAL_PURPOSE when type is blank; throws if type is unknown.
      */
     private fun resolveAgentDefinition(subagentType: String?): AgentDefinition {
-        if (subagentType.isNullOrBlank()) return BuiltInAgents.GENERAL_PURPOSE
+        if (subagentType.isNullOrBlank()) return BuiltInAgents.generalPurpose(mcpRuntimeManager.getContext())
         return agentDefinitions.find { it.agentType == subagentType }
             ?: throw IllegalArgumentException(
                 "Agent type '$subagentType' not found. Available: ${agentDefinitions.map { it.agentType }}"

@@ -1,3 +1,694 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OmniChat</string>
+
+    <!-- ── ui_text_keys.json: Chat ── -->
+    <string name="chat_tools_used_count">Used %d tools</string>
+    <string name="chat_tool_used">Tool used</string>
+    <string name="chat_tools_working_x">Calling tool x%d</string>
+    <string name="workspace_tool_called">Tool result (ID: %s)</string>
+    <string name="workspace_intervention_label">[User Intervention]</string>
+    <string name="workspace_orchestrator_injected">From orchestrator agent</string>
+    <string name="workspace_agent_thinking">%s is thinking…</string>
+    <string name="workspace_agent_empty">%s awaiting task assignment</string>
+    <string name="workspace_agent_waiting_tool">Executing tool…</string>
+    <string name="preset_button_new">New Agent Preset</string>
+    <string name="preset_list_empty">No presets yet. Create presets before workspace tasks begin to assign specific prompts and models to specific roles!</string>
+    <string name="preset_action_edit">Edit</string>
+    <string name="preset_action_delete">Delete</string>
+    <string name="preset_model_tag">Assigned model: %s</string>
+    <string name="preset_form_new_title">New Agent Preset</string>
+    <string name="preset_form_edit_title">Edit Agent Preset</string>
+    <string name="preset_form_name">Preset role name (e.g. Poetry Expert) *</string>
+    <string name="preset_form_desc">Description summary (optional)</string>
+    <string name="preset_form_system_prompt">System Prompt (optional)</string>
+    <string name="preset_form_model_default">None (use workspace default)</string>
+    <string name="preset_form_model">Assigned model (optional)</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="preset_dialog_delete_title">Delete Preset</string>
+    <string name="preset_dialog_delete_body">Are you sure you want to delete preset \"%s\"? This will not modify any existing workspace history.</string>
+    <string name="action_delete">Delete</string>
+    <string name="workspace_tab_orchestrator">Orchestrator Agent</string>
+    <string name="dialog_ask_user_title">Clarification Needed</string>
+    <string name="dialog_ask_user_options_hint">Please choose from the following options:</string>
+    <string name="dialog_ask_user_custom_input_label">Custom answer</string>
+    <string name="dialog_ask_user_custom_input_placeholder">Type your custom answer here…</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="chat_not_set">Not set</string>
+    <string name="chat_reminder">Reminder</string>
+    <string name="chat_no_provider_warning">A global default provider must be set for normal conversation!</string>
+    <string name="chat_memory">Memory</string>
+    <string name="chat_memory_injected">Dynamically fused %d long-term learning preference memories</string>
+    <string name="chat_mcp_loading">MCP tools loading: %s</string>
+    <string name="chat_separator">, </string>
+    <string name="chat_scroll_to_bottom">Scroll to latest</string>
+    <string name="chat_current_model">Current model: %s · %s</string>
+    <string name="chat_switch_model">Switch Model</string>
+    <string name="chat_select_image">Select Image</string>
+    <string name="chat_take_photo">Take Photo</string>
+    <string name="chat_selected_image">Image selected</string>
+    <string name="chat_image_attached">Image attached</string>
+    <string name="chat_remove_image">Remove image</string>
+    <string name="chat_toolbar_collapse">Collapse</string>
+    <string name="chat_toolbar_expand">Expand tools</string>
+    <string name="chat_input_hint_with_image">Add description (optional)…</string>
+    <string name="chat_input_hint">Type a message…</string>
+    <string name="chat_send_contentDescription">Send</string>
+    <string name="chat_ai_ready">AI Ready</string>
+    <string name="chat_welcome_title">Welcome to Long-term Memory AI Assistant</string>
+    <string name="chat_welcome_desc">This app specially supports a dual-model architecture! One main model handles conversation, while a secondary model analyzes and distills conversation facts in the background after each response, persisting across sessions and restarts!</string>
+    <string name="chat_status_overview">Status Overview:</string>
+    <string name="chat_status_provider_ok">✓ Current provider: %s</string>
+    <string name="chat_status_provider_empty">✗ No provider set</string>
+    <string name="chat_status_memories_count">✓ Stored long-term memories: %d</string>
+    <string name="chat_thinking_in_progress">AI is thinking deeply (live streaming)…</string>
+    <string name="chat_thinking_folded">Deep thinking (folded, tap to expand)</string>
+    <string name="chat_action_fold">Fold</string>
+    <string name="chat_action_unfold">Unfold</string>
+    <string name="chat_image">Image</string>
+    <string name="chat_copy_content">Copy Content</string>
+    <string name="chat_thinking_default">Thinking…</string>
+    <string name="chat_retry">Retry</string>
+    <string name="chat_thinking_start">Waking up deep reasoning model and thinking deeply…</string>
+    <string name="chat_thinking_reply_plan">Composing reply…</string>
+    <string name="chat_assistant_typing">Assistant is typing…</string>
+
+    <!-- ── ui_text_keys.json: Export / Import ── -->
+    <string name="export_section_export">Export Configuration</string>
+    <string name="export_desc">Select content to export and save as a JSON file for backup or migration to other devices.</string>
+    <string name="export_option_providers">Provider Configuration</string>
+    <string name="export_option_providers_desc">API providers, endpoints, API keys, model lists</string>
+    <string name="export_option_mcp">MCP Configuration</string>
+    <string name="export_option_mcp_desc">MCP server list, runtime configuration, environment variables</string>
+    <string name="export_option_memory">Long-term Memory</string>
+    <string name="export_option_memory_desc">Cross-session memory entries, system prompt templates</string>
+    <string name="export_option_colors">Color Scheme</string>
+    <string name="export_option_colors_desc">Current UI settings, color scheme presets (up to 5)</string>
+    <string name="export_btn">Choose save location and export</string>
+    <string name="import_section_import">Import Configuration</string>
+    <string name="import_desc">Restore configuration from a previously exported JSON file. Select the content types to import.</string>
+    <string name="import_option_providers_desc">Import API provider configuration</string>
+    <string name="import_option_mcp_desc">Import MCP server configuration</string>
+    <string name="import_option_memory_desc">Import memory entries and prompt templates</string>
+    <string name="import_option_colors_desc">Import UI settings and color presets</string>
+    <string name="import_replace_title">Overwrite Existing Data</string>
+    <string name="import_replace_desc">When enabled, existing data of the corresponding type will be cleared before importing; when disabled, data will be appended</string>
+    <string name="import_btn">Choose JSON file and import</string>
+    <string name="export_note">Exported file is in standard JSON format containing complete data of selected configurations. API keys are stored in plaintext in the file, please keep the exported file safe. It is recommended to back up existing configuration before importing.</string>
+    <string name="import_confirm_title">Confirm Import</string>
+    <string name="import_confirm_body">About to import the following content:</string>
+    <string name="import_confirm_replace_warning">Overwrite mode is enabled. Existing corresponding data will be cleared and replaced. This action cannot be undone.</string>
+    <string name="import_confirm_ok">Confirm Import</string>
+    <string name="import_confirm_cancel">Cancel</string>
+
+    <!-- ── ui_text_keys.json: Workspace intervention ── -->
+    <string name="workspace_intervention_target_prefix">Send to </string>
+    <string name="workspace_intervention_queued_hint">· Will be delivered after this round</string>
+    <string name="workspace_intervention_hint_orchestrator">Ask the orchestrator agent, adjust direction, or add requirements…</string>
+    <string name="workspace_intervention_hint_sub">Send intervention message to %s…</string>
+    <string name="action_send">Send</string>
+
+    <!-- ── ui_text_keys.json: Permission dialog ── -->
+    <string name="dialog_permission_title">File Access Permission Request</string>
+    <string name="dialog_permission_subtitle">MCP Tool Request</string>
+    <string name="dialog_permission_desc">AI assistant wants to access files outside the sandbox:</string>
+    <string name="dialog_permission_allow_always">Always Allow</string>
+    <string name="dialog_permission_allow_once">Allow Once</string>
+    <string name="dialog_permission_dont_ask">Don\'t Ask Again</string>
+    <string name="dialog_permission_deny">Deny</string>
+
+    <!-- ── ui_text_keys.json: Settings tabs ── -->
+    <string name="tab_settings_models">Model Config</string>
+    <string name="tab_settings_mcp">MCP Tools</string>
+    <string name="tab_settings_memory">Long-term Memory</string>
+    <string name="tab_settings_presets">Agent Presets</string>
+    <string name="tab_settings_data">Data Management</string>
+
+    <!-- ── ui_text_keys.json: Top bar ── -->
+    <string name="topbar_title_chat">Chat</string>
+    <string name="topbar_title_workspace">Workspace</string>
+    <string name="topbar_title_settings">Settings</string>
+    <string name="topbar_provider_prefix">Provider: </string>
+    <string name="topbar_menu_open">Open menu</string>
+    <string name="topbar_memory_syncing">Syncing memory</string>
+    <string name="topbar_memory_sync">Sync Memory</string>
+
+    <!-- ── ui_text_keys.json: MCP ── -->
+    <string name="mcp_stat_servers">Servers</string>
+    <string name="mcp_stat_running_servers">Running</string>
+    <string name="mcp_stat_tools_count">Tools</string>
+    <string name="mcp_import_json">Import JSON</string>
+    <string name="mcp_add_service">Add Service</string>
+    <string name="mcp_empty_title">No MCP Services</string>
+    <string name="mcp_empty_desc">Tap \"Add Service\" in the top-right to configure a Node.js or Python MCP server</string>
+    <string name="mcp_examples_title">Common Examples</string>
+    <string name="mcp_add_dialog_title">Add MCP Service</string>
+    <string name="mcp_builtin_title">Built-in Tools</string>
+    <string name="mcp_unknown">Unknown</string>
+    <string name="mcp_status_running">Running</string>
+    <string name="mcp_status_starting">Starting</string>
+    <string name="mcp_status_error">Error</string>
+    <string name="mcp_status_stopped">Stopped</string>
+    <string name="mcp_more">More</string>
+    <string name="mcp_edit_config">Edit Config</string>
+    <string name="mcp_restart_service">Restart Service</string>
+    <string name="mcp_delete">Delete</string>
+    <string name="mcp_tools_count_label">%d tools</string>
+    <string name="mcp_enabled">Enabled</string>
+    <string name="mcp_disabled">Disabled</string>
+    <string name="mcp_delete_title">Delete MCP Service</string>
+    <string name="mcp_delete_confirm_body">Are you sure you want to delete \"%s\"? The service will be stopped and removed from configuration.</string>
+    <string name="mcp_cancel">Cancel</string>
+    <string name="mcp_group_memory">Long-term Memory</string>
+    <string name="mcp_group_ui_appearance">UI Appearance</string>
+    <string name="mcp_group_efficiency">Efficiency Reminders</string>
+    <string name="mcp_group_ui_text">UI Text</string>
+    <string name="mcp_group_files">File Management</string>
+    <string name="mcp_group_documents">Document Creation</string>
+    <string name="mcp_builtin_groups_title">Built-in Tool Group Permissions</string>
+    <string name="mcp_builtin_groups_desc">AI can enable or disable these features. The core group is always enabled.</string>
+    <string name="mcp_builtin_desc">%d tools · Always available</string>
+    <string name="mcp_builtin_status">Running</string>
+    <string name="mcp_view_tools">View Tools</string>
+    <string name="mcp_dialog_tools_title">Tools of %s</string>
+    <string name="mcp_dialog_no_tools">No tools available</string>
+    <string name="mcp_dialog_import_title">Import MCP Configuration (JSON)</string>
+    <string name="mcp_dialog_import_desc">Paste standard mcpServers JSON configuration. After import, services will be automatically added and started.</string>
+    <string name="mcp_dialog_invalid_json">Invalid JSON format or missing mcpServers field</string>
+    <string name="mcp_dialog_cancel">Cancel</string>
+    <string name="mcp_dialog_confirm_import">Confirm Import</string>
+    <string name="mcp_dialog_edit_title">Edit MCP Service</string>
+    <string name="mcp_dialog_add_title">Add MCP Service</string>
+    <string name="mcp_dialog_service_name">Service Name</string>
+    <string name="mcp_dialog_service_name_hint">e.g. File System Service</string>
+    <string name="mcp_dialog_runtime">Runtime</string>
+    <string name="mcp_dialog_params">Parameters (JSON array)</string>
+    <string name="mcp_dialog_invalid_json_array">Please enter a valid JSON array, e.g. [\"arg1\", \"arg2\"]</string>
+    <string name="mcp_dialog_custom_headers">Custom Headers (JSON object)</string>
+    <string name="mcp_dialog_env_vars">Environment Variables (JSON object)</string>
+    <string name="mcp_dialog_invalid_json_object">Please enter a valid JSON object, e.g. {\"KEY\": \"value\"}</string>
+    <string name="mcp_dialog_auto_start">Auto-start on launch</string>
+    <string name="action_add">Add</string>
+    <string name="mcp_dialog_runtime_node">Node.js</string>
+    <string name="mcp_dialog_runtime_node_desc">Embedded Node.js</string>
+    <string name="mcp_dialog_runtime_python">Python</string>
+    <string name="mcp_dialog_runtime_python_desc">Embedded Python</string>
+    <string name="mcp_dialog_runtime_remote_http">Remote HTTP</string>
+    <string name="mcp_dialog_runtime_remote_http_desc">Remote MCP Service</string>
+    <string name="mcp_dialog_node_hint">Uses the app\'s embedded Node.js runtime to execute JS MCP servers. No need to install Node.js on the device.\nBuilt-in scripts have been auto-deployed to:\n%s\nEnter the filename or absolute path in the command field.</string>
+    <string name="mcp_dialog_python_hint">Uses the app\'s embedded Python runtime to execute Python MCP servers. No need to install Python on the device.</string>
+    <string name="mcp_dialog_remote_http_hint">Connect to a remote MCP server. This app follows the MCP HTTP transport standard (SSE + POST).\nEnter the SSE endpoint URL in the command field.\nCustom headers can be used to attach HTTP headers such as authentication tokens.</string>
+    <string name="mcp_example_fetch">HTTP Fetch</string>
+    <string name="mcp_example_remote">Remote Example</string>
+    <string name="mcp_dialog_command_label_node">JS entry file path</string>
+    <string name="mcp_dialog_command_label_python">Python script path</string>
+    <string name="mcp_dialog_command_label_remote_http">SSE endpoint URL</string>
+    <string name="mcp_dialog_command_label_default">Command</string>
+    <string name="mcp_dialog_command_placeholder_node">mcp_fetch.js (or absolute path)</string>
+    <string name="mcp_dialog_command_placeholder_python">/sdcard/OmniChat/mcp/my_server.py</string>
+    <string name="mcp_dialog_command_placeholder_remote_http">https://example.com/mcp/sse</string>
+    <string name="mcp_dialog_command_placeholder_default">Command or path</string>
+    <string name="mcp_dialog_runtime_details_title">Runtime Status Details</string>
+    <string name="mcp_dialog_node_title">Embedded Node.js</string>
+    <string name="mcp_dialog_node_disabled">Disabled in settings</string>
+    <string name="mcp_dialog_node_ok">libnode.so loaded, Node.js available</string>
+    <string name="mcp_dialog_node_missing">libnode.so not found</string>
+    <string name="mcp_dialog_node_instructions">Please place libnode.so in the app/src/main/jniLibs/&lt;ABI&gt;/ directory and recompile.</string>
+    <string name="mcp_dialog_python_title">Embedded Python</string>
+    <string name="mcp_dialog_python_disabled">Disabled in settings</string>
+    <string name="mcp_dialog_python_instructions">Please prepare stdlib.zip and .so files and recompile.</string>
+    <string name="mcp_dialog_remote_http_title">Remote HTTP MCP</string>
+    <string name="mcp_dialog_remote_http_status">Supports connecting to remote MCP services via HTTP/HTTPS.</string>
+    <string name="mcp_dialog_remote_http_instructions">Remote services must follow the MCP HTTP transport standard, supporting SSE endpoints and JSON-RPC POST requests.</string>
+    <string name="mcp_dialog_got_it">Got it</string>
+    <string name="mcp_dialog_install_steps">Installation steps:</string>
+
+    <!-- ── ui_text_keys.json: Memory ── -->
+    <string name="memory_tab_memory_library">Long-term Memory Library (%d)</string>
+    <string name="memory_system_prompt_templates">System Prompt Templates</string>
+    <string name="memory_manual_input_title">Manually enter long-term memory / user preference</string>
+    <string name="memory_input_hint">e.g. User prefers Kotlin for questions; prefers concise AI answers…</string>
+    <string name="memory_add_preference">Add Preference</string>
+    <string name="memory_list_title">AI-refined long-term memories (%d):</string>
+    <string name="memory_backfill_tags">Retrospective tags (%d)</string>
+    <string name="memory_clear_all">Clear All</string>
+    <string name="memory_empty_hint">No long-term memories yet. You can tell the AI your preferences directly in chat, or wait for the AI to automatically extract them from conversation analysis!</string>
+    <string name="memory_unpin">Unpin</string>
+    <string name="memory_pin">Pin</string>
+    <string name="memory_delete">Delete</string>
+    <string name="memory_create_template">Create Custom System Template</string>
+    <string name="memory_template_title_hint">Template description/title (e.g. Kotlin Coding Master)</string>
+    <string name="memory_template_prompt_text">System Prompt Text</string>
+    <string name="memory_template_placeholder_hint">Must contain placeholder [CROSS_SESSION_MEMORY] for automatic memory data orchestration</string>
+    <string name="memory_cancel">Cancel</string>
+    <string name="memory_save_template">Save Template</string>
+    <string name="memory_add">Add New</string>
+    <string name="memory_add_system_template">Add System Template</string>
+
+    <!-- ── ui_text_keys.json: Models ── -->
+    <string name="models_provider_library">API Provider Management Library</string>
+    <string name="models_add_provider">Add Provider</string>
+    <string name="models_empty_hint">No API providers configured yet.\nTap \"Add Provider\" in the top-right to get started!</string>
+    <string name="models_default_badge">Default Provider</string>
+    <string name="models_collapse">Collapse</string>
+    <string name="models_expand">Expand</string>
+    <string name="models_endpoint_label_colon">Endpoint: </string>
+    <string name="models_api_key_label_colon">API Key: </string>
+    <string name="models_custom_headers_label">Custom Headers: </string>
+    <string name="models_headers_count">%d</string>
+    <string name="models_set_default_title">Set as Default Provider</string>
+    <string name="models_set_default_desc">Use this API provider globally</string>
+    <string name="models_edit">Edit</string>
+    <string name="models_delete">Delete</string>
+    <string name="models_add_provider_config">Add Provider Config</string>
+    <string name="models_edit_provider_config">Edit Provider Config</string>
+    <string name="models_provider_id">Provider ID</string>
+    <string name="models_provider_id_hint">e.g. openai, deepseek, silicon-flow</string>
+    <string name="models_endpoint_label">OpenAI-compatible Endpoint</string>
+    <string name="models_endpoint_hint">e.g. https://api.openai.com/v1</string>
+    <string name="models_api_key_label">API Key</string>
+    <string name="models_hide_key">Hide Key</string>
+    <string name="models_show_key">Show Key</string>
+    <string name="models_custom_headers_title">Custom Headers:</string>
+    <string name="models_add">Add</string>
+    <string name="models_no_custom_headers">No custom headers</string>
+    <string name="models_header_name">Header Name</string>
+    <string name="models_header_value">Value</string>
+    <string name="models_auto_fetch">Auto-fetch available models:</string>
+    <string name="models_fetching">Fetching…</string>
+    <string name="models_fetch_button">One-click fetch available models from current Endpoint</string>
+    <string name="models_fetch_error">Fetch error: %s</string>
+    <string name="models_available_list_title">Available models (tap model name to select; tap badges below to manually toggle thinking/vision/tool capabilities):</string>
+    <string name="models_context_size_format">Context: %s</string>
+    <string name="models_thinking_badge_emoji">💭 Thinking/Reasoning</string>
+    <string name="models_vision_badge_emoji">👁️ Vision</string>
+    <string name="models_tool_badge_emoji">🛠️ Tool Calling</string>
+    <string name="models_cancel">Cancel</string>
+    <string name="models_save">Save</string>
+    <string name="models_back">Back</string>
+    <string name="models_select_provider_title">Select Provider</string>
+    <string name="models_select_model_title">Select Model</string>
+    <string name="models_close">Close</string>
+    <string name="models_default_short">Default</string>
+    <string name="models_no_saved_models">No saved model list for this Provider</string>
+    <string name="models_fetch_first">Please fetch models in \"Model Config\" first</string>
+    <string name="models_thinking_badge">💭 Thinking</string>
+    <string name="models_vision_badge">👁️ Vision</string>
+    <string name="models_tool_badge">🛠️ Tool</string>
+    <string name="models_selected">Selected</string>
+    <string name="models_confirm_select">Confirm Selection</string>
+    <string name="models_unknown_provider">Unknown Provider</string>
+    <string name="models_secondary_config">Secondary Model Config</string>
+    <string name="models_secondary_desc">For memory optimization analysis and session title generation</string>
+    <string name="models_add_provider_first">Please add a provider first</string>
+    <string name="models_current_secondary">Current secondary model</string>
+    <string name="models_secondary_none">Not selected (will use primary model)</string>
+    <string name="models_select">Select</string>
+    <string name="models_secondary_explanation">The secondary model runs in the background after each conversation, responsible for distilling memory entries and generating session titles. You can choose any model from any provider; a fast, low-cost small model is recommended.</string>
+
+    <!-- ── ui_text_keys.json: Workspace tools ── -->
+    <string name="workspace_tool_agent">Delegate Sub-agent</string>
+    <string name="workspace_tool_generic">Tool Call</string>
+    <string name="workspace_tool_args_hide">Hide Parameters</string>
+    <string name="workspace_tool_args_show">View Parameters</string>
+    <string name="workspace_tool_collapse">Collapse</string>
+    <string name="workspace_tool_expand">Expand Full Text</string>
+
+    <!-- ── ui_text_keys.json: Sidebar ── -->
+    <string name="sidebar_new_session_default">New Session</string>
+    <string name="sidebar_chat_sessions">Chats</string>
+    <string name="sidebar_no_sessions">No chats yet. Tap the top-right to create new</string>
+    <string name="sidebar_rename">Rename</string>
+    <string name="sidebar_delete">Delete</string>
+    <string name="sidebar_workspaces">Multi-agent Workspaces</string>
+    <string name="sidebar_no_workspace">Tap + to create a workspace and let multiple AIs collaborate</string>
+    <string name="dialog_delete_session_title">Delete Session</string>
+    <string name="dialog_delete_session_body">Are you sure you want to delete \"%s\"?\nAll message records in this session will be permanently deleted and cannot be recovered.</string>
+    <string name="sidebar_rename_session">Rename Session</string>
+    <string name="sidebar_session_name">Session Name</string>
+    <string name="sidebar_confirm">Confirm</string>
+    <string name="sidebar_cancel">Cancel</string>
+    <string name="dialog_delete_workspace_title">Delete Workspace</string>
+    <string name="dialog_delete_workspace_body">Are you sure you want to delete workspace \"%s\"?\nAll collaboration conversation records and instance metadata within this workspace will be permanently cascade-deleted and cannot be recovered.</string>
+    <string name="sidebar_title">OmniChat</string>
+    <string name="sidebar_subtitle">Multi-model · Long-term Memory · Multi-agent</string>
+    <string name="sidebar_new_session">New Session</string>
+    <string name="sidebar_not_set">No model configured</string>
+    <string name="sidebar_settings">Settings</string>
+    <string name="sidebar_reset_colors">Reset to Default Colors</string>
+
+    <!-- ── ui_text_keys.json: Workspace ── -->
+    <string name="workspace_panel_agents">Agent List</string>
+    <string name="workspace_panel_tasks">Task List</string>
+    <string name="workspace_task_blocked_by">Blocked by: %s</string>
+    <string name="workspace_task_status_pending">Pending</string>
+    <string name="workspace_task_status_in_progress">In Progress</string>
+    <string name="workspace_task_status_completed">Completed</string>
+    <string name="workspace_task_status_failed">Failed</string>
+    <string name="workspace_agent_status_idle">Idle</string>
+    <string name="workspace_agent_status_streaming">Streaming</string>
+    <string name="workspace_agent_status_tool">Using Tools</string>
+    <string name="workspace_agent_status_done">Done</string>
+    <string name="workspace_agent_status_error">Error</string>
+    <string name="workspace_setup_model_none">Select Model</string>
+    <string name="workspace_ready_title">Ready</string>
+    <string name="workspace_ready_hint">Describe your task, and the AI will automatically analyze and dispatch multiple agents to collaborate</string>
+    <string name="workspace_sandbox_label">Working Directory (Sandbox)</string>
+    <string name="workspace_sandbox_unset">Not set (unrestricted)</string>
+    <string name="workspace_sandbox_placeholder">e.g. /sdcard/OmniChat/workspace</string>
+    <string name="workspace_sandbox_clear">Clear</string>
+    <string name="workspace_setup_task_placeholder">e.g. Please help me write some Kotlin code and create sub-agents for code review…</string>
+    <string name="workspace_select_hint">Please select or create a workspace in the sidebar to start collaborating</string>
+    <string name="workspace_agents_count">%d Agents</string>
+    <string name="workspace_export_log">Export Log</string>
+    <string name="workspace_toggle_task_panel">Task Panel</string>
+    <string name="workspace_phase_planning">Planning</string>
+    <string name="workspace_phase_working">Agents Working</string>
+    <string name="workspace_phase_synthesizing">Synthesizing Results</string>
+    <string name="workspace_phase_awaiting">Awaiting</string>
+    <string name="workspace_status_completed">Completed</string>
+
+    <!-- ── Extra: ChatViewModel ── -->
+    <string name="default_session_title">Aesthetic Conversation</string>
+    <string name="default_session_title_display">Aesthetic Conversation</string>
+    <string name="error_no_default_provider">Error: No default provider set. Please add a Provider in \"Model Settings\" and set it as default.</string>
+    <string name="no_memories_recorded">None recorded</string>
+    <string name="ai_time_instruction">The current real time is %s. Please use this to answer all time-related questions (date, time, today, now, recent, etc.). Do not guess based on training data.</string>
+    <string name="error_tool_depth_exceeded">Tool call depth exceeded limit (%d), automatically stopped to prevent infinite loop.</string>
+    <string name="error_model_fetch_failed">Failed to fetch model list.</string>
+    <string name="default_assistant_name">Default Assistant</string>
+    <string name="new_session">New Session</string>
+
+    <!-- ── Extra: SettingsViewModel ── -->
+    <string name="export_success">Export successful</string>
+    <string name="export_failed">Export failed: %s</string>
+    <string name="import_file_unreadable">Cannot read file</string>
+    <string name="import_success">Import successful, processed %d records</string>
+    <string name="import_failed">Import failed: %s</string>
+    <string name="imported_scheme_name">Imported Scheme</string>
+
+    <!-- ── Extra: Compose hardcoded ── -->
+    <string name="sidebar_workspace_unlocked">Multi-agent workspace unlocked</string>
+    <string name="sidebar_no_model_selected">No model selected</string>
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_ago">%d min ago</string>
+    <string name="time_hours_ago">%d hr ago</string>
+    <string name="time_seconds_ago_short">%ds ago</string>
+    <string name="time_minutes_ago_short">%dm ago</string>
+    <string name="time_hours_ago_short">%dh ago</string>
+    <string name="time_days_ago_short">%dd ago</string>
+    <string name="preset_name_empty_error">Name cannot be empty</string>
+    <string name="workspace_model_default_format">%s (default)</string>
+    <string name="workspace_tool_calls_count">%d tool calls</string>
+
+    <!-- ── Extra: AgentRunner ── -->
+    <string name="agent_tool_iteration_limit">Maximum tool call iterations reached (%d), forcibly ending this conversation round.</string>
+    <string name="agent_consecutive_failures">Consecutive tool call failures %d times, forcibly ending this conversation round. Please check if tools are available or parameters are correct.</string>
+    <string name="agent_context_compacted">(Above conversation has been compacted, %d messages total. Below is a summary of key early information)</string>
+    <string name="role_system">[System]</string>
+    <string name="role_user">[User]</string>
+    <string name="role_assistant">[Assistant]</string>
+    <string name="role_tool_result">[Tool Result]</string>
+    <string name="agent_output_truncated">[Output truncated by system]</string>
+
+    <!-- ── Extra: AgentDefinition ── -->
+    <string name="agent_name_general">General-purpose Agent</string>
+    <string name="agent_when_to_use_general">General-purpose Agent for researching complex questions, searching code, and executing multi-step tasks.</string>
+    <string name="agent_name_explore">Explore Agent</string>
+    <string name="agent_when_to_use_explore">Fast codebase exploration Agent. Use when you need to find files by pattern, grep for symbols or keywords, or answer questions about where things are defined.</string>
+    <string name="agent_name_plan">Planning Agent</string>
+    <string name="agent_when_to_use_plan">Software architecture planning Agent, for designing implementation approaches. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.</string>
+    <string name="agent_name_verification">Verification Agent</string>
+    <string name="agent_when_to_use_verification">Agent for verifying implementation correctness. Call before reporting completion to ensure work meets requirements.</string>
+    <string name="agent_prompt_explore">You are a file search expert. You excel at comprehensively navigating and exploring codebases.\n\n=== CRITICAL: Read-only mode - File modification prohibited ===\nThis is a read-only exploration task. You are strictly prohibited from:\n- Creating new files (no Write, touch, or any file creation)\n- Modifying existing files (no Edit operations)\n- Deleting files (no rm or deletion)\n- Moving or copying files (no mv or cp)\n- Creating temporary files anywhere, including /tmp\n- Using redirect operators (&gt;, &gt;&gt;, |) or heredocs to write files\n- Running any command that changes system state\n\nYour role is limited to searching and analyzing existing code. You do not have access to file editing tools — attempting to edit files will fail.\n\nYour strengths:\n- Fast file finding using glob patterns\n- Code and text search using powerful regex patterns\n- Reading and analyzing file contents\n\nGuidelines:\n- Use Glob for broad file pattern matching\nn- Use Grep for file content search (regex)\n- Use Read when you know the specific file path\n- Bash only for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n- Never use Bash for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install or any file creation/modification\n- Adjust search strategy based on the thoroughness level specified by the caller\n- Output final report directly as a plain message — do not create files\n\nNote: You are a fast agent and should return output as quickly as possible. To achieve this:\n- Use available tools efficiently: smart search for files and implementations\n- Initiate multiple grep and file read calls in parallel when possible\n\nComplete the user\'s search request efficiently and report findings clearly.</string>
+    <string name="agent_prompt_plan">You are a software architecture and planning expert. Your role is to explore the codebase and design implementation plans.\n\n=== CRITICAL: Read-only mode - File modification prohibited ===\nThis is a read-only planning task. You are strictly prohibited from:\n- Creating new files (no Write, touch, or any file creation)\n- Modifying existing files (no Edit operations)\n- Deleting files (no rm or deletion)\n- Moving or copying files (no mv or cp)\n- Creating temporary files anywhere, including /tmp\n- Using redirect operators (&gt;, &gt;&gt;, |) or heredocs to write files\n- Running any command that changes system state\n\nYour role is limited to exploring the codebase and designing implementation plans. You do not have access to file editing tools — attempting to edit files will fail.\n\nYou will receive a set of requirements along with an optional design perspective.\n\n## Your Process\n\n1. **Understand Requirements**: Focus on the provided requirements, applying the specified perspective throughout the design process.\n\n2. **Comprehensive Exploration**:\n   - Read any files provided in the initial prompt\n   - Use Glob, Grep, and Read to find existing patterns and conventions\n   - Understand the current architecture\n   - Identify similar features as reference\n   - Trace related code paths\n   - Bash only for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n   - Never use Bash for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install or any file creation/modification\n\n3. **Design Solution**:\n   - Create implementation approach based on the specified perspective\n   - Consider trade-offs and architectural decisions\n   - Follow existing patterns where appropriate\n\n4. **Detailed Plan**:\n   - Provide step-by-step implementation strategy\n   - Identify dependencies and sequencing\n   - Anticipate potential challenges\n\n## Required Output\n\nEnd your response with:\n\n### Implementation Key Files\nList 3-5 files most critical to implementing this plan:\n- path/to/file1.kt\n- path/to/file2.kt\n- path/to/file3.kt\n\nRemember: You may only explore and plan. You cannot and are not allowed to write, edit, or modify any files. You do not have access to file editing tools.</string>
+    <string name="agent_prompt_verification">You are a verification expert. Your task is not to confirm the implementation works — it is to try to break it.\n\nYou have two documented failure modes. First, verification avoidance: when faced with a check, you find reasons not to run it — you read the code, narrate what you would test, write \"PASS\" and move on. Second, seduced by the first 80%: you see a polished UI or passing test suite and tend to pass it, not noticing that half the buttons are unresponsive, state disappears on refresh, or the backend crashes on bad input. The first 80% is the easy part. Your entire value is finding the last 20%. The caller may spot-check your commands by re-running them — if a PASS step has no command output, or the output doesn\'t match a re-run, your report will be rejected.\n\n=== CRITICAL: Do Not Modify Project ===\nYou are strictly prohibited from:\n- Creating, modifying, or deleting any files in the project directory\n- Installing dependencies or packages\n- Running git write operations (add, commit, push)\n\nYou may write temporary test scripts via Bash redirects in a temporary directory (/tmp or $TMPDIR) — when inline commands are not enough, such as multi-step race harnesses or Playwright tests. Clean up afterward.\n\nCheck what tools you actually have available rather than assuming from this prompt. Depending on the session, you may have browser automation (mcp__claude-in-chrome__*, mcp__playwright__*), WebFetch, or other MCP tools — do not skip capabilities you didn\'t think to check.\n\n=== What You Will Receive ===\nYou will receive: original task description, changed files, approach taken, and optionally a plan file path.\n\n=== Verification Strategy ===\nAdjust strategy based on change type:\n\n**Frontend changes**: Start dev server → check for browser automation tools (mcp__claude-in-chrome__*, mcp__playwright__*) and use them to navigate, screenshot, click, read console → don\'t say \"need real browser\" without trying → curl page subresource samples (image optimization URLs like /_next/image, same-origin API routes, static assets) because HTML can return 200 while everything it references fails → run frontend tests\n**Backend/API changes**: Start server → curl/fetch endpoints → verify response shape matches expected (not just status code) → test error handling → check edge cases\n**CLI/Script changes**: Run with representative inputs → verify stdout/stderr/exit codes → test edge inputs (empty, malformed, boundary) → verify --help / usage output is accurate\n**Infrastructure/Config changes**: Verify syntax → dry-run where possible (terraform plan, kubectl apply --dry-run=server, docker build, nginx -t) → check env vars / secrets are actually referenced, not just defined\n**Library/Package changes**: Build → full test suite → import library from new context and exercise public API as a consumer → verify exported types match README/docs examples\n**Bug fixes**: Reproduce original bug → verify fix → run regression tests → check related feature side effects\n**Data/ML pipelines**: Run with sample inputs → verify output shape/schema/types → test empty input, single row, NaN/null handling → check silent data loss (rows in vs out)\n**Database migrations**: Run migration up → verify schema matches intent → run migration down (reversibility) → test with existing data, not just empty DB\n**Refactoring (no behavior change)**: Existing test suite must pass unchanged → diff public API surface (no new/deleted exports) → spot-check observable behavior is identical (same input → same output)\n**Other change types**: The pattern is always the same — (a) figure out how to directly execute this change (run/invoke/deploy it), (b) check output matches expectation, (c) try to break it with inputs/conditions the implementer didn\'t test. The above strategies are instances of common cases.\n\n=== Required Steps (Universal Baseline) ===\n1. Read the project\'s CLAUDE.md / README for build/test commands and conventions. Check package.json / Makefile / pyproject.toml for script names. If the implementer points to a plan or spec file, read it — this is the success criteria.\n2. Run the build (if applicable). A broken build is an automatic FAIL.\n3. Run the project\'s test suite (if any). Failing tests are an automatic FAIL.\n4. Run linters/type-checkers (if configured) (eslint, tsc, mypy, etc.).\n5. Check for related code regressions.\n\nThen apply the type-specific strategies above. Adjust rigor based on risk: a one-off script doesn\'t need race condition probing; production payment code needs everything.\n\nTest suite results are context, not evidence. Run the suite, record pass/fail, then proceed to your real verification. The implementer is an LLM — its tests may heavily mock, loop-assert, or cover happy paths only, proving nothing about the system actually working end-to-end.\n\n=== Know Your Own Rationalizations ===\nYou will feel the urge to skip checks. These are the excuses you make — recognize them and do the opposite:\n- \"Code reads correctly\" — Reading is not verification. Run it.\n- \"Implementer\'s tests pass\" — The implementer is an LLM. Verify independently.\n- \"This should be fine\" — \"Should\" is not verification. Run it.\n- \"Let me check the code by starting the server\" — No. Start the server and hit the endpoint.\n- \"I don\'t have a browser\" — Did you actually check for mcp__claude-in-chrome__* / mcp__playwright__*? If they exist, use them. If MCP tools fail, troubleshoot (server running? selector correct?). There are fallbacks so you don\'t fabricate your own \"can\'t do it\" story.\n- \"This will take too long\" — That\'s not your call.\nIf you find yourself writing explanations instead of commands, stop. Run commands.\n\n=== Adversarial Probing (Adapt to Change Type) ===\nFunctional testing confirms the happy path. Also try to break it:\n- **Concurrency** (server/API): Parallel requests to create-if-not-exists paths — duplicate sessions? Lost writes?\n- **Edge values**: 0, -1, empty string, very long string, unicode, MAX_INT\n- **Idempotency**: Same mutation request twice — creates duplicates? Error? Correct no-op?\n- **Orphan operations**: Delete/reference non-existent IDs\nThese are seeds, not a checklist — pick those appropriate to your verification.\n\n=== Before PASS ===\nYour report must include at least one adversarial probe you ran (concurrency, boundary, idempotency, orphan operation, or similar) and its result — even if the result is \"handled correctly.\" If all your checks are \"returned 200\" or \"test suite passed,\" you confirmed the happy path, not correctness. Go back and try to break something.\n\n=== Before FAIL ===\nYou found something that looks broken. Before reporting FAIL, check you haven\'t missed that it\'s actually fine:\n- **Handled**: Is there defensive code elsewhere (upstream validation, downstream error recovery) that prevents this issue?\n- **Intentional**: Does the CLAUDE.md / comments / commit message explain this is deliberate?\n- **Not actionable**: Is this a real limitation but it can\'t be fixed without breaking external contracts (stable API, protocol spec, backward compat)? If so, note as observation, not FAIL — a \"bug\" that can\'t be fixed is not actionable.\nDon\'t use these excuses to ignore real problems — but also don\'t FAIL on intentional behavior.\n\n=== Output Format (Required) ===\nEvery check must follow this structure. A check without a Command run block is not a PASS — it is a skip.\n\n### Check: [What you verified]\n**Command run:**\n  [Exact command you executed]\n**Observed output:**\n  [Actual terminal output — copy-paste, not paraphrased. Truncate if very long but preserve relevant portions.]\n**Result: PASS** (or FAIL — with Expected vs Actual)\n\nEnd with the following line (parsed by caller):\n\nVERDICT: PASS\nor\nVERDICT: FAIL\nor\nVERDICT: PARTIAL\n\nPARTIAL is only for environmental limitations (no test framework, tools unavailable, server won\'t start) — not \"I\'m not sure if this is a bug.\" If you can run the check, you must decide PASS or FAIL.\n\nUse the literal string `VERDICT: ` followed by one of `PASS`, `FAIL`, or `PARTIAL`. No markdown bold, no punctuation, no variants.\n- **FAIL**: Include what failed, exact error output, steps to reproduce.\n- **PARTIAL**: What was verified, what couldn\'t be verified and why (missing tools/env), what the implementer should know.</string>
+    <string name="agent_verification_critical">CRITICAL: This is a verification task. You must NOT edit, write, or create files in the project directory (tmp allowed for temporary test scripts). You must end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.</string>
+
+    <!-- ── Extra: DB entity defaults ── -->
+    <string name="default_workspace_title">New Workspace</string>
+
+    <!-- ── BuiltinToolHandler: Core ── -->
+    <string name="tool_unknown_builtin">Unknown built-in tool: %s</string>
+    <string name="tool_ui_reset">UI has been reset to default settings.</string>
+    <string name="tool_time_info">Current time information</string>
+    <string name="tool_time_local">• Local time: %s</string>
+    <string name="tool_time_zone">• Time zone: %s (UTC%s)</string>
+    <string name="tool_time_iso">• ISO 8601: %s</string>
+    <string name="tool_time_unix">• Unix timestamp: %s</string>
+
+    <!-- ── BuiltinToolHandler: UI ── -->
+    <string name="tool_ui_no_changes">No field changes detected (input may be empty or all invalid).</string>
+    <string name="tool_ui_applied">UI settings applied. Updated %d items: %s</string>
+    <string name="tool_ui_capability_desc">UI theme capability list. Use adjust_ui to pass the fields you want to change; unpassed fields retain current values. Pass resetToDefault=true to restore all settings.</string>
+
+    <!-- ── BuiltinToolHandler: Color Scheme ── -->
+    <string name="tool_color_action_invalid">Parameter \'action\' must be one of save, list, apply, or delete.</string>
+    <string name="tool_color_save_name_empty">Save failed: name cannot be empty.</string>
+    <string name="tool_color_save_limit">Save failed: maximum of %d presets reached.\n\nCurrently saved:\n%s\n\nPlease use action=\"delete\" to remove a preset first.</string>
+    <string name="tool_color_saved">Color scheme \"%s\" saved.\nschemeId: %s\nCurrently saved %d/%d presets.</string>
+    <string name="tool_color_list_empty">No saved color schemes. You can first use adjust_ui to adjust colors, then use color_scheme(action=\"save\") to save.</string>
+    <string name="tool_color_list_header">Saved color schemes (%d/%d):</string>
+    <string name="tool_color_list_desc">Description: %s</string>
+    <string name="tool_color_list_saved_at">Saved at: %s</string>
+    <string name="tool_color_list_primary">Primary: %s  Background: %s</string>
+    <string name="tool_color_list_success">Success: %s  Corner radius: %ddp  Spacing: %sx</string>
+    <string name="tool_color_apply_no_id">Apply failed: schemeId cannot be empty. Please use action=\"list\" to get available schemeIds.</string>
+    <string name="tool_color_apply_not_found">Apply failed: schemeId=%s not found. Please use action=\"list\" to confirm available schemeIds.</string>
+    <string name="tool_color_applied">Color scheme \"%s\" applied. Changes take effect immediately.\nDescription: %s</string>
+    <string name="tool_color_delete_no_id">Delete failed: schemeId cannot be empty.</string>
+    <string name="tool_color_delete_not_found">Delete failed: schemeId=%s not found.</string>
+    <string name="tool_color_deleted">Color scheme \"%s\" deleted. Remaining %d/%d presets.</string>
+
+    <!-- ── BuiltinToolHandler: Memory ── -->
+    <string name="tool_memory_query_empty">Search failed: query cannot be empty.</string>
+    <string name="tool_memory_search_results">Memory library search results (keyword: \"%s\"%s, %d total memories, %d matched):</string>
+    <string name="tool_memory_no_results">No memories found matching the keyword.</string>
+    <string name="tool_memory_no_results_hint">Tip: Try different keywords, or browse all memories (%d total in the library).</string>
+    <string name="tool_memory_pinned_tag"> [Pinned]</string>
+    <string name="tool_memory_entry_format">%d. [id=%d, confidence=%.2f, relevance=%.2f%s%s]</string>
+
+    <!-- ── BuiltinToolHandler: UI Text ── -->
+    <string name="tool_ui_text_header">=== App Adjustable/Translatable UI Text List ===</string>
+    <string name="tool_ui_text_filter">Filter keyword: \"%s\"</string>
+    <string name="tool_ui_text_hint">Tip: Currently returning all text. You can provide a query parameter when calling list_ui_texts for fuzzy matching.</string>
+    <string name="tool_ui_text_format">Format: [Key] = \"Default\" -> If there is an override, shows [Current override: \"New value\"]</string>
+    <string name="tool_ui_text_stats_header">== Statistics ==</string>
+    <string name="tool_ui_text_stats_filtered">Matching text: %d / %d items</string>
+    <string name="tool_ui_text_stats_all">All adjustable text: %d items</string>
+    <string name="tool_ui_text_tips_header">== Tips ==</string>
+    <string name="tool_ui_text_tip_modify">• Modify/translate keys: set_ui_texts({\"updates\": {\"key1\": \"new1\", \"key2\": \"new2\"}})</string>
+    <string name="tool_ui_text_tip_restore">• Restore keys to default: set_ui_texts({\"delete\": [\"key1\", \"key2\"]})</string>
+    <string name="tool_ui_text_tip_reset_all">• Reset all at once: set_ui_texts({\"resetAll\": true})</string>
+    <string name="tool_ui_text_reset_all">All UI text labels reset to default Chinese.</string>
+    <string name="tool_ui_text_call_failed">Call failed: must provide updates (key-value pairs to set) or delete (key list to remove), or pass resetAll=true to reset all.</string>
+    <string name="tool_ui_text_updated">UI text updated. Changes take effect immediately.</string>
+    <string name="tool_ui_text_set_count">Set %d items:</string>
+    <string name="tool_ui_text_restore_count">Restored to default (removed overrides) %d items: %s</string>
+    <string name="tool_ui_text_no_changes">No changes detected (input may be empty).</string>
+    <string name="tool_ui_text_override_count">Currently %d overridden keys.</string>
+
+    <!-- ── BuiltinToolHandler: MCP Tool Groups ── -->
+    <string name="tool_group_header">=== Built-in MCP Tool Group Status ===</string>
+    <string name="tool_group_enabled">✅ Enabled</string>
+    <string name="tool_group_disabled">❌ Disabled</string>
+    <string name="tool_group_hint">Tip: To enable a feature, call configure_mcp_tool_groups(enable=[\"group_id\"])</string>
+    <string name="tool_group_no_change">No changes executed (groups already in target state or parameters empty).</string>
+    <string name="tool_group_updated">✅ MCP tool group configuration updated.</string>
+    <string name="tool_group_enabled_list">Enabled: %s</string>
+    <string name="tool_group_disabled_list">Disabled: %s</string>
+    <string name="tool_group_current">Currently enabled groups: %s</string>
+    <string name="tool_group_desc_core">Core tools: basic time, questions, runtime management (always on)</string>
+    <string name="tool_group_desc_memory">Long-term memory: search historical preferences and facts (default on)</string>
+    <string name="tool_group_desc_ui_appearance">UI Appearance: colors, corner radius, spacing, fonts (default on)</string>
+    <string name="tool_group_desc_efficiency">Efficiency reminders: create and manage timers (default on)</string>
+    <string name="tool_group_desc_ui_text">UI Text: modify all in-app text labels (default off)</string>
+    <string name="tool_group_desc_files">File Management: read/write external storage files (default off)</string>
+    <string name="tool_group_desc_documents">Document Creation: generate PDF/Excel/Word/PPT (default off)</string>
+
+    <!-- ── BuiltinToolHandler: Tool Display Mode ── -->
+    <string name="tool_display_silent_on">Silent mode enabled. Subsequent tool calls will be displayed in compact form without expanding detail cards. To restore, call set_tool_display_mode(silent=false).</string>
+    <string name="tool_display_silent_off">Silent mode disabled. Subsequent tool calls will be displayed as normal detail cards.</string>
+
+    <!-- ── BuiltinToolHandler: File Operations ── -->
+    <string name="tool_file_path_empty">Parameter \'path\' cannot be empty.</string>
+    <string name="tool_file_path_invalid">Path invalid or permission denied: %s</string>
+    <string name="tool_file_not_exists">File does not exist: %s</string>
+    <string name="tool_file_not_a_file">Path does not point to a file: %s</string>
+    <string name="tool_file_not_a_dir">Path does not point to a directory: %s</string>
+    <string name="tool_file_dir_not_exists">Directory does not exist: %s</string>
+    <string name="tool_file_written">File written: %s\nSize: %d bytes</string>
+    <string name="tool_file_write_failed">Failed to write file: %s</string>
+    <string name="tool_file_appended">Content appended to: %s\nCurrent file size: %d bytes</string>
+    <string name="tool_file_append_failed">Failed to append file: %s</string>
+    <string name="tool_file_deleted">Deleted: %s</string>
+    <string name="tool_file_delete_failed">Delete failed, directory may not be empty (pass recursive=true for recursive deletion).</string>
+    <string name="tool_file_delete_error">Delete failed: %s</string>
+    <string name="tool_file_read_failed">Failed to read file: %s</string>
+    <string name="tool_file_truncated">[File truncated, showing first %d bytes, full size: %d bytes]</string>
+    <string name="tool_file_content_truncated">[Content truncated, exceeds %d byte limit]</string>
+    <string name="tool_file_empty_dir">(empty directory)</string>
+    <string name="tool_file_search_at_least_one">Please provide at least one of namePattern or contentQuery.</string>
+    <string name="tool_file_search_invalid_regex">Invalid regular expression: %s</string>
+    <string name="tool_file_source_path_empty">Parameter \'sourcePath\' cannot be empty.</string>
+    <string name="tool_file_dest_path_empty">Parameter \'destinationPath\' cannot be empty.</string>
+    <string name="tool_file_source_not_exists">Source path does not exist: %s</string>
+    <string name="tool_file_dest_exists">Destination path already exists: %s (pass overwrite=true to overwrite).</string>
+    <string name="tool_file_moved">Moved:\n  From: %s\n  To: %s</string>
+    <string name="tool_file_moved_copy">Moved (copy+delete):\n  From: %s\n  To: %s</string>
+    <string name="tool_file_move_failed">Move failed: %s</string>
+    <string name="tool_file_copied">Copied:\n  From: %s\n  To: %s</string>
+    <string name="tool_file_copy_failed">Copy failed: %s</string>
+    <string name="tool_file_dir_exists">Directory already exists: %s</string>
+    <string name="tool_file_dir_created">Directory created: %s</string>
+    <string name="tool_file_dir_create_failed">Failed to create directory: %s</string>
+
+    <!-- ── BuiltinToolHandler: Document Creation ── -->
+    <string name="tool_doc_format_invalid">Parameter \'format\' must be one of pdf, xlsx, docx, or pptx.</string>
+    <string name="tool_doc_created">Document created: %s\nFormat: %s\nSize: %d bytes</string>
+    <string name="tool_doc_create_failed">Failed to create document: %s</string>
+    <string name="tool_doc_pptx_table_fallback">[Table data (table rendering not directly supported)]:</string>
+
+    <!-- ── BuiltinToolHandler: Ask User ── -->
+    <string name="tool_ask_user_question_empty">Parameter \'question\' cannot be empty.</string>
+
+    <!-- ── BuiltinToolHandler: Timer ── -->
+    <string name="tool_timer_delay_min">Parameter \'delay_seconds\' must be ≥ 1.</string>
+    <string name="tool_timer_repeat_negative">Parameter \'repeat_interval_seconds\' cannot be negative.</string>
+    <string name="tool_timer_repeat_min">Parameter \'repeat_interval_seconds\' if provided must be ≥ 1.</string>
+    <string name="tool_timer_message_empty">Parameter \'message\' cannot be empty.</string>
+    <string name="tool_timer_no_session">Cannot create timer: no active chat session.</string>
+    <string name="tool_timer_label">AI Timer Reminder</string>
+    <string name="tool_timer_created">Timer created!\n\n• Timer ID: `%s`\n• Triggers in: %s%s\n• Reminder content: %s\n\nWhen the time arrives, a reminder message will be inserted into the chat and a system notification will be sent.\nThe timer remains valid even after app close or device restart.\nTo cancel, call cancel_timer with timer_id: \"%s\"</string>
+    <string name="tool_timer_repeat_info">\n• Repeat interval: every %s</string>
+    <string name="tool_timer_cancel_id_empty">Parameter \'timer_id\' cannot be empty. Please call list_timers first to see current pending timers.</string>
+    <string name="tool_timer_cancelled">Timer `%s` cancelled successfully.</string>
+    <string name="tool_timer_cancel_not_found">Cannot find timer with timer_id=\"%s\". It may have already been triggered or does not exist.\n\nCall list_timers to see all currently pending timers.</string>
+    <string name="tool_timer_list_empty">No pending timers.</string>
+    <string name="tool_timer_list_header">Pending timers (%d total):</string>
+    <string name="tool_timer_list_entry_label">   Label: %s</string>
+    <string name="tool_timer_list_entry_message">   Content: %s</string>
+    <string name="tool_timer_list_entry_remaining">   Remaining: %s (triggers at %s)</string>
+
+    <!-- ── BuiltinToolHandler: Search ── -->
+    <string name="tool_search_scope">Search scope: %s</string>
+    <string name="tool_search_name_pattern">Filename pattern: %s</string>
+    <string name="tool_search_content_query">Content keyword: %s%s</string>
+    <string name="tool_search_regex_tag"> (regex)</string>
+    <string name="tool_search_results_count">Found %d results%s:</string>
+    <string name="tool_search_limit_reached"> (limit reached: %d)</string>
+
+    <!-- ── BuiltinToolHandler: File Info ── -->
+    <string name="tool_fileinfo_type_dir">Directory</string>
+    <string name="tool_fileinfo_type_file">File</string>
+    <string name="tool_fileinfo_type">Type: %s</string>
+    <string name="tool_fileinfo_size">Size: %d bytes (%.2f KB)</string>
+    <string name="tool_fileinfo_mime">MIME type: %s</string>
+    <string name="tool_fileinfo_child_count">Child count: %d</string>
+    <string name="tool_fileinfo_last_modified">Last modified: %s</string>
+    <string name="tool_fileinfo_readable">Readable: %s</string>
+    <string name="tool_fileinfo_writable">Writable: %s</string>
+    <string name="tool_fileinfo_path">Path: %s</string>
+    <string name="tool_fileinfo_dir_label">Directory: %s</string>
+    <string name="tool_fileinfo_recursive">(Recursive, max depth %d)</string>
+    <string name="tool_fileinfo_yes">Yes</string>
+    <string name="tool_fileinfo_no">No</string>
+
+    <!-- ── BuiltinToolHandler: Additional Keys ── -->
+    <string name="tool_ui_applied_no_changes">UI settings applied. No field changes detected.</string>
+    <string name="tool_duration_hours">%d hours </string>
+    <string name="tool_duration_minutes">%d minutes </string>
+    <string name="tool_duration_seconds">%d seconds</string>
+    <string name="tool_doc_pptx_table_fallback_android">[Table data (table rendering not directly supported)]:</string>
+    <string name="tool_timer_type_repeat">🔁 Repeat (every %s)</string>
+    <string name="tool_timer_type_once">⏳ One-time</string>
+    <string name="tool_ui_text_key_label">• Key: %s</string>
+    <string name="tool_ui_text_default">  Default: \"%s\"</string>
+    <string name="tool_ui_text_override">  Currently overridden to: \"%s\"</string>
+
+    <!-- ── ToolCallComponents: formatToolCallSummary ── -->
+    <string name="tool_call_root_directory">root directory</string>
+    <string name="tool_call_browsed_dir">Browsed directory: %s</string>
+    <string name="tool_call_read_file">Read file: %s</string>
+    <string name="tool_call_wrote_file">Wrote file: %s</string>
+    <string name="tool_call_appended_file">Appended file: %s</string>
+    <string name="tool_call_deleted_file">Deleted file/directory: %s</string>
+    <string name="tool_call_file_info">Viewed path info: %s</string>
+    <string name="tool_call_filename_match">Filename match: %s</string>
+    <string name="tool_call_content_match">Content match: %s</string>
+    <string name="tool_call_searched_dir">Searched directory %s</string>
+    <string name="tool_call_searched_memory">Searched memory: \"%s\"</string>
+    <string name="tool_call_adjusted_ui">Modified UI theme configuration</string>
+    <string name="tool_call_saved_scheme">Saved color scheme: %s</string>
+    <string name="tool_call_applied_scheme">Applied color scheme: %s</string>
+    <string name="tool_call_deleted_scheme">Deleted color scheme: %s</string>
+    <string name="tool_call_listed_schemes">Listed saved color schemes</string>
+    <string name="tool_call_scheme_action">Color scheme operation</string>
+    <string name="tool_call_delegated_agent">Delegated sub-agent: %s</string>
+    <string name="tool_call_sent_message">Sent message to %s</string>
+    <string name="tool_call_created_task">Created task: %s</string>
+    <string name="tool_call_updated_task">Updated task status: %s</string>
+    <string name="tool_call_got_time">Retrieved current system time</string>
+    <string name="tool_call_got_ui_caps">Retrieved UI configuration parameters</string>
+    <string name="tool_call_reset_ui">Reset UI to default</string>
+    <string name="tool_call_updated_texts">Updated UI custom text</string>
+    <string name="tool_call_listed_texts">Queried UI text labels</string>
+    <string name="tool_call_path_action">Performed operation on path \"%s\"</string>
+    <string name="tool_call_queried">Searched: \"%s\"</string>
+    <string name="tool_call_visited_url">Visited URL: %s</string>
+    <string name="tool_call_executed_cmd">Executed system command: %s</string>
+    <string name="tool_call_params">Parameters: %s</string>
+    <string name="tool_call_executed">Executed tool</string>
+    <string name="tool_call_called_tool">Called tool %1$s: %2$s</string>
+    <string name="tool_call_tool_name">Called tool %s</string>
+    <string name="tool_call_tool_id">Tool ID: %s</string>
+    <string name="tool_call_collapse_args">Collapse input parameters</string>
+    <string name="tool_call_expand_args">View input parameters</string>
+    <string name="tool_call_collapse_result">Collapse result</string>
+    <string name="tool_call_expand_result">View result</string>
+
+    <!-- ── WorkspaceViewModel: Log Export & Status ── -->
+    <string name="ws_create_failed">Failed to create workspace, please retry</string>
+    <string name="ws_delete_failed">Failed to delete workspace, please retry</string>
+    <string name="ws_log_export_success">Log exported successfully</string>
+    <string name="ws_log_export_failed">Export failed: %s</string>
+    <string name="ws_status_running">Running</string>
+    <string name="ws_status_completed">Completed</string>
+    <string name="ws_active">active</string>
+    <string name="ws_exec_multi_agent">Executing multi-agent collaboration: %s…</string>
+    <string name="ws_start_failed">Failed to start workspace execution, please retry</string>
+    <string name="ws_task_completed">Task completed: %s</string>
+    <string name="ws_log_header">OmniChat Workspace Log</string>
+    <string name="ws_log_info">Workspace Info</string>
+    <string name="ws_log_export_time">Export time: %s</string>
+    <string name="ws_log_session_id">Session ID: %s</string>
+    <string name="ws_log_title">Title: %s</string>
+    <string name="ws_log_status">Status: %s</string>
+    <string name="ws_log_created_at">Created at: %s</string>
+    <string name="ws_log_team_status">Team Status</string>
+    <string name="ws_log_team_name">Team name: %s</string>
+    <string name="ws_log_agent_count">Agent count: %d</string>
+    <string name="ws_log_messages_count">%d messages</string>
+    <string name="ws_log_created_at_time">Created at: %s</string>
+    <string name="ws_log_orchestrator_history">Orchestrator conversation history (%d messages)</string>
+    <string name="ws_log_end">End of log</string>
+    <string name="ws_log_intervention"> [User Intervention]</string>
+    <string name="ws_log_truncated">\n    … (truncated, %d characters total)</string>
+
+    <!-- ── ExportImportScreen ── -->
+    <string name="processing">Processing…</string>
+
+    <!-- ── McpRuntimeManager ── -->
+    <string name="builtin_server_name">Built-in Tools</string>
+    <string name="ws_no_model_configs">No model configs available</string>
+
+    <!-- ── BuiltinToolHandler ── -->
+    <string name="tool_time_format_pattern">MMMM d, yyyy HH:mm:ss (EEEE)</string>
+    <string name="tool_memory_tag_filter">, tag filter: %s</string>
+
+    <!-- ── AlarmReceiver ── -->
+    <string name="alarm_notification_description">Scheduled reminder created by AI assistant</string>
+    <string name="alarm_timer_reminder">⏰ **Reminder**\n\n%s</string>
+    <string name="tool_search_match_lines">  (matched lines: %s)</string>
 </resources>

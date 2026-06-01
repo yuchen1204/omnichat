@@ -60,7 +60,8 @@ import com.example.ui.components.toUIModel
 import com.example.ui.theme.LocalChatFontScale
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.ui.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -190,7 +191,7 @@ fun ChatView(viewModel: ChatViewModel) {
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
     // 当前实际使用的 Provider 和模型
-    val activeProviderName = defaultProvider?.name ?: uiText("chat.not_set", "未设置")
+    val activeProviderName = defaultProvider?.name ?: stringResource(R.string.chat_not_set)
     val activeModelId = defaultProvider?.selectedModelId ?: ""
 
     Column(
@@ -210,13 +211,13 @@ fun ChatView(viewModel: ChatViewModel) {
                 if (defaultProvider == null) {
                     Icon(
                         imageVector = Icons.Default.Info,
-                        contentDescription = uiText("chat.4c423b81", "提醒"),
+                        contentDescription = stringResource(R.string.chat_reminder),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = uiText("chat.no_provider.warning", "需设置全局自动提供商才能正常会话！"),
+                        text = stringResource(R.string.chat_no_provider_warning),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
@@ -224,13 +225,13 @@ fun ChatView(viewModel: ChatViewModel) {
                 } else {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = uiText("chat.b489ee1d", "记忆"),
+                        contentDescription = stringResource(R.string.chat_memory),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = uiText("chat.memory.injected", "已动态融合共 %d 条长效学习偏好记忆").format(memories.size),
+                        text = stringResource(R.string.chat_memory_injected, memories.size),
                         fontSize = (11 * fs).sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -266,8 +267,8 @@ fun ChatView(viewModel: ChatViewModel) {
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = uiText("chat.mcp_loading", "MCP 工具加载中：%s").format(
-                        startingServers.joinToString(uiText("chat.separator", "、")) { it.server.name }
+                    text = stringResource(R.string.chat_mcp_loading,
+                        startingServers.joinToString(stringResource(R.string.chat_separator)) { it.server.name }
                     ),
                     fontSize = (11 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -411,7 +412,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = uiText("chat.scroll_to_bottom", "回到最新"),
+                            contentDescription = stringResource(R.string.chat_scroll_to_bottom),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -458,7 +459,7 @@ fun ChatView(viewModel: ChatViewModel) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = uiText("chat.current.model", "当前模型: %s  ·  %s").format(activeModelId, activeProviderName),
+                                text = stringResource(R.string.chat_current_model, activeModelId, activeProviderName),
                                 fontSize = (11 * fs).sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.weight(1f),
@@ -501,7 +502,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = uiText("chat.57841df8", "切换模型"),
+                                        text = stringResource(R.string.chat_switch_model),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -533,7 +534,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = uiText("chat.select_image", "选择图片"),
+                                        text = stringResource(R.string.chat_select_image),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -567,7 +568,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = uiText("chat.take_photo", "拍照"),
+                                        text = stringResource(R.string.chat_take_photo),
                                         fontSize = (12 * fs).sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
@@ -604,7 +605,7 @@ fun ChatView(viewModel: ChatViewModel) {
                             if (selectedImagePath != null) {
                                 AsyncImage(
                                     model = selectedImageUri ?: selectedImagePath,
-                                    contentDescription = uiText("chat.selected_image", "已选图片"),
+                                    contentDescription = stringResource(R.string.chat_selected_image),
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
@@ -614,7 +615,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = uiText("chat.image_attached", "已添加图片"),
+                            text = stringResource(R.string.chat_image_attached),
                             fontSize = (12 * fs).sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -631,7 +632,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = uiText("chat.remove_image", "移除图片"),
+                                contentDescription = stringResource(R.string.chat_remove_image),
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -660,7 +661,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", "收起") else uiText("chat.toolbar.expand", "展开工具"),
+                            contentDescription = if (showToolbar) stringResource(R.string.chat_toolbar_collapse) else stringResource(R.string.chat_toolbar_expand),
                             tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -675,9 +676,9 @@ fun ChatView(viewModel: ChatViewModel) {
                         onValueChange = { textInput = it },
                         placeholder = {
                             val hint = if (selectedImagePath != null) {
-                                uiText("chat.input.hint_with_image", "添加描述（可选）...")
+                                stringResource(R.string.chat_input_hint_with_image)
                             } else {
-                                uiText("chat.input.hint", "输入消息...")
+                                stringResource(R.string.chat_input_hint)
                             }
                             Text(hint, fontSize = (15 * fs).sp)
                         },
@@ -739,7 +740,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
-                            contentDescription = uiText("chat.send.contentDescription", "发送"),
+                            contentDescription = stringResource(R.string.chat_send_contentDescription),
                             tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -781,7 +782,7 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
     ) {
         Icon(
             imageVector = Icons.Default.Check,
-            contentDescription = uiText("chat.17bbe99c", "AI 准备就绪"),
+            contentDescription = stringResource(R.string.chat_ai_ready),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .size(64.dp)
@@ -793,7 +794,7 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = uiText("chat.1fda5871", "欢迎使用长效记忆 AI 助手"),
+            text = stringResource(R.string.chat_welcome_title),
             fontSize = (18 * fs).sp,
             fontWeight = FontWeight.Bold,
             fontFamily = resolvedFontFamily,
@@ -801,7 +802,7 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = uiText("chat.aa2781f8", "本应用特别支持双模型架构！一个主模型专门负责对话聊天，而一个副模型专门在每次回答后在后台分析提炼对话事实信息，跨越不同对话会话、重启不丢失！"),
+            text = stringResource(R.string.chat_welcome_desc),
             fontSize = (13 * fs).sp,
             fontFamily = resolvedFontFamily,
             textAlign = TextAlign.Center,
@@ -815,17 +816,17 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(uiText("chat.4d810ed0", "状态一览:"), fontWeight = FontWeight.Bold, fontSize = (13 * fs).sp, fontFamily = resolvedFontFamily)
+                Text(stringResource(R.string.chat_status_overview), fontWeight = FontWeight.Bold, fontSize = (13 * fs).sp, fontFamily = resolvedFontFamily)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = if (config != null) uiText("chat.status.provider_ok", "✓ 当前提供商: %s").format(config.name) else uiText("chat.status.provider_empty", "✗ 未设置 Provider"),
+                    text = if (config != null) stringResource(R.string.chat_status_provider_ok, config.name) else stringResource(R.string.chat_status_provider_empty),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily,
                     color = if (config != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = uiText("chat.status.memories_count", "✓ 当前存储的长效记忆: %d 条").format(memories.size),
+                    text = stringResource(R.string.chat_status_memories_count, memories.size),
                     fontSize = (12 * fs).sp,
                     fontFamily = resolvedFontFamily
                 )
@@ -932,7 +933,7 @@ fun ThinkingProcessPanel(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (!isThinkingFinished) uiText("chat.thinking.in_progress", "AI 正在深度思考中（实时吐流）...") else uiText("chat.thinking.folded", "深度思考过程 (已折叠，点击展开)"),
+                    text = if (!isThinkingFinished) stringResource(R.string.chat_thinking_in_progress) else stringResource(R.string.chat_thinking_folded),
                     fontSize = (12 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -940,7 +941,7 @@ fun ThinkingProcessPanel(
             }
             Icon(
                 imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (isExpanded) uiText("chat.action.fold", "折叠") else uiText("chat.action.unfold", "展开"),
+                contentDescription = if (isExpanded) stringResource(R.string.chat_action_fold) else stringResource(R.string.chat_action_unfold),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(18.dp)
             )
@@ -1068,7 +1069,7 @@ fun BubbleMessage(
                                 ) {
                                     AsyncImage(
                                         model = imagePath,
-                                        contentDescription = uiText("chat.image", "图片"),
+                                        contentDescription = stringResource(R.string.chat_image),
                                         modifier = Modifier.fillMaxWidth(),
                                         contentScale = ContentScale.Fit
                                     )
@@ -1094,7 +1095,7 @@ fun BubbleMessage(
                         shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                     ) {
                         DropdownMenuItem(
-                            text = { Text(uiText("chat.403a6bf8", "复制内容")) },
+                            text = { Text(stringResource(R.string.chat_copy_content)) },
                             onClick = {
                                 showMenu = false
                                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1113,7 +1114,7 @@ fun BubbleMessage(
                 ) {
                     if (parsed.thinking != null) {
                         ThinkingProcessPanel(
-                            thinkingText = parsed.thinking.ifEmpty { uiText("chat.thinking.default", "正在深度思考...") },
+                            thinkingText = parsed.thinking.ifEmpty { stringResource(R.string.chat_thinking_default) },
                             isThinkingFinished = parsed.isThinkingFinished
                         )
                     }
@@ -1160,7 +1161,7 @@ fun BubbleMessage(
                                 shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text(uiText("chat.7a875b8c", "重试")) },
+                                    text = { Text(stringResource(R.string.chat_retry)) },
                                     onClick = {
                                         showMenu = false
                                         onRetry(message)
@@ -1168,7 +1169,7 @@ fun BubbleMessage(
                                     leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(uiText("chat.403a6bf8", "复制内容")) },
+                                    text = { Text(stringResource(R.string.chat_copy_content)) },
                                     onClick = {
                                         showMenu = false
                                         val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1210,7 +1211,7 @@ fun StreamingBubble(
         Column(modifier = Modifier.widthIn(max = 290.dp)) {
             if (isThinkingFallback) {
                 ThinkingProcessPanel(
-                    thinkingText = uiText("chat.thinking.start", "正在唤醒深度推理模型并深度构思中....."),
+                    thinkingText = stringResource(R.string.chat_thinking_start),
                     isThinkingFinished = false
                 )
             } else {
@@ -1223,7 +1224,7 @@ fun StreamingBubble(
                     }
                     if (bodyText.isNotEmpty() || !isThinkingFinished) {
                         val displayText = bodyText.ifEmpty { 
-                            if (!isThinkingFinished) "" else uiText("chat.thinking.reply_plan", "正在构思答复内容...") 
+                            if (!isThinkingFinished) "" else stringResource(R.string.chat_thinking_reply_plan)
                         }
                         if (displayText.isNotEmpty()) {
                             Surface(
@@ -1270,7 +1271,7 @@ fun StreamingBubble(
                 }
             }
             Text(
-                text = uiText("chat.32423845", "助手正在输入..."),
+                text = stringResource(R.string.chat_assistant_typing),
                 fontSize = (10 * fs).sp,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

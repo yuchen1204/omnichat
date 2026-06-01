@@ -15,7 +15,8 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.mcp.AskUserManager.AskUserRequest
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
+import com.example.R
 
 @Composable
 fun AskUserDialog(
@@ -53,7 +54,7 @@ fun AskUserDialog(
             ) {
                 // Header
                 Text(
-                    text = uiText("dialog.ask_user.title", "需要您的澄清与确认"),
+                    text = stringResource(R.string.dialog_ask_user_title),
                     fontSize = (18 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = resolvedFontFamily,
@@ -83,7 +84,7 @@ fun AskUserDialog(
                         if (request.options.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = uiText("dialog.ask_user.options_hint", "请选择以下选项："),
+                                text = stringResource(R.string.dialog_ask_user_options_hint),
                                 fontSize = (12 * fs).sp,
                                 fontWeight = FontWeight.Medium,
                                 fontFamily = resolvedFontFamily,
@@ -150,8 +151,8 @@ fun AskUserDialog(
                 OutlinedTextField(
                     value = customInput,
                     onValueChange = { customInput = it },
-                    label = { Text(uiText("dialog.ask_user.custom_input_label", "自定义回答"), fontFamily = resolvedFontFamily) },
-                    placeholder = { Text(uiText("dialog.ask_user.custom_input_placeholder", "在此输入您的自定义回答..."), fontFamily = resolvedFontFamily) },
+                    label = { Text(stringResource(R.string.dialog_ask_user_custom_input_label), fontFamily = resolvedFontFamily) },
+                    placeholder = { Text(stringResource(R.string.dialog_ask_user_custom_input_placeholder), fontFamily = resolvedFontFamily) },
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = resolvedFontFamily, fontSize = (13 * fs).sp),
                     maxLines = 4
@@ -169,7 +170,7 @@ fun AskUserDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) {
-                        Text(uiText("action.cancel", "取消"), fontFamily = resolvedFontFamily)
+                        Text(stringResource(R.string.action_cancel), fontFamily = resolvedFontFamily)
                     }
 
                     Button(
@@ -189,7 +190,7 @@ fun AskUserDialog(
                         },
                         shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
                     ) {
-                        Text(uiText("action.confirm", "确认"), fontFamily = resolvedFontFamily)
+                        Text(stringResource(R.string.action_confirm), fontFamily = resolvedFontFamily)
                     }
                 }
             }

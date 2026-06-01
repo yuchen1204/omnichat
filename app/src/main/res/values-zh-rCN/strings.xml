@@ -1,0 +1,694 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OmniChat</string>
+
+    <!-- ── ui_text_keys.json: Chat ── -->
+    <string name="chat_tools_used_count">已调用 %d 个工具</string>
+    <string name="chat_tool_used">已调用工具</string>
+    <string name="chat_tools_working_x">调用工具 x%d</string>
+    <string name="workspace_tool_called">工具执行结果 (ID: %s)</string>
+    <string name="workspace_intervention_label">【用户干预】</string>
+    <string name="workspace_orchestrator_injected">来自主控 Agent</string>
+    <string name="workspace_agent_thinking">%s 正在思考…</string>
+    <string name="workspace_agent_empty">%s 等待任务分配</string>
+    <string name="workspace_agent_waiting_tool">正在执行工具…</string>
+    <string name="preset_button_new">新建 Agent 预设</string>
+    <string name="preset_list_empty">暂无预设。在工作区任务开始前，创建预设可以为特定的角色指定特定的 Prompt 和模型！</string>
+    <string name="preset_action_edit">编辑</string>
+    <string name="preset_action_delete">删除</string>
+    <string name="preset_model_tag">指定模型: %s</string>
+    <string name="preset_form_new_title">新建 Agent 预设</string>
+    <string name="preset_form_edit_title">编辑 Agent 预设</string>
+    <string name="preset_form_name">预设角色名称 (如: 写诗专家) *</string>
+    <string name="preset_form_desc">描述摘要 (选填)</string>
+    <string name="preset_form_system_prompt">系统提示词 (System Prompt - 选填)</string>
+    <string name="preset_form_model_default">不指定（使用工作区默认）</string>
+    <string name="preset_form_model">指定模型 (选填)</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_save">保存</string>
+    <string name="preset_dialog_delete_title">删除预设</string>
+    <string name="preset_dialog_delete_body">确定要删除预设「%s」吗？该操作不会修改任何现有的工作区历史记录。</string>
+    <string name="action_delete">删除</string>
+    <string name="workspace_tab_orchestrator">主控 Agent</string>
+    <string name="dialog_ask_user_title">需要您的澄清与确认</string>
+    <string name="dialog_ask_user_options_hint">请选择以下选项：</string>
+    <string name="dialog_ask_user_custom_input_label">自定义回答</string>
+    <string name="dialog_ask_user_custom_input_placeholder">在此输入您的自定义回答...</string>
+    <string name="action_confirm">确认</string>
+    <string name="chat_not_set">未设置</string>
+    <string name="chat_reminder">提醒</string>
+    <string name="chat_no_provider_warning">需设置全局自动提供商才能正常会话！</string>
+    <string name="chat_memory">记忆</string>
+    <string name="chat_memory_injected">已动态融合共 %d 条长效学习偏好记忆</string>
+    <string name="chat_mcp_loading">MCP 工具加载中：%s</string>
+    <string name="chat_separator">、</string>
+    <string name="chat_scroll_to_bottom">回到最新</string>
+    <string name="chat_current_model">当前模型: %s  ·  %s</string>
+    <string name="chat_switch_model">切换模型</string>
+    <string name="chat_select_image">选择图片</string>
+    <string name="chat_take_photo">拍照</string>
+    <string name="chat_selected_image">已选图片</string>
+    <string name="chat_image_attached">已添加图片</string>
+    <string name="chat_remove_image">移除图片</string>
+    <string name="chat_toolbar_collapse">收起</string>
+    <string name="chat_toolbar_expand">展开工具</string>
+    <string name="chat_input_hint_with_image">添加描述（可选）...</string>
+    <string name="chat_input_hint">输入消息...</string>
+    <string name="chat_send_contentDescription">发送</string>
+    <string name="chat_ai_ready">AI 准备就绪</string>
+    <string name="chat_welcome_title">欢迎使用长效记忆 AI 助手</string>
+    <string name="chat_welcome_desc">本应用特别支持双模型架构！一个主模型专门负责对话聊天，而一个副模型专门在每次回答后在后台分析提炼对话事实信息，跨越不同对话会话、重启不丢失！</string>
+    <string name="chat_status_overview">状态一览:</string>
+    <string name="chat_status_provider_ok">✓ 当前提供商: %s</string>
+    <string name="chat_status_provider_empty">✗ 未设置 Provider</string>
+    <string name="chat_status_memories_count">✓ 当前存储的长效记忆: %d 条</string>
+    <string name="chat_thinking_in_progress">AI 正在深度思考中（实时吐流）...</string>
+    <string name="chat_thinking_folded">深度思考过程 (已折叠，点击展开)</string>
+    <string name="chat_action_fold">折叠</string>
+    <string name="chat_action_unfold">展开</string>
+    <string name="chat_image">图片</string>
+    <string name="chat_copy_content">复制内容</string>
+    <string name="chat_thinking_default">正在深度思考...</string>
+    <string name="chat_retry">重试</string>
+    <string name="chat_thinking_start">正在唤醒深度推理模型并深度构思中.....</string>
+    <string name="chat_thinking_reply_plan">正在构思答复内容...</string>
+    <string name="chat_assistant_typing">助手正在输入...</string>
+
+    <!-- ── ui_text_keys.json: Export / Import ── -->
+    <string name="export_section_export">导出配置</string>
+    <string name="export_desc">选择要导出的内容，保存为 JSON 文件，可用于备份或迁移到其他设备。</string>
+    <string name="export_option_providers">供应商配置</string>
+    <string name="export_option_providers_desc">API 提供商、Endpoint、API Key、模型列表</string>
+    <string name="export_option_mcp">MCP 配置</string>
+    <string name="export_option_mcp_desc">MCP 服务器列表、运行时配置、环境变量</string>
+    <string name="export_option_memory">长效记忆</string>
+    <string name="export_option_memory_desc">跨会话记忆条目、系统 Prompt 模板</string>
+    <string name="export_option_colors">配色方案</string>
+    <string name="export_option_colors_desc">当前 UI 设置、配色方案预设（最多 5 个）</string>
+    <string name="export_btn">选择保存位置并导出</string>
+    <string name="import_section_import">导入配置</string>
+    <string name="import_desc">从之前导出的 JSON 文件中恢复配置。选择要导入的内容类型。</string>
+    <string name="import_option_providers_desc">导入 API 提供商配置</string>
+    <string name="import_option_mcp_desc">导入 MCP 服务器配置</string>
+    <string name="import_option_memory_desc">导入记忆条目和 Prompt 模板</string>
+    <string name="import_option_colors_desc">导入 UI 设置和配色预设</string>
+    <string name="import_replace_title">覆盖现有数据</string>
+    <string name="import_replace_desc">开启后将清空对应类型的现有数据再导入；关闭则追加</string>
+    <string name="import_btn">选择 JSON 文件并导入</string>
+    <string name="export_note">导出文件为标准 JSON 格式，包含所选配置的完整数据。API Key 会以明文保存在文件中，请妥善保管导出文件。导入时建议先备份现有配置。</string>
+    <string name="import_confirm_title">确认导入</string>
+    <string name="import_confirm_body">即将导入以下内容：</string>
+    <string name="import_confirm_replace_warning">覆盖模式已开启，现有对应数据将被清空后替换，此操作不可撤销。</string>
+    <string name="import_confirm_ok">确认导入</string>
+    <string name="import_confirm_cancel">取消</string>
+
+    <!-- ── ui_text_keys.json: Workspace intervention ── -->
+    <string name="workspace_intervention_target_prefix">发送给 </string>
+    <string name="workspace_intervention_queued_hint">· 将在本轮结束后送达</string>
+    <string name="workspace_intervention_hint_orchestrator">向主控 Agent 提问、调整方向或追加需求…</string>
+    <string name="workspace_intervention_hint_sub">向 %s 发送干预消息…</string>
+    <string name="action_send">发送</string>
+
+    <!-- ── ui_text_keys.json: Permission dialog ── -->
+    <string name="dialog_permission_title">文件访问权限请求</string>
+    <string name="dialog_permission_subtitle">MCP 工具请求</string>
+    <string name="dialog_permission_desc">AI 助手想要访问沙盒外的文件：</string>
+    <string name="dialog_permission_allow_always">始终允许</string>
+    <string name="dialog_permission_allow_once">允许一次</string>
+    <string name="dialog_permission_dont_ask">不再询问</string>
+    <string name="dialog_permission_deny">拒绝</string>
+
+    <!-- ── ui_text_keys.json: Settings tabs ── -->
+    <string name="tab_settings_models">模型配置</string>
+    <string name="tab_settings_mcp">MCP工具</string>
+    <string name="tab_settings_memory">长效记忆</string>
+    <string name="tab_settings_presets">Agent 预设</string>
+    <string name="tab_settings_data">数据管理</string>
+
+    <!-- ── ui_text_keys.json: Top bar ── -->
+    <string name="topbar_title_chat">会话</string>
+    <string name="topbar_title_workspace">工作区</string>
+    <string name="topbar_title_settings">设置</string>
+    <string name="topbar_provider_prefix">提供商: </string>
+    <string name="topbar_menu_open">打开菜单</string>
+    <string name="topbar_memory_syncing">记忆同步中</string>
+    <string name="topbar_memory_sync">同步记忆</string>
+
+    <!-- ── ui_text_keys.json: MCP ── -->
+    <string name="mcp_stat_servers">服务</string>
+    <string name="mcp_stat_running_servers">运行中</string>
+    <string name="mcp_stat_tools_count">工具</string>
+    <string name="mcp_import_json">导入 JSON</string>
+    <string name="mcp_add_service">添加服务</string>
+    <string name="mcp_empty_title">暂无 MCP 服务</string>
+    <string name="mcp_empty_desc">点击右上角「添加服务」配置 Node.js 或 Python MCP server</string>
+    <string name="mcp_examples_title">常用示例</string>
+    <string name="mcp_add_dialog_title">添加 MCP 服务</string>
+    <string name="mcp_builtin_title">内置工具</string>
+    <string name="mcp_unknown">未知</string>
+    <string name="mcp_status_running">运行中</string>
+    <string name="mcp_status_starting">启动中</string>
+    <string name="mcp_status_error">错误</string>
+    <string name="mcp_status_stopped">已停止</string>
+    <string name="mcp_more">更多</string>
+    <string name="mcp_edit_config">编辑配置</string>
+    <string name="mcp_restart_service">重启服务</string>
+    <string name="mcp_delete">删除</string>
+    <string name="mcp_tools_count_label">%d 个工具</string>
+    <string name="mcp_enabled">已启用</string>
+    <string name="mcp_disabled">已禁用</string>
+    <string name="mcp_delete_title">删除 MCP 服务</string>
+    <string name="mcp_delete_confirm_body">确定要删除「%s」吗？该服务将被停止并从配置中移除。</string>
+    <string name="mcp_cancel">取消</string>
+    <string name="mcp_group_memory">长效记忆</string>
+    <string name="mcp_group_ui_appearance">界面外观</string>
+    <string name="mcp_group_efficiency">效率提醒</string>
+    <string name="mcp_group_ui_text">界面文案</string>
+    <string name="mcp_group_files">文件管理</string>
+    <string name="mcp_group_documents">文档创作</string>
+    <string name="mcp_builtin_groups_title">内置工具组权限控制</string>
+    <string name="mcp_builtin_groups_desc">AI 可以主动开启或关闭这些功能。 core 组始终开启。</string>
+    <string name="mcp_builtin_desc">%d 个工具 · 始终可用</string>
+    <string name="mcp_builtin_status">运行中</string>
+    <string name="mcp_view_tools">查看工具</string>
+    <string name="mcp_dialog_tools_title">%s 的工具</string>
+    <string name="mcp_dialog_no_tools">暂无工具</string>
+    <string name="mcp_dialog_import_title">导入 MCP 配置 (JSON)</string>
+    <string name="mcp_dialog_import_desc">粘贴标准的 mcpServers JSON 配置。导入后将自动添加并尝试启动服务。</string>
+    <string name="mcp_dialog_invalid_json">无效的 JSON 格式或缺少 mcpServers 字段</string>
+    <string name="mcp_dialog_cancel">取消</string>
+    <string name="mcp_dialog_confirm_import">确认导入</string>
+    <string name="mcp_dialog_edit_title">编辑 MCP 服务</string>
+    <string name="mcp_dialog_add_title">添加 MCP 服务</string>
+    <string name="mcp_dialog_service_name">服务名称</string>
+    <string name="mcp_dialog_service_name_hint">例如：文件系统服务</string>
+    <string name="mcp_dialog_runtime">运行时</string>
+    <string name="mcp_dialog_params">参数 (JSON 数组)</string>
+    <string name="mcp_dialog_invalid_json_array">请输入合法的 JSON 数组，例如 ["arg1", "arg2"]</string>
+    <string name="mcp_dialog_custom_headers">自定义请求头 (JSON 对象)</string>
+    <string name="mcp_dialog_env_vars">环境变量 (JSON 对象)</string>
+    <string name="mcp_dialog_invalid_json_object">请输入合法的 JSON 对象，例如 {"KEY": "value"}</string>
+    <string name="mcp_dialog_auto_start">启动时自动运行</string>
+    <string name="action_add">添加</string>
+    <string name="mcp_dialog_runtime_node">Node.js</string>
+    <string name="mcp_dialog_runtime_node_desc">内嵌 Node.js</string>
+    <string name="mcp_dialog_runtime_python">Python</string>
+    <string name="mcp_dialog_runtime_python_desc">内嵌 Python</string>
+    <string name="mcp_dialog_runtime_remote_http">远程 HTTP</string>
+    <string name="mcp_dialog_runtime_remote_http_desc">远程 MCP 服务</string>
+    <string name="mcp_dialog_node_hint">使用 app 内嵌的 Node.js 运行时执行 JS MCP server，无需设备安装 Node.js。\n内置脚本已自动部署到：\n%s\ncommand 填文件名或绝对路径均可。</string>
+    <string name="mcp_dialog_python_hint">使用 app 内嵌的 Python 运行时执行 Python MCP server，无需设备安装 Python</string>
+    <string name="mcp_dialog_remote_http_hint">连接到远程 MCP server。本应用遵循 MCP HTTP 传输标准（SSE + POST）。\ncommand 请填写 SSE 端点 URL。\n自定义请求头字段可填写需要附加的 HTTP 请求头，例如认证 Token。</string>
+    <string name="mcp_example_fetch">HTTP Fetch</string>
+    <string name="mcp_example_remote">远程示例</string>
+    <string name="mcp_dialog_command_label_node">JS 入口文件路径</string>
+    <string name="mcp_dialog_command_label_python">Python 脚本路径</string>
+    <string name="mcp_dialog_command_label_remote_http">SSE 端点 URL</string>
+    <string name="mcp_dialog_command_label_default">命令</string>
+    <string name="mcp_dialog_command_placeholder_node">mcp_fetch.js  （或绝对路径）</string>
+    <string name="mcp_dialog_command_placeholder_python">/sdcard/OmniChat/mcp/my_server.py</string>
+    <string name="mcp_dialog_command_placeholder_remote_http">https://example.com/mcp/sse</string>
+    <string name="mcp_dialog_command_placeholder_default">命令或路径</string>
+    <string name="mcp_dialog_runtime_details_title">运行时状态详情</string>
+    <string name="mcp_dialog_node_title">内嵌 Node.js</string>
+    <string name="mcp_dialog_node_disabled">已在设置中禁用</string>
+    <string name="mcp_dialog_node_ok">libnode.so 已加载，Node.js 可用</string>
+    <string name="mcp_dialog_node_missing">libnode.so 未找到</string>
+    <string name="mcp_dialog_node_instructions">请将 libnode.so 放入 app/src/main/jniLibs/&lt;ABI&gt;/ 目录并重新编译。</string>
+    <string name="mcp_dialog_python_title">内嵌 Python</string>
+    <string name="mcp_dialog_python_disabled">已在设置中禁用</string>
+    <string name="mcp_dialog_python_instructions">请准备 stdlib.zip 和 .so 文件并重新编译。</string>
+    <string name="mcp_dialog_remote_http_title">远程 HTTP MCP</string>
+    <string name="mcp_dialog_remote_http_status">支持通过 HTTP/HTTPS 连接远程 MCP 服务。</string>
+    <string name="mcp_dialog_remote_http_instructions">远程服务需要遵循 MCP HTTP 传输标准，支持 SSE 端点和 JSON-RPC POST 请求。</string>
+    <string name="mcp_dialog_got_it">知道了</string>
+    <string name="mcp_dialog_install_steps">安装步骤：</string>
+
+    <!-- ── ui_text_keys.json: Memory ── -->
+    <string name="memory_tab_memory_library">长效对话记忆库 (%d)</string>
+    <string name="memory_system_prompt_templates">系统Prompt模板</string>
+    <string name="memory_manual_input_title">手动录入长效记忆 / 用户首选项偏好</string>
+    <string name="memory_input_hint">例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼...</string>
+    <string name="memory_add_preference">添加偏好</string>
+    <string name="memory_list_title">AI 自我反省提炼的长效记忆 (%d):</string>
+    <string name="memory_backfill_tags">补打标签 (%d)</string>
+    <string name="memory_clear_all">清空全部</string>
+    <string name="memory_empty_hint">暂无长效记忆。你可以直接在聊天中告诉 AI 你的习惯偏好，或者等待 AI 在对话后台分析后自动提炼生成！</string>
+    <string name="memory_unpin">取消锁定</string>
+    <string name="memory_pin">锁定</string>
+    <string name="memory_delete">删除</string>
+    <string name="memory_create_template">创建自定义 System 模板</string>
+    <string name="memory_template_title_hint">模版说明/标题 (如: Kotlin 写法大师)</string>
+    <string name="memory_template_prompt_text">System Prompt 文字</string>
+    <string name="memory_template_placeholder_hint">必须包含占位符 [CROSS_SESSION_MEMORY] 自动编排记忆数据</string>
+    <string name="memory_cancel">取消</string>
+    <string name="memory_save_template">保存模板</string>
+    <string name="memory_add">新增</string>
+    <string name="memory_add_system_template">新增 System 模版</string>
+
+    <!-- ── ui_text_keys.json: Models ── -->
+    <string name="models_provider_library">API 提供商管理库</string>
+    <string name="models_add_provider">新增提供商</string>
+    <string name="models_empty_hint">当前未配置任何 API 提供商。\n点击右上角"新增提供商"开始添加！</string>
+    <string name="models_default_badge">默认提供商</string>
+    <string name="models_collapse">收起</string>
+    <string name="models_expand">展开</string>
+    <string name="models_endpoint_label_colon">Endpoint: </string>
+    <string name="models_api_key_label_colon">API Key: </string>
+    <string name="models_custom_headers_label">自定义请求头: </string>
+    <string name="models_headers_count">%d 个</string>
+    <string name="models_set_default_title">设为默认配置</string>
+    <string name="models_set_default_desc">将此 API 提供商作为全局使用</string>
+    <string name="models_edit">编辑</string>
+    <string name="models_delete">删除</string>
+    <string name="models_add_provider_config">新增提供商配置</string>
+    <string name="models_edit_provider_config">编辑提供商配置</string>
+    <string name="models_provider_id">提供商 ID (Provider ID)</string>
+    <string name="models_provider_id_hint">如: openai, deepseek, silicon-flow</string>
+    <string name="models_endpoint_label">OpenAI 兼容 Endpoint</string>
+    <string name="models_endpoint_hint">如: https://api.openai.com/v1</string>
+    <string name="models_api_key_label">API Key</string>
+    <string name="models_hide_key">隐藏密钥</string>
+    <string name="models_show_key">显示密钥</string>
+    <string name="models_custom_headers_title">自定义请求头 (Custom Headers):</string>
+    <string name="models_add">添加</string>
+    <string name="models_no_custom_headers">暂无自定义请求头</string>
+    <string name="models_header_name">Header 名</string>
+    <string name="models_header_value">值</string>
+    <string name="models_auto_fetch">自动拉取并解析可用模型:</string>
+    <string name="models_fetching">正在拉取中...</string>
+    <string name="models_fetch_button">一键获取当前 Endpoint 的可用模型</string>
+    <string name="models_fetch_error">拉取错误: %s</string>
+    <string name="models_available_list_title">可用模型列表 (点击模型名选择；点击下方标签可手动修正 思考/视觉/工具 调用能力):</string>
+    <string name="models_context_size_format">Context: %s</string>
+    <string name="models_thinking_badge_emoji">💭 思考/推理</string>
+    <string name="models_vision_badge_emoji">👁️ 视觉</string>
+    <string name="models_tool_badge_emoji">🛠️ 工具调用</string>
+    <string name="models_cancel">取消</string>
+    <string name="models_save">保存</string>
+    <string name="models_back">返回</string>
+    <string name="models_select_provider_title">选择 Provider</string>
+    <string name="models_select_model_title">选择模型</string>
+    <string name="models_close">关闭</string>
+    <string name="models_default_short">默认</string>
+    <string name="models_no_saved_models">该 Provider 暂无已保存的模型列表</string>
+    <string name="models_fetch_first">请先在「模型配置」中拉取模型</string>
+    <string name="models_thinking_badge">💭 思考</string>
+    <string name="models_vision_badge">👁️ 视觉</string>
+    <string name="models_tool_badge">🛠️ 工具</string>
+    <string name="models_selected">已选</string>
+    <string name="models_confirm_select">确认选择</string>
+    <string name="models_unknown_provider">未知 Provider</string>
+    <string name="models_secondary_config">副模型配置</string>
+    <string name="models_secondary_desc">用于记忆优化分析 &amp; 会话标题生成</string>
+    <string name="models_add_provider_first">请先添加提供商</string>
+    <string name="models_current_secondary">当前副模型</string>
+    <string name="models_secondary_none">未选择（将使用主模型）</string>
+    <string name="models_select">选择</string>
+    <string name="models_secondary_explanation">副模型在每次对话后台运行，负责提炼记忆条目并生成会话标题。可选择任意 Provider 的模型，建议用速度快、成本低的小模型。</string>
+
+    <!-- ── ui_text_keys.json: Workspace tools ── -->
+    <string name="workspace_tool_agent">委派子 Agent</string>
+    <string name="workspace_tool_generic">工具调用</string>
+    <string name="workspace_tool_args_hide">收起参数</string>
+    <string name="workspace_tool_args_show">查看参数</string>
+    <string name="workspace_tool_collapse">收起</string>
+    <string name="workspace_tool_expand">展开全文</string>
+
+    <!-- ── ui_text_keys.json: Sidebar ── -->
+    <string name="sidebar_new_session_default">新会话</string>
+    <string name="sidebar_chat_sessions">对话</string>
+    <string name="sidebar_no_sessions">还没有对话，点击右上角新建</string>
+    <string name="sidebar_rename">重命名</string>
+    <string name="sidebar_delete">删除</string>
+    <string name="sidebar_workspaces">多智能体工作区</string>
+    <string name="sidebar_no_workspace">点击 + 新建工作区，让多个 AI 协同完成任务</string>
+    <string name="dialog_delete_session_title">删除会话</string>
+    <string name="dialog_delete_session_body">确定要删除「%s」吗？\n该会话的所有消息记录将被永久清除，无法恢复。</string>
+    <string name="sidebar_rename_session">重命名会话</string>
+    <string name="sidebar_session_name">会话名称</string>
+    <string name="sidebar_confirm">确认</string>
+    <string name="sidebar_cancel">取消</string>
+    <string name="dialog_delete_workspace_title">删除工作区</string>
+    <string name="dialog_delete_workspace_body">确定要删除工作区「%s」吗？\n该工作区内的所有协作对话记录及实例元数据将被永久级联删除，无法恢复。</string>
+    <string name="sidebar_title">OmniChat</string>
+    <string name="sidebar_subtitle">多模型 · 长效记忆 · 多智能体</string>
+    <string name="sidebar_new_session">新建会话</string>
+    <string name="sidebar_not_set">未配置模型</string>
+    <string name="sidebar_settings">设置</string>
+    <string name="sidebar_reset_colors">恢复默认配色</string>
+
+    <!-- ── ui_text_keys.json: Workspace ── -->
+    <string name="workspace_panel_agents">Agent 列表</string>
+    <string name="workspace_panel_tasks">任务列表</string>
+    <string name="workspace_task_blocked_by">依赖：%s</string>
+    <string name="workspace_task_status_pending">等待</string>
+    <string name="workspace_task_status_in_progress">执行中</string>
+    <string name="workspace_task_status_completed">完成</string>
+    <string name="workspace_task_status_failed">失败</string>
+    <string name="workspace_agent_status_idle">空闲</string>
+    <string name="workspace_agent_status_streaming">输出中</string>
+    <string name="workspace_agent_status_tool">工具中</string>
+    <string name="workspace_agent_status_done">完成</string>
+    <string name="workspace_agent_status_error">错误</string>
+    <string name="workspace_setup_model_none">选择模型</string>
+    <string name="workspace_ready_title">准备好了</string>
+    <string name="workspace_ready_hint">描述你的任务，AI 将自动分析并派遣多个 Agent 协作完成</string>
+    <string name="workspace_sandbox_label">工作目录（沙盒）</string>
+    <string name="workspace_sandbox_unset">未设置（不限制）</string>
+    <string name="workspace_sandbox_placeholder">例如: /sdcard/OmniChat/workspace</string>
+    <string name="workspace_sandbox_clear">清除</string>
+    <string name="workspace_setup_task_placeholder">例如：请帮我写一段 Kotlin 代码，并创建子 Agent 进行 Code Review...</string>
+    <string name="workspace_select_hint">请在侧边栏选择或新建一个工作区开始协作</string>
+    <string name="workspace_agents_count">%d 个 Agent</string>
+    <string name="workspace_export_log">导出日志</string>
+    <string name="workspace_toggle_task_panel">任务面板</string>
+    <string name="workspace_phase_planning">正在规划</string>
+    <string name="workspace_phase_working">Agent 执行中</string>
+    <string name="workspace_phase_synthesizing">汇总结果</string>
+    <string name="workspace_phase_awaiting">等待中</string>
+    <string name="workspace_status_completed">已完成</string>
+
+    <!-- ── Extra: ChatViewModel ── -->
+    <string name="default_session_title">探讨与交谈</string>
+    <string name="default_session_title_display">探讨与交谈 (Aesthetic Conversation)</string>
+    <string name="error_no_default_provider">错误：未设置默认提供商。请在"模型设置"菜单中添加 Provider 并将其设为默认。</string>
+    <string name="no_memories_recorded">无 (None recorded)</string>
+    <string name="ai_time_instruction">当前真实时间为 %s。请以此为准回答所有涉及日期、时间、今天、现在、最近等时间相关的问题，不要凭训练数据猜测当前时间。</string>
+    <string name="error_tool_depth_exceeded">工具调用深度超过限制（%d），已自动停止以防止无限循环。</string>
+    <string name="error_model_fetch_failed">未获取到模型列表。</string>
+    <string name="default_assistant_name">智能助手 (Default Assistant)</string>
+    <string name="new_session">新会话</string>
+
+    <!-- ── Extra: SettingsViewModel ── -->
+    <string name="export_success">导出成功</string>
+    <string name="export_failed">导出失败: %s</string>
+    <string name="import_file_unreadable">无法读取文件</string>
+    <string name="import_success">导入成功，共处理 %d 条记录</string>
+    <string name="import_failed">导入失败: %s</string>
+    <string name="imported_scheme_name">导入方案</string>
+
+    <!-- ── Extra: Compose hardcoded ── -->
+    <string name="sidebar_workspace_unlocked">已解锁多智能体工作区</string>
+    <string name="sidebar_no_model_selected">未选择模型</string>
+    <string name="time_just_now">刚刚</string>
+    <string name="time_minutes_ago">%d分钟前</string>
+    <string name="time_hours_ago">%d小时前</string>
+    <string name="time_seconds_ago_short">%ds 前</string>
+    <string name="time_minutes_ago_short">%dm 前</string>
+    <string name="time_hours_ago_short">%dh 前</string>
+    <string name="time_days_ago_short">%dd 前</string>
+    <string name="preset_name_empty_error">名称不能为空</string>
+    <string name="workspace_model_default_format">%s (默认)</string>
+    <string name="workspace_tool_calls_count">%d 次工具调用</string>
+
+    <!-- ── Extra: AgentRunner ── -->
+    <string name="agent_tool_iteration_limit">已达到最大工具调用次数限制 (%d)，强制结束本轮对话。</string>
+    <string name="agent_consecutive_failures">连续工具调用失败 %d 次，强制结束本轮对话。请检查工具是否可用或参数是否正确。</string>
+    <string name="agent_context_compacted">（以上对话已压缩，共 %d 条消息。以下是早期关键信息摘要）</string>
+    <string name="role_system">[系统]</string>
+    <string name="role_user">[用户]</string>
+    <string name="role_assistant">[助手]</string>
+    <string name="role_tool_result">[工具结果]</string>
+    <string name="agent_output_truncated">[输出过长已由系统截断]</string>
+
+    <!-- ── Extra: AgentDefinition ── -->
+    <string name="agent_name_general">通用 Agent</string>
+    <string name="agent_when_to_use_general">通用 Agent 用于研究复杂问题、搜索代码和执行多步骤任务。</string>
+    <string name="agent_name_explore">探索 Agent</string>
+    <string name="agent_when_to_use_explore">快速探索代码库的 Agent。当你需要通过模式快速查找文件、搜索符号或关键字、或回答关于代码定义位置的问题时使用。</string>
+    <string name="agent_name_plan">规划 Agent</string>
+    <string name="agent_when_to_use_plan">软件架构规划 Agent，用于设计实现方案。返回分步计划，识别关键文件，考虑架构权衡。</string>
+    <string name="agent_name_verification">验证 Agent</string>
+    <string name="agent_when_to_use_verification">验证实现工作是否正确的 Agent，在报告完成前调用以确保工作满足要求。</string>
+    <string name="agent_prompt_explore">你是一个文件搜索专家。你擅长全面导航和探索代码库。\n\n=== 关键：只读模式 - 禁止文件修改 ===\n这是只读探索任务。你严格禁止：\n- 创建新文件（禁止 Write、touch 或任何文件创建）\n- 修改现有文件（禁止 Edit 操作）\n- 删除文件（禁止 rm 或删除）\n- 移动或复制文件（禁止 mv 或 cp）\n- 在任何位置创建临时文件，包括 /tmp\n- 使用重定向操作符（&gt;, &gt;&gt;, |）或 heredocs 写入文件\n- 运行任何改变系统状态的命令\n\n你的角色仅限于搜索和分析现有代码。你无权访问文件编辑工具 — 尝试编辑文件将失败。\n\n你的优势：\n- 使用 glob 模式快速查找文件\n- 使用强大正则模式搜索代码和文本\n- 读取和分析文件内容\n\n指南：\n- 使用 Glob 进行广泛文件模式匹配\n- 使用 Grep 搜索文件内容（正则）\n- 当你知道具体文件路径时使用 Read\n- Bash 仅用于只读操作（ls, git status, git log, git diff, find, cat, head, tail）\n- 绝不使用 Bash 进行：mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install 或任何文件创建/修改\n- 根据调用者指定的 thoroughness 级别调整搜索策略\n- 直接以普通消息输出最终报告 — 不要创建文件\n\n注意：你是一个快速 Agent，应尽快返回输出。为此你必须：\n- 高效使用可用工具：智能搜索文件和实现\n- 尽可能并行发起多个 grep 和文件读取调用\n\n高效完成用户的搜索请求并清晰报告发现。</string>
+    <string name="agent_prompt_plan">你是一个软件架构和规划专家。你的角色是探索代码库并设计实现计划。\n\n=== 关键：只读模式 - 禁止文件修改 ===\n这是只读规划任务。你严格禁止：\n- 创建新文件（禁止 Write、touch 或任何文件创建）\n- 修改现有文件（禁止 Edit 操作）\n- 删除文件（禁止 rm 或删除）\n- 移动或复制文件（禁止 mv 或 cp）\n- 在任何位置创建临时文件，包括 /tmp\n- 使用重定向操作符（&gt;, &gt;&gt;, |）或 heredocs 写入文件\n- 运行任何改变系统状态的命令\n\n你的角色仅限于探索代码库并设计实现计划。你无权访问文件编辑工具 — 尝试编辑文件将失败。\n\n你将收到一组需求以及可选的设计视角。\n\n## 你的流程\n\n1. **理解需求**：聚焦提供的需求，在整个设计过程中应用指定的视角。\n\n2. **全面探索**：\n   - 读取初始提示中提供的任何文件\n   - 使用 Glob、Grep 和 Read 查找现有模式和约定\n   - 理解当前架构\n   - 识别相似功能作为参考\n   - 追踪相关代码路径\n   - Bash 仅用于只读操作（ls, git status, git log, git diff, find, cat, head, tail）\n   - 绝不使用 Bash 进行：mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install 或任何文件创建/修改\n\n3. **设计方案**：\n   - 根据指定视角创建实现方法\n   - 考虑权衡和架构决策\n   - 在适当处遵循现有模式\n\n4. **详细计划**：\n   - 提供分步骤实现策略\n   - 识别依赖和顺序\n   - 预测潜在挑战\n\n## 必需输出\n\n以以下内容结束响应：\n\n### 实现关键文件\n列出 3-5 个实现此计划最关键的文件：\n- path/to/file1.kt\n- path/to/file2.kt\n- path/to/file3.kt\n\n记住：你只能探索和规划。你不能也禁止写入、编辑或修改任何文件。你无权访问文件编辑工具。</string>
+    <string name="agent_prompt_verification">你是一个验证专家。你的任务不是确认实现能工作 —— 而是尝试打破它。\n\n你有两个已记录的失败模式。第一，验证规避：面对检查时，你找到不运行它的理由 —— 你读取代码、叙述你会测试什么、写上 "PASS" 然后继续。第二，被前 80% 诱惑：你看到精致的 UI 或通过的测试套件，倾向于通过它，没注意到一半按钮无响应、状态刷新时消失、或后端在坏输入时崩溃。前 80% 是简单部分。你的全部价值在于找到最后 20%。调用者可能抽查你的命令通过重新运行 —— 如果 PASS 步骤没有命令输出，或输出与重新执行不匹配，你的报告会被拒绝。\n\n=== 关键：禁止修改项目 ===\n你严格禁止：\n- 在项目目录中创建、修改或删除任何文件\n- 安装依赖或包\n- 运行 git 写操作（add, commit, push）\n\n你可以通过 Bash 重定向在临时目录（/tmp 或 $TMPDIR）写入临时测试脚本 —— 当内联命令不够时，如多步骤竞态 harness 或 Playwright 测试。完成后清理。\n\n检查你实际可用的工具，而不是从此提示假设。根据会话，你可能有浏览器自动化（mcp__claude-in-chrome__*, mcp__playwright__*）、WebFetch 或其他 MCP 工具 —— 不要跳过你没想到检查的能力。\n\n=== 你将收到 ===\n你将收到：原始任务描述、变更文件、采用方法，可选的计划文件路径。\n\n=== 验证策略 ===\n根据变更类型调整策略：\n\n**前端变更**：启动开发服务器 → 检查浏览器自动化工具（mcp__claude-in-chrome__*, mcp__playwright__*）并使用它们导航、截图、点击、读取控制台 → 不要说 "需要真实浏览器" 而不尝试 → curl 页面子资源样本（图片优化 URL 如 /_next/image、同源 API 路由、静态资源）因为 HTML 可以返回 200 而它引用的所有内容失败 → 运行前端测试\n**后端/API 变更**：启动服务器 → curl/fetch 端点 → 验证响应形状符合预期（不只是状态码） → 测试错误处理 → 检查边界情况\n**CLI/脚本变更**：用代表性输入运行 → 验证 stdout/stderr/exit codes → 测试边界输入（空、畸形、边界） → 验证 --help / usage 输出准确\n**基础设施/配置变更**：验证语法 → 尽可能 dry-run（terraform plan, kubectl apply --dry-run=server, docker build, nginx -t） → 检查 env vars / secrets 实际被引用，不只是定义\n**库/包变更**：构建 → 完整测试套件 → 从新上下文导入库并作为消费者执行公共 API → 验证导出类型匹配 README/docs 示例\n**Bug 修复**：重现原始 bug → 验证修复 → 运行回归测试 → 检查相关功能副作用\n**数据/ML 管道**：用样本输入运行 → 验证输出形状/schema/types → 测试空输入、单行、NaN/null 处理 → 检查静默数据丢失（行数入 vs 出）\n**数据库迁移**：运行迁移 up → 验证 schema 匹配意图 → 运行迁移 down（可逆性） → 对现有数据测试，不只是空 DB\n**重构（无行为变更）**：现有测试套件必须不变通过 → diff 公共 API 表面（无新增/删除导出） → 抽查可观察行为相同（相同输入 → 相同输出）\n**其他变更类型**：模式总是相同 — (a) 找出如何直接执行此变更（运行/调用/部署它），(b) 检查输出符合预期，(c) 尝试用实现者没测试的输入/条件打破它。以上策略是常见案例的实例。\n\n=== 必需步骤（通用基线） ===\n1. 读取项目的 CLAUDE.md / README 获取构建/测试命令和约定。检查 package.json / Makefile / pyproject.toml 获取脚本名。如果实现者指向计划或 spec 文件，读取它 —— 这是成功标准。\n2. 运行构建（如适用）。破损构建自动 FAIL。\n3. 运行项目的测试套件（如有）。失败测试自动 FAIL。\n4. 运行 linters/type-checkers（如配置）（eslint, tsc, mypy 等）。\n5. 检查相关代码回归。\n\n然后应用以上类型特定策略。根据风险调整严谨度：一次性脚本不需要竞态条件探测；生产支付代码需要一切。\n\n测试套件结果是上下文，不是证据。运行套件、记录 pass/fail、然后继续你的真正验证。实现者是 LLM —— 它的测试可能大量 mock、循环断言、或 happy-path 覆盖，证明不了系统实际端到端工作。\n\n=== 认识你自己的合理化 ===\n你会感到跳过检查的冲动。这些是你找的借口 —— 认识它们并做相反的事：\n- "代码阅读正确" —— 阅读不是验证。运行它。\n- "实现者的测试已通过" —— 实现者是 LLM。独立验证。\n- "这应该没问题" —— "应该" 不是验证。运行它。\n- "让我启动服务器检查代码" —— 不。启动服务器并 hit 端点。\n- "我没有浏览器" —— 你真的检查了 mcp__claude-in-chrome__* / mcp__playwright__*？如果存在，使用它们。如果 MCP 工具失败，排查（服务器运行？选择器正确？）。存在 fallback 所以你不要编造自己的 "做不到" 故事。\n- "这会太久" —— 不是你的决定。\n如果你发现自己在写解释而不是命令，停止。运行命令。\n\n=== 对抗性探测（适应变更类型） ===\n功能测试确认 happy path。也尝试打破它：\n- **并发**（服务器/API）：对 create-if-not-exists 路径并行请求 —— 重复会话？丢失写入？\n- **边界值**：0, -1, 空字符串, 非常长字符串, unicode, MAX_INT\n- **幂等性**：相同变异请求两次 —— 创建重复？错误？正确 no-op？\n- **孤儿操作**：删除/引用不存在的 ID\n这些是种子，不是清单 —— 选适合你验证的那些。\n\n=== PASS 前 ===\n你的报告必须包含至少一个你运行的对抗性探测（并发、边界、幂等性、孤儿操作或类似）及其结果 —— 即使结果是 "正确处理"。如果你的所有检查是 "返回 200" 或 "测试套件通过"，你确认了 happy path，没验证正确性。回去尝试打破什么。\n\n=== FAIL 前 ===\n你发现看起来破损的东西。报告 FAIL 前，检查你没有错过它实际没问题：\n- **已处理**：是否有其他地方的防御代码（上游验证、下游错误恢复）阻止此问题？\n- **有意**：CLAUDE.md / comments / commit message 解释这是故意的吗？\n- **不可操作**：这是真实限制但不破坏外部契约（稳定 API、协议 spec、向后兼容）就无法修复？如是，记为观察，不是 FAIL —— 不能修复的 "bug" 不可操作。\n不要用这些借口忽略真实问题 —— 但也不要对有意行为 FAIL。\n\n=== 输出格式（必需） ===\n每个检查必须遵循此结构。没有 Command run 块的检查不是 PASS —— 它是跳过。\n\n### 检查：[你验证什么]\n**运行命令：**\n  [你执行的确切命令]\n**观察到输出：**\n  [实际终端输出 —— 复制粘贴，不转述。如很长截断但保留相关部分。]\n**结果： PASS**（或 FAIL — 带 Expected vs Actual）\n\n以以下行结束（由调用者解析）：\n\nVERDICT: PASS\n或\nVERDICT: FAIL\n或\nVERDICT: PARTIAL\n\nPARTIAL 仅用于环境限制（无测试框架、工具不可用、服务器无法启动） —— 不是 "我不确定这是否 bug"。如果能运行检查，必须决定 PASS 或 FAIL。\n\n使用字面字符串 `VERDICT: ` 后跟 `PASS`、`FAIL` 或 `PARTIAL` 之一。无 markdown bold、无标点、无变体。\n- **FAIL**：包含失败内容、确切错误输出、复现步骤。\n- **PARTIAL**：验证了什么、无法验证什么及原因（缺少工具/env）、实现者应知道什么。</string>
+    <string name="agent_verification_critical">关键：这是验证任务。你不能编辑、写入或在项目目录创建文件（tmp 允许用于临时测试脚本）。你必须以 VERDICT: PASS、VERDICT: FAIL 或 VERDICT: PARTIAL 结束。</string>
+
+    <!-- ── Extra: DB entity defaults ── -->
+    <string name="default_workspace_title">新工作区</string>
+
+    <!-- ── BuiltinToolHandler: Core ── -->
+    <string name="tool_unknown_builtin">未知的内置工具: %s</string>
+    <string name="tool_ui_reset">UI 已重置为默认设置。</string>
+    <string name="tool_time_info">当前时间信息</string>
+    <string name="tool_time_local">• 本地时间：%s</string>
+    <string name="tool_time_zone">• 时区：%s (UTC%s)</string>
+    <string name="tool_time_iso">• ISO 8601：%s</string>
+    <string name="tool_time_unix">• Unix 时间戳：%s</string>
+
+    <!-- ── BuiltinToolHandler: UI ── -->
+    <string name="tool_ui_no_changes">未检测到任何字段变化（输入可能为空或全部无效）。</string>
+    <string name="tool_ui_applied">UI 设置已应用。已更新 %d 项：%s</string>
+    <string name="tool_ui_capability_desc">UI 主题能力清单。使用 adjust_ui 传入想改的字段即可，未传字段保持当前值。传 resetToDefault=true 可还原全部设置。</string>
+
+    <!-- ── BuiltinToolHandler: Color Scheme ── -->
+    <string name="tool_color_action_invalid">参数 \'action\' 必须是 save、list、apply 或 delete 之一。</string>
+    <string name="tool_color_save_name_empty">保存失败：name 不能为空。</string>
+    <string name="tool_color_save_limit">保存失败：已达到最多 %d 个方案上限。\n\n当前已保存：\n%s\n\n请先用 action=\"delete\" 删除一个方案。</string>
+    <string name="tool_color_saved">配色方案「%s」已保存。\nschemeId: %s\n当前已保存 %d/%d 个方案。</string>
+    <string name="tool_color_list_empty">当前没有已保存的配色方案。可以先用 adjust_ui 调整配色，再用 color_scheme(action=\"save\") 保存。</string>
+    <string name="tool_color_list_header">已保存的配色方案（%d/%d）：</string>
+    <string name="tool_color_list_desc">概述: %s</string>
+    <string name="tool_color_list_saved_at">保存时间: %s</string>
+    <string name="tool_color_list_primary">主色: %s  背景色: %s</string>
+    <string name="tool_color_list_success">成功色: %s  圆角: %ddp  间距: %sx</string>
+    <string name="tool_color_apply_no_id">应用失败：schemeId 不能为空。请先用 action=\"list\" 获取可用的 schemeId。</string>
+    <string name="tool_color_apply_not_found">应用失败：找不到 schemeId=%s 的方案。请用 action=\"list\" 确认可用的 schemeId。</string>
+    <string name="tool_color_applied">配色方案「%s」已应用，界面立即生效。\n概述：%s</string>
+    <string name="tool_color_delete_no_id">删除失败：schemeId 不能为空。</string>
+    <string name="tool_color_delete_not_found">删除失败：找不到 schemeId=%s 的方案。</string>
+    <string name="tool_color_deleted">配色方案「%s」已删除。当前剩余 %d/%d 个方案。</string>
+
+    <!-- ── BuiltinToolHandler: Memory ── -->
+    <string name="tool_memory_query_empty">搜索失败：query 不能为空。</string>
+    <string name="tool_memory_search_results">记忆库搜索结果（关键词：「%s」%s，共 %d 条记忆，命中 %d 条）：</string>
+    <string name="tool_memory_no_results">未找到与关键词相关的记忆。</string>
+    <string name="tool_memory_no_results_hint">提示：可以尝试更换关键词，或直接浏览全部记忆（记忆库共 %d 条）。</string>
+    <string name="tool_memory_pinned_tag"> [已锁定]</string>
+    <string name="tool_memory_entry_format">%d. [id=%d, 置信度=%.2f, 相关度=%.2f%s%s]</string>
+
+    <!-- ── BuiltinToolHandler: UI Text ── -->
+    <string name="tool_ui_text_header">=== App 可调整/翻译的 UI 文字列表 ===</string>
+    <string name="tool_ui_text_filter">过滤关键词：「%s」</string>
+    <string name="tool_ui_text_hint">提示：当前返回所有文字。可以调用 list_ui_texts 时提供 query 参数进行模糊匹配过滤。</string>
+    <string name="tool_ui_text_format">格式说明：【Key】 = \"默认值\" -> 如果有覆盖则显示 [当前覆盖: \"新值\"]</string>
+    <string name="tool_ui_text_stats_header">== 统计 ==</string>
+    <string name="tool_ui_text_stats_filtered">符合过滤条件的文字：%d / %d 项</string>
+    <string name="tool_ui_text_stats_all">全部可调整的文字：%d 项</string>
+    <string name="tool_ui_text_tips_header">== 提示 ==</string>
+    <string name="tool_ui_text_tip_modify">• 修改/翻译某些 key：set_ui_texts({\"updates\": {\"key1\": \"new1\", \"key2\": \"new2\"}})</string>
+    <string name="tool_ui_text_tip_restore">• 恢复某些 key 为默认：set_ui_texts({\"delete\": [\"key1\", \"key2\"]})</string>
+    <string name="tool_ui_text_tip_reset_all">• 一键全部重置：set_ui_texts({\"resetAll\": true})</string>
+    <string name="tool_ui_text_reset_all">已重置全部 UI 文字标签为默认中文。</string>
+    <string name="tool_ui_text_call_failed">调用失败：必须提供 updates（要设置的键值对）或 delete（要删除的 key 列表）至少一项，或传 resetAll=true 重置全部。</string>
+    <string name="tool_ui_text_updated">UI 文字已更新，界面立即生效。</string>
+    <string name="tool_ui_text_set_count">已设置 %d 项：</string>
+    <string name="tool_ui_text_restore_count">已恢复默认（删除覆盖）%d 项：%s</string>
+    <string name="tool_ui_text_no_changes">未检测到任何变化（输入可能为空）。</string>
+    <string name="tool_ui_text_override_count">当前共有 %d 个被覆盖的 key。</string>
+
+    <!-- ── BuiltinToolHandler: MCP Tool Groups ── -->
+    <string name="tool_group_header">=== 内置 MCP 工具组状态 ===</string>
+    <string name="tool_group_enabled">✅ 已启用</string>
+    <string name="tool_group_disabled">❌ 已禁用</string>
+    <string name="tool_group_hint">提示：如需启用某个功能，请调用 configure_mcp_tool_groups(enable=[\"group_id\"])</string>
+    <string name="tool_group_no_change">未执行任何更改（组已处于目标状态或参数为空）。</string>
+    <string name="tool_group_updated">✅ MCP 工具组配置已更新。</string>
+    <string name="tool_group_enabled_list">已启用：%s</string>
+    <string name="tool_group_disabled_list">已禁用：%s</string>
+    <string name="tool_group_current">当前启用的组：%s</string>
+    <string name="tool_group_desc_core">核心工具：基础时间、提问、运行时管理 (始终开启)</string>
+    <string name="tool_group_desc_memory">长效记忆：搜索历史偏好事实 (默认开启)</string>
+    <string name="tool_group_desc_ui_appearance">界面外观：调色、圆角、间距、字体 (默认开启)</string>
+    <string name="tool_group_desc_efficiency">效率提醒：创建和管理定时器 (默认开启)</string>
+    <string name="tool_group_desc_ui_text">界面文字：修改 App 内部所有的文案标签 (默认关闭)</string>
+    <string name="tool_group_desc_files">文件管理：读写外部存储文件 (默认关闭)</string>
+    <string name="tool_group_desc_documents">文档创作：生成 PDF/Excel/Word/PPT (默认关闭)</string>
+
+    <!-- ── BuiltinToolHandler: Tool Display Mode ── -->
+    <string name="tool_display_silent_on">已开启静默模式。后续工具调用将以紧凑方式显示，不再展开详情卡片。如需恢复，请调用 set_tool_display_mode(silent=false)。</string>
+    <string name="tool_display_silent_off">已关闭静默模式。后续工具调用将以正常详情卡片显示。</string>
+
+    <!-- ── BuiltinToolHandler: File Operations ── -->
+    <string name="tool_file_path_empty">参数 \'path\' 不能为空。</string>
+    <string name="tool_file_path_invalid">路径无效或权限被拒绝：%s</string>
+    <string name="tool_file_not_exists">文件不存在：%s</string>
+    <string name="tool_file_not_a_file">路径指向的不是文件：%s</string>
+    <string name="tool_file_not_a_dir">路径指向的不是目录：%s</string>
+    <string name="tool_file_dir_not_exists">目录不存在：%s</string>
+    <string name="tool_file_written">文件已写入：%s\n大小：%d 字节</string>
+    <string name="tool_file_write_failed">写入文件失败：%s</string>
+    <string name="tool_file_appended">内容已追加到：%s\n当前文件大小：%d 字节</string>
+    <string name="tool_file_append_failed">追加文件失败：%s</string>
+    <string name="tool_file_deleted">已删除：%s</string>
+    <string name="tool_file_delete_failed">删除失败，目录可能不为空（如需递归删除请传 recursive=true）。</string>
+    <string name="tool_file_delete_error">删除失败：%s</string>
+    <string name="tool_file_read_failed">读取文件失败：%s</string>
+    <string name="tool_file_truncated">[文件已截断，仅显示前 %d 字节，完整大小：%d 字节]</string>
+    <string name="tool_file_content_truncated">[内容已截断，超过 %d 字节限制]</string>
+    <string name="tool_file_empty_dir">（空目录）</string>
+    <string name="tool_file_search_at_least_one">请至少提供 namePattern 或 contentQuery 之一。</string>
+    <string name="tool_file_search_invalid_regex">无效的正则表达式：%s</string>
+    <string name="tool_file_source_path_empty">参数 \'sourcePath\' 不能为空。</string>
+    <string name="tool_file_dest_path_empty">参数 \'destinationPath\' 不能为空。</string>
+    <string name="tool_file_source_not_exists">源路径不存在：%s</string>
+    <string name="tool_file_dest_exists">目标路径已存在：%s（如需覆盖请传 overwrite=true）。</string>
+    <string name="tool_file_moved">已移动：\n  从：%s\n  到：%s</string>
+    <string name="tool_file_moved_copy">已移动（复制+删除）：\n  从：%s\n  到：%s</string>
+    <string name="tool_file_move_failed">移动失败：%s</string>
+    <string name="tool_file_copied">已复制：\n  从：%s\n  到：%s</string>
+    <string name="tool_file_copy_failed">复制失败：%s</string>
+    <string name="tool_file_dir_exists">目录已存在：%s</string>
+    <string name="tool_file_dir_created">目录已创建：%s</string>
+    <string name="tool_file_dir_create_failed">创建目录失败：%s</string>
+
+    <!-- ── BuiltinToolHandler: Document Creation ── -->
+    <string name="tool_doc_format_invalid">参数 \'format\' 必须是 pdf、xlsx、docx 或 pptx 之一。</string>
+    <string name="tool_doc_created">精致文档已创建：%s\n格式：%s\n大小：%d 字节</string>
+    <string name="tool_doc_create_failed">创建精致文档失败：%s</string>
+    <string name="tool_doc_pptx_table_fallback">[表格数据 (暂不支持直接渲染表格)]:</string>
+
+    <!-- ── BuiltinToolHandler: Ask User ── -->
+    <string name="tool_ask_user_question_empty">参数 \'question\' 不能为空。</string>
+
+    <!-- ── BuiltinToolHandler: Timer ── -->
+    <string name="tool_timer_delay_min">参数 \'delay_seconds\' 必须 ≥ 1。</string>
+    <string name="tool_timer_repeat_negative">参数 \'repeat_interval_seconds\' 不能为负数。</string>
+    <string name="tool_timer_repeat_min">参数 \'repeat_interval_seconds\' 如提供则必须 ≥ 1。</string>
+    <string name="tool_timer_message_empty">参数 \'message\' 不能为空。</string>
+    <string name="tool_timer_no_session">无法创建定时器：当前没有活跃的聊天 session。</string>
+    <string name="tool_timer_label">AI 定时提醒</string>
+    <string name="tool_timer_created">✅ 定时器已创建！\n\n• 定时器 ID：`%s`\n• 触发时间：%s 后%s\n• 提醒内容：%s\n\n到时间后会在聊天中插入提醒消息，并发送系统通知。\n定时器在应用关闭或设备重启后仍然有效。\n如需取消，请调用 cancel_timer 并传入 timer_id: \"%s\"</string>
+    <string name="tool_timer_repeat_info">\n• 重复间隔：每 %s</string>
+    <string name="tool_timer_cancel_id_empty">参数 \'timer_id\' 不能为空。请先调用 list_timers 查看当前待触发的定时器。</string>
+    <string name="tool_timer_cancelled">✅ 定时器 `%s` 已成功取消。</string>
+    <string name="tool_timer_cancel_not_found">找不到 timer_id=\"%s\" 的定时器。它可能已经触发或不存在。\n\n调用 list_timers 可查看当前所有待触发的定时器。</string>
+    <string name="tool_timer_list_empty">当前没有待触发的定时器。</string>
+    <string name="tool_timer_list_header">当前待触发的定时器（共 %d 个）：</string>
+    <string name="tool_timer_list_entry_label">   标签：%s</string>
+    <string name="tool_timer_list_entry_message">   内容：%s</string>
+    <string name="tool_timer_list_entry_remaining">   剩余：%s（%s 触发）</string>
+
+    <!-- ── BuiltinToolHandler: Search ── -->
+    <string name="tool_search_scope">搜索范围：%s</string>
+    <string name="tool_search_name_pattern">文件名模式：%s</string>
+    <string name="tool_search_content_query">内容关键词：%s%s</string>
+    <string name="tool_search_regex_tag"> (正则)</string>
+    <string name="tool_search_results_count">找到 %d 个结果%s：</string>
+    <string name="tool_search_limit_reached">（已达上限 %d）</string>
+
+    <!-- ── BuiltinToolHandler: File Info ── -->
+    <string name="tool_fileinfo_type_dir">目录</string>
+    <string name="tool_fileinfo_type_file">文件</string>
+    <string name="tool_fileinfo_type">类型：%s</string>
+    <string name="tool_fileinfo_size">大小：%d 字节 (%.2f KB)</string>
+    <string name="tool_fileinfo_mime">MIME 类型：%s</string>
+    <string name="tool_fileinfo_child_count">子项数量：%d</string>
+    <string name="tool_fileinfo_last_modified">最后修改：%s</string>
+    <string name="tool_fileinfo_readable">可读：%s</string>
+    <string name="tool_fileinfo_writable">可写：%s</string>
+    <string name="tool_fileinfo_path">路径：%s</string>
+    <string name="tool_fileinfo_dir_label">目录：%s</string>
+    <string name="tool_fileinfo_recursive">（递归，最大深度 %d）</string>
+    <string name="tool_fileinfo_yes">是</string>
+    <string name="tool_fileinfo_no">否</string>
+
+    <!-- ── BuiltinToolHandler: Additional Keys ── -->
+    <string name="tool_ui_applied_no_changes">UI 设置已应用。未检测到任何字段变化。</string>
+    <string name="tool_duration_hours">%d 小时 </string>
+    <string name="tool_duration_minutes">%d 分钟 </string>
+    <string name="tool_duration_seconds">%d 秒</string>
+    <string name="tool_doc_pptx_table_fallback_android">[表格数据 (暂不支持直接渲染表格)]:</string>
+    <string name="tool_timer_type_repeat">🔁 重复(每 %s)</string>
+    <string name="tool_timer_type_once">⏳ 单次</string>
+    <string name="tool_ui_text_key_label">• Key: %s</string>
+    <string name="tool_ui_text_default">  默认: \"%s\"</string>
+    <string name="tool_ui_text_override">  当前已覆盖为: \"%s\"</string>
+
+    <!-- ── ToolCallComponents: formatToolCallSummary ── -->
+    <string name="tool_call_root_directory">根目录</string>
+    <string name="tool_call_browsed_dir">浏览了目录: %s</string>
+    <string name="tool_call_read_file">读取了文件: %s</string>
+    <string name="tool_call_wrote_file">写入了文件: %s</string>
+    <string name="tool_call_appended_file">追加了文件: %s</string>
+    <string name="tool_call_deleted_file">删除了文件/目录: %s</string>
+    <string name="tool_call_file_info">查看了路径信息: %s</string>
+    <string name="tool_call_filename_match">文件名匹配: %s</string>
+    <string name="tool_call_content_match">内容匹配: %s</string>
+    <string name="tool_call_searched_dir">搜索了目录 %s</string>
+    <string name="tool_call_searched_memory">检索了记忆库: \"%s\"</string>
+    <string name="tool_call_adjusted_ui">修改了界面 UI 样式配置</string>
+    <string name="tool_call_saved_scheme">保存了配色方案: %s</string>
+    <string name="tool_call_applied_scheme">应用了配色方案: %s</string>
+    <string name="tool_call_deleted_scheme">删除了配色方案: %s</string>
+    <string name="tool_call_listed_schemes">列出了已保存的配色方案</string>
+    <string name="tool_call_scheme_action">操作了配色方案</string>
+    <string name="tool_call_delegated_agent">委派子 Agent: %s</string>
+    <string name="tool_call_sent_message">向 %s 发送了消息</string>
+    <string name="tool_call_created_task">创建任务: %s</string>
+    <string name="tool_call_updated_task">更新任务状态: %s</string>
+    <string name="tool_call_got_time">获取了当前系统时间</string>
+    <string name="tool_call_got_ui_caps">获取了 UI 配置参数范围</string>
+    <string name="tool_call_reset_ui">重置了 UI 界面为默认</string>
+    <string name="tool_call_updated_texts">更新了 UI 界面自定义文本</string>
+    <string name="tool_call_listed_texts">查询了 UI 文字标签列表</string>
+    <string name="tool_call_path_action">对路径 \"%s\" 执行了操作</string>
+    <string name="tool_call_queried">检索了: \"%s\"</string>
+    <string name="tool_call_visited_url">访问了 URL: %s</string>
+    <string name="tool_call_executed_cmd">执行了系统命令: %s</string>
+    <string name="tool_call_params">参数: %s</string>
+    <string name="tool_call_executed">执行了该工具</string>
+    <string name="tool_call_called_tool">调用工具 %1$s: %2$s</string>
+    <string name="tool_call_tool_name">调用工具 %s</string>
+    <string name="tool_call_tool_id">工具 ID: %s</string>
+    <string name="tool_call_collapse_args">收起输入参数</string>
+    <string name="tool_call_expand_args">查看输入参数</string>
+    <string name="tool_call_collapse_result">收起执行结果</string>
+    <string name="tool_call_expand_result">查看执行结果</string>
+
+    <!-- ── WorkspaceViewModel: Log Export & Status ── -->
+    <string name="ws_create_failed">创建工作区失败，请重试</string>
+    <string name="ws_delete_failed">删除工作区失败，请重试</string>
+    <string name="ws_log_export_success">日志导出成功</string>
+    <string name="ws_log_export_failed">导出失败: %s</string>
+    <string name="ws_status_running">运行中</string>
+    <string name="ws_status_completed">已完成</string>
+    <string name="ws_active">活跃</string>
+    <string name="ws_exec_multi_agent">正在执行多 Agent 协作：%s…</string>
+    <string name="ws_start_failed">启动工作区执行失败，请重试</string>
+    <string name="ws_task_completed">任务已完成：%s</string>
+    <string name="ws_log_header">OmniChat 工作区日志</string>
+    <string name="ws_log_info">工作区信息</string>
+    <string name="ws_log_export_time">导出时间: %s</string>
+    <string name="ws_log_session_id">会话 ID: %s</string>
+    <string name="ws_log_title">标题: %s</string>
+    <string name="ws_log_status">状态: %s</string>
+    <string name="ws_log_created_at">创建时间: %s</string>
+    <string name="ws_log_team_status">团队状态</string>
+    <string name="ws_log_team_name">团队名: %s</string>
+    <string name="ws_log_agent_count">Agent 数量: %d</string>
+    <string name="ws_log_messages_count">%d 条消息</string>
+    <string name="ws_log_created_at_time">创建时间: %s</string>
+    <string name="ws_log_orchestrator_history">Orchestrator 对话历史 (%d 条消息)</string>
+    <string name="ws_log_end">日志结束</string>
+    <string name="ws_log_intervention"> [用户干预]</string>
+    <string name="ws_log_truncated">\n    ... (截断，共 %d 字符)</string>
+
+    <!-- ── ExportImportScreen ── -->
+    <string name="processing">处理中…</string>
+
+    <!-- ── McpRuntimeManager ── -->
+    <string name="builtin_server_name">内置工具</string>
+    <string name="ws_no_model_configs">No model configs available</string>
+
+    <!-- ── BuiltinToolHandler ── -->
+    <string name="tool_time_format_pattern">yyyy年MM月dd日 HH:mm:ss (EEEE)</string>
+    <string name="tool_memory_tag_filter">，标签过滤：%s</string>
+
+    <!-- ── AlarmReceiver ── -->
+    <string name="alarm_notification_description">AI 助手创建的定时提醒</string>
+    <string name="alarm_timer_reminder">⏰ **定时提醒**\n\n%s</string>
+    <string name="tool_search_match_lines">  (匹配行: %s)</string>
+</resources>

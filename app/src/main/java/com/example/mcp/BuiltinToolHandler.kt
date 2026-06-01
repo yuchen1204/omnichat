@@ -2,6 +2,8 @@ package com.example.mcp
 
 import android.content.Context
 import android.os.Environment
+import androidx.annotation.StringRes
+import com.example.R
 import android.util.Base64
 import android.webkit.MimeTypeMap
 import com.example.data.AppDatabase
@@ -22,6 +24,9 @@ import java.util.Locale
 import java.util.UUID
 
 object BuiltinToolHandler {
+
+    private fun str(context: Context, @StringRes resId: Int): String = context.getString(resId)
+    private fun str(context: Context, @StringRes resId: Int, vararg args: Any): String = context.getString(resId, *args)
 
     /**
      * Interface for accessing workspace state from MCP tools.
@@ -70,7 +75,7 @@ object BuiltinToolHandler {
             "get_ui_capabilities" -> handleGetUiCapabilities(context)
             "reset_ui_to_default" -> handleAdjustUi(context, JSONObject().apply { put("resetToDefault", true) })
             "adjust_ui" -> handleAdjustUi(context, arguments)
-            "get_current_time" -> handleGetCurrentTime(arguments)
+            "get_current_time" -> handleGetCurrentTime(context, arguments)
             "color_scheme" -> handleColorScheme(context, arguments)
             "search_memory" -> handleSearchMemory(context, arguments)
             "list_ui_texts" -> handleListUiTexts(context, arguments)
@@ -102,7 +107,7 @@ object BuiltinToolHandler {
             "scratchpad_read" -> handleScratchpadRead(arguments)
             "scratchpad_list" -> handleScratchpadList()
             "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
-            else -> errorResponse("未知的内置工具: $toolName")
+            else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
     }
 
@@ -174,7 +179,7 @@ object BuiltinToolHandler {
     private suspend fun handleGetUiCapabilities(context: Context): JSONObject {
         val repository = getRepository(context)
         val current = repository.getUISettings() ?: UISettings()
-        return buildUiCapabilitiesResponse(current)
+        return buildUiCapabilitiesResponse(context, current)
     }
 
     // 使用 UiFieldRegistry 循环处理颜色字段，消除 30 行重复的 hex() 调用和变更检测
@@ -184,7 +189,7 @@ object BuiltinToolHandler {
 
         if (arguments.optBoolean("resetToDefault", false)) {
             repository.upsertUISettings(UISettings())
-            return successResponse("UI 已重置为默认设置。")
+            return successResponse(str(context, R.string.tool_ui_reset))
         }
 
         var next = current
@@ -243,12 +248,12 @@ object BuiltinToolHandler {
 
         repository.upsertUISettings(next.copy(updatedAt = System.currentTimeMillis()))
 
-        val summary = if (changed.isEmpty()) "未检测到任何字段变化（输入可能为空或全部无效）。"
-        else "已更新 ${changed.size} 项：${changed.joinToString(", ")}"
-        return successResponse("UI 设置已应用。$summary")
+        val text = if (changed.isEmpty()) str(context, R.string.tool_ui_applied_no_changes)
+        else str(context, R.string.tool_ui_applied, changed.size, changed.joinToString(", "))
+        return successResponse(text)
     }
 
-    private fun handleGetCurrentTime(arguments: JSONObject): JSONObject {
+    private fun handleGetCurrentTime(context: Context, arguments: JSONObject): JSONObject {
         val tzId = arguments.optString("timezone").takeIf { it.isNotBlank() }
         val zone = try {
             if (tzId != null) java.time.ZoneId.of(tzId) else java.time.ZoneId.systemDefault()
@@ -256,14 +261,14 @@ object BuiltinToolHandler {
             java.time.ZoneId.systemDefault()
         }
         val now = ZonedDateTime.now(zone)
-        val fullFmt = DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm:ss (EEEE)", Locale.CHINESE)
+        val fullFmt = DateTimeFormatter.ofPattern(context.getString(R.string.tool_time_format_pattern), Locale.getDefault())
         val isoFmt = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         val result = buildString {
-            appendLine("当前时间信息：")
-            appendLine("• 本地时间：${now.format(fullFmt)}")
-            appendLine("• 时区：${zone.id} (UTC${now.format(DateTimeFormatter.ofPattern("xxx"))})")
-            appendLine("• ISO 8601：${now.format(isoFmt)}")
-            appendLine("• Unix 时间戳：${now.toEpochSecond()}")
+            appendLine("${str(context, R.string.tool_time_info)}：")
+            appendLine(str(context, R.string.tool_time_local, now.format(fullFmt)))
+            appendLine(str(context, R.string.tool_time_zone, zone.id, now.format(DateTimeFormatter.ofPattern("xxx"))))
+            appendLine(str(context, R.string.tool_time_iso, now.format(isoFmt)))
+            appendLine(str(context, R.string.tool_time_unix, now.toEpochSecond()))
         }
         return successResponse(result.trim())
     }
@@ -273,7 +278,7 @@ object BuiltinToolHandler {
     private suspend fun handleColorScheme(context: Context, arguments: JSONObject): JSONObject {
         val action = arguments.optString("action").trim().lowercase()
         if (action !in listOf("save", "list", "apply", "delete")) {
-            return errorResponse("参数 'action' 必须是 save、list、apply 或 delete 之一。")
+            return errorResponse(str(context, R.string.tool_color_action_invalid))
         }
 
         val repository = getRepository(context)
@@ -282,55 +287,55 @@ object BuiltinToolHandler {
             "save" -> {
                 val name = arguments.optString("name").trim()
                 val desc = arguments.optString("description").trim()
-                if (name.isBlank()) return errorResponse("保存失败：name 不能为空。")
+                if (name.isBlank()) return errorResponse(str(context, R.string.tool_color_save_name_empty))
                 val count = repository.getColorSchemePresetCount()
                 if (count >= ColorSchemePreset.MAX_PRESETS) {
                     val existing = repository.getAllColorSchemePresets()
                     val list = existing.joinToString("\n") { "• [${it.schemeId}] ${it.name}" }
-                    return errorResponse("保存失败：已达到最多 ${ColorSchemePreset.MAX_PRESETS} 个方案上限。\n\n当前已保存：\n$list\n\n请先用 action=\"delete\" 删除一个方案。")
+                    return errorResponse(str(context, R.string.tool_color_save_limit, ColorSchemePreset.MAX_PRESETS, list))
                 }
                 val current = repository.getUISettings() ?: UISettings()
                 val schemeId = UUID.randomUUID().toString()
                 val preset = ColorSchemePreset.fromUISettings(schemeId, name.take(30), desc.take(100), current)
                 repository.insertColorSchemePreset(preset)
-                successResponse("配色方案「${preset.name}」已保存。\nschemeId: $schemeId\n当前已保存 ${count + 1}/${ColorSchemePreset.MAX_PRESETS} 个方案。")
+                successResponse(str(context, R.string.tool_color_saved, preset.name, schemeId, count + 1, ColorSchemePreset.MAX_PRESETS))
             }
             "list" -> {
                 val presets = repository.getAllColorSchemePresets()
                 if (presets.isEmpty()) {
-                    return successResponse("当前没有已保存的配色方案。可以先用 adjust_ui 调整配色，再用 color_scheme(action=\"save\") 保存。")
+                    return successResponse(str(context, R.string.tool_color_list_empty))
                 }
-                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINESE)
+                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
                 val text = buildString {
-                    appendLine("已保存的配色方案（${presets.size}/${ColorSchemePreset.MAX_PRESETS}）：")
+                    appendLine(str(context, R.string.tool_color_list_header, presets.size, ColorSchemePreset.MAX_PRESETS))
                     appendLine()
                     presets.forEachIndexed { i, p ->
                         appendLine("${i + 1}. 「${p.name}」")
                         appendLine("   schemeId:    ${p.schemeId}")
-                        appendLine("   概述:        ${p.description}")
-                        appendLine("   保存时间:    ${sdf.format(Date(p.createdAt))}")
-                        appendLine("   主色:        ${p.primaryColor}  背景色: ${p.backgroundColor}")
-                        appendLine("   成功色:      ${p.successColor}  圆角: ${p.cornerRadiusDp}dp  间距: ${p.spacingMultiplier}x")
+                        appendLine("   ${str(context, R.string.tool_color_list_desc, p.description)}")
+                        appendLine("   ${str(context, R.string.tool_color_list_saved_at, sdf.format(Date(p.createdAt)))}")
+                        appendLine("   ${str(context, R.string.tool_color_list_primary, p.primaryColor, p.backgroundColor)}")
+                        appendLine("   ${str(context, R.string.tool_color_list_success, p.successColor, p.cornerRadiusDp, p.spacingMultiplier)}")
                     }
                 }
                 successResponse(text.trimEnd())
             }
             "apply" -> {
                 val schemeId = arguments.optString("schemeId").trim()
-                if (schemeId.isBlank()) return errorResponse("应用失败：schemeId 不能为空。请先用 action=\"list\" 获取可用的 schemeId。")
+                if (schemeId.isBlank()) return errorResponse(str(context, R.string.tool_color_apply_no_id))
                 val preset = repository.getColorSchemePresetById(schemeId)
-                    ?: return errorResponse("应用失败：找不到 schemeId=$schemeId 的方案。请用 action=\"list\" 确认可用的 schemeId。")
+                    ?: return errorResponse(str(context, R.string.tool_color_apply_not_found, schemeId))
                 repository.upsertUISettings(preset.toUISettings())
-                successResponse("配色方案「${preset.name}」已应用，界面立即生效。\n概述：${preset.description}")
+                successResponse(str(context, R.string.tool_color_applied, preset.name, preset.description))
             }
             else -> { // delete
                 val schemeId = arguments.optString("schemeId").trim()
-                if (schemeId.isBlank()) return errorResponse("删除失败：schemeId 不能为空。")
+                if (schemeId.isBlank()) return errorResponse(str(context, R.string.tool_color_delete_no_id))
                 val preset = repository.getColorSchemePresetById(schemeId)
-                    ?: return errorResponse("删除失败：找不到 schemeId=$schemeId 的方案。")
+                    ?: return errorResponse(str(context, R.string.tool_color_delete_not_found, schemeId))
                 repository.deleteColorSchemePreset(schemeId)
                 val remaining = repository.getColorSchemePresetCount()
-                successResponse("配色方案「${preset.name}」已删除。当前剩余 $remaining/${ColorSchemePreset.MAX_PRESETS} 个方案。")
+                successResponse(str(context, R.string.tool_color_deleted, preset.name, remaining, ColorSchemePreset.MAX_PRESETS))
             }
         }
     }
@@ -340,7 +345,7 @@ object BuiltinToolHandler {
     private suspend fun handleSearchMemory(context: Context, arguments: JSONObject): JSONObject {
         val query = arguments.optString("query").trim()
         if (query.isBlank()) {
-            return errorResponse("搜索失败：query 不能为空。")
+            return errorResponse(str(context, R.string.tool_memory_query_empty))
         }
         if (query.any { it.code > 127 }) {
             return errorResponse("search_memory only supports English queries. Please search using English keywords.")
@@ -389,18 +394,18 @@ object BuiltinToolHandler {
             .sortedByDescending { it.score }
             .take(limit)
 
-        val filterDesc = if (tagFilter != null) "，标签过滤：$tagFilter" else ""
+        val filterDesc = if (tagFilter != null) context.getString(R.string.tool_memory_tag_filter, tagFilter) else ""
         val text = buildString {
-            appendLine("记忆库搜索结果（关键词：「$query」$filterDesc，共 $totalCount 条记忆，命中 ${scored.size} 条）：")
+            appendLine(str(context, R.string.tool_memory_search_results, query, filterDesc, totalCount, scored.size))
             appendLine()
             if (scored.isEmpty()) {
-                appendLine("未找到与关键词相关的记忆。")
-                appendLine("提示：可以尝试更换关键词，或直接浏览全部记忆（记忆库共 $totalCount 条）。")
+                appendLine(str(context, R.string.tool_memory_no_results))
+                appendLine(str(context, R.string.tool_memory_no_results_hint, totalCount))
             } else {
                 scored.forEachIndexed { i, sm ->
-                    val pinnedTag = if (sm.memory.pinned) " [已锁定]" else ""
+                    val pinnedTag = if (sm.memory.pinned) str(context, R.string.tool_memory_pinned_tag) else ""
                     val tagsDisplay = if (sm.memory.tags.isNotBlank()) " [${sm.memory.tags}]" else ""
-                    appendLine("${i + 1}. [id=${sm.memory.id}, 置信度=${sm.memory.confidence}, 相关度=${String.format("%.2f", sm.score)}$pinnedTag$tagsDisplay]")
+                    appendLine(str(context, R.string.tool_memory_entry_format, i + 1, sm.memory.id, sm.memory.confidence, sm.score, pinnedTag, tagsDisplay))
                     appendLine("   ${sm.memory.content}")
                 }
             }
@@ -433,13 +438,13 @@ object BuiltinToolHandler {
         val hasQuery = query.isNotEmpty()
 
         val text = buildString {
-            appendLine("=== App 可调整/翻译的 UI 文字列表 ===")
+            appendLine(str(context, R.string.tool_ui_text_header))
             if (hasQuery) {
-                appendLine("过滤关键词：「$query」")
+                appendLine(str(context, R.string.tool_ui_text_filter, query))
             } else {
-                appendLine("提示：当前返回所有文字。可以调用 list_ui_texts 时提供 query 参数进行模糊匹配过滤。")
+                appendLine(str(context, R.string.tool_ui_text_hint))
             }
-            appendLine("格式说明：【Key】 = \"默认值\" -> 如果有覆盖则显示 [当前覆盖: \"新值\"]")
+            appendLine(str(context, R.string.tool_ui_text_format))
             appendLine()
 
             val unionKeys = (allKeys.keys + strings.overrides.keys).sorted()
@@ -457,28 +462,28 @@ object BuiltinToolHandler {
                 if (matchesQuery) {
                     matchCount++
                     if (overrideText != null) {
-                        appendLine("• Key: $key")
-                        appendLine("  默认: \"$defaultText\"")
-                        appendLine("  当前已覆盖为: \"$overrideText\"")
+                        appendLine(str(context, R.string.tool_ui_text_key_label, key))
+                        appendLine(str(context, R.string.tool_ui_text_default, defaultText))
+                        appendLine(str(context, R.string.tool_ui_text_override, overrideText))
                     } else {
-                        appendLine("• Key: $key")
-                        appendLine("  默认: \"$defaultText\"")
+                        appendLine(str(context, R.string.tool_ui_text_key_label, key))
+                        appendLine(str(context, R.string.tool_ui_text_default, defaultText))
                     }
                     appendLine()
                 }
             }
 
-            appendLine("== 统计 ==")
+            appendLine(str(context, R.string.tool_ui_text_stats_header))
             if (hasQuery) {
-                appendLine("符合过滤条件的文字：$matchCount / ${unionKeys.size} 项")
+                appendLine(str(context, R.string.tool_ui_text_stats_filtered, matchCount, unionKeys.size))
             } else {
-                appendLine("全部可调整的文字：${unionKeys.size} 项")
+                appendLine(str(context, R.string.tool_ui_text_stats_all, unionKeys.size))
             }
             appendLine()
-            appendLine("== 提示 ==")
-            appendLine("• 修改/翻译某些 key：set_ui_texts({\"updates\": {\"key1\": \"new1\", \"key2\": \"new2\"}})")
-            appendLine("• 恢复某些 key 为默认：set_ui_texts({\"delete\": [\"key1\", \"key2\"]})")
-            appendLine("• 一键全部重置：set_ui_texts({\"resetAll\": true})")
+            appendLine(str(context, R.string.tool_ui_text_tips_header))
+            appendLine(str(context, R.string.tool_ui_text_tip_modify))
+            appendLine(str(context, R.string.tool_ui_text_tip_restore))
+            appendLine(str(context, R.string.tool_ui_text_tip_reset_all))
         }
 
         return successResponse(text)
@@ -491,13 +496,13 @@ object BuiltinToolHandler {
 
         if (arguments.optBoolean("resetAll", false)) {
             repository.upsertUISettings(current.copy(uiStrings = "{}", updatedAt = System.currentTimeMillis()))
-            return successResponse("已重置全部 UI 文字标签为默认中文。")
+            return successResponse(str(context, R.string.tool_ui_text_reset_all))
         }
 
         val updates = arguments.optJSONObject("updates")
         val deletes = arguments.optJSONArray("delete")
         if (updates == null && deletes == null) {
-            return errorResponse("调用失败：必须提供 updates（要设置的键值对）或 delete（要删除的 key 列表）至少一项，或传 resetAll=true 重置全部。")
+            return errorResponse(str(context, R.string.tool_ui_text_call_failed))
         }
 
         val merged = currentStrings.overrides.toMutableMap()
@@ -528,22 +533,22 @@ object BuiltinToolHandler {
         repository.upsertUISettings(current.copy(uiStrings = newJson, updatedAt = System.currentTimeMillis()))
 
         val text = buildString {
-            appendLine("UI 文字已更新，界面立即生效。")
+            appendLine(str(context, R.string.tool_ui_text_updated))
             if (applied.isNotEmpty()) {
                 appendLine()
-                appendLine("已设置 ${applied.size} 项：")
+                appendLine(str(context, R.string.tool_ui_text_set_count, applied.size))
                 applied.forEach { appendLine("  • $it") }
             }
             if (removed.isNotEmpty()) {
                 appendLine()
-                appendLine("已恢复默认（删除覆盖）${removed.size} 项：${removed.joinToString(", ")}")
+                appendLine(str(context, R.string.tool_ui_text_restore_count, removed.size, removed.joinToString(", ")))
             }
             if (applied.isEmpty() && removed.isEmpty()) {
                 appendLine()
-                appendLine("未检测到任何变化（输入可能为空）。")
+                appendLine(str(context, R.string.tool_ui_text_no_changes))
             }
             appendLine()
-            appendLine("当前共有 ${merged.size} 个被覆盖的 key。")
+            appendLine(str(context, R.string.tool_ui_text_override_count, merged.size))
         }
         return successResponse(text.trimEnd())
     }
@@ -556,25 +561,25 @@ object BuiltinToolHandler {
         val enabledGroups = settings.enabledMcpGroups.split(",").toSet()
 
         val allGroups = listOf(
-            "core" to "核心工具：基础时间、提问、运行时管理 (始终开启)",
-            "memory" to "长效记忆：搜索历史偏好事实 (默认开启)",
-            "ui_appearance" to "界面外观：调色、圆角、间距、字体 (默认开启)",
-            "efficiency" to "效率提醒：创建和管理定时器 (默认开启)",
-            "ui_text" to "界面文字：修改 App 内部所有的文案标签 (默认关闭)",
-            "files" to "文件管理：读写外部存储文件 (默认关闭)",
-            "documents" to "文档创作：生成 PDF/Excel/Word/PPT (默认关闭)"
+            "core" to str(context, R.string.tool_group_desc_core),
+            "memory" to str(context, R.string.tool_group_desc_memory),
+            "ui_appearance" to str(context, R.string.tool_group_desc_ui_appearance),
+            "efficiency" to str(context, R.string.tool_group_desc_efficiency),
+            "ui_text" to str(context, R.string.tool_group_desc_ui_text),
+            "files" to str(context, R.string.tool_group_desc_files),
+            "documents" to str(context, R.string.tool_group_desc_documents)
         )
 
         val text = buildString {
-            appendLine("=== 内置 MCP 工具组状态 ===")
+            appendLine(str(context, R.string.tool_group_header))
             appendLine()
             allGroups.forEach { (id, desc) ->
-                val status = if (id == "core" || id in enabledGroups) "✅ 已启用" else "❌ 已禁用"
+                val status = if (id == "core" || id in enabledGroups) str(context, R.string.tool_group_enabled) else str(context, R.string.tool_group_disabled)
                 appendLine("$status 【$id】")
                 appendLine("   $desc")
                 appendLine()
             }
-            appendLine("提示：如需启用某个功能，请调用 configure_mcp_tool_groups(enable=[\"group_id\"])")
+            appendLine(str(context, R.string.tool_group_hint))
         }
         return successResponse(text.trimEnd())
     }
@@ -608,18 +613,18 @@ object BuiltinToolHandler {
         }
 
         if (enabledCount.isEmpty() && disabledCount.isEmpty()) {
-            return successResponse("未执行任何更改（组已处于目标状态或参数为空）。")
+            return successResponse(str(context, R.string.tool_group_no_change))
         }
 
         val nextGroups = currentGroups.sorted().joinToString(",")
         repository.upsertUISettings(current.copy(enabledMcpGroups = nextGroups, updatedAt = System.currentTimeMillis()))
 
         val text = buildString {
-            appendLine("✅ MCP 工具组配置已更新。")
-            if (enabledCount.isNotEmpty()) appendLine("已启用：${enabledCount.joinToString(", ")}")
-            if (disabledCount.isNotEmpty()) appendLine("已禁用：${disabledCount.joinToString(", ")}")
+            appendLine(str(context, R.string.tool_group_updated))
+            if (enabledCount.isNotEmpty()) appendLine(str(context, R.string.tool_group_enabled_list, enabledCount.joinToString(", ")))
+            if (disabledCount.isNotEmpty()) appendLine(str(context, R.string.tool_group_disabled_list, disabledCount.joinToString(", ")))
             appendLine()
-            appendLine("当前启用的组：$nextGroups")
+            appendLine(str(context, R.string.tool_group_current, nextGroups))
         }
         return successResponse(text.trimEnd())
     }
@@ -632,9 +637,9 @@ object BuiltinToolHandler {
         val silent = arguments.optBoolean("silent", false)
         repository.upsertUISettings(current.copy(silentToolCalls = silent, updatedAt = System.currentTimeMillis()))
         return if (silent) {
-            successResponse("已开启静默模式。后续工具调用将以紧凑方式显示，不再展开详情卡片。如需恢复，请调用 set_tool_display_mode(silent=false)。")
+            successResponse(str(context, R.string.tool_display_silent_on))
         } else {
-            successResponse("已关闭静默模式。后续工具调用将以正常详情卡片显示。")
+            successResponse(str(context, R.string.tool_display_silent_off))
         }
     }
 
@@ -644,9 +649,9 @@ object BuiltinToolHandler {
         val path = arguments.optString("path").trim()
         val content = arguments.optString("content")
         val encoding = arguments.optString("encoding", "utf8")
-        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         val file = resolvePath(context, path)
-            ?: return errorResponse("路径无效或权限被拒绝：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             file.parentFile?.mkdirs()
             if (encoding == "base64") {
@@ -655,9 +660,9 @@ object BuiltinToolHandler {
             } else {
                 file.writeText(content, Charsets.UTF_8)
             }
-            successResponse("文件已写入：${file.absolutePath}\n大小：${file.length()} 字节")
+            successResponse(str(context, R.string.tool_file_written, file.absolutePath, file.length()))
         } catch (e: Exception) {
-            errorResponse("写入文件失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_write_failed, e.localizedMessage))
         }
     }
 
@@ -667,11 +672,11 @@ object BuiltinToolHandler {
         val maxBytes = arguments.optInt("maxBytes", 1024 * 1024).coerceIn(1, 10 * 1024 * 1024)
         val startLine = arguments.optInt("startLine", 0)
         val endLine = arguments.optInt("endLine", 0)
-        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         val file = resolvePath(context, path)
-            ?: return errorResponse("路径无效或权限被拒绝：$path")
-        if (!file.exists()) return errorResponse("文件不存在：$path")
-        if (!file.isFile) return errorResponse("路径指向的不是文件：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
+        if (!file.exists()) return errorResponse(str(context, R.string.tool_file_not_exists, path))
+        if (!file.isFile) return errorResponse(str(context, R.string.tool_file_not_a_file, path))
         return try {
             if (encoding == "base64") {
                 // base64 模式：按字节读取
@@ -682,7 +687,7 @@ object BuiltinToolHandler {
                 }
                 val truncated = file.length() > maxBytes
                 val resultText = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                val suffix = if (truncated) "\n\n[文件已截断，仅显示前 $maxBytes 字节，完整大小：${file.length()} 字节]" else ""
+                val suffix = if (truncated) "\n\n${str(context, R.string.tool_file_truncated, maxBytes, file.length())}" else ""
                 successResponse(resultText + suffix)
             } else if (startLine > 0 || endLine > 0) {
                 // 按行范围读取
@@ -693,7 +698,7 @@ object BuiltinToolHandler {
                 val text = selected.joinToString("\n")
                 val byteSize = text.toByteArray(Charsets.UTF_8).size
                 if (byteSize > maxBytes) {
-                    successResponse(text.take(maxBytes) + "\n\n[内容已截断，超过 $maxBytes 字节限制]")
+                    successResponse(text.take(maxBytes) + "\n\n${str(context, R.string.tool_file_content_truncated, maxBytes)}")
                 } else {
                     successResponse(text)
                 }
@@ -706,20 +711,20 @@ object BuiltinToolHandler {
                 }
                 val truncated = file.length() > maxBytes
                 val resultText = String(bytes, Charsets.UTF_8)
-                val suffix = if (truncated) "\n\n[文件已截断，仅显示前 $maxBytes 字节，完整大小：${file.length()} 字节]" else ""
+                val suffix = if (truncated) "\n\n${str(context, R.string.tool_file_truncated, maxBytes, file.length())}" else ""
                 successResponse(resultText + suffix)
             }
         } catch (e: Exception) {
-            errorResponse("读取文件失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_read_failed, e.localizedMessage))
         }
     }
 
     private suspend fun handleFileAppend(context: Context, arguments: JSONObject): JSONObject {
         val path = arguments.optString("path").trim()
         val content = arguments.optString("content")
-        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         val file = resolvePath(context, path)
-            ?: return errorResponse("路径无效或权限被拒绝：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             file.parentFile?.mkdirs()
             val needsNewline = if (file.exists() && file.length() > 0) {
@@ -731,25 +736,25 @@ object BuiltinToolHandler {
                 }
             } else false
             file.appendText(if (needsNewline) "\n$content" else content, Charsets.UTF_8)
-            successResponse("内容已追加到：${file.absolutePath}\n当前文件大小：${file.length()} 字节")
+            successResponse(str(context, R.string.tool_file_appended, file.absolutePath, file.length()))
         } catch (e: Exception) {
-            errorResponse("追加文件失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_append_failed, e.localizedMessage))
         }
     }
 
     private suspend fun handleFileDelete(context: Context, arguments: JSONObject): JSONObject {
         val path = arguments.optString("path").trim()
         val recursive = arguments.optBoolean("recursive", false)
-        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         val file = resolvePath(context, path)
-            ?: return errorResponse("路径无效或权限被拒绝：$path")
-        if (!file.exists()) return errorResponse("路径不存在：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
+        if (!file.exists()) return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             val success = if (recursive) deleteRecursive(file) else file.delete()
-            if (success) successResponse("已删除：${file.absolutePath}")
-            else errorResponse("删除失败，目录可能不为空（如需递归删除请传 recursive=true）。")
+            if (success) successResponse(str(context, R.string.tool_file_deleted, file.absolutePath))
+            else errorResponse(str(context, R.string.tool_file_delete_failed))
         } catch (e: Exception) {
-            errorResponse("删除失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_delete_error, e.localizedMessage))
         }
     }
 
@@ -759,9 +764,9 @@ object BuiltinToolHandler {
         val recursive = arguments.optBoolean("recursive", false)
         val maxDepth = arguments.optInt("maxDepth", 3).coerceIn(1, 10)
         val dir = resolvePath(context, path.ifEmpty { "." })
-            ?: return errorResponse("路径无效或权限被拒绝：${path.ifEmpty { "/" }}")
-        if (!dir.exists()) return errorResponse("目录不存在：${path.ifEmpty { "/" }}")
-        if (!dir.isDirectory) return errorResponse("路径指向的不是目录：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path.ifEmpty { "/" }))
+        if (!dir.exists()) return errorResponse(str(context, R.string.tool_file_dir_not_exists, path.ifEmpty { "/" }))
+        if (!dir.isDirectory) return errorResponse(str(context, R.string.tool_file_not_a_dir, path))
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
         fun listDir(d: File, depth: Int): String {
@@ -785,10 +790,10 @@ object BuiltinToolHandler {
 
         val listing = listDir(dir, 0)
         val text = buildString {
-            appendLine("目录：${dir.absolutePath}")
-            if (recursive) appendLine("（递归，最大深度 $maxDepth）")
+            appendLine(str(context, R.string.tool_fileinfo_dir_label, dir.absolutePath))
+            if (recursive) appendLine(str(context, R.string.tool_fileinfo_recursive, maxDepth))
             appendLine()
-            if (listing.isEmpty()) appendLine("（空目录）")
+            if (listing.isEmpty()) appendLine(str(context, R.string.tool_file_empty_dir))
             else append(listing.trimEnd())
         }
         return successResponse(text.trimEnd())
@@ -802,23 +807,23 @@ object BuiltinToolHandler {
         val isRegex = arguments.optBoolean("isRegex", false)
         val contextLines = arguments.optInt("contextLines", 0).coerceIn(0, 10)
         if (namePattern == null && contentQuery == null) {
-            return errorResponse("请至少提供 namePattern 或 contentQuery 之一。")
+            return errorResponse(str(context, R.string.tool_file_search_at_least_one))
         }
         val searchRoot = resolvePath(context, directory.ifEmpty { "." })
-            ?: return errorResponse("路径无效或权限被拒绝：${directory.ifEmpty { "/" }}")
-        if (!searchRoot.exists()) return errorResponse("搜索目录不存在：${directory.ifEmpty { "/" }}")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, directory.ifEmpty { "/" }))
+        if (!searchRoot.exists()) return errorResponse(str(context, R.string.tool_file_dir_not_exists, directory.ifEmpty { "/" }))
         val contentRegex = if (contentQuery != null && isRegex) {
             try { Regex(contentQuery, RegexOption.IGNORE_CASE) } catch (e: Exception) {
-                return errorResponse("无效的正则表达式：${e.message}")
+                return errorResponse(str(context, R.string.tool_file_search_invalid_regex, e.message ?: "Unknown error"))
             }
         } else null
         val results = mutableListOf<JSONObject>()
         searchFiles(searchRoot, namePattern, contentQuery, contentRegex, contextLines, results, maxResults)
         val text = buildString {
-            appendLine("搜索范围：${searchRoot.absolutePath}")
-            if (namePattern != null) appendLine("文件名模式：$namePattern")
-            if (contentQuery != null) appendLine("内容关键词：$contentQuery${if (isRegex) " (正则)" else ""}")
-            appendLine("找到 ${results.size} 个结果${if (results.size >= maxResults) "（已达上限 $maxResults）" else ""}：")
+            appendLine(str(context, R.string.tool_search_scope, searchRoot.absolutePath))
+            if (namePattern != null) appendLine(str(context, R.string.tool_search_name_pattern, namePattern))
+            if (contentQuery != null) appendLine(str(context, R.string.tool_search_content_query, contentQuery, if (isRegex) str(context, R.string.tool_search_regex_tag) else ""))
+            appendLine(str(context, R.string.tool_search_results_count, results.size, if (results.size >= maxResults) str(context, R.string.tool_search_limit_reached, maxResults) else ""))
             appendLine()
             results.forEach { r ->
                 val absPath = r.optString("path")
@@ -826,7 +831,7 @@ object BuiltinToolHandler {
                 val matchLines = r.optJSONArray("matchLines")
                 if (matchLines != null && matchLines.length() > 0) {
                     val lines = (0 until matchLines.length()).map { matchLines.getInt(it) }
-                    append("  (匹配行: ${lines.joinToString(", ")})")
+                    append("  " + context.getString(R.string.tool_search_match_lines, lines.joinToString(", ")))
                 }
                 val contextSnippets = r.optJSONArray("contextSnippets")
                 if (contextSnippets != null && contextSnippets.length() > 0) {
@@ -844,26 +849,26 @@ object BuiltinToolHandler {
 
     private suspend fun handleFileInfo(context: Context, arguments: JSONObject): JSONObject {
         val path = arguments.optString("path").trim()
-        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         val file = resolvePath(context, path)
-            ?: return errorResponse("路径无效或权限被拒绝：$path")
-        if (!file.exists()) return errorResponse("路径不存在：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
+        if (!file.exists()) return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val ext = file.extension.lowercase()
         val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
         val text = buildString {
-            appendLine("路径：${file.absolutePath}")
-            appendLine("类型：${if (file.isDirectory) "目录" else "文件"}")
+            appendLine(str(context, R.string.tool_fileinfo_path, file.absolutePath))
+            appendLine(str(context, R.string.tool_fileinfo_type, if (file.isDirectory) str(context, R.string.tool_fileinfo_type_dir) else str(context, R.string.tool_fileinfo_type_file)))
             if (file.isFile) {
-                appendLine("大小：${file.length()} 字节 (${String.format("%.2f", file.length() / 1024.0)} KB)")
-                appendLine("MIME 类型：$mimeType")
+                appendLine(str(context, R.string.tool_fileinfo_size, file.length(), file.length() / 1024.0))
+                appendLine(str(context, R.string.tool_fileinfo_mime, mimeType))
             } else {
                 val childCount = file.listFiles()?.size ?: 0
-                appendLine("子项数量：$childCount")
+                appendLine(str(context, R.string.tool_fileinfo_child_count, childCount))
             }
-            appendLine("最后修改：${sdf.format(Date(file.lastModified()))}")
-            appendLine("可读：${file.canRead()}")
-            appendLine("可写：${file.canWrite()}")
+            appendLine(str(context, R.string.tool_fileinfo_last_modified, sdf.format(Date(file.lastModified()))))
+            appendLine(str(context, R.string.tool_fileinfo_readable, if (file.canRead()) str(context, R.string.tool_fileinfo_yes) else str(context, R.string.tool_fileinfo_no)))
+            appendLine(str(context, R.string.tool_fileinfo_writable, if (file.canWrite()) str(context, R.string.tool_fileinfo_yes) else str(context, R.string.tool_fileinfo_no)))
         }
         return successResponse(text.trimEnd())
     }
@@ -872,28 +877,28 @@ object BuiltinToolHandler {
         val srcPath = arguments.optString("sourcePath").trim()
         val dstPath = arguments.optString("destinationPath").trim()
         val overwrite = arguments.optBoolean("overwrite", false)
-        if (srcPath.isEmpty()) return errorResponse("参数 'sourcePath' 不能为空。")
-        if (dstPath.isEmpty()) return errorResponse("参数 'destinationPath' 不能为空。")
+        if (srcPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_source_path_empty))
+        if (dstPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_dest_path_empty))
         val src = resolvePath(context, srcPath)
-            ?: return errorResponse("源路径无效或权限被拒绝：$srcPath")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, srcPath))
         val dst = resolvePath(context, dstPath)
-            ?: return errorResponse("目标路径无效或权限被拒绝：$dstPath")
-        if (!src.exists()) return errorResponse("源路径不存在：$srcPath")
-        if (dst.exists() && !overwrite) return errorResponse("目标路径已存在：$dstPath（如需覆盖请传 overwrite=true）。")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, dstPath))
+        if (!src.exists()) return errorResponse(str(context, R.string.tool_file_source_not_exists, srcPath))
+        if (dst.exists() && !overwrite) return errorResponse(str(context, R.string.tool_file_dest_exists, dstPath))
         return try {
             dst.parentFile?.mkdirs()
             if (dst.exists()) dst.delete()
             val success = src.renameTo(dst)
             if (success) {
-                successResponse("已移动：\n  从：${src.absolutePath}\n  到：${dst.absolutePath}")
+                successResponse(str(context, R.string.tool_file_moved, src.absolutePath, dst.absolutePath))
             } else {
                 // renameTo 跨文件系统可能失败，回退到复制+删除
                 src.copyRecursively(dst, overwrite = true)
                 deleteRecursive(src)
-                successResponse("已移动（复制+删除）：\n  从：${src.absolutePath}\n  到：${dst.absolutePath}")
+                successResponse(str(context, R.string.tool_file_moved_copy, src.absolutePath, dst.absolutePath))
             }
         } catch (e: Exception) {
-            errorResponse("移动失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_move_failed, e.localizedMessage))
         }
     }
 
@@ -901,14 +906,14 @@ object BuiltinToolHandler {
         val srcPath = arguments.optString("sourcePath").trim()
         val dstPath = arguments.optString("destinationPath").trim()
         val overwrite = arguments.optBoolean("overwrite", false)
-        if (srcPath.isEmpty()) return errorResponse("参数 'sourcePath' 不能为空。")
-        if (dstPath.isEmpty()) return errorResponse("参数 'destinationPath' 不能为空。")
+        if (srcPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_source_path_empty))
+        if (dstPath.isEmpty()) return errorResponse(str(context, R.string.tool_file_dest_path_empty))
         val src = resolvePath(context, srcPath)
-            ?: return errorResponse("源路径无效或权限被拒绝：$srcPath")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, srcPath))
         val dst = resolvePath(context, dstPath)
-            ?: return errorResponse("目标路径无效或权限被拒绝：$dstPath")
-        if (!src.exists()) return errorResponse("源路径不存在：$srcPath")
-        if (dst.exists() && !overwrite) return errorResponse("目标路径已存在：$dstPath（如需覆盖请传 overwrite=true）。")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, dstPath))
+        if (!src.exists()) return errorResponse(str(context, R.string.tool_file_source_not_exists, srcPath))
+        if (dst.exists() && !overwrite) return errorResponse(str(context, R.string.tool_file_dest_exists, dstPath))
         return try {
             dst.parentFile?.mkdirs()
             if (src.isDirectory) {
@@ -916,28 +921,28 @@ object BuiltinToolHandler {
             } else {
                 src.copyTo(dst, overwrite = overwrite)
             }
-            successResponse("已复制：\n  从：${src.absolutePath}\n  到：${dst.absolutePath}")
+            successResponse(str(context, R.string.tool_file_copied, src.absolutePath, dst.absolutePath))
         } catch (e: Exception) {
-            errorResponse("复制失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_copy_failed, e.localizedMessage))
         }
     }
 
     private suspend fun handleFileMkdir(context: Context, arguments: JSONObject): JSONObject {
         val path = arguments.optString("path").trim()
-        if (path.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (path.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         val file = resolvePath(context, path)
-            ?: return errorResponse("路径无效或权限被拒绝：$path")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, path))
         return try {
             if (file.exists()) {
-                if (file.isDirectory) successResponse("目录已存在：${file.absolutePath}")
-                else errorResponse("路径已存在且不是目录：$path")
+                if (file.isDirectory) successResponse(str(context, R.string.tool_file_dir_exists, file.absolutePath))
+                else errorResponse(str(context, R.string.tool_file_path_invalid, path))
             } else if (file.mkdirs()) {
-                successResponse("目录已创建：${file.absolutePath}")
+                successResponse(str(context, R.string.tool_file_dir_created, file.absolutePath))
             } else {
-                errorResponse("创建目录失败：$path")
+                errorResponse(str(context, R.string.tool_file_dir_create_failed, path))
             }
         } catch (e: Exception) {
-            errorResponse("创建目录失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_file_dir_create_failed, e.localizedMessage))
         }
     }
 
@@ -991,13 +996,13 @@ object BuiltinToolHandler {
             }
         }
 
-        if (relativePath.isEmpty()) return errorResponse("参数 'path' 不能为空。")
+        if (relativePath.isEmpty()) return errorResponse(str(context, R.string.tool_file_path_empty))
         if (format !in listOf("pdf", "xlsx", "docx", "pptx")) {
-            return errorResponse("参数 'format' 必须是 pdf、xlsx、docx 或 pptx 之一。")
+            return errorResponse(str(context, R.string.tool_doc_format_invalid))
         }
 
         val file = resolvePath(context, relativePath)
-            ?: return errorResponse("路径无效或权限被拒绝：$relativePath")
+            ?: return errorResponse(str(context, R.string.tool_file_path_invalid, relativePath))
 
         return try {
             file.parentFile?.mkdirs()
@@ -1009,9 +1014,9 @@ object BuiltinToolHandler {
                 "pptx" -> createPptxDocument(file, title, sections, themeColor, preset, context)
             }
 
-            successResponse("✅ 精致文档已创建：${file.absolutePath}\n格式：${format.uppercase()}\n大小：${file.length()} 字节")
+            successResponse(str(context, R.string.tool_doc_created, file.absolutePath, format.uppercase(), file.length()))
         } catch (e: Throwable) {
-            errorResponse("创建精致文档失败：${e.localizedMessage}")
+            errorResponse(str(context, R.string.tool_doc_create_failed, e.localizedMessage))
         }
     }
 
@@ -1020,7 +1025,7 @@ object BuiltinToolHandler {
     private suspend fun handleAskUser(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         val question = arguments.optString("question").trim()
         if (question.isEmpty()) {
-            return errorResponse("参数 'question' 不能为空。")
+            return errorResponse(str(context, R.string.tool_ask_user_question_empty))
         }
         val optionsArray = arguments.optJSONArray("options")
         val options = mutableListOf<String>()
@@ -1042,24 +1047,24 @@ object BuiltinToolHandler {
     private suspend fun handleCreateTimer(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         val delaySeconds = arguments.optLong("delay_seconds", 0L)
         val message = arguments.optString("message").trim()
-        val label = arguments.optString("label", "AI 定时提醒").trim()
-            .take(30).ifEmpty { "AI 定时提醒" }
+        val label = arguments.optString("label", str(context, R.string.tool_timer_label)).trim()
+            .take(30).ifEmpty { str(context, R.string.tool_timer_label) }
         val repeatIntervalSec = arguments.optLong("repeat_interval_seconds", 0L)
 
         if (delaySeconds < 1) {
-            return errorResponse("参数 'delay_seconds' 必须 ≥ 1。")
+            return errorResponse(str(context, R.string.tool_timer_delay_min))
         }
         if (repeatIntervalSec < 0) {
-            return errorResponse("参数 'repeat_interval_seconds' 不能为负数。")
+            return errorResponse(str(context, R.string.tool_timer_repeat_negative))
         }
         if (repeatIntervalSec > 0 && repeatIntervalSec < 1) {
-            return errorResponse("参数 'repeat_interval_seconds' 如提供则必须 ≥ 1。")
+            return errorResponse(str(context, R.string.tool_timer_repeat_min))
         }
         if (message.isEmpty()) {
-            return errorResponse("参数 'message' 不能为空。")
+            return errorResponse(str(context, R.string.tool_timer_message_empty))
         }
         if (sessionId == null) {
-            return errorResponse("无法创建定时器：当前没有活跃的聊天 session。")
+            return errorResponse(str(context, R.string.tool_timer_no_session))
         }
 
         val timerId = TimerManager.createTimer(
@@ -1071,70 +1076,63 @@ object BuiltinToolHandler {
             repeatIntervalSec = repeatIntervalSec
         )
 
-        val humanDelay = formatDuration(delaySeconds)
+        val humanDelay = formatDuration(context, delaySeconds)
 
         val repeatInfo = if (repeatIntervalSec > 0) {
-            "\n• 重复间隔：每 ${formatDuration(repeatIntervalSec)}"
+            str(context, R.string.tool_timer_repeat_info, formatDuration(context, repeatIntervalSec))
         } else ""
 
         return successResponse(
-            "✅ 定时器已创建！\n\n" +
-            "• 定时器 ID：`$timerId`\n" +
-            "• 触发时间：$humanDelay 后" +
-            repeatInfo + "\n" +
-            "• 提醒内容：$message\n\n" +
-            "到时间后会在聊天中插入提醒消息，并发送系统通知。\n" +
-            "定时器在应用关闭或设备重启后仍然有效。\n" +
-            "如需取消，请调用 cancel_timer 并传入 timer_id: \"$timerId\""
+            str(context, R.string.tool_timer_created, timerId, humanDelay, repeatInfo, message, timerId)
         )
     }
 
     private fun handleCancelTimer(context: Context, arguments: JSONObject): JSONObject {
         val timerId = arguments.optString("timer_id").trim()
         if (timerId.isEmpty()) {
-            return errorResponse("参数 'timer_id' 不能为空。请先调用 list_timers 查看当前待触发的定时器。")
+            return errorResponse(str(context, R.string.tool_timer_cancel_id_empty))
         }
         val cancelled = TimerManager.cancelTimer(context, timerId)
         return if (cancelled) {
-            successResponse("✅ 定时器 `$timerId` 已成功取消。")
+            successResponse(str(context, R.string.tool_timer_cancelled, timerId))
         } else {
-            errorResponse("找不到 timer_id=\"$timerId\" 的定时器。它可能已经触发或不存在。\n\n调用 list_timers 可查看当前所有待触发的定时器。")
+            errorResponse(str(context, R.string.tool_timer_cancel_not_found, timerId))
         }
     }
 
     private fun handleListTimers(context: Context): JSONObject {
         val timers = TimerManager.listTimers(context)
         if (timers.isEmpty()) {
-            return successResponse("当前没有待触发的定时器。")
+            return successResponse(str(context, R.string.tool_timer_list_empty))
         }
         val now = System.currentTimeMillis()
         val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
         val text = buildString {
-            appendLine("当前待触发的定时器（共 ${timers.size} 个）：")
+            appendLine(str(context, R.string.tool_timer_list_header, timers.size))
             appendLine()
             timers.forEachIndexed { i, t ->
                 val remainingMs = (t.fireAtMs - now).coerceAtLeast(0L)
                 val remainingSec = remainingMs / 1000
-                val humanRemaining = formatDuration(remainingSec)
+                val humanRemaining = formatDuration(context, remainingSec)
                 val fireTime = sdf.format(java.util.Date(t.fireAtMs))
-                val type = if (t.repeatIntervalMs > 0) "🔁 重复(每 ${formatDuration(t.repeatIntervalMs / 1000)})" else "⏳ 单次"
+                val type = if (t.repeatIntervalMs > 0) str(context, R.string.tool_timer_type_repeat, formatDuration(context, t.repeatIntervalMs / 1000)) else str(context, R.string.tool_timer_type_once)
                 appendLine("${i + 1}. ID: `${t.timerId}` [$type]")
-                appendLine("   标签：${t.label}")
-                appendLine("   内容：${t.message}")
-                appendLine("   剩余：$humanRemaining（$fireTime 触发）")
+                appendLine(str(context, R.string.tool_timer_list_entry_label, t.label))
+                appendLine(str(context, R.string.tool_timer_list_entry_message, t.message))
+                appendLine(str(context, R.string.tool_timer_list_entry_remaining, humanRemaining, fireTime))
             }
         }
         return successResponse(text.trimEnd())
     }
 
-    private fun formatDuration(totalSeconds: Long): String {
+    private fun formatDuration(context: Context, totalSeconds: Long): String {
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
         return buildString {
-            if (hours > 0) append("${hours} 小时 ")
-            if (minutes > 0) append("${minutes} 分钟 ")
-            if (seconds > 0 || isEmpty()) append("${seconds} 秒")
+            if (hours > 0) append(str(context, R.string.tool_duration_hours, hours))
+            if (minutes > 0) append(str(context, R.string.tool_duration_minutes, minutes))
+            if (seconds > 0 || isEmpty()) append(str(context, R.string.tool_duration_seconds, seconds))
         }.trim()
     }
 
@@ -1617,7 +1615,7 @@ object BuiltinToolHandler {
                         val ph = currentSlide?.placeholders?.getOrNull(1)
                         if (ph != null) {
                             val p = ph.addNewTextParagraph()
-                            p.addNewTextRun().setText("[表格数据 (暂不支持直接渲染表格)]:")
+                            p.addNewTextRun().setText(str(context, R.string.tool_doc_pptx_table_fallback_android))
                             if (section.tableHeaders.isNotEmpty()) {
                                 val hParagraph = ph.addNewTextParagraph()
                                 hParagraph.addNewTextRun().setText(section.tableHeaders.joinToString(" | "))
@@ -1776,7 +1774,7 @@ object BuiltinToolHandler {
     }
 
     // 使用 UiFieldRegistry 生成 capabilities 响应，消除硬编码字段列表
-    private fun buildUiCapabilitiesResponse(current: UISettings): JSONObject {
+    private fun buildUiCapabilitiesResponse(context: Context, current: UISettings): JSONObject {
         data class Field(val name: String, val currentValue: Any?, val purpose: String, val constraint: String)
 
         val colorFields = UiFieldRegistry.colorFields.map { f ->
@@ -1837,7 +1835,7 @@ object BuiltinToolHandler {
             put("content", JSONArray().apply {
                 put(JSONObject().apply {
                     put("type", "text")
-                    put("text", "UI 主题能力清单。使用 adjust_ui 传入想改的字段即可，未传字段保持当前值。传 resetToDefault=true 可还原全部设置。")
+                    put("text", str(context, R.string.tool_ui_capability_desc))
                 })
                 put(JSONObject().apply {
                     put("type", "text")

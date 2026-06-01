@@ -22,9 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.theme.LocalUISettings
 import com.example.ui.theme.resolveFontFamily
-import com.example.ui.theme.uiText
+import androidx.compose.ui.res.stringResource
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -125,7 +126,7 @@ private fun AgentToolCard(args: JSONObject, fs: Float, fontFamily: FontFamily) {
     ToolCallSurface(
         icon = Icons.Default.Hub,
         iconTint = MaterialTheme.colorScheme.primary,
-        title = uiText("workspace.tool.agent", "委派子 Agent"),
+        title = stringResource(R.string.workspace_tool_agent),
         subtitle = description.takeIf { it.isNotBlank() },
         badge = model.takeIf { it.isNotBlank() },
         badgeColor = MaterialTheme.colorScheme.tertiary,
@@ -152,7 +153,7 @@ private fun GenericToolCallCard(name: String, args: JSONObject, fs: Float, fontF
     ToolCallSurface(
         icon = Icons.Default.Build,
         iconTint = MaterialTheme.colorScheme.outline,
-        title = uiText("workspace.tool.generic", "工具调用"),
+        title = stringResource(R.string.workspace_tool_generic),
         subtitle = name,
         badge = null,
         badgeColor = null,
@@ -165,9 +166,9 @@ private fun GenericToolCallCard(name: String, args: JSONObject, fs: Float, fontF
         ) {
             Text(
                 text = if (expanded)
-                    uiText("workspace.tool.args.hide", "收起参数")
+                    stringResource(R.string.workspace_tool_args_hide)
                 else
-                    uiText("workspace.tool.args.show", "查看参数"),
+                    stringResource(R.string.workspace_tool_args_show),
                 fontSize = (11 * fs).sp,
                 color = MaterialTheme.colorScheme.primary,
                 fontFamily = fontFamily
@@ -307,9 +308,9 @@ private fun ExpandableLongText(
         ) {
             Text(
                 text = if (expanded)
-                    uiText("workspace.tool.collapse", "收起")
+                    stringResource(R.string.workspace_tool_collapse)
                 else
-                    uiText("workspace.tool.expand", "展开全文"),
+                    stringResource(R.string.workspace_tool_expand),
                 fontSize = (10.5f * fs).sp,
                 color = MaterialTheme.colorScheme.primary,
                 fontFamily = fontFamily
