@@ -9,9 +9,12 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
+import com.example.data.AgentDefinitionEntity
+import com.example.data.AgentPreset
 import com.example.data.AppDatabase
 import com.example.data.AppRepository
 import com.example.data.ColorSchemePreset
+import com.example.data.McpFilePermission
 import com.example.data.McpServer
 import com.example.data.MemoryItem
 import com.example.data.ModelConfig
@@ -52,10 +55,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // ── 导出/导入状态 ────────────────────────────────────────────────────
 
     var exportImportStatus by mutableStateOf<ExportImportStatus>(ExportImportStatus.Idle)
-        private set
 
     fun clearStatus() {
         exportImportStatus = ExportImportStatus.Idle
+    }
+
+    fun setError(message: String) {
+        exportImportStatus = ExportImportStatus.Error(message)
     }
 
     // ── 导出 ─────────────────────────────────────────────────────────────
@@ -68,10 +74,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         includeProviders: Boolean,
         includeMcp: Boolean,
         includeMemory: Boolean,
-        includeColorSchemes: Boolean
+        includeColorSchemes: Boolean,
+        includeAgents: Boolean
     ): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("exportedAt", System.currentTimeMillis())
 
         if (includeProviders) {
@@ -108,6 +115,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 })
             }
             root.put("mcpServers", arr)
+
+            // 同时导出 MCP 文件权限
+            val perms = repository.getAllMcpFilePermissions()
+            val pArr = JSONArray()
+            for (p in perms) {
+                pArr.put(JSONObject().apply {
+                    put("path", p.path)
+                    put("isAllowed", p.isAllowed)
+                })
+            }
+            root.put("mcpFilePermissions", pArr)
         }
 
         if (includeMemory) {
@@ -121,6 +139,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     put("createdAt", m.createdAt)
                     put("updatedAt", m.updatedAt)
                     put("lastReinforcedAt", m.lastReinforcedAt)
+                    put("tags", m.tags)
                 })
             }
             root.put("memories", arr)
@@ -151,6 +170,52 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             root.put("colorSchemePresets", arr)
         }
 
+        if (includeAgents) {
+            val presets = repository.getAllAgentPresets()
+            val arr = JSONArray()
+            for (p in presets) {
+                arr.put(JSONObject().apply {
+                    put("name", p.name)
+                    put("description", p.description)
+                    put("systemPrompt", p.systemPrompt)
+                    put("createdAt", p.createdAt)
+                })
+            }
+            root.put("agentPresets", arr)
+
+            val defs = repository.getAllAgentDefinitions()
+            val dArr = JSONArray()
+            for (d in defs) {
+                dArr.put(JSONObject().apply {
+                    put("agentType", d.agentType)
+                    put("displayName", d.displayName)
+                    put("whenToUse", d.whenToUse)
+                    put("systemPrompt", d.systemPrompt)
+                    put("modelHint", d.modelHint ?: JSONObject.NULL)
+                    put("overrideModelId", d.overrideModelId ?: JSONObject.NULL)
+                    put("toolsJson", d.toolsJson ?: JSONObject.NULL)
+                    put("disallowedToolsJson", d.disallowedToolsJson ?: JSONObject.NULL)
+                    put("background", d.background)
+                    put("maxTurns", d.maxTurns)
+                    put("color", d.color ?: JSONObject.NULL)
+                    put("memory", d.memory ?: JSONObject.NULL)
+                    put("mcpServersJson", d.mcpServersJson ?: JSONObject.NULL)
+                    put("hooksJson", d.hooksJson ?: JSONObject.NULL)
+                    put("permissionMode", d.permissionMode ?: JSONObject.NULL)
+                    put("initialPrompt", d.initialPrompt ?: JSONObject.NULL)
+                    put("effort", d.effort ?: JSONObject.NULL)
+                    put("omitClaudeMd", d.omitClaudeMd)
+                    put("requiredMcpServersJson", d.requiredMcpServersJson ?: JSONObject.NULL)
+                    put("filePath", d.filePath ?: JSONObject.NULL)
+                    put("baseDir", d.baseDir ?: JSONObject.NULL)
+                    put("criticalSystemReminder", d.criticalSystemReminder ?: JSONObject.NULL)
+                    put("createdAt", d.createdAt)
+                    put("updatedAt", d.updatedAt)
+                })
+            }
+            root.put("agentDefinitions", dArr)
+        }
+
         root.toString(2)
     }
 
@@ -160,12 +225,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         includeProviders: Boolean,
         includeMcp: Boolean,
         includeMemory: Boolean,
-        includeColorSchemes: Boolean
+        includeColorSchemes: Boolean,
+        includeAgents: Boolean
     ) {
         viewModelScope.launch {
             exportImportStatus = ExportImportStatus.Loading
             try {
-                val json = buildExportJson(includeProviders, includeMcp, includeMemory, includeColorSchemes)
+                val json = buildExportJson(includeProviders, includeMcp, includeMemory, includeColorSchemes, includeAgents)
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         out.write(json.toByteArray(Charsets.UTF_8))
@@ -187,6 +253,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         importMcp: Boolean,
         importMemory: Boolean,
         importColorSchemes: Boolean,
+        importAgents: Boolean,
         replaceExisting: Boolean
     ) {
         viewModelScope.launch {
@@ -251,6 +318,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
 
+                if (importMcp && root.has("mcpFilePermissions")) {
+                    val pArr = root.getJSONArray("mcpFilePermissions")
+                    if (replaceExisting) {
+                        repository.deleteAllMcpFilePermissions()
+                    }
+                    for (i in 0 until pArr.length()) {
+                        val obj = pArr.getJSONObject(i)
+                        repository.insertMcpFilePermission(
+                            McpFilePermission(
+                                path = obj.optString("path", ""),
+                                isAllowed = obj.optBoolean("isAllowed", false)
+                            )
+                        )
+                        importedCount++
+                    }
+                }
+
                 if (importMemory && root.has("memories")) {
                     val arr = root.getJSONArray("memories")
                     if (replaceExisting) {
@@ -265,7 +349,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                                 pinned = obj.optBoolean("pinned", false),
                                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                                 updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
-                                lastReinforcedAt = obj.optLong("lastReinforcedAt", System.currentTimeMillis())
+                                lastReinforcedAt = obj.optLong("lastReinforcedAt", System.currentTimeMillis()),
+                                tags = obj.optString("tags", "")
                             )
                         )
                         importedCount++
@@ -309,6 +394,66 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         // 最多 5 个预设
                         if (repository.getColorSchemePresetCount() >= ColorSchemePreset.MAX_PRESETS) break
                         repository.insertColorSchemePreset(jsonToColorPreset(obj))
+                        importedCount++
+                    }
+                }
+
+                if (importAgents && root.has("agentPresets")) {
+                    val arr = root.getJSONArray("agentPresets")
+                    if (replaceExisting) {
+                        val existing = repository.getAllAgentPresets()
+                        for (p in existing) repository.deleteAgentPreset(p)
+                    }
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        repository.insertAgentPreset(
+                            AgentPreset(
+                                name = obj.optString("name", "preset-$i"),
+                                description = obj.optString("description", ""),
+                                systemPrompt = obj.optString("systemPrompt", ""),
+                                createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                            )
+                        )
+                        importedCount++
+                    }
+                }
+
+                if (importAgents && root.has("agentDefinitions")) {
+                    val arr = root.getJSONArray("agentDefinitions")
+                    if (replaceExisting) {
+                        val existing = repository.getAllAgentDefinitions()
+                        for (d in existing) repository.deleteAgentDefinition(d)
+                    }
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        repository.insertAgentDefinition(
+                            AgentDefinitionEntity(
+                                agentType = obj.optString("agentType", "custom:imported-$i"),
+                                displayName = obj.optString("displayName", "Imported Agent"),
+                                whenToUse = obj.optString("whenToUse", ""),
+                                systemPrompt = obj.optString("systemPrompt", ""),
+                                modelHint = if (obj.isNull("modelHint")) null else obj.optString("modelHint"),
+                                overrideModelId = if (obj.isNull("overrideModelId")) null else obj.optString("overrideModelId"),
+                                toolsJson = if (obj.isNull("toolsJson")) null else obj.optString("toolsJson"),
+                                disallowedToolsJson = if (obj.isNull("disallowedToolsJson")) null else obj.optString("disallowedToolsJson"),
+                                background = obj.optBoolean("background", false),
+                                maxTurns = obj.optInt("maxTurns", 50),
+                                color = if (obj.isNull("color")) null else obj.optString("color"),
+                                memory = if (obj.isNull("memory")) null else obj.optString("memory"),
+                                mcpServersJson = if (obj.isNull("mcpServersJson")) null else obj.optString("mcpServersJson"),
+                                hooksJson = if (obj.isNull("hooksJson")) null else obj.optString("hooksJson"),
+                                permissionMode = if (obj.isNull("permissionMode")) null else obj.optString("permissionMode"),
+                                initialPrompt = if (obj.isNull("initialPrompt")) null else obj.optString("initialPrompt"),
+                                effort = if (obj.isNull("effort")) null else obj.optString("effort"),
+                                omitClaudeMd = obj.optBoolean("omitClaudeMd", false),
+                                requiredMcpServersJson = if (obj.isNull("requiredMcpServersJson")) null else obj.optString("requiredMcpServersJson"),
+                                filePath = if (obj.isNull("filePath")) null else obj.optString("filePath"),
+                                baseDir = if (obj.isNull("baseDir")) null else obj.optString("baseDir"),
+                                criticalSystemReminder = if (obj.isNull("criticalSystemReminder")) null else obj.optString("criticalSystemReminder"),
+                                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                            )
+                        )
                         importedCount++
                     }
                 }
@@ -361,6 +506,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         put("isNodeEnabled", s.isNodeEnabled)
         put("isPythonEnabled", s.isPythonEnabled)
         put("enabledMcpGroups", s.enabledMcpGroups)
+        put("silentToolCalls", s.silentToolCalls)
         put("uiStrings", s.uiStrings)
     }
 
@@ -406,6 +552,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             isNodeEnabled = obj.optBoolean("isNodeEnabled", defaults.isNodeEnabled),
             isPythonEnabled = obj.optBoolean("isPythonEnabled", defaults.isPythonEnabled),
             enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
+            silentToolCalls = obj.optBoolean("silentToolCalls", defaults.silentToolCalls),
             uiStrings = obj.optString("uiStrings", "{}"),
             updatedAt = System.currentTimeMillis()
         )
