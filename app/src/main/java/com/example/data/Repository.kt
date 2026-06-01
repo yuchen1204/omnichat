@@ -23,6 +23,7 @@ class AppRepository(private val db: AppDatabase) {
     private val agentStateSnapshotDao = db.agentStateSnapshotDao()
     // Agent Team 任务系统
     val teamTaskDao: TeamTaskDao = db.teamTaskDao()
+    private val mcpFilePermissionDao = db.mcpFilePermissionDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -113,6 +114,11 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun insertAgentPreset(preset: AgentPreset): Long = agentPresetDao.insertPreset(preset)
     suspend fun updateAgentPreset(preset: AgentPreset) = agentPresetDao.updatePreset(preset)
     suspend fun deleteAgentPreset(preset: AgentPreset) = agentPresetDao.deletePreset(preset)
+
+    // MCP File Permissions
+    suspend fun getAllMcpFilePermissions(): List<McpFilePermission> = mcpFilePermissionDao.getAllPermissions()
+    suspend fun insertMcpFilePermission(perm: McpFilePermission): Long = mcpFilePermissionDao.insertPermission(perm)
+    suspend fun deleteAllMcpFilePermissions() = mcpFilePermissionDao.deleteAllPermissions()
 
     // Workspace Sessions
     val allWorkspaceSessions: Flow<List<WorkspaceSession>> = workspaceSessionDao.getAllSessionsFlow()

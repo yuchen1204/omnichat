@@ -54,12 +54,14 @@ fun ExportImportView(
     var exportMcp by remember { mutableStateOf(true) }
     var exportMemory by remember { mutableStateOf(false) }
     var exportColorSchemes by remember { mutableStateOf(true) }
+    var exportAgents by remember { mutableStateOf(true) }
 
     // ── 导入选项状态 ──────────────────────────────────────────────────────
     var importProviders by remember { mutableStateOf(true) }
     var importMcp by remember { mutableStateOf(true) }
     var importMemory by remember { mutableStateOf(false) }
     var importColorSchemes by remember { mutableStateOf(true) }
+    var importAgents by remember { mutableStateOf(true) }
     var replaceExisting by remember { mutableStateOf(false) }
 
     // ── 导入确认对话框 ────────────────────────────────────────────────────
@@ -68,7 +70,7 @@ fun ExportImportView(
 
     // ── SAF 文件选择器 ────────────────────────────────────────────────────
     val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
         if (uri != null) {
             settingsViewModel.exportToUri(
@@ -77,7 +79,8 @@ fun ExportImportView(
                 includeProviders = exportProviders,
                 includeMcp = exportMcp,
                 includeMemory = exportMemory,
-                includeColorSchemes = exportColorSchemes
+                includeColorSchemes = exportColorSchemes,
+                includeAgents = exportAgents
             )
         }
     }
@@ -86,8 +89,16 @@ fun ExportImportView(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            pendingImportUri = uri
-            showImportConfirm = true
+            // Validate .omniconfig extension
+            val fileName = uri.lastPathSegment ?: ""
+            if (!fileName.endsWith(".omniconfig", ignoreCase = true)) {
+                settingsViewModel.setError(
+                    context.getString(R.string.import_invalid_file)
+                )
+            } else {
+                pendingImportUri = uri
+                showImportConfirm = true
+            }
         }
     }
 
@@ -198,16 +209,25 @@ fun ExportImportView(
                 iconColor = LocalCustomColors.current.accent,
                 fs = fs
             )
+            ExportOptionToggle(
+                checked = exportAgents,
+                onCheckedChange = { exportAgents = it },
+                title = uiText("export.option.agents", R.string.export_option_agents),
+                subtitle = uiText("export.option.agents.desc", R.string.export_option_agents_desc),
+                icon = Icons.Default.Person,
+                iconColor = LocalCustomColors.current.info,
+                fs = fs
+            )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            val nothingSelected = !exportProviders && !exportMcp && !exportMemory && !exportColorSchemes
+            val nothingSelected = !exportProviders && !exportMcp && !exportMemory && !exportColorSchemes && !exportAgents
             val isLoading = status is ExportImportStatus.Loading
 
             Button(
                 onClick = {
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                    exportLauncher.launch("omnichat_config_$timestamp.json")
+                    exportLauncher.launch("omnichat_config_$timestamp.omniconfig")
                 },
                 enabled = !nothingSelected && !isLoading,
                 modifier = Modifier.fillMaxWidth(),
@@ -282,6 +302,15 @@ fun ExportImportView(
                 iconColor = LocalCustomColors.current.accent,
                 fs = fs
             )
+            ExportOptionToggle(
+                checked = importAgents,
+                onCheckedChange = { importAgents = it },
+                title = uiText("export.option.agents", R.string.export_option_agents),
+                subtitle = uiText("import.option.agents.desc", R.string.import_option_agents_desc),
+                icon = Icons.Default.Person,
+                iconColor = LocalCustomColors.current.info,
+                fs = fs
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider(
@@ -324,11 +353,11 @@ fun ExportImportView(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            val nothingSelected = !importProviders && !importMcp && !importMemory && !importColorSchemes
+            val nothingSelected = !importProviders && !importMcp && !importMemory && !importColorSchemes && !importAgents
             val isLoading = status is ExportImportStatus.Loading
 
             FilledTonalButton(
-                onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                onClick = { importLauncher.launch(arrayOf("*/*")) },
                 enabled = !nothingSelected && !isLoading,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
@@ -391,6 +420,7 @@ fun ExportImportView(
             importMcp = importMcp,
             importMemory = importMemory,
             importColorSchemes = importColorSchemes,
+            importAgents = importAgents,
             fs = fs,
             onConfirm = {
                 showImportConfirm = false
@@ -401,6 +431,7 @@ fun ExportImportView(
                     importMcp = importMcp,
                     importMemory = importMemory,
                     importColorSchemes = importColorSchemes,
+                    importAgents = importAgents,
                     replaceExisting = replaceExisting
                 )
                 pendingImportUri = null
@@ -566,6 +597,7 @@ private fun ImportConfirmDialog(
     importMcp: Boolean,
     importMemory: Boolean,
     importColorSchemes: Boolean,
+    importAgents: Boolean,
     fs: Float,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
@@ -601,6 +633,7 @@ private fun ImportConfirmDialog(
                     if (importMcp) add(uiText("export.option.mcp", R.string.export_option_mcp))
                     if (importMemory) add(uiText("export.option.memory", R.string.export_option_memory))
                     if (importColorSchemes) add(uiText("export.option.colors", R.string.export_option_colors))
+                    if (importAgents) add(uiText("export.option.agents", R.string.export_option_agents))
                 }
                 items.forEach { item ->
                     Text(
