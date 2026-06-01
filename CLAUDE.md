@@ -49,7 +49,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **No DI framework** — ViewModels directly instantiate `AppDatabase` / `AppRepository` using `AndroidViewModel` for Application context
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
-- **Chinese UI strings** are hardcoded in Compose (not `strings.xml`). AI-adjustable strings use the `uiText("namespace.key", "默认中文")` pattern with auto-generated `ui_text_keys.json`
+- **UI strings** use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", "English default")` pattern with auto-generated `ui_text_keys.json`
 - **Room database** version 30 with 26 sequential migrations (v4→v30). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`
 - **Node.js can start only once per process** (nodejs-mobile limitation) — merge multiple servers into one entry script
 - **Native runtimes are optional**; app degrades gracefully without them

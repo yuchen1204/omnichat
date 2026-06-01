@@ -1,5 +1,5 @@
 {
-  "chat.tools_used_count": "已调用 %d 个工具",
-  "chat.tool_used": "已调用工具",
-  "chat.tools_working_x": "调用工具 x%d"
+  "chat.tools_used_count": "Used %d tools",
+  "chat.tool_used": "Tool used",
+  "chat.tools_working_x": "Using tools x%d"
 }

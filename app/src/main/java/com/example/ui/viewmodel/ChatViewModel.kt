@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.example.R
 import com.example.mcp.AskUserManager
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -109,7 +110,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _selectedSessionId.value = firstSession.id
             } ?: run {
                 // Pre-create an initial default session
-                createNewSession("探讨与交谈 (Aesthetic Conversation)")
+                createNewSession(getApplication<Application>().getString(R.string.default_session_title_display))
             }
         }
     }
@@ -135,7 +136,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 if (remaining != null) {
                     _selectedSessionId.value = remaining.id
                 } else {
-                    createNewSession("探讨与交谈")
+                    createNewSession(getApplication<Application>().getString(R.string.default_session_title))
                 }
             }
         }
@@ -200,7 +201,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     Message(
                         sessionId = sessionId,
                         role = "assistant",
-                        content = "错误：未设置默认提供商。请在“模型设置”菜单中添加 Provider 并将其设为默认。"
+                        content = getApplication<Application>().getString(R.string.error_no_default_provider)
                     )
                 )
                 return@launch
@@ -208,7 +209,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             // Generate title using memory model of default provider
             val currentSession = sessions.value.find { it.id == sessionId }
-            if (currentSession != null && (currentSession.title.startsWith("探讨与交谈") || currentSession.title.startsWith("新会话"))) {
+            val zhDefault = getApplication<Application>().getString(R.string.default_session_title)
+            val newSession = getApplication<Application>().getString(R.string.new_session)
+            if (currentSession != null && (currentSession.title.startsWith(zhDefault) || currentSession.title.startsWith(newSession)
+                    || currentSession.title.startsWith("Aesthetic Conversation") || currentSession.title.startsWith("New Session"))) {
                 try {
                     val defaultForTitle = repository.getDefaultProvider()
                     val titleConfig = if (defaultForTitle != null) {
@@ -253,7 +257,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val allMemories = repository.getAllMemories()
         val localMemories = allMemories.take(MEMORY_INJECT_LIMIT)
         val memoriesText = if (localMemories.isEmpty()) {
-            "无 (None recorded)"
+            getApplication<Application>().getString(R.string.no_memories_recorded)
         } else {
             localMemories.joinToString("\n") { "- ${it.content}" }
         }
@@ -276,7 +280,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // Inject current date/time to prevent AI temporal hallucinations
         val now = ZonedDateTime.now()
         val dateTimeStr = now.format(DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm (EEEE, z)", Locale.CHINESE))
-        finalSystemPrompt += "\n\n<!-- SYSTEM TIME: 当前真实时间为 $dateTimeStr。请以此为准回答所有涉及日期、时间、今天、现在、最近等时间相关的问题，不要凭训练数据猜测当前时间。 -->"
+        finalSystemPrompt += "\n\n<!-- SYSTEM TIME: " + getApplication<Application>().getString(R.string.ai_time_instruction, dateTimeStr) + " -->"
 
         // Hidden formatting instruction: always respond using Markdown
         finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
@@ -493,7 +497,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     startAssistantResponse(sessionId, config, systemPrompt, toolCallDepth + 1)
                 } else {
                     repository.insertMessage(
-                        Message(sessionId = sessionId, role = "assistant", content = "⚠️ 工具调用深度超过限制（${MAX_TOOL_CALL_DEPTH}），已自动停止以防止无限循环。")
+                        Message(sessionId = sessionId, role = "assistant", content = "⚠️ " + getApplication<Application>().getString(R.string.error_tool_depth_exceeded, MAX_TOOL_CALL_DEPTH))
                     )
                 }
             }

@@ -251,9 +251,9 @@ fun ToolGroupCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (totalCount > 1) {
-                        uiText("chat.tools_used_count", "已调用 %d 个工具").format(totalCount)
+                        uiText("chat.tools_used_count", "Used %d tools").format(totalCount)
                     } else {
-                        uiText("chat.tool_used", "已调用工具")
+                        uiText("chat.tool_used", "Tool used")
                     },
                     fontSize = (13 * fs).sp,
                     fontWeight = FontWeight.Bold,
@@ -498,7 +498,7 @@ fun SilentToolIndicator(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = uiText("chat.tools_working_x", "调用工具 x%d").format(totalCount),
+                text = uiText("chat.tools_working_x", "Using tools x%d").format(totalCount),
                 fontSize = (11.5f * fs).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
