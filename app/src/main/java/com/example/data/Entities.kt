@@ -1,6 +1,7 @@
 package com.example.data
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -227,6 +228,38 @@ data class MemoryItem(
     val lastReinforcedAt: Long = System.currentTimeMillis(),
     /** LLM 生成的语义标签，逗号分隔，如 "preference,fact" */
     val tags: String = ""
+)
+
+@Entity(
+    tableName = "memory_associations",
+    indices = [
+        Index(value = ["fromMemoryId"]),
+        Index(value = ["toMemoryId"])
+    ],
+    foreignKeys = [
+        ForeignKey(
+            entity = MemoryItem::class,
+            parentColumns = ["id"],
+            childColumns = ["fromMemoryId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = MemoryItem::class,
+            parentColumns = ["id"],
+            childColumns = ["toMemoryId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
+data class MemoryAssociation(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fromMemoryId: Long,
+    val toMemoryId: Long,
+    /** LLM-generated relation label: related, causes, part_of, contrasts, belongs_to, implies */
+    val relationLabel: String,
+    /** "bidirectional" (default) or "directed" */
+    val direction: String = "bidirectional",
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "prompt_templates")

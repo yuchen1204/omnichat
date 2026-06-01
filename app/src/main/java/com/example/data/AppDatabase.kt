@@ -59,10 +59,12 @@ class Converters {
         // Agent Team 任务系统
         TeamTask::class,
         McpFilePermission::class,
+        // 记忆关联网络
+        MemoryAssociation::class,
         // Agent 定义
         AgentDefinitionEntity::class,
     ],
-    version = 34,
+    version = 35,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -89,6 +91,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun teamTaskDao(): TeamTaskDao
     // MCP 文件权限 DAO
     abstract fun mcpFilePermissionDao(): McpFilePermissionDao
+    // 记忆关联网络 DAO
+    abstract fun memoryAssociationDao(): MemoryAssociationDao
     // Agent 定义 DAO
     abstract fun agentDefinitionDao(): AgentDefinitionDao
 
@@ -607,6 +611,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v34→v35：新增 memory_associations 表（记忆关联网络） */
+        private val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_associations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        fromMemoryId INTEGER NOT NULL,
+                        toMemoryId INTEGER NOT NULL,
+                        relationLabel TEXT NOT NULL,
+                        direction TEXT NOT NULL DEFAULT 'bidirectional',
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY (fromMemoryId) REFERENCES memory_items(id) ON DELETE CASCADE,
+                        FOREIGN KEY (toMemoryId) REFERENCES memory_items(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_memory_associations_fromMemoryId ON memory_associations(fromMemoryId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_memory_associations_toMemoryId ON memory_associations(toMemoryId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_memory_associations_from_to ON memory_associations(fromMemoryId, toMemoryId)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -644,7 +671,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_30_31,
                         MIGRATION_31_32,
                         MIGRATION_32_33,
-                        MIGRATION_33_34
+                        MIGRATION_33_34,
+                        MIGRATION_34_35
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。
