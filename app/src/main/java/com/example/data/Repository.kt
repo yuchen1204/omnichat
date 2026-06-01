@@ -97,6 +97,8 @@ class AppRepository(private val db: AppDatabase) {
         memoryAssociationDao.getAllForMemory(memoryId)
 
     suspend fun insertAssociation(assoc: MemoryAssociation): Long {
+        // Prevent self-referencing associations
+        if (assoc.fromMemoryId == assoc.toMemoryId) return -1L
         // For bidirectional edges, normalize: always store smaller ID as fromMemoryId
         val normalized = if (assoc.direction == "bidirectional" && assoc.fromMemoryId > assoc.toMemoryId) {
             assoc.copy(fromMemoryId = assoc.toMemoryId, toMemoryId = assoc.fromMemoryId)
