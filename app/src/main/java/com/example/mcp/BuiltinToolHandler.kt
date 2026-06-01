@@ -101,6 +101,7 @@ object BuiltinToolHandler {
             "scratchpad_write" -> handleScratchpadWrite(arguments)
             "scratchpad_read" -> handleScratchpadRead(arguments)
             "scratchpad_list" -> handleScratchpadList()
+            "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
             else -> errorResponse("未知的内置工具: $toolName")
         }
     }
@@ -621,6 +622,20 @@ object BuiltinToolHandler {
             appendLine("当前启用的组：$nextGroups")
         }
         return successResponse(text.trimEnd())
+    }
+
+    // ── 工具显示模式 ───────────────────────────────────────────────────────
+
+    private suspend fun handleSetToolDisplayMode(context: Context, arguments: JSONObject): JSONObject {
+        val repository = getRepository(context)
+        val current = repository.getUISettings() ?: UISettings()
+        val silent = arguments.optBoolean("silent", false)
+        repository.upsertUISettings(current.copy(silentToolCalls = silent, updatedAt = System.currentTimeMillis()))
+        return if (silent) {
+            successResponse("已开启静默模式。后续工具调用将以紧凑方式显示，不再展开详情卡片。如需恢复，请调用 set_tool_display_mode(silent=false)。")
+        } else {
+            successResponse("已关闭静默模式。后续工具调用将以正常详情卡片显示。")
+        }
     }
 
     // ── 文件系统工具 ────────────────────────────────────────────────────────
