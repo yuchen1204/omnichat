@@ -3,6 +3,16 @@ package com.example.data
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * 记忆关联展开结果：包含关联的记忆条目、关系标签和方向。
+ * 供 search_memory 的 BFS 遍历使用。
+ */
+data class RelatedMemoryInfo(
+    val memory: MemoryItem,
+    val relationLabel: String,
+    val direction: String
+)
+
 class AppRepository(private val db: AppDatabase) {
     private val modelConfigDao = db.modelConfigDao()
     private val sessionDao = db.sessionDao()
@@ -24,6 +34,7 @@ class AppRepository(private val db: AppDatabase) {
     // Agent Team 任务系统
     val teamTaskDao: TeamTaskDao = db.teamTaskDao()
     private val mcpFilePermissionDao = db.mcpFilePermissionDao()
+    private val memoryAssociationDao = db.memoryAssociationDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -65,6 +76,39 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteMemoryById(id: Long) = memoryItemDao.deleteMemoryById(id)
     suspend fun deleteAllUnpinnedMemories() = memoryItemDao.deleteAllUnpinnedMemories()
     suspend fun deleteAllMemories() = memoryItemDao.deleteAllMemories()
+
+    // Memory Associations
+    suspend fun getRelatedMemories(memoryId: Long): List<RelatedMemoryInfo> {
+        val associations = memoryAssociationDao.getAllForMemory(memoryId)
+        return associations.mapNotNull { assoc ->
+            val relatedId = when {
+                assoc.direction == "bidirectional" -> {
+                    if (assoc.fromMemoryId == memoryId) assoc.toMemoryId else assoc.fromMemoryId
+                }
+                assoc.fromMemoryId == memoryId -> assoc.toMemoryId
+                else -> return@mapNotNull null  // directed edge, wrong direction
+            }
+            val mem = memoryItemDao.getMemoryById(relatedId) ?: return@mapNotNull null
+            RelatedMemoryInfo(mem, assoc.relationLabel, assoc.direction)
+        }
+    }
+
+    suspend fun getAssociationsFor(memoryId: Long): List<MemoryAssociation> =
+        memoryAssociationDao.getAllForMemory(memoryId)
+
+    suspend fun insertAssociation(assoc: MemoryAssociation): Long {
+        // For bidirectional edges, normalize: always store smaller ID as fromMemoryId
+        val normalized = if (assoc.direction == "bidirectional" && assoc.fromMemoryId > assoc.toMemoryId) {
+            assoc.copy(fromMemoryId = assoc.toMemoryId, toMemoryId = assoc.fromMemoryId)
+        } else {
+            assoc
+        }
+        return memoryAssociationDao.insert(normalized)
+    }
+
+    suspend fun deleteAssociation(id: Long) = memoryAssociationDao.deleteById(id)
+    suspend fun deleteAssociationsForMemory(memoryId: Long) = memoryAssociationDao.deleteAllForMemory(memoryId)
+    suspend fun getUnassociatedMemories(limit: Int): List<MemoryItem> = memoryAssociationDao.getUnassociatedMemories(limit)
 
     // Prompt Templates
     val allTemplates: Flow<List<PromptTemplate>> = promptTemplateDao.getAllTemplatesFlow()
