@@ -159,32 +159,31 @@ fun ChatView(viewModel: ChatViewModel) {
     // 自动滚动到底部的控制逻辑
     // 核心原则：只在用户已经在底部时跟随滚动，用户主动上翻时不干扰
     var autoScrollEnabled by remember { mutableStateOf(true) }
-    
-    // 检测用户手动滚动：如果用户正在拖动，且不在底部，说明用户主动上翻，暂停自动滚动
+
+    // 检测用户手动滚动：拖动中或惯性滑动中（isScrollInProgress 捕获 fling），
+    // 且不在底部 → 暂停自动滚动；回到底部 → 恢复
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
-    LaunchedEffect(listState.canScrollBackward, isDragged) {
+    LaunchedEffect(listState.canScrollBackward, isDragged, listState.isScrollInProgress) {
         if (!listState.canScrollBackward) {
-            // 已经在底部了，恢复自动滚动
             autoScrollEnabled = true
-        } else if (isDragged) {
-            // 不在底部且用户正在手动拖动，说明用户主动上翻，暂停自动滚动
+        } else if (isDragged || listState.isScrollInProgress) {
             autoScrollEnabled = false
         }
     }
-    
-    // 新消息到来时的自动滚动
+
+    // 新消息到来时的自动滚动（使用 scrollToItem 避免动画与用户手势冲突）
     LaunchedEffect(messages.size) {
         if (autoScrollEnabled && messages.isNotEmpty()) {
-            listState.animateScrollToItem(0)
+            listState.scrollToItem(0)
         }
     }
-    
-    // 流式输出时的平滑跟随滚动（使用 snapshotFlow 避免 LaunchedEffect 频繁取消重启导致抖动）
+
+    // 流式输出时的跟随滚动（使用 scrollToItem 即时定位，避免 animateScrollToItem 动画抖动）
     LaunchedEffect(Unit) {
         snapshotFlow { streamingBody?.length to streamingThinking?.length }
             .collect {
                 if (autoScrollEnabled && isStreaming) {
-                    listState.animateScrollToItem(0)
+                    listState.scrollToItem(0)
                 }
             }
     }
