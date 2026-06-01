@@ -204,7 +204,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     suspend fun createWorkspaceSession(): Long {
         val session = WorkspaceSession(
-            title = "新工作区",
+            title = "__res:default_workspace_title",
             isActive = true,
             createdAt = System.currentTimeMillis(),
             lastActiveAt = System.currentTimeMillis()
@@ -1082,7 +1082,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
                             persistAllAgentMessages(wsId, snapshot)
 
-                            val firstUserMsg = snapshot.orchestratorMessages.find { it.role == "user" }?.content ?: "新工作区"
+                            val firstUserMsg = snapshot.orchestratorMessages.find { it.role == "user" }?.content ?: "__res:default_workspace_title"
                             val title = firstUserMsg.trim().replace(Regex("\\s+"), " ").take(20)
                             repository.updateWorkspaceSessionTitle(wsId, title)
 

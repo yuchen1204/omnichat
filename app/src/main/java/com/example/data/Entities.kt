@@ -33,7 +33,7 @@ data class AgentPreset(
 @Entity(tableName = "workspace_sessions")
 data class WorkspaceSession(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val title: String = "新工作区",
+    val title: String = "__res:default_workspace_title",
     val isActive: Boolean = true,              // true = 执行中；false = 已完成
     val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis()
