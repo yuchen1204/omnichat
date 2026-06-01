@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,9 +35,11 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val templates by viewModel.promptTemplates.collectAsStateWithLifecycle()
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
+    val isBackfillingTags = viewModel.isBackfillingTags
 
     var manualMemoryText by remember { mutableStateOf("") }
     var activeSubTab by remember { mutableStateOf("memory") }
+    var isManualInputExpanded by remember { mutableStateOf(false) }
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
     val uiSettings = LocalUISettings.current
@@ -65,7 +68,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
         if (activeSubTab == "memory") {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp * spacingMultiplier)
+                verticalArrangement = Arrangement.spacedBy(12.dp * spacingMultiplier)
             ) {
                 // 1. 副模型配置卡片
                 item {
@@ -79,7 +82,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                     )
                 }
 
-                // 2. 手动新增偏好/记忆卡片
+                // 2. 手动新增偏好/记忆卡片（可折叠）
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -87,70 +90,114 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
                         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = uiText("memory.manual.input.title", "手动录入长效记忆 / 用户首选项偏好"),
-                                fontSize = (12 * fs).sp,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = resolvedFontFamily,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(8.dp * spacingMultiplier))
-                            OutlinedTextField(
-                                value = manualMemoryText,
-                                onValueChange = { manualMemoryText = it },
-                                placeholder = { Text(uiText("memory.eaea8fbf", "例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼..."), fontSize = (12 * fs).sp) },
-                                minLines = 2,
-                                maxLines = 4,
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = LocalTextStyle.current.copy(fontSize = (13 * fs).sp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(8.dp * spacingMultiplier))
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isManualInputExpanded = !isManualInputExpanded },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Button(
-                                    onClick = {
-                                        if (manualMemoryText.isNotBlank()) {
-                                            viewModel.insertManualMemory(manualMemoryText.trim())
-                                            manualMemoryText = ""
+                                Text(
+                                    text = uiText("memory.manual.input.title", "手动录入长效记忆 / 用户首选项偏好"),
+                                    fontSize = (12 * fs).sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = resolvedFontFamily,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = if (isManualInputExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = isManualInputExpanded,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(10.dp * spacingMultiplier))
+                                    OutlinedTextField(
+                                        value = manualMemoryText,
+                                        onValueChange = { manualMemoryText = it },
+                                        placeholder = { Text(uiText("memory.eaea8fbf", "例如：用户习惯在提问时使用 Kotlin；希望 AI 回答尽量精炼..."), fontSize = (12 * fs).sp) },
+                                        minLines = 2,
+                                        maxLines = 4,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textStyle = LocalTextStyle.current.copy(fontSize = (13 * fs).sp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp * spacingMultiplier))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                if (manualMemoryText.isNotBlank()) {
+                                                    viewModel.insertManualMemory(manualMemoryText.trim())
+                                                    manualMemoryText = ""
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(8.dp * spacingMultiplier)
+                                        ) {
+                                            Text(uiText("memory.51c52a46", "添加偏好"), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
                                         }
-                                    },
-                                    shape = RoundedCornerShape(8.dp * spacingMultiplier)
-                                ) {
-                                    Text(uiText("memory.51c52a46", "添加偏好"), fontSize = (12 * fs).sp, fontWeight = FontWeight.Medium)
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // 3. 列表标题和清空按钮
+                // 3. 列表标题和操作按钮（两行布局，避免溢出）
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    val untaggedCount = memories.count { it.tags.isBlank() }
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = uiText("memory.list.title", "AI 自我反省提炼的长效记忆 (%d):").format(memories.size),
                             fontSize = (12 * fs).sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (memories.isNotEmpty()) {
-                            TextButton(
-                                onClick = { viewModel.clearAllMemories() },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Text(uiText("memory.7c4e09ff", "清空全部"), fontSize = (12 * fs).sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            if (untaggedCount > 0) {
+                                TextButton(
+                                    onClick = { viewModel.manualBackfillTags() },
+                                    enabled = !isBackfillingTags
+                                ) {
+                                    if (isBackfillingTags) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text(
+                                        uiText("memory.backfill_tags", "补打标签 (%d)").format(untaggedCount),
+                                        fontSize = (12 * fs).sp
+                                    )
+                                }
+                            }
+                            if (memories.isNotEmpty()) {
+                                TextButton(
+                                    onClick = { viewModel.clearAllMemories() },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text(uiText("memory.7c4e09ff", "清空全部"), fontSize = (12 * fs).sp)
+                                }
                             }
                         }
                     }
@@ -203,7 +250,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                             shape = RoundedCornerShape(10.dp * spacingMultiplier)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
                                 Box(
@@ -225,7 +272,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     if (memory.tags.isNotBlank()) {
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Spacer(modifier = Modifier.height(6.dp))
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             memory.tags.split(",").filter { it.isNotBlank() }.forEach { tag ->
                                                 SuggestionChip(
