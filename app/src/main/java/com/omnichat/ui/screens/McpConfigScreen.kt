@@ -233,7 +233,6 @@ fun McpConfigScreen(
     if (showAddDialog) {
         McpServerEditDialog(
             server = null,
-            mcpWorkDir = mcpViewModel.mcpWorkDir,
             mcpViewModel = mcpViewModel,
             onDismiss = { showAddDialog = false },
             onSave = { server ->
@@ -246,7 +245,6 @@ fun McpConfigScreen(
     editTarget?.let { server ->
         McpServerEditDialog(
             server = server,
-            mcpWorkDir = mcpViewModel.mcpWorkDir,
             mcpViewModel = mcpViewModel,
             onDismiss = { editTarget = null },
             onSave = { updated ->
