@@ -23,3 +23,12 @@ app/release/
 
 # Claude Code local config and worktrees
 .claude/
+
+# Superpowers
+.superpowers/
+
+# OpenCode
+.opencode/
+
+# Build outputs
+.build-outputs/
