@@ -1,34 +1,42 @@
+### Android Studio ###
 *.iml
-.gradle
-.kotlin
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+.idea/
+.gradle/
+.kotlin/
 local.properties
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+### Environment & Secrets ###
 .env
+.env.*
+!.env.example
+*.jks
+*.keystore
 debug.keystore
-ClaudeCode-main
 
-# Release build output
+### Build ###
 app/release/
+app/build/
 
-# Claude Code local config and worktrees
+### Claude Code ###
 .claude/
 
-# Superpowers
+### Superpowers ###
 .superpowers/
 
-# OpenCode
+### OpenCode ###
 .opencode/
+opencode.json
+metadata.json
 
-# Build outputs
+### Build Outputs ###
 .build-outputs/
+
+### Artifacts ###
+.artifacts/
