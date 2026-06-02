@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OmniChat is an Android AI chat app with embedded MCP runtime support, long-term memory, multi-provider model configuration, and AI-adjustable UI theming.
 
+## Prerequisites & Requirements
+
+- **Android Studio**: Hedgehog or later
+- **JDK**: 17+
+- **Android SDK**: 36 (compileSdk: 36, targetSdk: 36, minSdk: 26)
+- **CMake**: 3.22.1
+- **NDK**: 27.0.12077973 (for JNI native bridges)
+- **Kotlin**: 2.2.10
+
+**Environment note:** `gradle.properties` does NOT hardcode JDK path. Set locally or via CI. Override `org.gradle.java.home` if needed. Kotlin compiler runs `in-process` to avoid daemon connection errors.
+
 ## Build & Test Commands
 
 ```bash
@@ -28,18 +39,26 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 ./gradlew generateUiTextKeys
 ```
 
-**Before first run:** API keys are configured per-provider in the app UI (模型配置 tab).
+**Before first run:** No special configuration needed. API keys are configured per-provider in the app UI (模型配置 tab).
 
 **CI:** `.github/workflows/release.yml` builds release APKs on tag push (`Release-V*.*`). No CI for PRs or unit tests.
 
 **Windows:** Use `gradlew.bat` (same flags). PowerShell uses `;` not `&&` for chaining.
+
+## Build Quirks & Configuration
+
+- Configuration cache and parallel builds enabled
+- Core library desugaring is on (`desugarJdkLibs`)
+- `useLegacyPackaging = false` for jniLibs (mmap for faster .so loading)
+- No minification (`isMinifyEnabled = false`)
+- Signing config in `app/build.gradle.kts` uses env vars (`STORE_PASSWORD` / `KEY_PASSWORD` in CI, fallbacks locally)
 
 ## Architecture
 
 MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with three top-level views: `"chat"`, `"workspace"`, and `"settings"` (toggled via `mutableStateOf`). The `"settings"` view contains a **TabRow with 5 sub-tabs**: 模型配置, MCP工具, 长效记忆, Agent 预设, 数据管理.
 
 ```
-Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 entities, v30)
+Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tables, v35)
                                     ↘ ApiClient (OkHttp + SSE, vision support)
                                     ↘ McpRuntimeManager (Node.js / Python / remote_http via JNI)
 ```
@@ -50,7 +69,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **UI strings** use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", "English default")` pattern with auto-generated `ui_text_keys.json`
-- **Room database** version 30 with 26 sequential migrations (v4→v30). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`
+- **Room database** version 35 with 30+ sequential migrations (v4→v35). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
 - **Node.js can start only once per process** (nodejs-mobile limitation) — merge multiple servers into one entry script
 - **Native runtimes are optional**; app degrades gracefully without them
 
@@ -61,11 +80,12 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 | `com.omnichat` | Entry point (`MainActivity.kt` — note lowercase 'm') |
 | `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
 | `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
-| `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
-| `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs` |
-| `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
+| `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
+| `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `AgentHook`, `McpFilePermissionHook`, `WorkspaceSandboxHook`, `LoggingHooks` |
+| `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `WorkspaceScreen`, `WorkspaceToolbar`, `WorkspaceReadyView`, `AgentTabBar`, `AgentMessageArea`, `AgentBubbleMessage`, `OrchestrationToolCallCard`, `TeamTaskPanel`, `InterventionInput`, `AgentPresetConfigScreen`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
+| `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel`, `WorkspaceViewModel` |
 | `com.omnichat.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
-| `com.omnichat.ui.theme` | Material 3 theming with DB-driven dynamic color |
+| `com.omnichat.ui.theme` | Material 3 theming with DB-driven dynamic color, `UiStrings` |
 | `com.omnichat.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
 
 ## Native Code (MCP Runtime)
@@ -84,6 +104,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **Add MCP server support**: Add runtime config in `McpRuntimeManager`, bridge class following `NodeJsBridge`/`PythonBridge` patterns
 - **Add/modify built-in MCP tools**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`). Tools are grouped (core, memory, ui_appearance, ui_text, files, documents, efficiency); `UISettings.enabledMcpGroups` controls active groups
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, use `LocalUiStrings.current` in Compose screens
+- **Add hooks**: Implement `MessageHook`, `McpHook`, or `AgentHook` interface in `com.omnichat.hooks` package, register with `HookManager` (object with register/unregister methods)
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; MCP tools in `BuiltinToolHandler` update it
 - **Modify workspace multi-agent logic**: Edit `TeamManager.kt` (facade), `AgentRunner.kt` (per-agent LLM loop), `AgentTool.kt` (SubAgent spawning), `ToolOrchestrator.kt` (tool routing), `TaskTools.kt` (task CRUD), `SendMessageTool.kt` (inter-agent messaging), `AgentDefinition.kt` (agent type registry)
@@ -97,7 +118,6 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 - **API keys**: Configured per-provider in the app UI (ModelConfig entity), never hardcoded
 - **Custom HTTP headers**: `ModelConfig.customHeaders` is a JSON object string sent with every API request
 - **Streaming internals**: SSE chunk prefixes `ERROR:`, `INFO:`, `TOOL_CALL_DELTA:`, `RETRY_RESET:` have special handling in `ChatViewModel`. UI updates throttled to 50ms intervals
-- **No minification** (`isMinifyEnabled = false`)
 - **Vision support**: `Message.imagePath` and `WorkspaceMessage.imagePath` store local image paths. `ApiClient.imageToBase64DataUrl()` auto-compresses and converts to base64
 - **Storage permissions**: Android 11+ needs `MANAGE_EXTERNAL_STORAGE` (settings page); required for MCP script deployment
 - **Thinking/reasoning support**: `reasoning_effort` (low/medium/high/xhigh) with `budget_tokens`
