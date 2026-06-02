@@ -348,18 +348,17 @@ object BuiltinToolHandler {
         if (query.isBlank()) {
             return errorResponse(str(context, R.string.tool_memory_query_empty))
         }
-        if (query.any { it.code > 127 }) {
-            return errorResponse("search_memory only supports English queries. Please search using English keywords.")
-        }
+        // 中文搜索支持：bigramTokenize 已支持中文字符，无需限制查询语言
         val tagFilter = arguments.optString("tag").trim().lowercase().takeIf { it.isNotBlank() }
         val limit = arguments.optInt("limit", 10).coerceIn(1, 50)
         val repository = getRepository(context)
 
         // 确定候选集：按 tag 预过滤或全量
-        val validTags = setOf("preference", "fact", "instruction", "habit", "context")
+        // 支持中英文 tag，统一转小写匹配
         val candidates: List<com.omnichat.data.MemoryItem>
         val totalCount: Int
-        if (tagFilter != null && tagFilter in validTags) {
+        if (tagFilter != null) {
+            // 直接按 tag 搜索，不再限制于预定义的 validTags
             candidates = repository.searchMemoriesByTag(tagFilter)
             totalCount = candidates.size
         } else {
@@ -439,7 +438,8 @@ object BuiltinToolHandler {
                 scored.forEachIndexed { i, sm ->
                     val pinnedTag = if (sm.memory.pinned) str(context, R.string.tool_memory_pinned_tag) else ""
                     val tagsDisplay = if (sm.memory.tags.isNotBlank()) " [${sm.memory.tags}]" else ""
-                    appendLine(str(context, R.string.tool_memory_entry_format, i + 1, sm.memory.id, sm.memory.confidence, sm.score, pinnedTag, tagsDisplay))
+                    // 安全格式化：confidence 是 Int，score 是 Double，确保类型匹配
+                    appendLine(str(context, R.string.tool_memory_entry_format, i + 1, sm.memory.id, sm.memory.confidence.toDouble(), sm.score, pinnedTag, tagsDisplay))
                     appendLine("   ${sm.memory.content}")
                 }
             }
