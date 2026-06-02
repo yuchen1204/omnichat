@@ -23,6 +23,7 @@ import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.ui.viewmodel.SettingsViewModel
 
 import com.omnichat.mcp.TimerManager
+import com.omnichat.StreamingForegroundService
 
 class MainActivity : AppCompatActivity() {
 
@@ -56,6 +57,8 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
         // 初始化定时器通知 Channel
         TimerManager.initNotificationChannel(applicationContext)
+        // 初始化流式回复前台服务通知 Channel
+        StreamingForegroundService.initChannel(applicationContext)
         // 从磁盘恢复待触发的定时器（进程重启后不丢失）
         TimerManager.restoreFromDisk(applicationContext)
         

@@ -586,4 +586,10 @@
     <string name="alarm_notification_description">AI 助手创建的定时提醒</string>
     <string name="alarm_timer_reminder">⏰ **定时提醒**\n\n%s</string>
     <string name="tool_search_match_lines">  (匹配行: %s)</string>
+
+    <!-- ── StreamingForegroundService ── -->
+    <string name="streaming_notification_title">AI 回复中</string>
+    <string name="streaming_notification_text">正在生成回复…</string>
+    <string name="streaming_notification_complete_title">AI 回复完成</string>
+    <string name="streaming_notification_complete_text">点击查看</string>
 </resources>

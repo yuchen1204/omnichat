@@ -586,4 +586,10 @@
     <string name="alarm_notification_description">Scheduled reminder created by AI assistant</string>
     <string name="alarm_timer_reminder">⏰ **Reminder**\n\n%s</string>
     <string name="tool_search_match_lines">  (matched lines: %s)</string>
+
+    <!-- ── StreamingForegroundService ── -->
+    <string name="streaming_notification_title">AI responding</string>
+    <string name="streaming_notification_text">Generating reply…</string>
+    <string name="streaming_notification_complete_title">AI reply complete</string>
+    <string name="streaming_notification_complete_text">Tap to view</string>
 </resources>

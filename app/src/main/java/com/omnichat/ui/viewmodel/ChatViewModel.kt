@@ -19,6 +19,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.omnichat.R
 import com.omnichat.mcp.AskUserManager
+import com.omnichat.StreamingForegroundService
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
@@ -335,6 +336,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         currentStreamingBody = ""
         isThinkingFinished = true
 
+        // 启动前台服务：保持 LLM 连接不被系统回收；仅在顶层调用时启动
+        val isTopLevelStreaming = toolCallDepth == 0
+        if (isTopLevelStreaming) {
+            StreamingForegroundService.start(getApplication())
+        }
+
         // BUG-015: 使用 try/finally 确保 isStreaming 在所有路径（包括异常）上都被重置
         try {
         var accumulatedText = ""
@@ -509,6 +516,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         } finally {
             // BUG-015: 确保 isStreaming 在所有路径上都被重置，防止 UI 永久卡在加载状态
             isStreaming = false
+            // 顶层调用完成 → 通知前台服务：回复已完成（5 秒后自动停止）
+            if (isTopLevelStreaming) {
+                StreamingForegroundService.complete(getApplication())
+            }
         }
     }
 
