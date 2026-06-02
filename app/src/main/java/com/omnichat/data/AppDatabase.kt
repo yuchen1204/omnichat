@@ -64,7 +64,7 @@ class Converters {
         // Agent 定义
         AgentDefinitionEntity::class,
     ],
-    version = 35,
+    version = 36,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -634,6 +634,89 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v35→v36：移除 mcp_servers.runtime 列和 ui_settings.isNodeEnabled/isPythonEnabled 列 */
+        private val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 重建 mcp_servers 表（移除 runtime 列，删除 node/python 类型的 server）
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS mcp_servers_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        command TEXT NOT NULL,
+                        args TEXT NOT NULL DEFAULT '[]',
+                        env TEXT NOT NULL DEFAULT '{}',
+                        isEnabled INTEGER NOT NULL DEFAULT 1,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("INSERT INTO mcp_servers_new (id, name, command, args, env, isEnabled, createdAt) SELECT id, name, command, args, env, isEnabled, createdAt FROM mcp_servers WHERE runtime = 'remote_http'")
+                db.execSQL("DROP TABLE mcp_servers")
+                db.execSQL("ALTER TABLE mcp_servers_new RENAME TO mcp_servers")
+
+                // 重建 ui_settings 表（移除 isNodeEnabled 和 isPythonEnabled 列）
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS ui_settings_new (
+                        id INTEGER PRIMARY KEY NOT NULL,
+                        primaryColor TEXT NOT NULL,
+                        onPrimaryColor TEXT NOT NULL,
+                        primaryContainerColor TEXT NOT NULL,
+                        onPrimaryContainerColor TEXT NOT NULL,
+                        secondaryColor TEXT NOT NULL,
+                        onSecondaryColor TEXT NOT NULL,
+                        secondaryContainerColor TEXT NOT NULL,
+                        onSecondaryContainerColor TEXT NOT NULL,
+                        tertiaryColor TEXT NOT NULL,
+                        onTertiaryColor TEXT NOT NULL,
+                        backgroundColor TEXT NOT NULL,
+                        onBackgroundColor TEXT NOT NULL,
+                        surfaceColor TEXT NOT NULL,
+                        onSurfaceColor TEXT NOT NULL,
+                        surfaceVariantColor TEXT NOT NULL,
+                        onSurfaceVariantColor TEXT NOT NULL,
+                        outlineColor TEXT NOT NULL,
+                        outlineVariantColor TEXT NOT NULL,
+                        errorColor TEXT NOT NULL,
+                        onErrorColor TEXT NOT NULL,
+                        errorContainerColor TEXT NOT NULL,
+                        onErrorContainerColor TEXT NOT NULL,
+                        successColor TEXT NOT NULL,
+                        warningColor TEXT NOT NULL,
+                        infoColor TEXT NOT NULL,
+                        accentColor TEXT NOT NULL,
+                        sidebarBackgroundColor TEXT NOT NULL,
+                        sidebarOnBackgroundColor TEXT NOT NULL,
+                        sidebarActiveColor TEXT NOT NULL,
+                        sidebarOnActiveColor TEXT NOT NULL,
+                        cornerRadiusDp INTEGER NOT NULL,
+                        spacingMultiplier REAL NOT NULL,
+                        fontSizeScale REAL NOT NULL,
+                        chatFontSizeScale REAL NOT NULL,
+                        fontFamily TEXT NOT NULL,
+                        enabledMcpGroups TEXT NOT NULL,
+                        silentToolCalls INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        uiStrings TEXT NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO ui_settings_new SELECT
+                        id, primaryColor, onPrimaryColor, primaryContainerColor, onPrimaryContainerColor,
+                        secondaryColor, onSecondaryColor, secondaryContainerColor, onSecondaryContainerColor,
+                        tertiaryColor, onTertiaryColor,
+                        backgroundColor, onBackgroundColor, surfaceColor, onSurfaceColor,
+                        surfaceVariantColor, onSurfaceVariantColor, outlineColor, outlineVariantColor,
+                        errorColor, onErrorColor, errorContainerColor, onErrorContainerColor,
+                        successColor, warningColor, infoColor, accentColor,
+                        sidebarBackgroundColor, sidebarOnBackgroundColor, sidebarActiveColor, sidebarOnActiveColor,
+                        cornerRadiusDp, spacingMultiplier, fontSizeScale, chatFontSizeScale, fontFamily,
+                        enabledMcpGroups, silentToolCalls, updatedAt, uiStrings
+                    FROM ui_settings
+                """.trimIndent())
+                db.execSQL("DROP TABLE ui_settings")
+                db.execSQL("ALTER TABLE ui_settings_new RENAME TO ui_settings")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -672,7 +755,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_31_32,
                         MIGRATION_32_33,
                         MIGRATION_33_34,
-                        MIGRATION_34_35
+                        MIGRATION_34_35,
+                        MIGRATION_35_36
                     )
                     // 兜底：只对 v1、v2、v3 这些极旧版本触发破坏性迁移（BUG-13）。
                     // v4 及以上版本有完整的迁移脚本，不应触发破坏性迁移，避免清空用户数据。

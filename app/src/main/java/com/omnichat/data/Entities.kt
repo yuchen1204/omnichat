@@ -281,21 +281,17 @@ data class FetchedModel(
 /**
  * MCP (Model Context Protocol) 服务配置。
  *
- * runtime 字段：
- *   "node"   — 通过内嵌 Node.js 运行 JS/TS MCP server
- *   "python" — 通过内嵌 Python 运行 Python MCP server
- *   "remote_http" — 通过 HTTP/HTTPS 连接远程 MCP server
+ * 通过 HTTP/HTTPS 连接远程 MCP server。
  *
- * command  — 入口脚本路径、包名 或 远程 URL
+ * command  — 远程 URL
  * args     — JSON 数组字符串，例如 '["--root", "/sdcard"]'
- * env      — JSON 对象字符串，例如 '{"API_KEY": "xxx"}'
+ * env      — JSON 对象字符串（自定义 HTTP 请求头），例如 '{"Authorization": "Bearer token"}'
  */
 @Entity(tableName = "mcp_servers")
 data class McpServer(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val runtime: String = "node",   // "node" | "python" | "remote_http"
-    val command: String,            // 入口脚本路径 或 npm 包名 或 URL
+    val command: String,            // 远程 URL
     val args: String = "[]",        // JSON 数组字符串
     val env: String = "{}",         // JSON 对象字符串
     val isEnabled: Boolean = true,
@@ -510,11 +506,6 @@ data class UISettings(
      * 不支持的值会回退到 "default"。
      */
     val fontFamily: String = "default",
-
-    /** 是否启用 Node.js 运行时 */
-    val isNodeEnabled: Boolean = true,
-    /** 是否启用 Python 运行时 */
-    val isPythonEnabled: Boolean = true,
 
     /**
      * 已启用的内置 MCP 工具组，逗号分隔。
