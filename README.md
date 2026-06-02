@@ -2,7 +2,7 @@
 
 # OmniChat
 
-> Android AI Assistant with Embedded MCP Agent Runtime -- Let AI truly control your device
+> Android AI Assistant with MCP Runtime -- Let AI truly control your device
 
 <div align="center">
 
@@ -16,8 +16,7 @@
 
 ## Core Features
 
-- **Embedded MCP Runtime** -- Run Node.js / Python MCP servers locally on Android, enabling AI to directly invoke on-device tools
-- **Multi-Agent Workspace** -- Orchestrator-pattern multi-agent collaboration with team management, task assignment, and inter-agent communication
+- **MCP Runtime** -- Connect to remote MCP servers via HTTP/HTTPS, enabling AI to invoke external tools
 - **Cross-Session Memory System** -- 15-minute rolling summaries + long-term memory items (with confidence scoring), so AI truly "remembers" your preferences
 - **AI-Adjustable UI** -- Apple-inspired color schemes; AI can modify app themes, colors, fonts, and layouts in real time via MCP tools
 - **Multimedia Capabilities** -- Camera capture, image picker, document generation (docx/xlsx), AlarmManager timers (with repeating tasks)
@@ -31,38 +30,30 @@
 ```
 +---------------------------------------------------------------+
 |                     Compose UI Layer                         |
-|  +----------+  +-----------+  +------------+  +---------+   |
-|  |ChatScreen|  |Workspace  |  |  Settings  |  | Sidebar |   |
-|  |          |  |  Screen   |  |   (5 tabs) |  |  Drawer |   |
-|  +----+-----+  +-----+-----+  +-----+------+  +----+----+   |
-+-------+--------------+--------------+--------------+---------+
+|  +----------+  +------------+  +---------+                   |
+|  |ChatScreen|  |  Settings  |  | Sidebar |                   |
+|  |          |  |   (4 tabs) |  |  Drawer |                   |
+|  +----+-----+  +-----+------+  +----+----+                   |
++-------+--------------+--------------+-------------------------+
 |                     ViewModel Layer                          |
-|  +--------------+  +----------------+  +---------------+    |
-|  | ChatViewModel|  |WorkspaceVM     |  |SettingsVM     |    |
-|  +------+-------+  +-------+--------+  +-------+-------+    |
-+---------+-------------------+--------------------+-----------+
+|  +--------------+  +---------------+                         |
+|  | ChatViewModel|  |SettingsVM     |                         |
+|  +------+-------+  +-------+-------+                         |
++---------+-------------------+--------------------------------+
 |                 Data / Repository Layer                      |
 |  +---------------------------------------------------------+ |
-|  |              AppRepository (Room DB v32 - 20 tables)     | |
+|  |           AppRepository (Room DB v37)                    | |
 |  +---------------------------------------------------------+ |
 +---------------------------------------------------------------+
 |                   MCP Runtime Layer                          |
-|  +---------------+  +---------------+  +---------------+    |
-|  |  NodeJsBridge |  | PythonBridge  |  | Remote HTTP   |    |
-|  |   (JNI/TCP)   |  |  (JNI/dlopen) |  |  (SSE+Stream) |    |
-|  +---------------+  +---------------+  +---------------+    |
-+---------------------------------------------------------------+
-|                  Workspace (Multi-Agent)                     |
-|  +-----------+  +----------+  +----------+  +-----------+   |
-|  |TeamManager|  |TaskTools |  |AgentTool |  |AgentRunner|   |
-|  +-----------+  +----------+  +----------+  +-----------+   |
-|  +---------------+  +--------------+  +-----------------+   |
-|  |ToolOrchestratr|  | AgentRegistry|  |MarkdownAgentLdr |   |
-|  +---------------+  +--------------+  +-----------------+   |
+|  +---------------+                                           |
+|  |  Remote HTTP  |                                           |
+|  |  (SSE+Stream) |                                           |
+|  +---------------+                                           |
 +---------------------------------------------------------------+
 ```
 
-Single Activity architecture (`MainActivity`), three top-level views: Chat, Workspace, Settings (with 5 sub-tabs).
+Single Activity architecture (`MainActivity`), two top-level views: Chat, Settings (with 4 sub-tabs).
 
 ## Quick Start
 
@@ -71,7 +62,6 @@ Single Activity architecture (`MainActivity`), three top-level views: Chat, Work
 - Android Studio Hedgehog or later
 - JDK 17+
 - Android SDK 36
-- CMake 3.22.1 + NDK 27.0.12077973
 
 ### Install
 
@@ -108,20 +98,16 @@ cd omnichat
 
 ```
 omnichat/
-+-- app/src/main/java/com/example/
++-- app/src/main/java/com/omnichat/
 |   +-- MainActivity.kt              # Entry Activity
 |   +-- data/                        # Data layer
-|   |   +-- Entities.kt              # Room entity definitions (20 tables)
+|   |   +-- Entities.kt              # Room entity definitions
 |   |   +-- Daos.kt                  # DAO interfaces
-|   |   +-- AppDatabase.kt           # Database config (v32, 28 migrations)
+|   |   +-- AppDatabase.kt           # Database config (v37)
 |   |   +-- Repository.kt            # Repository (AppRepository)
 |   +-- mcp/                         # MCP runtime
 |   |   +-- McpRuntimeManager.kt     # Runtime manager
-|   |   +-- McpScriptManager.kt      # Script deployment manager
 |   |   +-- McpPermissionManager.kt  # MCP permission manager
-|   |   +-- NodeJsBridge.kt          # Node.js JNI bridge (TCP)
-|   |   +-- PythonBridge.kt          # Python bridge (stdin/stdout)
-|   |   +-- PythonRuntime.kt         # Python runtime (dlopen)
 |   |   +-- BuiltinToolHandler.kt    # Built-in tool handler
 |   +-- hooks/                       # Hook system
 |   |   +-- HookManager.kt           # Hook manager
@@ -130,31 +116,17 @@ omnichat/
 |   |   +-- McpFilePermissionHook.kt # File permission hook
 |   +-- network/
 |   |   +-- ApiClient.kt            # OpenAI-compatible API client (SSE)
-|   +-- workspace/                   # Multi-agent workspace
-|   |   +-- TeamManager.kt           # Team manager (orchestrator)
-|   |   +-- AgentRunner.kt           # Agent executor
-|   |   +-- AgentRegistry.kt         # Agent registration and discovery
-|   |   +-- AgentDefinition.kt       # Agent type definitions
-|   |   +-- AgentContext.kt          # Agent execution context
-|   |   +-- AgentTool.kt             # SubAgent creation
-|   |   +-- AgentToolFilter.kt       # Tool filtering
-|   |   +-- ToolOrchestrator.kt      # Tool routing and orchestration
-|   |   +-- TaskTools.kt             # Task management
-|   |   +-- SendMessageTool.kt       # Inter-agent communication
-|   |   +-- StructuredMessage.kt     # Structured message format
-|   |   +-- MemorySnapshot.kt        # Agent memory snapshot
-|   |   +-- MarkdownAgentLoader.kt   # Markdown agent definition loader
-|   |   +-- WorkspaceModels.kt       # Workspace data models
+|   +-- memory/                      # Memory engine
+|   |   +-- MemoryEngine.kt          # Cross-session memory engine
+|   |   +-- MemoryTokenizer.kt       # Tokenizer for memory search
 |   +-- ui/
 |   |   +-- screens/                 # Compose screens
 |   |   +-- viewmodel/               # ViewModel layer
 |   |   +-- components/              # Reusable components
 |   |   +-- theme/                   # Material 3 theme system
 |   +-- TimerManager.kt             # Timer manager (AlarmManager)
-+-- app/src/main/cpp/                # C++ JNI code
 +-- app/src/main/assets/
 |   +-- node/                        # Node.js MCP scripts
-|   +-- python/                      # Python stdlib
 +-- scripts/                         # Utility scripts
 ```
 
@@ -162,14 +134,13 @@ omnichat/
 
 | Category | Technology |
 |----------|-----------|
-| Language | Kotlin 2.2.10, C++17 (JNI) |
+| Language | Kotlin 2.2.10 |
 | UI | Jetpack Compose (Material 3) |
-| Database | Room v2.7.0 (v32, 20 entities, 28 migrations) |
+| Database | Room v2.7.0 (v37) |
 | Networking | OkHttp + SSE + Retrofit 2.12.0 |
 | Serialization | Moshi 1.15.2 |
 | Firebase | Firebase BOM 34.12.0 |
-| Build | AGP 9.1.1, KSP 2.2.10-2.0.2, CMake 3.22.1 |
-| Native Runtimes | nodejs-mobile (libnode.so), Python 3.14 (dlopen) |
+| Build | AGP 9.1.1, KSP 2.2.10-2.0.2 |
 | Document Generation | Apache POI 5.5.1 |
 | Permissions | Accompanist Permissions 0.37.3 |
 | Image Loading | Coil 2.7.0 |
@@ -177,36 +148,10 @@ omnichat/
 | Markdown | compose-markdown 0.7.2 |
 | Testing | JUnit, Robolectric, Roborazzi 1.59.0 |
 | CI/CD | GitHub Actions (automated release builds) |
-| ABI | arm64-v8a, x86_64 |
-
-## Database Schema (v32, 20 Entities)
-
-| Entity | Table | Purpose |
-|--------|-------|---------|
-| `ModelConfig` | `model_configs` | API provider / model configuration |
-| `Session` | `sessions` | Chat sessions |
-| `Message` | `messages` | Chat messages (user/assistant/tool) |
-| `MemoryItem` | `memory_items` | Cross-session memory (with confidence scoring) |
-| `PromptTemplate` | `prompt_templates` | System prompt templates |
-| `FetchedModel` | `fetched_models` | Model list cache |
-| `SessionSummary` | `session_summaries` | 15-minute rolling session summaries |
-| `McpServer` | `mcp_servers` | MCP server configuration |
-| `UISettings` | `ui_settings` | AI-adjustable global UI settings |
-| `ColorSchemePreset` | `color_scheme_presets` | Color scheme snapshots (up to 5) |
-| `AgentPreset` | `agent_presets` | Agent preset configurations |
-| `WorkspaceSession` | `workspace_sessions` | Workspace sessions |
-| `WorkspaceTeam` | `workspace_teams` | Workspace teams |
-| `AgentInstance` | `agent_instances` | Running agent instances |
-| `AgentDefinitionEntity` | `agent_definitions` | Agent type definitions (with Claude Code-aligned fields) |
-| `WorkspaceMessage` | `workspace_messages` | Workspace messages |
-| `MailboxMessage` | `mailbox_messages` | Inter-agent mailbox messages |
-| `AgentStateSnapshot` | `agent_state_snapshots` | Agent state snapshots |
-| `TeamTask` | `team_tasks` | Team tasks (status / blocking management) |
-| `McpFilePermission` | `mcp_file_permissions` | MCP file access permissions |
 
 ## MCP Tool Extension
 
-### Built-in Tools (35)
+### Built-in Tools
 
 | Tool | Description |
 |------|-------------|
@@ -219,38 +164,14 @@ omnichat/
 | Camera Capture | Invoke device camera to take and save photos |
 | Image Picker | Select images from the gallery |
 | Timers | Create and manage countdown / stopwatch timers |
-| Agent Management | Create / manage multi-agent workspace |
-| Task Management | Task CRUD, status tracking, blocking dependencies |
 | Memory Search | Search cross-session memories |
 
 ### Adding Custom MCP Servers
 
 1. Go to **Settings -> MCP Tools** tab and tap **Add**
 2. Configure the server:
-   - **Node.js**: Specify the `.js` file path
-   - **Python**: Specify the `.py` file path
    - **Remote HTTP**: Enter the server URL (supports SSE 2024-11-05 and Streamable HTTP 2025-03-26)
 3. Supports standard `mcpServers` JSON format import
-
-> Node.js can only start once per process (nodejs-mobile limitation) -- multiple servers are merged into a single entry script.
-
-## Multi-Agent Workspace
-
-Orchestrator-pattern multi-agent collaboration system with Claude Code-style agent definitions:
-
-- **TeamManager** -- Manages teammates and overall workflow
-- **AgentRegistry** -- Agent registration and discovery
-- **AgentDefinition** -- Agent type definitions (built-in + custom Markdown definitions)
-- **MarkdownAgentLoader** -- Loads agent definitions from Markdown files
-- **AgentTool** -- Creates isolated SubAgents to execute tasks
-- **AgentToolFilter** -- Filters available tools by agent type
-- **ToolOrchestrator** -- Tool routing and orchestration
-- **TaskTools** -- Task CRUD, status tracking, blocking dependencies
-- **AgentRunner** -- Agent execution loop (with MCP tool calls)
-- **SendMessageTool** -- Asynchronous inter-agent messaging
-- **StructuredMessage** -- Structured message format
-- **MemorySnapshot** -- Agent memory snapshots
-- **AgentContext** -- Coroutine context isolation
 
 ## Release Build
 
