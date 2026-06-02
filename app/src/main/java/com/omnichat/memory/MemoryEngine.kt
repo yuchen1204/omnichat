@@ -31,7 +31,7 @@ class MemoryEngine(
         private const val MEMORY_RECENT_RAW_COUNT = 20
         private const val MIN_NEW_CHARS_THRESHOLD = 200
         private const val DEDUP_SIMILARITY_THRESHOLD = 0.55
-        private const val MEMORY_INJECT_LIMIT = 30
+        internal const val MEMORY_INJECT_LIMIT = 30
         private const val COLD_START_ASSOC_LIMIT = 20
         val ASSOC_LABEL_VOCABULARY = setOf("related", "causes", "part_of", "contrasts", "belongs_to", "implies")
     }
@@ -50,7 +50,13 @@ class MemoryEngine(
      * @param limit 最大注入数量
      */
     suspend fun selectRelevantMemories(userMessage: String = "", limit: Int = MEMORY_INJECT_LIMIT): List<MemoryItem> {
-        val allMemories = repository.getAllMemories()
+        val allMemories = try {
+            repository.getAllMemories()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(TAG, "Failed to load memories for injection: ${e.message}")
+            return emptyList()
+        }
         val pinned = allMemories.filter { it.pinned }
         val unpinned = allMemories.filter { !it.pinned }
 
@@ -113,28 +119,12 @@ class MemoryEngine(
     // ── 置信度衰减 ─────────────────────────────────────────────────────
 
     /**
-     * 批量置信度衰减：所有非 pinned 记忆每过一天 confidence -1，下限为 1。
+     * 批量置信度衰减：每行独立计算衰减天数（SQL 中按 lastReinforcedAt 计算）。
      * 使用单条 SQL UPDATE 替代逐条更新，大幅提升性能。
      */
     suspend fun applyConfidenceDecay(now: Long) {
         try {
-            // 找到需要衰减的最早时间点：任何 lastReinforcedAt 早于此刻的记忆都需要衰减
-            val allMemories = repository.getAllMemories()
-            val needDecay = allMemories.filter { !it.pinned && it.lastReinforcedAt < now }
-            if (needDecay.isEmpty()) return
-
-            // 找到最早的 lastReinforcedAt，计算最大衰减天数
-            val earliestReinforced = needDecay.minOf { it.lastReinforcedAt }
-            val maxDaysSince = ((now - earliestReinforced) / 86_400_000L).toInt()
-            if (maxDaysSince <= 0) return
-
-            // 批量衰减：对所有符合条件的记录一次性执行
-            // threshold 设为 now，这样所有 lastReinforcedAt < now 的非 pinned 记忆都会被衰减
-            repository.batchDecayConfidence(
-                daysDecay = maxDaysSince,
-                threshold = now,
-                now = now
-            )
+            repository.batchDecayConfidence(now)
         } catch (e: Exception) {
             Log.w(TAG, "Batch confidence decay failed, falling back to per-item: ${e.message}")
             // 降级为逐条更新
@@ -295,75 +285,92 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
             val existingById = existingMemories.associateBy { it.id }
 
             for (i in 0 until ops.length()) {
-                val op = ops.optJSONObject(i) ?: continue
-                when (op.optString("op").uppercase()) {
-                    "ADD" -> {
-                        val content = op.optString("content").trim()
-                        if (content.isNotBlank()) {
-                            val duplicate = existingMemories.firstOrNull { existing ->
-                                MemoryTokenizer.jaccardSimilarity(content, existing.content) >= DEDUP_SIMILARITY_THRESHOLD
-                            }
-                            if (duplicate != null) {
-                                repository.reinforceMemory(duplicate.id, duplicate.content, now)
-                                logAudit(duplicate.id, "REINFORCE", duplicate.content, "sync", duplicate.confidence, duplicate.confidence + 1, now)
-                            } else {
-                                val tags = parseTagsFromJson(op.optJSONArray("tags"))
-                                val newId = repository.insertMemory(
-                                    MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags)
-                                )
-                                logAudit(newId, "ADD", content, "sync", null, 1, now)
-                                if (newId > 0) {
-                                    try { computeAndStoreEmbedding(newId, content) } catch (_: Exception) {}
-                                    // 即时关联：为新记忆找到最相似的已有记忆并建立关联
-                                    try {
-                                        createImmediateAssociations(newId, content, existingMemories)
-                                    } catch (_: Exception) {}
+                try {
+                    val op = ops.optJSONObject(i) ?: continue
+                    when (op.optString("op").uppercase()) {
+                        "ADD" -> {
+                            val content = op.optString("content").trim()
+                            if (content.isNotBlank()) {
+                                val duplicate = existingMemories.firstOrNull { existing ->
+                                    MemoryTokenizer.jaccardSimilarity(content, existing.content) >= DEDUP_SIMILARITY_THRESHOLD
+                                }
+                                if (duplicate != null) {
+                                    repository.reinforceMemory(duplicate.id, duplicate.content, now)
+                                    logAudit(duplicate.id, "REINFORCE", duplicate.content, "sync", duplicate.confidence, duplicate.confidence + 1, now)
+                                } else {
+                                    val tags = parseTagsFromJson(op.optJSONArray("tags"))
+                                    val newId = repository.insertMemory(
+                                        MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags)
+                                    )
+                                    logAudit(newId, "ADD", content, "sync", null, 1, now)
+                                    if (newId > 0) {
+                                        try {
+                                            computeAndStoreEmbedding(newId, content)
+                                        } catch (e: Exception) {
+                                            if (e is kotlinx.coroutines.CancellationException) throw e
+                                            Log.w(TAG, "Embedding computation failed for new memory id=$newId: ${e.message}")
+                                        }
+                                        try {
+                                            createImmediateAssociations(newId, content, existingMemories)
+                                        } catch (e: Exception) {
+                                            if (e is kotlinx.coroutines.CancellationException) throw e
+                                            Log.w(TAG, "Immediate association creation failed for memory id=$newId: ${e.message}")
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                    "UPDATE" -> {
-                        val id = op.optLong("id", -1L)
-                        val content = op.optString("content").trim()
-                        val existing = existingById[id]
-                        if (existing == null) {
-                            Log.w(TAG, "Memory UPDATE ignored: id=$id not found")
-                        } else if (existing.pinned) {
-                            Log.d(TAG, "Memory UPDATE ignored: id=$id is pinned")
-                        } else if (content.isBlank()) {
-                            Log.w(TAG, "Memory UPDATE ignored: id=$id has blank content")
-                        } else {
-                            val tags = parseTagsFromJson(op.optJSONArray("tags"))
-                            val newConfidence = existing.confidence + 1
-                            repository.updateMemory(
-                                existing.copy(content = content, updatedAt = now, confidence = newConfidence, tags = tags)
-                            )
-                            logAudit(id, "UPDATE", content, "sync", existing.confidence, newConfidence, now)
-                            try { computeAndStoreEmbedding(id, content) } catch (_: Exception) {}
+                        "UPDATE" -> {
+                            val id = op.optLong("id", -1L)
+                            val content = op.optString("content").trim()
+                            val existing = existingById[id]
+                            if (existing == null) {
+                                Log.w(TAG, "Memory UPDATE ignored: id=$id not found")
+                            } else if (existing.pinned) {
+                                Log.d(TAG, "Memory UPDATE ignored: id=$id is pinned")
+                            } else if (content.isBlank()) {
+                                Log.w(TAG, "Memory UPDATE ignored: id=$id has blank content")
+                            } else {
+                                val tags = parseTagsFromJson(op.optJSONArray("tags"))
+                                val newConfidence = existing.confidence + 1
+                                repository.updateMemory(
+                                    existing.copy(content = content, updatedAt = now, confidence = newConfidence, tags = tags)
+                                )
+                                logAudit(id, "UPDATE", content, "sync", existing.confidence, newConfidence, now)
+                                try {
+                                    computeAndStoreEmbedding(id, content)
+                                } catch (e: Exception) {
+                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                    Log.w(TAG, "Embedding update failed for memory id=$id after UPDATE: ${e.message}")
+                                }
+                            }
+                        }
+                        "REINFORCE" -> {
+                            val id = op.optLong("id", -1L)
+                            val existing = existingById[id]
+                            if (existing != null) {
+                                repository.reinforceMemory(id, existing.content, now)
+                                logAudit(id, "REINFORCE", existing.content, "sync", existing.confidence, existing.confidence + 1, now)
+                            } else {
+                                Log.w(TAG, "Memory REINFORCE ignored: id=$id not found")
+                            }
+                        }
+                        "DELETE" -> {
+                            val id = op.optLong("id", -1L)
+                            val existing = existingById[id]
+                            if (existing == null) {
+                                Log.w(TAG, "Memory DELETE ignored: id=$id not found")
+                            } else if (existing.pinned) {
+                                Log.d(TAG, "Memory DELETE ignored: id=$id is pinned")
+                            } else {
+                                logAudit(id, "DELETE", existing.content, "sync", existing.confidence, null, now)
+                                repository.deleteMemoryById(id)
+                            }
                         }
                     }
-                    "REINFORCE" -> {
-                        val id = op.optLong("id", -1L)
-                        val existing = existingById[id]
-                        if (existing != null) {
-                            repository.reinforceMemory(id, existing.content, now)
-                            logAudit(id, "REINFORCE", existing.content, "sync", existing.confidence, existing.confidence + 1, now)
-                        } else {
-                            Log.w(TAG, "Memory REINFORCE ignored: id=$id not found")
-                        }
-                    }
-                    "DELETE" -> {
-                        val id = op.optLong("id", -1L)
-                        val existing = existingById[id]
-                        if (existing == null) {
-                            Log.w(TAG, "Memory DELETE ignored: id=$id not found")
-                        } else if (existing.pinned) {
-                            Log.d(TAG, "Memory DELETE ignored: id=$id is pinned")
-                        } else {
-                            logAudit(id, "DELETE", existing.content, "sync", existing.confidence, null, now)
-                            repository.deleteMemoryById(id)
-                        }
-                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Log.e(TAG, "Failed to apply CRUD op at index $i: ${e.message}", e)
                 }
             }
 
@@ -371,7 +378,8 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
             val existingIds = existingMemories.map { it.id }.toSet()
             applyAssociationsFromJson(json, existingIds)
         } catch (e: Exception) {
-            e.printStackTrace()
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(TAG, "applyMemoryCrudOps failed for json length=${json.length}: ${e.message}", e)
         }
     }
 
@@ -408,7 +416,8 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(TAG, "applyAssociationsFromJson failed: ${e.message}", e)
         }
     }
 
@@ -464,6 +473,7 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
             val ftsIds = try {
                 repository.searchMemoryFts(query, limit = 100)
             } catch (e: Exception) {
+                Log.w(TAG, "FTS5 search failed, falling back to keyword search: ${e.message}")
                 emptyList()
             }
             if (ftsIds.isNotEmpty()) {
@@ -539,21 +549,26 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
             val (currentId, currentDepth) = pollResult
             if (currentDepth >= depth) continue
 
-            val associations = repository.getAssociationsFor(currentId)
-            for (assoc in associations) {
-                val relatedId = when {
-                    assoc.direction == "bidirectional" -> {
-                        if (assoc.fromMemoryId == currentId) assoc.toMemoryId else assoc.fromMemoryId
+            try {
+                val associations = repository.getAssociationsFor(currentId)
+                for (assoc in associations) {
+                    val relatedId = when {
+                        assoc.direction == "bidirectional" -> {
+                            if (assoc.fromMemoryId == currentId) assoc.toMemoryId else assoc.fromMemoryId
+                        }
+                        assoc.fromMemoryId == currentId -> assoc.toMemoryId
+                        else -> continue
                     }
-                    assoc.fromMemoryId == currentId -> assoc.toMemoryId
-                    else -> continue
-                }
-                if (relatedId in visited) continue
-                visited.add(relatedId)
+                    if (relatedId in visited) continue
+                    visited.add(relatedId)
 
-                val relatedMem = repository.getMemoryById(relatedId) ?: continue
-                expandedMemories.add(Triple(relatedMem, assoc.relationLabel, currentDepth + 1))
-                queue.add(relatedId to currentDepth + 1)
+                    val relatedMem = repository.getMemoryById(relatedId) ?: continue
+                    expandedMemories.add(Triple(relatedMem, assoc.relationLabel, currentDepth + 1))
+                    queue.add(relatedId to currentDepth + 1)
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "BFS expansion failed for memory id=$currentId: ${e.message}")
             }
         }
 
@@ -635,6 +650,10 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
                 val batchResults = ApiClient.executeEmbedding(config, batch, embeddingModelId)
                 if (batchResults != null) {
                     results.addAll(batchResults.map { it.toFloatArray() })
+                    // API 返回数量不足时填充 null，保持与输入对齐
+                    if (batchResults.size < batch.size) {
+                        repeat(batch.size - batchResults.size) { results.add(null) }
+                    }
                 } else {
                     results.addAll(batch.map { null })
                 }
@@ -741,7 +760,7 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
                 )
             )
         } catch (e: Exception) {
-            Log.d(TAG, "Audit log write failed: ${e.message}")
+            Log.w(TAG, "Audit log write failed for memoryId=$memoryId op=$opType: ${e.message}")
         }
     }
 
@@ -753,7 +772,7 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
         try {
             repository.pruneOldAuditEntries(thirtyDaysAgo)
         } catch (e: Exception) {
-            Log.d(TAG, "Audit log pruning failed: ${e.message}")
+            Log.w(TAG, "Audit log pruning failed: ${e.message}", e)
         }
     }
 

@@ -103,6 +103,7 @@ object MemoryTokenizer {
             if (cleaned.isBlank()) return null
             cleaned.split(",").map { it.trim().toFloat() }.toFloatArray()
         } catch (e: Exception) {
+            android.util.Log.d("MemoryTokenizer", "Failed to parse embedding (${json.length} chars): ${e.message}")
             null
         }
     }
