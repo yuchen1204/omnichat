@@ -469,7 +469,7 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
         if (tagFilter != null) {
             candidates = repository.searchMemoriesByTag(tagFilter)
         } else {
-            // 优先用 FTS5 全文检索，降级为 SQL LIKE
+            // 优先用 FTS 全文检索，降级为 SQL LIKE
             val ftsIds = try {
                 repository.searchMemoryFts(query, limit = 100)
             } catch (e: Exception) {

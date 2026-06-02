@@ -533,7 +533,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** v37→v38：记忆系统增强 — 添加嵌入向量存储、嵌入模型配置、FTS5 全文索引、审计日志 */
+        /** v37→v38：记忆系统增强 — 添加嵌入向量存储、嵌入模型配置、FTS 全文索引、审计日志 */
         private val MIGRATION_37_38 = object : Migration(37, 38) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 1. memory_items 加 embedding 列（JSON 序列化的 float 数组）
@@ -542,8 +542,8 @@ abstract class AppDatabase : RoomDatabase() {
                 // 2. model_configs 加 embeddingModelId 列
                 db.execSQL("ALTER TABLE model_configs ADD COLUMN embeddingModelId TEXT NOT NULL DEFAULT ''")
 
-                // 3. FTS5 全文索引（替代 SQL LIKE，支持中英文分词）
-                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS memory_items_fts USING fts5(content, tags, content=memory_items, content_rowid=id)")
+                // 3. FTS 全文索引（FTS3，Android 内置 SQLite 不支持 FTS5；不用 content= 语法，通过 triggers 手动同步）
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS memory_items_fts USING fts3(content, tags)")
                 db.execSQL("CREATE TRIGGER IF NOT EXISTS memory_items_ai AFTER INSERT ON memory_items BEGIN INSERT INTO memory_items_fts(rowid, content, tags) VALUES (new.id, new.content, new.tags); END")
                 db.execSQL("CREATE TRIGGER IF NOT EXISTS memory_items_ad AFTER DELETE ON memory_items BEGIN INSERT INTO memory_items_fts(memory_items_fts, rowid, content, tags) VALUES ('delete', old.id, old.content, old.tags); END")
                 db.execSQL("CREATE TRIGGER IF NOT EXISTS memory_items_au AFTER UPDATE ON memory_items BEGIN INSERT INTO memory_items_fts(memory_items_fts, rowid, content, tags) VALUES ('delete', old.id, old.content, old.tags); INSERT INTO memory_items_fts(rowid, content, tags) VALUES (new.id, new.content, new.tags); END")
