@@ -140,11 +140,10 @@ interface MemoryAssociationDao {
     suspend fun countForMemory(memoryId: Long): Int
 
     @Query("""
-        SELECT m.* FROM memory_items m
-        LEFT JOIN memory_associations a1 ON m.id = a1.fromMemoryId
-        LEFT JOIN memory_associations a2 ON m.id = a2.toMemoryId
-        WHERE a1.id IS NULL AND a2.id IS NULL
-        ORDER BY m.confidence DESC, m.updatedAt DESC
+        SELECT * FROM memory_items
+        WHERE id NOT IN (SELECT fromMemoryId FROM memory_associations)
+          AND id NOT IN (SELECT toMemoryId FROM memory_associations)
+        ORDER BY confidence DESC, updatedAt DESC
         LIMIT :limit
     """)
     suspend fun getUnassociatedMemories(limit: Int): List<MemoryItem>
