@@ -662,12 +662,12 @@ Output a JSON object with an "ops" array. Each op must be one of:
   {"op": "REINFORCE", "id": <existing_id>}
   {"op": "DELETE",    "id": <existing_id>}
 
-Tag vocabulary (assign 1-2 tags per ADD/UPDATE):
-  - "preference": user's likes, dislikes, style choices
-  - "fact": objective info about the user (job, location, tech stack)
-  - "instruction": how the user wants the AI to behave
-  - "habit": recurring patterns, routines
-  - "context": project-specific or temporal context
+Tag rules (assign 1-2 tags per ADD/UPDATE):
+  - Tags should be short, descriptive keywords in Chinese or English
+  - English tags: max 10 characters (e.g., "preference", "coding", "workflow")
+  - Chinese tags: max 5 characters (e.g., "偏好", "技能", "项目")
+  - Choose tags that best describe the fact's semantic category
+  - You may create new tags or use existing ones for consistency
 
 Rules:
 - ADD new facts not yet captured. IMPORTANT: before adding, check if an existing fact already covers the same information — if so, use REINFORCE or UPDATE instead of ADD. Avoid semantic duplicates.
@@ -910,10 +910,14 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
      */
     private fun parseTagsFromJson(tagsArray: org.json.JSONArray?): String {
         if (tagsArray == null) return ""
-        val validTags = setOf("preference", "fact", "instruction", "habit", "context")
         val tags = (0 until tagsArray.length())
-            .map { tagsArray.optString(it, "").trim().lowercase() }
-            .filter { it in validTags }
+            .map { tagsArray.optString(it, "").trim() }
+            .filter { tag ->
+                if (tag.isBlank()) return@filter false
+                // 英文 tag ≤10 字符，中文 tag ≤5 字符
+                val isEnglish = tag.all { it.code < 128 }
+                if (isEnglish) tag.length <= 10 else tag.length <= 5
+            }
         return tags.joinToString(",").take(100)
     }
 
@@ -1168,13 +1172,15 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
                     )
                 }
 
-                val validTags = setOf("preference", "fact", "instruction", "habit", "context")
-                val tagVocab = validTags.joinToString(", ")
-
+                // Tag rules: free-form, English ≤10 chars, Chinese ≤5 chars
                 for (batch in untagged.chunked(20)) {
                     val itemsText = batch.joinToString("\n") { "${it.id}. ${it.content}" }
-                    val prompt = """Classify each memory item into 1-2 tags.
-Tags: $tagVocab
+                    val prompt = """Assign 1-2 short tags to each memory item.
+
+Tag rules:
+- English tags: max 10 characters (e.g., "preference", "coding", "workflow")
+- Chinese tags: max 5 characters (e.g., "偏好", "技能", "项目")
+- Choose descriptive semantic categories
 
 Items:
 $itemsText
