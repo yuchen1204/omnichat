@@ -45,7 +45,7 @@
 - [ ] **Step 1: 添加新字段到 AgentDefinition**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 /**
  * Agent definition — describes a type of agent that can be spawned.
@@ -664,7 +664,7 @@ git commit -m "feat(data): add AgentDefinitionEntity with migration v30->v31"
 
 ```kotlin
 suspend fun loadAgentDefinitions(
-    repository: com.example.data.AppRepository,
+    repository: com.omnichat.data.AppRepository,
 ): List<AgentDefinition> {
     // Load from DB agent_definitions table
     val dbDefinitions = repository.getAllAgentDefinitions()
@@ -844,7 +844,7 @@ git commit -m "feat(workspace): support loading AgentDefinitions from new DB tab
 - [ ] **Step 1: 创建 StructuredMessage sealed class**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.json.JSONObject
 
@@ -1360,9 +1360,9 @@ git commit -m "feat(workspace): handle structured messages in AgentRunner mailbo
 - [ ] **Step 1: 创建 AgentMcpSpec 文件**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.mcp.McpRuntimeManager
+import com.omnichat.mcp.McpRuntimeManager
 import android.util.Log
 
 /**
@@ -1733,7 +1733,7 @@ git commit -m "feat(workspace): add task blocking and dependency chain support"
 - [ ] **Step 1: 创建 MarkdownAgentLoader**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
 import org.json.JSONObject
@@ -1968,7 +1968,7 @@ git commit -m "feat(workspace): add MarkdownAgentLoader for frontmatter parsing"
 
 ```kotlin
 suspend fun loadAgentDefinitions(
-    repository: com.example.data.AppRepository,
+    repository: com.omnichat.data.AppRepository,
     sandboxPath: String? = null,
 ): List<AgentDefinition> {
     // 1. Built-in agents
@@ -2176,7 +2176,7 @@ git commit -m "feat(workspace): support initialPrompt and omitClaudeMd in AgentR
 - [ ] **Step 1: 创建 MemorySnapshotManager**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
 import java.io.File
@@ -2446,7 +2446,7 @@ git commit -m "feat(workspace): integrate memory snapshot in AgentRunner"
 - [ ] **Step 1: 创建 AgentDefinitionTest**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -2500,7 +2500,7 @@ class AgentDefinitionTest {
 - [ ] **Step 2: 运行测试**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.AgentDefinitionTest"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.AgentDefinitionTest"
 ```
 
 预期输出：所有测试 PASS
@@ -2522,7 +2522,7 @@ git commit -m "test(workspace): add unit tests for AgentDefinition"
 - [ ] **Step 1: 创建 StructuredMessageTest**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -2603,7 +2603,7 @@ class StructuredMessageTest {
 - [ ] **Step 2: 运行测试**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.StructuredMessageTest"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.StructuredMessageTest"
 ```
 
 预期输出：所有测试 PASS
@@ -2625,7 +2625,7 @@ git commit -m "test(workspace): add unit tests for StructuredMessage"
 - [ ] **Step 1: 创建 MarkdownAgentLoaderTest**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -2732,7 +2732,7 @@ You are my custom agent.
 - [ ] **Step 2: 运行测试**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.MarkdownAgentLoaderTest"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.MarkdownAgentLoaderTest"
 ```
 
 预期输出：所有测试 PASS

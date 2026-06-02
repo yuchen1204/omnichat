@@ -45,7 +45,7 @@
 - [ ] **Step 1: 创建 AgentTask.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -201,7 +201,7 @@ git commit -m "feat(workspace): add AgentTask interface and TaskRegistry"
 - [ ] **Step 1: 创建 ToolOrchestrator.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
 import kotlinx.coroutines.async
@@ -383,7 +383,7 @@ class ToolOrchestrator(
 - [ ] **Step 2: 创建 ToolOrchestratorTest.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -526,7 +526,7 @@ class ToolOrchestratorTest {
 
 - [ ] **Step 3: 运行测试**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.ToolOrchestratorTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.ToolOrchestratorTest"`
 Expected: ALL TESTS PASS
 
 - [ ] **Step 4: Commit**
@@ -553,7 +553,7 @@ git commit -m "feat(workspace): add ToolOrchestrator for concurrent tool executi
 - [ ] **Step 1: 创建 AgentDefinition.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 /**
  * Agent 定义。
@@ -618,7 +618,7 @@ data class AgentDefinition(
 - [ ] **Step 2: 创建 AgentRegistry.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.content.Context
 import android.util.Log
@@ -668,7 +668,7 @@ class AgentRegistry(private val context: Context) {
      *
      * 由 TeamManager 在 createTeam 时调用，将 AgentPreset 转换为 AgentDefinition。
      */
-    fun loadFromPresets(presets: List<com.example.data.AgentPreset>) {
+    fun loadFromPresets(presets: List<com.omnichat.data.AgentPreset>) {
         for (preset in presets) {
             if (preset.name.isBlank()) continue
             val def = AgentDefinition(
@@ -853,7 +853,7 @@ class AgentRegistry(private val context: Context) {
 - [ ] **Step 4: 创建 AgentRegistryTest.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -995,7 +995,7 @@ class AgentRegistryTest {
         registry.loadAll() // Load built-in assets first
 
         val presets = listOf(
-            com.example.data.AgentPreset(
+            com.omnichat.data.AgentPreset(
                 id = 1,
                 name = "custom_agent",
                 systemPrompt = "Custom prompt",
@@ -1013,7 +1013,7 @@ class AgentRegistryTest {
 
 - [ ] **Step 5: 运行测试**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.AgentRegistryTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.AgentRegistryTest"`
 Expected: ALL TESTS PASS
 
 - [ ] **Step 6: Commit**
@@ -1038,7 +1038,7 @@ git commit -m "feat(workspace): add AgentDefinition, AgentRegistry, and built-in
 - [ ] **Step 1: 创建 Scratchpad.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
 import java.io.File
@@ -1148,7 +1148,7 @@ class Scratchpad(private val basePath: File) {
 - [ ] **Step 2: 创建 ScratchpadTest.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.junit.Assert.*
 import org.junit.Before
@@ -1235,7 +1235,7 @@ class ScratchpadTest {
 
 - [ ] **Step 3: 运行测试**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.ScratchpadTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.ScratchpadTest"`
 Expected: ALL TESTS PASS
 
 - [ ] **Step 4: 在 BuiltinToolHandler 中添加 Scratchpad 工具**
@@ -1266,7 +1266,7 @@ git commit -m "feat(workspace): add Scratchpad for cross-agent file sharing"
 - [ ] **Step 1: 创建 AgentProgressSummarizer.kt**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
 
@@ -1546,7 +1546,7 @@ Expected: BUILD SUCCESSFUL
 
 - [ ] **Step 4: 运行现有测试**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.*"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"`
 Expected: ALL EXISTING TESTS PASS（行为应与重构前一致）
 
 - [ ] **Step 5: Commit**
@@ -1901,7 +1901,7 @@ Expected: BUILD SUCCESSFUL
 
 - [ ] **Step 6: 运行全部测试**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.*"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"`
 Expected: ALL TESTS PASS
 
 - [ ] **Step 7: Commit**

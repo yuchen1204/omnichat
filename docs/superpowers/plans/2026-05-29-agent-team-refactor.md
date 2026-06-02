@@ -314,11 +314,11 @@ Add DAOs and Repository methods. Additive v30→v31 migration."
 - [ ] **Step 1: Create the executor package and interface**
 
 ```kotlin
-package com.example.workspace.executor
+package com.omnichat.workspace.executor
 
-import com.example.workspace.AgentDefinition
-import com.example.workspace.AgentStatus
-import com.example.workspace.TeammateIdentity
+import com.omnichat.workspace.AgentDefinition
+import com.omnichat.workspace.AgentStatus
+import com.omnichat.workspace.TeammateIdentity
 
 /**
  * 执行器类型 — 决定 Agent 间的协作模式。
@@ -365,7 +365,7 @@ interface TeammateExecutor {
     suspend fun spawn(config: SpawnConfig): SpawnResult
 
     /** 向指定 Agent 发送消息（通过 MailboxService）。 */
-    suspend fun sendMessage(agentId: String, message: com.example.data.MailboxMessage)
+    suspend fun sendMessage(agentId: String, message: com.omnichat.data.MailboxMessage)
 
     /** 优雅终止 — Agent 完成当前工具调用后退出。 */
     suspend fun terminate(agentId: String, reason: String? = null): Boolean
@@ -398,10 +398,10 @@ interface. Foundation for OrchestratorExecutor and PeerExecutor."
 - [ ] **Step 1: Create the lifecycle package and class**
 
 ```kotlin
-package com.example.workspace.lifecycle
+package com.omnichat.workspace.lifecycle
 
-import com.example.workspace.AgentStatus
-import com.example.workspace.TeammateIdentity
+import com.omnichat.workspace.AgentStatus
+import com.omnichat.workspace.TeammateIdentity
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -478,9 +478,9 @@ Replaces TeammateContext coroutine element. Supports lifecycle abort
 - [ ] **Step 1: Create AgentRegistry**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.omnichat.workspace.lifecycle.AgentLifecycleManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -560,11 +560,11 @@ type filtering, and iteration. Foundation for peer-to-peer mode."
 - [ ] **Step 1: Create MailboxService**
 
 ```kotlin
-package com.example.workspace.mailbox
+package com.omnichat.workspace.mailbox
 
 import android.util.Log
-import com.example.data.AppRepository
-import com.example.data.MailboxMessage
+import com.omnichat.data.AppRepository
+import com.omnichat.data.MailboxMessage
 
 /**
  * 邮箱服务 — Agent 间通信的 Room DB 后端。
@@ -579,7 +579,7 @@ import com.example.data.MailboxMessage
  * @property repository 数据仓库
  */
 class MailboxService(
-    private val repository: com.example.data.AppRepository,
+    private val repository: com.omnichat.data.AppRepository,
 ) {
     companion object {
         private const val TAG = "MailboxService"
@@ -828,7 +828,7 @@ enum class PermissionMode {
 
 - [ ] **Step 2: Update imports in files that used TeammateContext**
 
-Update imports in `AgentLifecycleManager.kt`, `AgentRegistry.kt`, `OrchestratorExecutor.kt`, `PeerExecutor.kt` to use `com.example.workspace.TeammateIdentity` from `WorkspaceModels.kt` instead of `TeammateContext.kt`.
+Update imports in `AgentLifecycleManager.kt`, `AgentRegistry.kt`, `OrchestratorExecutor.kt`, `PeerExecutor.kt` to use `com.omnichat.workspace.TeammateIdentity` from `WorkspaceModels.kt` instead of `TeammateContext.kt`.
 
 - [ ] **Step 3: Delete TeammateContext.kt**
 
@@ -860,16 +860,16 @@ git commit -m "refactor(workspace): remove TeammateContext, replaced by AgentLif
 - [ ] **Step 1: Create OrchestratorExecutor**
 
 ```kotlin
-package com.example.workspace.executor
+package com.omnichat.workspace.executor
 
 import android.util.Log
-import com.example.data.AppRepository
-import com.example.data.MailboxMessage
-import com.example.data.ModelConfig
-import com.example.mcp.McpRuntimeManager
-import com.example.workspace.*
-import com.example.workspace.lifecycle.AgentLifecycleManager
-import com.example.workspace.mailbox.MailboxService
+import com.omnichat.data.AppRepository
+import com.omnichat.data.MailboxMessage
+import com.omnichat.data.ModelConfig
+import com.omnichat.mcp.McpRuntimeManager
+import com.omnichat.workspace.*
+import com.omnichat.workspace.lifecycle.AgentLifecycleManager
+import com.omnichat.workspace.mailbox.MailboxService
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -910,7 +910,7 @@ class OrchestratorExecutor(
 
         // Create AgentInstance in DB
         val instanceId = repository.insertWorkspaceAgentInstance(
-            com.example.data.AgentInstance(
+            com.omnichat.data.AgentInstance(
                 teamId = 0, // Will be set by TeamManager
                 agentName = config.name,
                 agentType = config.agentDefinition.agentType,
@@ -1354,15 +1354,15 @@ git commit -m "refactor(workspace): AgentTool uses AgentLifecycleManager and new
 - [ ] **Step 1: Create PeerExecutor**
 
 ```kotlin
-package com.example.workspace.executor
+package com.omnichat.workspace.executor
 
 import android.util.Log
-import com.example.data.AppRepository
-import com.example.data.MailboxMessage
-import com.example.mcp.McpRuntimeManager
-import com.example.workspace.*
-import com.example.workspace.lifecycle.AgentLifecycleManager
-import com.example.workspace.mailbox.MailboxService
+import com.omnichat.data.AppRepository
+import com.omnichat.data.MailboxMessage
+import com.omnichat.mcp.McpRuntimeManager
+import com.omnichat.workspace.*
+import com.omnichat.workspace.lifecycle.AgentLifecycleManager
+import com.omnichat.workspace.mailbox.MailboxService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -1405,7 +1405,7 @@ class PeerExecutor(
         }
 
         val instanceId = repository.insertWorkspaceAgentInstance(
-            com.example.data.AgentInstance(
+            com.omnichat.data.AgentInstance(
                 agentName = config.name,
                 agentType = config.agentDefinition.agentType,
                 status = "idle",

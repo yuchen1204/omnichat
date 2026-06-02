@@ -253,7 +253,7 @@ git commit -m "feat: add SilentToolIndicator composable"
 
 In `app/src/main/java/com/example/ui/screens/ChatScreen.kt`, add import at top:
 ```kotlin
-import com.example.ui.components.SilentToolIndicator
+import com.omnichat.ui.components.SilentToolIndicator
 ```
 
 Replace the tool group rendering block (around line 349-357):
@@ -262,7 +262,7 @@ Replace the tool group rendering block (around line 349-357):
                         is List<*> -> {
                             // 渲染工具调用聚合条
                             @Suppress("UNCHECKED_CAST")
-                            val toolMsgs = (item as List<com.example.data.Message>).map { it.toUIModel() }
+                            val toolMsgs = (item as List<com.omnichat.data.Message>).map { it.toUIModel() }
                             if (uiSettings.silentToolCalls) {
                                 SilentToolIndicator(
                                     messages = toolMsgs,
@@ -283,7 +283,7 @@ Note: `uiSettings` is already available via `LocalUISettings.current` at the top
 
 In `app/src/main/java/com/example/ui/screens/AgentMessageArea.kt`, add import:
 ```kotlin
-import com.example.ui.components.SilentToolIndicator
+import com.omnichat.ui.components.SilentToolIndicator
 ```
 
 Replace the tool group rendering block (around line 138-145):
@@ -291,7 +291,7 @@ Replace the tool group rendering block (around line 138-145):
 ```kotlin
                 is List<*> -> {
                     @Suppress("UNCHECKED_CAST")
-                    val toolMsgs = (item as List<com.example.workspace.AgentMessage>).map { it.toUIModel() }
+                    val toolMsgs = (item as List<com.omnichat.workspace.AgentMessage>).map { it.toUIModel() }
                     if (uiSettings.silentToolCalls) {
                         SilentToolIndicator(
                             messages = toolMsgs,

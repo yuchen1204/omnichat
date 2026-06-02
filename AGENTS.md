@@ -6,7 +6,7 @@ An Android AI chat app with embedded MCP runtime support, long-term memory, mult
 
 | Item | Value |
 |------|-------|
-| Package | `com.example` (applicationId: `com.aistudio.aichatmemory.qwzkvp`) |
+| Package | `com.omnichat` (applicationId: `com.aistudio.aichatmemory.qwzkvp`) |
 | Min SDK | 26 路 Target SDK | 36 |
 | Language | Kotlin 2.2.10 + C++17 (JNI bridges) |
 | KSP | 2.2.10-2.0.2 |
@@ -19,7 +19,7 @@ An Android AI chat app with embedded MCP runtime support, long-term memory, mult
 ```bash
 ./gradlew assembleDebug      # Debug build
 ./gradlew testDebugUnitTest    # Unit tests
-./gradlew testDebugUnitTest --tests "com.example.YourTestClass" # Single test class
+./gradlew testDebugUnitTest --tests "com.omnichat.YourTestClass" # Single test class
 ./gradlew connectedDebugAndroidTest # Instrumented tests (needs device/emulator)
 ./gradlew verifyRoborazziDebug  # Screenshot tests (Roborazzi)
 ./gradlew generateUiTextKeys   # Regenerate ui_text_keys.json (runs automatically before asset merge)
@@ -55,16 +55,16 @@ Compose UI (Screens) 鈫?ViewModels 鈫?AppRepository 鈫?Room Database (16 enti
 
 | Package | Purpose |
 |---------|---------|
-| `com.example` | Entry point (`MainActivity.kt` 鈥?note lowercase 'm') |
-| `com.example.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
-| `com.example.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
-| `com.example.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
-| `com.example.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `AgentHook`, `McpFilePermissionHook`, `WorkspaceSandboxHook`, `LoggingHooks` |
-| `com.example.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
-| `com.example.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `WorkspaceScreen`, `WorkspaceToolbar`, `WorkspaceReadyView`, `AgentTabBar`, `AgentMessageArea`, `AgentBubbleMessage`, `OrchestrationToolCallCard`, `TeamTaskPanel`, `InterventionInput`, `AgentPresetConfigScreen`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
-| `com.example.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel`, `WorkspaceViewModel` |
-| `com.example.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
-| `com.example.ui.theme` | Material 3 theming with DB-driven dynamic color, `UiStrings` |
+| `com.omnichat` | Entry point (`MainActivity.kt` 鈥?note lowercase 'm') |
+| `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
+| `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
+| `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
+| `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `AgentHook`, `McpFilePermissionHook`, `WorkspaceSandboxHook`, `LoggingHooks` |
+| `com.omnichat.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
+| `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `WorkspaceScreen`, `WorkspaceToolbar`, `WorkspaceReadyView`, `AgentTabBar`, `AgentMessageArea`, `AgentBubbleMessage`, `OrchestrationToolCallCard`, `TeamTaskPanel`, `InterventionInput`, `AgentPresetConfigScreen`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
+| `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel`, `WorkspaceViewModel` |
+| `com.omnichat.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
+| `com.omnichat.ui.theme` | Material 3 theming with DB-driven dynamic color, `UiStrings` |
 
 ## Data Layer
 
@@ -151,6 +151,6 @@ Index may lag recent edits (6s debounce). Call `code-index_refresh_index` if sta
 - **Modify Main screens**: Edit `MainScreen.kt` for main Scaffold/topbar/drawer. Edit `ChatScreen.kt`, `SessionSidebarPanel.kt`, `WorkspaceScreen.kt`, `ModelsConfigScreen.kt`, or `MemoryAndPromptScreen.kt` for respective views/sidebars
 - **Modify API client**: Edit `ApiClient.kt` 鈥?it handles SSE streaming, model discovery, thinking config, and custom headers
 - **Modify theming**: `UISettings` entity drives the theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it. MCP tools in `BuiltinToolHandler` update it
-- **Add reusable UI components**: Add to `com.example.ui.components` package
+- **Add reusable UI components**: Add to `com.omnichat.ui.components` package
 - **Modify workspace UI**: Edit `WorkspaceScreen.kt` for the main layout, `WorkspaceToolbar.kt` for top bar, `AgentTabBar.kt` for agent switching, `AgentMessageArea.kt` for message display, `TeamTaskPanel.kt` for task status, `InterventionInput.kt` for user input to agents
 - **Modify workspace multi-agent logic**: Edit `TeamManager.kt` (facade), `AgentRunner.kt` (per-agent LLM loop), `AgentTool.kt` (SubAgent spawning), `ToolOrchestrator.kt` (tool routing), `TaskTools.kt` (task CRUD), `SendMessageTool.kt` (inter-agent messaging), `AgentDefinition.kt` (agent type registry)

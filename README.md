@@ -92,7 +92,7 @@ cd omnichat
 ./gradlew testDebugUnitTest
 
 # Single test class
-./gradlew testDebugUnitTest --tests "com.example.YourTestClass"
+./gradlew testDebugUnitTest --tests "com.omnichat.YourTestClass"
 
 # Android instrumented tests (requires device/emulator)
 ./gradlew connectedDebugAndroidTest

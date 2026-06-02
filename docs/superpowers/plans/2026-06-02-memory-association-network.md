@@ -536,7 +536,7 @@ git commit -m "feat(memory): add BFS association traversal to search_memory tool
 - [ ] **Step 1: Write association parsing tests**
 
 ```kotlin
-package com.example.ui.viewmodel
+package com.omnichat.ui.viewmodel
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -637,7 +637,7 @@ class MemoryAssociationTest {
 
 - [ ] **Step 2: Run tests**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.ui.viewmodel.MemoryAssociationTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.ui.viewmodel.MemoryAssociationTest"`
 Expected: All tests PASS
 
 - [ ] **Step 3: Commit**

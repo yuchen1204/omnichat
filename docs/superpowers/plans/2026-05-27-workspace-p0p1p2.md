@@ -222,7 +222,7 @@ class OrchestratorTools(
     private val teamManager: TeamManager,
     private val repository: AppRepository,
     private val messageBus: MessageBus,
-    private val mcpRuntimeManager: com.example.mcp.McpRuntimeManager,
+    private val mcpRuntimeManager: com.omnichat.mcp.McpRuntimeManager,
     private val agentRegistry: AgentRegistry,  // NEW
     private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
 )
@@ -637,7 +637,7 @@ Expected: BUILD SUCCESSFUL
 
 - [ ] **Step 3: 运行全部测试**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.*"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"`
 Expected: ALL TESTS PASS
 
 - [ ] **Step 4: Commit**

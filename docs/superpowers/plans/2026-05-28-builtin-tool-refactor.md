@@ -21,10 +21,10 @@
 Create `app/src/main/java/com/example/mcp/ToolHandler.kt`:
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
 import android.content.Context
-import com.example.data.AppRepository
+import com.omnichat.data.AppRepository
 import org.json.JSONObject
 
 /**
@@ -46,7 +46,7 @@ interface ToolHandler {
 Create `app/src/main/java/com/example/mcp/ToolUtils.kt`:
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
 import org.json.JSONArray
 import org.json.JSONArray
@@ -156,14 +156,14 @@ git commit -m "refactor(mcp): add ToolHandler interface and ToolUtils shared uti
 Create `app/src/main/java/com/example/mcp/handlers/MemoryToolHandler.kt`:
 
 ```kotlin
-package com.example.mcp.handlers
+package com.omnichat.mcp.handlers
 
 import android.content.Context
-import com.example.data.AppRepository
-import com.example.mcp.ToolHandler
-import com.example.mcp.ToolUtils.bigramTokenize
-import com.example.mcp.ToolUtils.errorResponse
-import com.example.mcp.ToolUtils.successResponse
+import com.omnichat.data.AppRepository
+import com.omnichat.mcp.ToolHandler
+import com.omnichat.mcp.ToolUtils.bigramTokenize
+import com.omnichat.mcp.ToolUtils.errorResponse
+import com.omnichat.mcp.ToolUtils.successResponse
 import org.json.JSONObject
 
 object MemoryToolHandler : ToolHandler {
@@ -192,7 +192,7 @@ object MemoryToolHandler : ToolHandler {
 
         val queryTokens = bigramTokenize(query)
 
-        data class ScoredMemory(val memory: com.example.data.MemoryItem, val score: Double)
+        data class ScoredMemory(val memory: com.omnichat.data.MemoryItem, val score: Double)
 
         val scored = allMemories
             .mapNotNull { mem ->
@@ -236,7 +236,7 @@ In `BuiltinToolHandler.kt`, find the `"search_memory" ->` block (around lines 47
 }
 ```
 
-Add the import at the top: `import com.example.mcp.handlers.MemoryToolHandler`
+Add the import at the top: `import com.omnichat.mcp.handlers.MemoryToolHandler`
 
 - [ ] **Step 3: Remove the now-unused bigramTokenize from BuiltinToolHandler**
 
@@ -269,13 +269,13 @@ Read the `create_timer`, `cancel_timer`, `list_timers` blocks from `BuiltinToolH
 The handler structure:
 
 ```kotlin
-package com.example.mcp.handlers
+package com.omnichat.mcp.handlers
 
 import android.content.Context
-import com.example.data.AppRepository
-import com.example.mcp.ToolHandler
-import com.example.mcp.ToolUtils.errorResponse
-import com.example.mcp.ToolUtils.successResponse
+import com.omnichat.data.AppRepository
+import com.omnichat.mcp.ToolHandler
+import com.omnichat.mcp.ToolUtils.errorResponse
+import com.omnichat.mcp.ToolUtils.successResponse
 import org.json.JSONObject
 
 object EfficiencyToolHandler : ToolHandler {
@@ -336,15 +336,15 @@ Extract these 7 tools from `BuiltinToolHandler.kt`:
 **Important:** The scratchpad tools access `BuiltinToolHandler.teamManager`. CoreToolHandler needs access to this. Pass it as a parameter — add a `teamManager` field to the `handle` call context. The simplest approach: CoreToolHandler accesses `BuiltinToolHandler.teamManager` directly since it's a public `@Volatile` field.
 
 ```kotlin
-package com.example.mcp.handlers
+package com.omnichat.mcp.handlers
 
 import android.content.Context
-import com.example.data.AppDatabase
-import com.example.data.AppRepository
-import com.example.mcp.BuiltinToolHandler
-import com.example.mcp.ToolHandler
-import com.example.mcp.ToolUtils.errorResponse
-import com.example.mcp.ToolUtils.successResponse
+import com.omnichat.data.AppDatabase
+import com.omnichat.data.AppRepository
+import com.omnichat.mcp.BuiltinToolHandler
+import com.omnichat.mcp.ToolHandler
+import com.omnichat.mcp.ToolUtils.errorResponse
+import com.omnichat.mcp.ToolUtils.successResponse
 import org.json.JSONObject
 
 object CoreToolHandler : ToolHandler {
@@ -537,25 +537,25 @@ The `when` block should now only contain delegation calls. Replace the entire `h
 The final `BuiltinToolHandler.kt` should look like:
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
 import android.content.Context
-import com.example.data.AppDatabase
-import com.example.data.AppRepository
-import com.example.mcp.handlers.CoreToolHandler
-import com.example.mcp.handlers.DocumentToolHandler
-import com.example.mcp.handlers.EfficiencyToolHandler
-import com.example.mcp.handlers.FileToolHandler
-import com.example.mcp.handlers.MemoryToolHandler
-import com.example.mcp.handlers.UiAppearanceToolHandler
-import com.example.mcp.handlers.UiTextToolHandler
+import com.omnichat.data.AppDatabase
+import com.omnichat.data.AppRepository
+import com.omnichat.mcp.handlers.CoreToolHandler
+import com.omnichat.mcp.handlers.DocumentToolHandler
+import com.omnichat.mcp.handlers.EfficiencyToolHandler
+import com.omnichat.mcp.handlers.FileToolHandler
+import com.omnichat.mcp.handlers.MemoryToolHandler
+import com.omnichat.mcp.handlers.UiAppearanceToolHandler
+import com.omnichat.mcp.handlers.UiTextToolHandler
 import org.json.JSONObject
 
 object BuiltinToolHandler {
 
     // WHY: 由 WorkspaceViewModel 在创建/清理 TeamManager 时设置，供 scratchpad 工具访问
     @Volatile
-    var teamManager: com.example.workspace.TeamManager? = null
+    var teamManager: com.omnichat.workspace.TeamManager? = null
 
     private val handlers = mapOf(
         "get_current_time" to CoreToolHandler,

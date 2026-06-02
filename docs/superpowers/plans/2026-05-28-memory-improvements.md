@@ -103,7 +103,7 @@ git commit -m "feat(memory): add lastReinforcedAt field with v28→v29 migration
 Create `app/src/test/java/com/example/ui/viewmodel/MemoryDecayTest.kt`:
 
 ```kotlin
-package com.example.ui.viewmodel
+package com.omnichat.ui.viewmodel
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -160,7 +160,7 @@ class MemoryDecayTest {
 
 - [ ] **Step 2: Run test to verify it passes**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.ui.viewmodel.MemoryDecayTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.ui.viewmodel.MemoryDecayTest"`
 Expected: All 5 tests PASS (the function is self-contained in the test)
 
 - [ ] **Step 3: Add applyConfidenceDecay to ChatViewModel**
@@ -324,7 +324,7 @@ git commit -m "feat(memory): add pin toggle UI with visual distinction for pinne
 Create `app/src/test/java/com/example/mcp/BigramTokenizeTest.kt`:
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -432,7 +432,7 @@ class BigramTokenizeTest {
 
 - [ ] **Step 2: Run test to verify it passes**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.mcp.BigramTokenizeTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.mcp.BigramTokenizeTest"`
 Expected: All 7 tests PASS
 
 - [ ] **Step 3: Replace search scoring in BuiltinToolHandler**
@@ -460,7 +460,7 @@ In `BuiltinToolHandler.kt`, replace the `search_memory` handler (lines 473-531) 
 
     val queryTokens = bigramTokenize(query)
 
-    data class ScoredMemory(val memory: com.example.data.MemoryItem, val score: Double)
+    data class ScoredMemory(val memory: com.omnichat.data.MemoryItem, val score: Double)
 
     val scored = allMemories
         .mapNotNull { mem ->
@@ -546,7 +546,7 @@ private fun bigramTokenize(text: String): Set<String> {
 
 - [ ] **Step 5: Run tests to verify**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.mcp.BigramTokenizeTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.mcp.BigramTokenizeTest"`
 Expected: All tests PASS
 
 - [ ] **Step 6: Build full project**

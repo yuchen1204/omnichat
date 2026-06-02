@@ -119,9 +119,9 @@ git commit -m "docs: mark TeamTask for Phase 7 integration"
 - [ ] **Step 1: Create AgentDefinition data class**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.data.ModelConfig
+import com.omnichat.data.ModelConfig
 
 /**
  * Agent definition — describes a type of agent that can be spawned.
@@ -252,7 +252,7 @@ Add to `AgentDefinition.kt`:
  * Merges with built-in definitions to produce the full agent list.
  */
 suspend fun loadAgentDefinitions(
-    repository: com.example.data.AppRepository,
+    repository: com.omnichat.data.AppRepository,
 ): List<AgentDefinition> {
     val presets = repository.getAllAgentPresets()
     val customAgents = presets.map { preset ->
@@ -479,7 +479,7 @@ git commit -m "feat: generate orchestrator system prompt dynamically with agent 
 - [ ] **Step 1: Create centralized tool filter**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 /**
  * Centralized tool filtering for agents.
@@ -915,11 +915,11 @@ git commit -m "feat: add async background agent execution with task-notification
 - [ ] **Step 1: Implement SendMessage tool**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
-import com.example.mcp.McpRuntimeManager
-import com.example.mcp.ToolSchemaDsl.schema
+import com.omnichat.mcp.McpRuntimeManager
+import com.omnichat.mcp.ToolSchemaDsl.schema
 import org.json.JSONObject
 
 /**
@@ -1032,7 +1032,7 @@ git commit -m "feat: add SendMessage tool for inter-agent communication"
 - [ ] **Step 1: Implement ProgressTracker**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 /**
  * Tracks agent progress metrics.
@@ -1172,12 +1172,12 @@ git commit -m "feat: add agent transcript persistence for resumption support"
 - [ ] **Step 1: Implement TaskCreate, TaskUpdate, TaskList, TaskGet tools**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
-import com.example.data.AppRepository
-import com.example.data.TeamTask
-import com.example.mcp.ToolSchemaDsl.schema
+import com.omnichat.data.AppRepository
+import com.omnichat.data.TeamTask
+import com.omnichat.mcp.ToolSchemaDsl.schema
 import org.json.JSONObject
 
 /**

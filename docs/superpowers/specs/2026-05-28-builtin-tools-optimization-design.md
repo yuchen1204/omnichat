@@ -32,9 +32,9 @@
 ### 新文件：`mcp/UiFieldRegistry.kt`
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
-import com.example.data.UISettings
+import com.omnichat.data.UISettings
 
 object UiFieldRegistry {
 
@@ -138,7 +138,7 @@ for (f in UiFieldRegistry.colorFields) {
 ### 新文件：`mcp/ToolSchemaDsl.kt`
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
 import org.json.JSONArray
 import org.json.JSONObject
