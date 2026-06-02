@@ -5,160 +5,6 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 多 Agent 工作区相关实体
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Agent 预设模板。
- *
- * 用户在设置页预先定义的可复用 Agent 模板，包含名称、描述、系统提示和指定模型。
- * 在工作区执行时，Orchestrator 可根据角色名称精确匹配预设来初始化 Sub-Agent。
- */
-@Entity(tableName = "agent_presets")
-data class AgentPreset(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,                          // 必填，不超过 100 字符
-    val description: String = "",              // 选填，摘要展示截取前 50 字符
-    val systemPrompt: String = "",             // 选填，Agent 系统提示
-    val modelConfigId: Long? = null,           // null = 使用工作区默认模型
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-/**
- * 工作区会话。
- *
- * 包含主控 Agent（Orchestrator）和若干子 Agent 的独立会话单元，
- * 与普通聊天会话分类隔离。isActive=true 表示执行中，false 表示已完成。
- */
-@Entity(tableName = "workspace_sessions")
-data class WorkspaceSession(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val title: String = "__res:default_workspace_title",
-    val isActive: Boolean = true,              // true = 执行中；false = 已完成
-    val createdAt: Long = System.currentTimeMillis(),
-    val lastActiveAt: Long = System.currentTimeMillis()
-)
-
-/**
- * Agent Team 实体。
- *
- * 代表一个可复用的 Agent 团队配置，包含模式（编排/对等）、
- * 编排器模型、沙盒路径等元数据。
- */
-@Entity(
-    tableName = "workspace_teams",
-    indices = [Index(value = ["teamName"], unique = true)]
-)
-data class WorkspaceTeam(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val teamName: String,
-    val mode: String,                  // "orchestrator" | "peer"
-    val orchestratorModelConfigId: Long,
-    val sandboxPath: String? = null,
-    val status: String = "active",     // "active" | "paused" | "completed"
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis(),
-)
-
-/**
- * Agent 实例元数据。
- *
- * 记录工作区内每个 Agent 的元数据。仅 Orchestrator 的记录在完成后保留，
- * Sub-Agent 的记录在工作区完成后被删除。
- */
-@Entity(
-    tableName = "agent_instances",
-    indices = [
-        Index(value = ["workspaceSessionId"]),
-        Index(value = ["teamId"]),
-    ]
-)
-data class AgentInstance(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val workspaceSessionId: Long,
-    val agentName: String,                     // Orchestrator 固定为 "主控 Agent"
-    val isOrchestrator: Boolean = false,
-    val systemPrompt: String = "",
-    val modelConfigId: Long,
-    val overrideModelId: String? = null,
-    val createdAt: Long = System.currentTimeMillis(),
-    // ── v31 新增列（Agent Team 重构） ──────────────────────────
-    val teamId: Long? = null,                  // 关联 WorkspaceTeam.id
-    val agentType: String = "sub",             // "orchestrator" | "sub" | "standalone"
-    val status: String = "idle",               // "idle" | "busy" | "paused" | "completed"
-    val updatedAt: Long = System.currentTimeMillis(),
-)
-
-/**
- * Agent 邮箱消息。
- *
- * 用于跨 Agent 异步通信。发送方将消息写入收件人的邮箱，
- * 收件人在下一次 LLM 循环时拉取未投递的消息。
- */
-@Entity(
-    tableName = "mailbox_messages",
-    indices = [
-        Index(value = ["recipientAgentId"]),
-        Index(value = ["delivered"]),
-    ]
-)
-data class MailboxMessage(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val recipientAgentId: Long,
-    val senderAgentName: String,
-    val role: String,                  // "user" | "system"
-    val content: String,
-    val source: String,                // "orchestrator" | "send_message" | "broadcast" | "task-notification"
-    val delivered: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis(),
-)
-
-/**
- * Agent 状态快照。
- *
- * 用于持久化 Agent 的对话历史和使用统计，
- * 支持 checkpoint（定期保存）和 completion（任务完成时保存）两种类型。
- */
-@Entity(
-    tableName = "agent_state_snapshots",
-    indices = [Index(value = ["agentInstanceId"])]
-)
-data class AgentStateSnapshot(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val agentInstanceId: Long,
-    val messagesJson: String,
-    val usageStatsJson: String,
-    val snapshotType: String,          // "checkpoint" | "completion"
-    val createdAt: Long = System.currentTimeMillis(),
-)
-
-/**
- * 工作区消息记录。
- *
- * 仅持久化 Orchestrator 的消息；Sub-Agent 消息仅存在内存中，工作区完成后不保留。
- * isIntervention=true 标记用户干预消息。
- */
-@Entity(
-    tableName = "workspace_messages",
-    indices = [
-        Index(value = ["workspaceSessionId"]),
-        Index(value = ["agentInstanceId"])
-    ]
-)
-data class WorkspaceMessage(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val workspaceSessionId: Long,
-    val agentInstanceId: Long,                 // 关联 AgentInstance
-    val role: String,                          // "user" | "assistant" | "tool" | "system"
-    val content: String,
-    val toolCallId: String? = null,
-    val toolCallsJson: String? = null,
-    val isIntervention: Boolean = false,       // 用户干预消息标记
-    val imagePath: String? = null,             // 图片路径
-    val timestamp: Long = System.currentTimeMillis()
-)
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // 原有实体
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -175,7 +21,9 @@ data class ModelConfig(
     val enableThinking: Boolean = true,
     val thinkingEffort: String = "medium",
     /** 自定义 HTTP 请求头，JSON 对象字符串，例如 '{"X-Custom-Header": "value"}' */
-    val customHeaders: String = "{}"
+    val customHeaders: String = "{}",
+    /** 嵌入模型 ID，用于记忆语义搜索（如 "text-embedding-3-small"） */
+    val embeddingModelId: String = ""
 )
 
 @Entity(tableName = "sessions")
@@ -226,7 +74,9 @@ data class MemoryItem(
     /** 最近一次被强化的时间戳，用于置信度衰减计算 */
     val lastReinforcedAt: Long = System.currentTimeMillis(),
     /** LLM 生成的语义标签，逗号分隔，如 "preference,fact" */
-    val tags: String = ""
+    val tags: String = "",
+    /** 嵌入向量的 JSON 序列化，如 "[0.1,0.2,...]"，用于语义搜索 */
+    val embedding: String = ""
 )
 
 @Entity(
@@ -245,6 +95,24 @@ data class MemoryAssociation(
     /** "bidirectional" (default) or "directed" */
     val direction: String = "bidirectional",
     val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "memory_audit_log",
+    indices = [
+        Index(value = ["memoryId"]),
+        Index(value = ["timestamp"])
+    ]
+)
+data class MemoryAuditEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val memoryId: Long,           // -1 表示批量操作
+    val opType: String,           // ADD, UPDATE, REINFORCE, DELETE, DECAY, MANUAL
+    val contentSnapshot: String,  // 操作时的记忆内容快照
+    val triggerReason: String,    // "sync", "manual", "dedup_merge", "backfill_tags"
+    val confidenceBefore: Int?,
+    val confidenceAfter: Int?,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "prompt_templates")
@@ -532,61 +400,6 @@ data class UISettings(
     val uiStrings: String = "{}"
 )
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Agent Team 任务系统实体
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * 团队任务。
- *
- * 对标 Claude Code 的任务系统（~/.claude/tasks/{teamName}/）。
- * 空闲 Agent 通过 [TeamTaskDao.claimTask] 自动认领 PENDING 状态且无 owner 的任务。
- *
- * 状态流转：PENDING -> IN_PROGRESS -> COMPLETED / FAILED
- *
- * @property id 自增主键
- * @property teamName 所属团队名称
- * @property subject 任务主题（简短描述）
- * @property description 任务详细描述
- * @property status 任务状态：PENDING / IN_PROGRESS / COMPLETED / FAILED
- * @property owner 认领者 Agent 名称，null 表示未被认领
- * @property blockedBy 被阻塞的任务 ID 列表，所有依赖任务完成后才能认领
- * @property createdAt 创建时间戳
- * @property updatedAt 最近更新时间戳
- */
-// TODO (Phase 7): Wire TeamTask into agent execution via TaskCreate/TaskUpdate tools.
-// Currently unused — will be integrated with AgentToolFilter and SendMessage tools.
-@Entity(
-    tableName = "team_tasks",
-    indices = [Index(value = ["teamName"])]
-)
-data class TeamTask(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val teamName: String,
-    val subject: String,
-    val description: String = "",
-    val status: String = "PENDING",
-    val owner: String? = null,
-    /** 预期执行的 Agent 名称。为 null 时表示任意 Agent 可认领 */
-    val intendedAgent: String? = null,
-    val blockedBy: List<String> = emptyList(),
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis(),
-)
-
-/**
- * 任务状态枚举。
- *
- * 对标蓝图的 TaskStatus，用于类型安全地表示任务状态。
- * Room 存储为 String，通过 TypeConverter 自动转换。
- */
-enum class TaskStatus {
-    PENDING,
-    IN_PROGRESS,
-    COMPLETED,
-    FAILED
-}
-
 /**
  * MCP File Access Permission
  * Records user's choice for accessing a file outside the sandbox.
@@ -610,92 +423,4 @@ data class McpFilePermission(
     /** 权限类型：read = 只读访问，write = 读写访问 */
     val permissionType: String = "read",
     val createdAt: Long = System.currentTimeMillis()
-)
-
-/**
- * Agent 定义实体 — 存储用户自定义 Agent 定义。
- * 对齐 Claude Code 的 AgentDefinition 结构。
- */
-@Entity(
-    tableName = "agent_definitions",
-    indices = [Index(value = ["agentType"], unique = true)]
-)
-data class AgentDefinitionEntity(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
-
-    /** Agent type identifier (e.g., "custom:my-agent") */
-    val agentType: String,
-
-    /** Display name */
-    val displayName: String,
-
-    /** When to use description */
-    val whenToUse: String = "",
-
-    /** System prompt */
-    val systemPrompt: String,
-
-    /** Model hint: "default", "fast", "reasoning", "vision", "inherit" */
-    val modelHint: String? = null,
-
-    /** Model config ID override */
-    val modelConfigId: Long? = null,
-
-    /** Model ID override */
-    val overrideModelId: String? = null,
-
-    /** Allowed tools (JSON array string, null or ["*"] = all) */
-    val toolsJson: String? = null,
-
-    /** Disallowed tools (JSON array string) */
-    val disallowedToolsJson: String? = null,
-
-    /** Background execution */
-    val background: Boolean = false,
-
-    /** Max turns */
-    val maxTurns: Int = 50,
-
-    /** UI color */
-    val color: String? = null,
-
-    /** Memory scope: "user", "project", "local" */
-    val memory: String? = null,
-
-    /** MCP servers (JSON array string) */
-    val mcpServersJson: String? = null,
-
-    /** Hooks (JSON string) */
-    val hooksJson: String? = null,
-
-    /** Permission mode */
-    val permissionMode: String? = null,
-
-    /** Initial prompt */
-    val initialPrompt: String? = null,
-
-    /** Effort level */
-    val effort: String? = null,
-
-    /** Omit CLAUDE.md */
-    val omitClaudeMd: Boolean = false,
-
-    /** Required MCP servers (JSON array string) */
-    val requiredMcpServersJson: String? = null,
-
-    /** Source file path (for markdown agents) */
-    val filePath: String? = null,
-
-    /** Base directory */
-    val baseDir: String? = null,
-
-    /** Critical system reminder */
-    val criticalSystemReminder: String? = null,
-
-    /** Created timestamp */
-    val createdAt: Long = System.currentTimeMillis(),
-
-    /** Updated timestamp */
-    val updatedAt: Long = System.currentTimeMillis(),
 )

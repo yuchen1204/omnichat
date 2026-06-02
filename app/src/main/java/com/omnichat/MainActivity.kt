@@ -21,7 +21,6 @@ import com.omnichat.ui.screens.MainScreen
 import com.omnichat.ui.theme.MyApplicationTheme
 import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.ui.viewmodel.SettingsViewModel
-import com.omnichat.ui.viewmodel.WorkspaceViewModel
 
 import com.omnichat.mcp.TimerManager
 
@@ -77,10 +76,8 @@ class MainActivity : AppCompatActivity() {
             
             MyApplicationTheme(uiSettings = uiSettings) {
                 val viewModel: ChatViewModel = viewModel()
-                val workspaceViewModel: WorkspaceViewModel = viewModel()
                 MainScreen(
-                    viewModel = viewModel,
-                    workspaceViewModel = workspaceViewModel
+                    viewModel = viewModel
                 )
             }
         }
@@ -147,6 +144,5 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        com.omnichat.workspace.WorkspaceScopes.cancelAll()
     }
 }

@@ -29,43 +29,6 @@ object BuiltinToolHandler {
     private fun str(context: Context, @StringRes resId: Int): String = context.getString(resId)
     private fun str(context: Context, @StringRes resId: Int, vararg args: Any): String = context.getString(resId, *args)
 
-    /**
-     * Interface for accessing workspace state from MCP tools.
-     * Decouples MCP runtime from concrete TeamManager implementation.
-     */
-    interface WorkspaceProvider {
-        fun getAgentTool(): com.omnichat.workspace.AgentTool?
-        fun getOrchestratorContext(): com.omnichat.workspace.AgentContext?
-        fun getSandboxPath(): String?
-        fun getAgentRegistry(): com.omnichat.workspace.AgentRegistry
-        fun getMailboxService(): com.omnichat.workspace.mailbox.MailboxService
-        fun getTeamName(): String?
-    }
-
-    @Volatile
-    var workspaceProvider: WorkspaceProvider? = null
-
-    // WHY: 由 WorkspaceViewModel 在创建/清理 TeamManager 时设置，供 scratchpad 工具访问
-    @Volatile
-    var teamManager: com.omnichat.workspace.TeamManager? = null
-        set(value) {
-            field = value
-            workspaceProvider = if (value != null) {
-                object : WorkspaceProvider {
-                    override fun getAgentTool() = value.getAgentTool()
-                    override fun getOrchestratorContext() = value.getOrchestratorContext()
-                    override fun getSandboxPath() = value.getSandboxPath()
-                    override fun getAgentRegistry() = value.agentRegistry
-                    override fun getMailboxService() = value.mailboxService
-                    override fun getTeamName() = value.teamState.value?.teamName
-                }
-            } else null
-        }
-
-    // ── 共享 Scratchpad（跨 Agent 协作的内存 KV 存储）──────────────────
-    private val scratchpad = java.util.concurrent.ConcurrentHashMap<String, ScratchpadEntry>()
-    data class ScratchpadEntry(val agentName: String, val key: String, val content: String, val timestamp: Long = System.currentTimeMillis())
-
     // 提取公共 Repository 工厂方法，消除 13 处重复的 AppDatabase.getDatabase + AppRepository 实例化
     private fun getRepository(context: Context): AppRepository {
         return AppRepository(AppDatabase.getDatabase(context))
@@ -98,81 +61,9 @@ object BuiltinToolHandler {
             "list_timers" -> handleListTimers(context)
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
-            "agent" -> handleAgentTool(arguments)
-            com.omnichat.workspace.SendMessageTool.TOOL_NAME -> handleSendMessage(arguments)
-            com.omnichat.workspace.TaskTools.TASK_CREATE -> handleTaskTool(context, toolName, arguments)
-            com.omnichat.workspace.TaskTools.TASK_GET -> handleTaskTool(context, toolName, arguments)
-            com.omnichat.workspace.TaskTools.TASK_LIST -> handleTaskTool(context, toolName, arguments)
-            com.omnichat.workspace.TaskTools.TASK_UPDATE -> handleTaskTool(context, toolName, arguments)
-            "scratchpad_write" -> handleScratchpadWrite(arguments)
-            "scratchpad_read" -> handleScratchpadRead(arguments)
-            "scratchpad_list" -> handleScratchpadList()
             "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
-    }
-
-    // ── Agent 工具 ──────────────────────────────────────────────────────────
-
-    private suspend fun handleAgentTool(arguments: JSONObject): JSONObject {
-        val agentTool = teamManager?.getAgentTool()
-            ?: return errorResponse("AgentTool not available: no active workspace")
-        val parentContext = teamManager?.getOrchestratorContext()
-            ?: return errorResponse("AgentTool not available: no orchestrator context")
-        val sandboxPath = teamManager?.getSandboxPath() ?: ""
-        return agentTool.call(arguments, parentContext, sandboxPath)
-    }
-
-    // ── SendMessage 工具 ────────────────────────────────────────────────────
-
-    private suspend fun handleSendMessage(arguments: JSONObject): JSONObject {
-        val manager = teamManager
-            ?: return errorResponse("SendMessage not available: no active workspace")
-        val sendTool = com.omnichat.workspace.SendMessageTool(manager.agentRegistry, manager.mailboxService)
-        return sendTool.call(arguments)
-    }
-
-    // ── Task 管理工具 ─────────────────────────────────────────────────────
-
-    private suspend fun handleTaskTool(context: Context, toolName: String, arguments: JSONObject): JSONObject {
-        val manager = teamManager
-            ?: return errorResponse("Task tools not available: no active workspace")
-        val teamName = manager.teamState?.value?.teamName ?: ""
-        val repository = getRepository(context)
-        val taskTools = com.omnichat.workspace.TaskTools(repository, teamName)
-        return taskTools.callTool(toolName, arguments)
-    }
-
-    // ── Scratchpad 工具 ────────────────────────────────────────────────────
-
-    private fun handleScratchpadWrite(arguments: JSONObject): JSONObject {
-        val agentName = teamManager?.teamState?.value?.orchestratorName ?: "unknown"
-        val key = arguments.optString("key", "").replace(Regex("[^a-zA-Z0-9_]"), "_")
-        val content = arguments.optString("content", "")
-        if (key.isEmpty()) return errorResponse("Missing 'key'")
-        if (content.isEmpty()) return errorResponse("Missing 'content'")
-        scratchpad[key] = ScratchpadEntry(agentName, key, content)
-        return successResponse("Wrote '$key' to scratchpad")
-    }
-
-    private fun handleScratchpadRead(arguments: JSONObject): JSONObject {
-        val agentName = arguments.optString("agentName", "")
-        val key = arguments.optString("key", "")
-        if (key.isEmpty()) return errorResponse("Missing 'key'")
-        val entry = scratchpad[key]
-            ?: return errorResponse("No scratchpad entry for key '$key'")
-        if (agentName.isNotEmpty() && entry.agentName != agentName) {
-            return errorResponse("Entry '$key' was written by '${entry.agentName}', not '$agentName'")
-        }
-        return successResponse(entry.content)
-    }
-
-    private fun handleScratchpadList(): JSONObject {
-        if (scratchpad.isEmpty()) return successResponse("Scratchpad is empty")
-        val list = scratchpad.values.joinToString("\n") { entry ->
-            "- [${entry.agentName}] ${entry.key}: ${entry.content.take(100)}${if (entry.content.length > 100) "..." else ""}"
-        }
-        return successResponse(list)
     }
 
     // ── UI 工具 ────────────────────────────────────────────────────────────
@@ -373,13 +264,13 @@ object BuiltinToolHandler {
             }
         }
 
-        val queryTokens = bigramTokenize(query)
+        val queryTokens = com.omnichat.memory.MemoryTokenizer.tokenize(query)
 
         data class ScoredMemory(val memory: com.omnichat.data.MemoryItem, val score: Double)
 
         val scored = candidates
             .mapNotNull { mem ->
-                val memTokens = bigramTokenize(mem.content)
+                val memTokens = com.omnichat.memory.MemoryTokenizer.tokenize(mem.content)
                 val intersection = queryTokens.intersect(memTokens).size
                 val union = queryTokens.union(memTokens).size
                 if (union == 0 || intersection == 0) return@mapNotNull null
@@ -406,7 +297,8 @@ object BuiltinToolHandler {
         }
 
         while (queue.isNotEmpty() && expandedMemories.size < maxExpand) {
-            val (currentId, currentDepth) = queue.poll()
+            val pollResult = queue.poll() ?: continue
+            val (currentId, currentDepth) = pollResult
             if (currentDepth >= depth) continue
 
             val associations = repository.getAssociationsFor(currentId)
@@ -1892,51 +1784,6 @@ object BuiltinToolHandler {
         }
     }
 
-    /**
-     * 将文本拆分为 token 集合：中文字符 + 中文字符 bigram + 英文/数字整词。
-     * 用于 search_memory 的中文友好匹配。
-     */
-    private fun bigramTokenize(text: String): Set<String> {
-        val tokens = mutableSetOf<String>()
-        val cjkRange = '一'..'鿿'
-        val buffer = StringBuilder()
 
-        for (ch in text) {
-            if (ch in cjkRange) {
-                if (buffer.isNotEmpty()) {
-                    tokens.add(buffer.toString().lowercase())
-                    buffer.clear()
-                }
-                tokens.add(ch.toString())
-            } else if (ch.isWhitespace() || ch in "，。！？、；：\u201c\u201d\u2018\u2019（）【】《》,.!?;:\"'()[]<>") {
-                if (buffer.isNotEmpty()) {
-                    tokens.add(buffer.toString().lowercase())
-                    buffer.clear()
-                }
-            } else {
-                buffer.append(ch)
-            }
-        }
-        if (buffer.isNotEmpty()) {
-            tokens.add(buffer.toString().lowercase())
-        }
-
-        // 中文字符 bigram（仅对原文中相邻的 CJK 字符生成）
-        // WHY: 原实现用 text.filter 提取所有 CJK 字符再拼接生成 bigram，
-        // 导致 "用户Kotlin编程" 产生虚假 bigram "户编"（"户"和"编"被 "Kotlin" 隔开）。
-        // 改为遍历原文，只对连续的 CJK 字符生成 bigram。
-        var prevCjk: Char? = null
-        for (ch in text) {
-            if (ch in cjkRange) {
-                if (prevCjk != null) {
-                    tokens.add("$prevCjk$ch")
-                }
-                prevCjk = ch
-            } else {
-                prevCjk = null
-            }
-        }
-
-        return tokens
-    }
+    // bigramTokenize 已迁移到 com.omnichat.memory.MemoryTokenizer.tokenize()
 }

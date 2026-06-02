@@ -24,17 +24,9 @@ class AppRepository(private val db: AppDatabase) {
     private val mcpServerDao = db.mcpServerDao()
     private val uiSettingsDao = db.uiSettingsDao()
     private val colorSchemePresetDao = db.colorSchemePresetDao()
-    private val agentPresetDao = db.agentPresetDao()
-    private val workspaceSessionDao = db.workspaceSessionDao()
-    private val workspaceTeamDao = db.workspaceTeamDao()
-    private val agentInstanceDao = db.agentInstanceDao()
-    private val workspaceMessageDao = db.workspaceMessageDao()
-    private val mailboxMessageDao = db.mailboxMessageDao()
-    private val agentStateSnapshotDao = db.agentStateSnapshotDao()
-    // Agent Team 任务系统
-    val teamTaskDao: TeamTaskDao = db.teamTaskDao()
     private val mcpFilePermissionDao = db.mcpFilePermissionDao()
     private val memoryAssociationDao = db.memoryAssociationDao()
+    private val memoryAuditDao = db.memoryAuditDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -76,6 +68,7 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteMemoryById(id: Long) = memoryItemDao.deleteMemoryById(id)
     suspend fun deleteAllUnpinnedMemories() = memoryItemDao.deleteAllUnpinnedMemories()
     suspend fun deleteAllMemories() = memoryItemDao.deleteAllMemories()
+    suspend fun batchDecayConfidence(daysDecay: Int, threshold: Long, now: Long) = memoryItemDao.batchDecayConfidence(daysDecay, threshold, now)
 
     // Memory Associations
     suspend fun getRelatedMemories(memoryId: Long): List<RelatedMemoryInfo> {
@@ -111,6 +104,28 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteAssociation(id: Long) = memoryAssociationDao.deleteById(id)
     suspend fun deleteAssociationsForMemory(memoryId: Long) = memoryAssociationDao.deleteAllForMemory(memoryId)
     suspend fun getUnassociatedMemories(limit: Int): List<MemoryItem> = memoryAssociationDao.getUnassociatedMemories(limit)
+
+    // Memory Audit Log
+    suspend fun getAuditHistoryForMemory(memoryId: Long): List<MemoryAuditEntry> = memoryAuditDao.getHistoryForMemory(memoryId)
+    suspend fun getRecentAuditActivity(limit: Int = 100): List<MemoryAuditEntry> = memoryAuditDao.getRecentActivity(limit)
+    suspend fun insertAuditEntry(entry: MemoryAuditEntry) = memoryAuditDao.insert(entry)
+    suspend fun pruneOldAuditEntries(before: Long) = memoryAuditDao.pruneOlderThan(before)
+
+    // Memory FTS (Full-Text Search) — 直接访问 SQLite，绕过 Room 对 FTS5 虚拟表的校验
+    suspend fun searchMemoryFts(query: String, limit: Int = 50): List<Long> {
+        val db = db.openHelper.readableDatabase
+        val cursor = db.query(
+            "SELECT rowid FROM memory_items_fts WHERE memory_items_fts MATCH ? ORDER BY rank LIMIT ?",
+            arrayOf(query, limit.toString())
+        )
+        return cursor.use {
+            val ids = mutableListOf<Long>()
+            while (it.moveToNext()) {
+                ids.add(it.getLong(0))
+            }
+            ids
+        }
+    }
 
     // Prompt Templates
     val allTemplates: Flow<List<PromptTemplate>> = promptTemplateDao.getAllTemplatesFlow()
@@ -153,243 +168,8 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun insertColorSchemePreset(preset: ColorSchemePreset) = colorSchemePresetDao.insertPreset(preset)
     suspend fun deleteColorSchemePreset(schemeId: String) = colorSchemePresetDao.deletePresetById(schemeId)
 
-    // Agent Presets
-    val allAgentPresets: Flow<List<AgentPreset>> = agentPresetDao.getAllPresetsFlow()
-    suspend fun getAllAgentPresets(): List<AgentPreset> = agentPresetDao.getAllPresets()
-    suspend fun getAgentPresetById(id: Long): AgentPreset? = agentPresetDao.getPresetById(id)
-    suspend fun insertAgentPreset(preset: AgentPreset): Long = agentPresetDao.insertPreset(preset)
-    suspend fun updateAgentPreset(preset: AgentPreset) = agentPresetDao.updatePreset(preset)
-    suspend fun deleteAgentPreset(preset: AgentPreset) = agentPresetDao.deletePreset(preset)
-
     // MCP File Permissions
     suspend fun getAllMcpFilePermissions(): List<McpFilePermission> = mcpFilePermissionDao.getAllPermissions()
     suspend fun insertMcpFilePermission(perm: McpFilePermission): Long = mcpFilePermissionDao.insertPermission(perm)
     suspend fun deleteAllMcpFilePermissions() = mcpFilePermissionDao.deleteAllPermissions()
-
-    // Workspace Sessions
-    val allWorkspaceSessions: Flow<List<WorkspaceSession>> = workspaceSessionDao.getAllSessionsFlow()
-    suspend fun getWorkspaceSessionById(id: Long): WorkspaceSession? = workspaceSessionDao.getById(id)
-    suspend fun insertWorkspaceSession(session: WorkspaceSession): Long = workspaceSessionDao.insertSession(session)
-    suspend fun updateWorkspaceSessionTitle(id: Long, title: String) = workspaceSessionDao.updateTitle(id, title)
-    suspend fun updateWorkspaceSessionStatus(id: Long, isActive: Boolean, lastActiveAt: Long) = 
-        workspaceSessionDao.updateStatus(id, isActive, lastActiveAt)
-    suspend fun deleteWorkspaceSession(id: Long) {
-        // 级联删除：使用事务保证原子性（BUG-003）
-        db.withTransaction {
-            workspaceMessageDao.deleteByWorkspaceSession(id)
-            agentInstanceDao.deleteByWorkspaceSession(id)
-            teamTaskDao.deleteAllForTeam("workspace_$id")
-            workspaceSessionDao.deleteById(id)
-        }
-    }
-
-    // Agent Instances
-    suspend fun getAgentInstancesByWorkspaceSession(wsId: Long): List<AgentInstance> =
-        agentInstanceDao.getByWorkspaceSession(wsId)
-    suspend fun getAgentInstancesByTeamId(teamId: Long): List<AgentInstance> =
-        agentInstanceDao.getByTeamId(teamId)
-    suspend fun getAgentInstanceById(id: Long): AgentInstance? =
-        agentInstanceDao.getById(id)
-    suspend fun getOrchestratorByTeamId(teamId: Long): AgentInstance? =
-        agentInstanceDao.getOrchestratorByTeamId(teamId)
-    suspend fun insertAgentInstance(instance: AgentInstance): Long = agentInstanceDao.insertInstance(instance)
-    suspend fun updateAgentInstance(instance: AgentInstance) = agentInstanceDao.updateInstance(instance)
-    suspend fun updateAgentInstanceStatus(id: Long, status: String) =
-        agentInstanceDao.updateStatus(id, status)
-    suspend fun deleteAgentInstancesByWorkspaceSession(wsId: Long) = agentInstanceDao.deleteByWorkspaceSession(wsId)
-    suspend fun deleteAgentInstancesByTeamId(teamId: Long) = agentInstanceDao.deleteByTeamId(teamId)
-
-    // ── Workspace Teams ────────────────────────────────────────────────
-
-    val allWorkspaceTeams: Flow<List<WorkspaceTeam>> = workspaceTeamDao.getAllTeamsFlow()
-    suspend fun getAllWorkspaceTeams(): List<WorkspaceTeam> = workspaceTeamDao.getAllTeams()
-    suspend fun getActiveWorkspaceTeams(): List<WorkspaceTeam> = workspaceTeamDao.getActiveTeams()
-    suspend fun getWorkspaceTeamById(id: Long): WorkspaceTeam? = workspaceTeamDao.getById(id)
-    suspend fun getWorkspaceTeamByName(teamName: String): WorkspaceTeam? = workspaceTeamDao.getByTeamName(teamName)
-    suspend fun insertWorkspaceTeam(team: WorkspaceTeam): Long = workspaceTeamDao.insert(team)
-    suspend fun updateWorkspaceTeam(team: WorkspaceTeam) = workspaceTeamDao.update(team)
-    suspend fun updateWorkspaceTeamStatus(id: Long, status: String) = workspaceTeamDao.updateStatus(id, status)
-    suspend fun deleteWorkspaceTeam(id: Long) {
-        db.withTransaction {
-            // 级联清理关联数据
-            agentStateSnapshotDao.deleteByTeamId(id)
-            mailboxMessageDao.deleteByTeamId(id)
-            agentInstanceDao.deleteByTeamId(id)
-            workspaceTeamDao.deleteById(id)
-        }
-    }
-
-    // ── Mailbox Messages ───────────────────────────────────────────────
-
-    suspend fun getUndeliveredMailboxMessages(agentId: Long): List<MailboxMessage> =
-        mailboxMessageDao.getUndeliveredByAgent(agentId)
-    fun getMailboxMessagesByAgentFlow(agentId: Long): Flow<List<MailboxMessage>> =
-        mailboxMessageDao.getByAgentFlow(agentId)
-    suspend fun getMailboxMessagesByAgent(agentId: Long): List<MailboxMessage> =
-        mailboxMessageDao.getByAgent(agentId)
-    suspend fun insertMailboxMessage(message: MailboxMessage): Long = mailboxMessageDao.insert(message)
-    suspend fun markMailboxMessagesDelivered(agentId: Long) = mailboxMessageDao.markAllDelivered(agentId)
-    suspend fun markMailboxMessageDelivered(id: Long) = mailboxMessageDao.markDelivered(id)
-    suspend fun markMailboxDelivered(id: Long) = mailboxMessageDao.markDelivered(id)
-    suspend fun countUndeliveredMailboxMessages(agentId: Long): Int = mailboxMessageDao.countUndelivered(agentId)
-    suspend fun getMailboxHistory(agentId: Long): List<MailboxMessage> = mailboxMessageDao.getByAgent(agentId)
-    suspend fun deleteMailboxMessagesByAgent(agentId: Long) = mailboxMessageDao.deleteByAgent(agentId)
-
-    // ── Agent State Snapshots ──────────────────────────────────────────
-
-    fun getAgentStateSnapshotsByAgentFlow(agentId: Long): Flow<List<AgentStateSnapshot>> =
-        agentStateSnapshotDao.getByAgentFlow(agentId)
-    suspend fun getAgentStateSnapshotsByAgent(agentId: Long): List<AgentStateSnapshot> =
-        agentStateSnapshotDao.getByAgent(agentId)
-    suspend fun getLatestAgentStateSnapshot(agentId: Long, type: String): AgentStateSnapshot? =
-        agentStateSnapshotDao.getLatestByType(agentId, type)
-    suspend fun getAgentStateSnapshotById(id: Long): AgentStateSnapshot? =
-        agentStateSnapshotDao.getById(id)
-    suspend fun insertAgentStateSnapshot(snapshot: AgentStateSnapshot): Long =
-        agentStateSnapshotDao.insert(snapshot)
-    suspend fun deleteAgentStateSnapshotsByAgent(agentId: Long) =
-        agentStateSnapshotDao.deleteByAgent(agentId)
-
-    // Workspace Messages
-    fun getWorkspaceMessagesByAgentFlow(agentId: Long): Flow<List<WorkspaceMessage>> = 
-        workspaceMessageDao.getMessagesByAgentFlow(agentId)
-    suspend fun getWorkspaceMessagesByAgent(agentId: Long): List<WorkspaceMessage> = 
-        workspaceMessageDao.getMessagesByAgent(agentId)
-    suspend fun insertWorkspaceMessage(message: WorkspaceMessage): Long = workspaceMessageDao.insertMessage(message)
-    suspend fun deleteWorkspaceMessagesBySession(wsId: Long) = workspaceMessageDao.deleteByWorkspaceSession(wsId)
-
-    // WHY: 通过 Agent 名称查询消息（transcript 恢复用），JOIN agent_instances 解析名称到 ID
-    suspend fun getWorkspaceMessagesForAgent(sessionId: Long, agentName: String): List<WorkspaceMessage> =
-        workspaceMessageDao.getMessagesForAgent(sessionId, agentName)
-
-    /**
-     * 原子地替换工作区的所有消息（先删除旧消息，再插入新消息）。
-     *
-     * WHY: 使用 Room 事务保证原子性。如果在 DELETE 完成后 INSERT 前进程被杀或超时，
-     * 事务会回滚，避免所有消息永久丢失。
-     */
-    suspend fun replaceWorkspaceMessages(wsId: Long, messages: List<WorkspaceMessage>) {
-        db.withTransaction {
-            workspaceMessageDao.deleteByWorkspaceSession(wsId)
-            messages.forEach { workspaceMessageDao.insertMessage(it) }
-        }
-    }
-
-    /**
-     * 原子地替换单个 Agent 的消息（COMPLETED 时即时持久化用）。
-     *
-     * 只删除该 agentInstanceId 的消息，不影响同一 workspace 里其他 Agent 的消息。
-     * 比 replaceWorkspaceMessages 更细粒度，避免覆盖其他 Agent 正在写入的消息。
-     */
-    suspend fun replaceAgentMessages(wsId: Long, agentInstanceId: Long, messages: List<WorkspaceMessage>) {
-        db.withTransaction {
-            workspaceMessageDao.deleteByAgentInstance(agentInstanceId)
-            messages.forEach { workspaceMessageDao.insertMessage(it) }
-        }
-    }
-
-    // ── Agent Team 任务系统 ─────────────────────────────────────────────
-
-    /**
-     * 观察指定团队的任务列表变化。
-     *
-     * @param teamName 团队名称
-     * @return 任务列表的响应式数据流
-     */
-    fun getTeamTasksFlow(teamName: String): Flow<List<TeamTask>> = teamTaskDao.getTasksFlow(teamName)
-
-    /**
-     * 获取指定团队的所有任务（一次性查询）。
-     */
-    suspend fun getTeamTasks(teamName: String): List<TeamTask> = teamTaskDao.getTasks(teamName)
-
-    /**
-     * 查找可认领的任务（带 Agent 匹配，返回候选列表供应用层过滤 blockedBy）。
-     */
-    suspend fun findClaimableTeamTasks(teamName: String, agentName: String): List<TeamTask> =
-        teamTaskDao.findClaimableTasks(teamName, agentName)
-
-    /**
-     * 查找可认领的任务（带 Agent 匹配）。
-     *
-     * 使用 findClaimableTasks（plural）获取候选列表，在应用层过滤 blockedBy。
-     * 不再使用已废弃的 findClaimableTask（依赖 SQL 中 `blockedBy = ''` 检查）。
-     */
-    suspend fun findClaimableTeamTask(teamName: String, agentName: String): TeamTask? =
-        teamTaskDao.findClaimableTasks(teamName, agentName).firstOrNull()
-
-    /**
-     * 插入新任务。
-     */
-    suspend fun insertTeamTask(task: TeamTask): Long = teamTaskDao.insert(task)
-
-    /**
-     * 按 ID 查询单个任务。
-     */
-    suspend fun getTeamTaskById(id: Long): TeamTask? = teamTaskDao.getTaskById(id)
-
-    /**
-     * 获取指定团队的所有任务（别名，供 TaskTools 使用）。
-     */
-    suspend fun getTeamTasksByTeam(teamName: String): List<TeamTask> = teamTaskDao.getTasks(teamName)
-
-    /**
-     * 更新任务。
-     */
-    suspend fun updateTeamTask(task: TeamTask) = teamTaskDao.update(task)
-
-    /**
-     * 原子认领任务。
-     */
-    suspend fun claimTeamTask(taskId: Long, agentName: String, now: Long = System.currentTimeMillis()): Int =
-        teamTaskDao.claimTask(taskId, agentName, now)
-
-    /**
-     * 删除指定团队的所有任务。
-     */
-    suspend fun deleteAllTeamTasks(teamName: String) = teamTaskDao.deleteAllForTeam(teamName)
-
-    // ── Agent Definitions ──────────────────────────────────────────────
-
-    /**
-     * 获取所有 Agent 定义。
-     */
-    suspend fun getAllAgentDefinitions(): List<AgentDefinitionEntity> =
-        db.agentDefinitionDao().getAll()
-
-    /**
-     * 按 agentType 查询 Agent 定义。
-     */
-    suspend fun getAgentDefinitionByType(agentType: String): AgentDefinitionEntity? =
-        db.agentDefinitionDao().getByType(agentType)
-
-    /**
-     * 按 baseDir 查询 Agent 定义。
-     */
-    suspend fun getAgentDefinitionsByBaseDir(baseDir: String): List<AgentDefinitionEntity> =
-        db.agentDefinitionDao().getByBaseDir(baseDir)
-
-    /**
-     * 插入 Agent 定义。
-     */
-    suspend fun insertAgentDefinition(entity: AgentDefinitionEntity): Long =
-        db.agentDefinitionDao().insert(entity)
-
-    /**
-     * 更新 Agent 定义。
-     */
-    suspend fun updateAgentDefinition(entity: AgentDefinitionEntity) =
-        db.agentDefinitionDao().update(entity)
-
-    /**
-     * 删除 Agent 定义。
-     */
-    suspend fun deleteAgentDefinition(entity: AgentDefinitionEntity) =
-        db.agentDefinitionDao().delete(entity)
-
-    /**
-     * 按 agentType 删除 Agent 定义。
-     */
-    suspend fun deleteAgentDefinitionByType(agentType: String) =
-        db.agentDefinitionDao().deleteByType(agentType)
 }

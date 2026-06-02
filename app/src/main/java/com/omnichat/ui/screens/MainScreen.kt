@@ -27,7 +27,6 @@ import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
-import com.omnichat.ui.viewmodel.WorkspaceViewModel
 import com.omnichat.mcp.AskUserManager
 import com.omnichat.mcp.McpPermissionManager
 import com.omnichat.mcp.PermissionResult
@@ -39,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 @Composable
 fun MainScreen(
     viewModel: ChatViewModel,
-    workspaceViewModel: WorkspaceViewModel,
     modifier: Modifier = Modifier
 ) {
     var currentTab by remember { mutableStateOf("chat") }
@@ -208,13 +206,8 @@ fun MainScreen(
             ) {
                 SessionSidebarPanel(
                     viewModel = viewModel,
-                    workspaceViewModel = workspaceViewModel,
                     onSessionSelected = {
                         currentTab = "chat"
-                        scope.launch { drawerState.close() }
-                    },
-                    onWorkspaceSelected = {
-                        currentTab = "workspace"
                         scope.launch { drawerState.close() }
                     },
                     onSettingsClick = {
@@ -232,7 +225,6 @@ fun MainScreen(
                 MainTopAppBar(
                     currentTab = currentTab,
                     viewModel = viewModel,
-                    workspaceViewModel = workspaceViewModel,
                     onOpenDrawer = {
                         scope.launch { drawerState.open() }
                     }
@@ -248,8 +240,7 @@ fun MainScreen(
             ) {
                 when (currentTab) {
                     "chat" -> ChatView(viewModel)
-                    "workspace" -> WorkspaceScreen(workspaceViewModel = workspaceViewModel)
-                    "settings" -> SettingsView(viewModel, mcpViewModel, workspaceViewModel)
+                    "settings" -> SettingsView(viewModel, mcpViewModel)
                 }
             }
         }
@@ -259,15 +250,13 @@ fun MainScreen(
 @Composable
 fun SettingsView(
     viewModel: ChatViewModel,
-    mcpViewModel: McpViewModel,
-    workspaceViewModel: WorkspaceViewModel
+    mcpViewModel: McpViewModel
 ) {
     var selectedSubTab by remember { mutableStateOf(0) }
     val tabs = listOf(
         uiText("tab.settings.models", R.string.tab_settings_models),
         uiText("tab.settings.mcp", R.string.tab_settings_mcp),
         uiText("tab.settings.memory", R.string.tab_settings_memory),
-        uiText("tab.settings.presets", R.string.tab_settings_presets),
         uiText("tab.settings.data", R.string.tab_settings_data)
     )
     val settingsViewModel: SettingsViewModel = viewModel()
@@ -306,8 +295,7 @@ fun SettingsView(
                 0 -> ModelsConfigView(viewModel)
                 1 -> McpConfigScreen(mcpViewModel = mcpViewModel)
                 2 -> MemoryAndPromptView(viewModel)
-                3 -> AgentPresetConfigScreen(workspaceViewModel = workspaceViewModel)
-                4 -> ExportImportView(settingsViewModel = settingsViewModel)
+                3 -> ExportImportView(settingsViewModel = settingsViewModel)
             }
         }
     }
@@ -318,7 +306,6 @@ fun SettingsView(
 fun MainTopAppBar(
     currentTab: String,
     viewModel: ChatViewModel,
-    workspaceViewModel: WorkspaceViewModel,
     onOpenDrawer: () -> Unit
 ) {
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
@@ -328,13 +315,10 @@ fun MainTopAppBar(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSession = sessions.find { it.id == activeSessionId }
 
-    val activeWsSession by workspaceViewModel.selectedWorkspaceSession.collectAsStateWithLifecycle()
-
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
 
     val titleText = when (currentTab) {
         "chat" -> activeSession?.title ?: uiText("topbar.title.chat", R.string.topbar_title_chat)
-        "workspace" -> activeWsSession?.title ?: uiText("topbar.title.workspace", R.string.topbar_title_workspace)
         "settings" -> uiText("topbar.title.settings", R.string.topbar_title_settings)
         else -> "AI"
     }
