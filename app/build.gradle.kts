@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.omnichat"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.aichatmemory.qwzkvp"
+    applicationId = "com.omnichat"
     minSdk = 26
     targetSdk = 36
     versionCode = 1

@@ -124,7 +124,7 @@ For each file, replace every `uiText("key", "default")` call with `stringResourc
 **Transformation pattern:**
 ```kotlin
 // Before
-import com.example.ui.theme.uiText
+import com.omnichat.ui.theme.uiText
 Text(uiText("topbar.title.chat", "会话"))
 
 // After
@@ -143,7 +143,7 @@ stringResource(R.string.chat_current_model, modelName, providerName)
 
 - [ ] **Step 1: Migrate MainScreen.kt** (17 uiText calls)
 
-Read `MainScreen.kt`, replace all 17 `uiText()` calls with `stringResource()`. Add `import androidx.compose.ui.res.stringResource`. Remove `import com.example.ui.theme.uiText` if no longer used.
+Read `MainScreen.kt`, replace all 17 `uiText()` calls with `stringResource()`. Add `import androidx.compose.ui.res.stringResource`. Remove `import com.omnichat.ui.theme.uiText` if no longer used.
 
 - [ ] **Step 2: Migrate ChatScreen.kt** (27 uiText calls)
 
@@ -397,7 +397,7 @@ fun resolveUiString(value: String, getString: (Int) -> String): String {
     if (value.startsWith("__res:")) {
         val resName = value.removePrefix("__res:")
         val resId = android.content.res.Resources.getSystem().getIdentifier(
-            resName, "string", "com.example"
+            resName, "string", "com.omnichat"
         )
         return if (resId != 0) getString(resId) else resName
     }

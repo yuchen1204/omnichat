@@ -124,7 +124,7 @@ git commit -m "feat(memory): add tags field to MemoryItem with v29→v30 migrati
 - [ ] **Step 1: Write tag parsing tests**
 
 ```kotlin
-package com.example.ui.viewmodel
+package com.omnichat.ui.viewmodel
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -188,7 +188,7 @@ class MemoryTagTest {
 
 - [ ] **Step 2: Run tests to verify they pass**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.ui.viewmodel.MemoryTagTest"`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.ui.viewmodel.MemoryTagTest"`
 Expected: All tests PASS (the parsing logic is standalone, no Android dependencies)
 
 - [ ] **Step 3: Commit**
@@ -406,7 +406,7 @@ private suspend fun handleSearchMemory(context: Context, arguments: JSONObject):
 
     // 确定候选集：按 tag 预过滤或全量
     val validTags = setOf("preference", "fact", "instruction", "habit", "context")
-    val candidates: List<com.example.data.MemoryItem>
+    val candidates: List<com.omnichat.data.MemoryItem>
     val totalCount: Int
     if (tagFilter != null && tagFilter in validTags) {
         candidates = repository.searchMemoriesByTag(tagFilter)
@@ -425,7 +425,7 @@ private suspend fun handleSearchMemory(context: Context, arguments: JSONObject):
 
     val queryTokens = bigramTokenize(query)
 
-    data class ScoredMemory(val memory: com.example.data.MemoryItem, val score: Double)
+    data class ScoredMemory(val memory: com.omnichat.data.MemoryItem, val score: Double)
 
     val scored = candidates
         .mapNotNull { mem ->

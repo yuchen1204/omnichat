@@ -51,7 +51,7 @@
 - [ ] **Step 1: Remove executor imports and field from TeamManager**
 
 In `TeamManager.kt`, remove:
-- Lines 10-12: `import com.example.workspace.executor.ExecutorType`, `import com.example.workspace.executor.OrchestratorExecutor`, `import com.example.workspace.executor.TeammateExecutor`
+- Lines 10-12: `import com.omnichat.workspace.executor.ExecutorType`, `import com.omnichat.workspace.executor.OrchestratorExecutor`, `import com.omnichat.workspace.executor.TeammateExecutor`
 - Line 61: `private var executor: TeammateExecutor? = null`
 - Line 387: `executor = null` (in deleteTeam)
 - Lines 138-152: The entire `executor = when (mode) { ... }` block
@@ -96,7 +96,7 @@ rm -rf app/src/main/java/com/example/workspace/executor/
 - [ ] **Step 5: Run tests to verify**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 Expected: All existing tests pass (executor was never used in tests).
@@ -175,7 +175,7 @@ agentRegistry.register(AgentRegistry.AgentEntry(
 - [ ] **Step 4: Run tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 - [ ] **Step 5: Commit**
@@ -204,11 +204,11 @@ shallow-copy semantics."
 Create `app/src/test/java/com/example/workspace/MailboxServiceTest.kt`:
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.data.AppRepository
-import com.example.data.MailboxMessage
-import com.example.workspace.mailbox.MailboxService
+import com.omnichat.data.AppRepository
+import com.omnichat.data.MailboxMessage
+import com.omnichat.workspace.mailbox.MailboxService
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -276,7 +276,7 @@ class MailboxService(
 - [ ] **Step 3: Run tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 - [ ] **Step 4: Commit**
@@ -397,7 +397,7 @@ onTaskNotification = { notification ->
 - [ ] **Step 5: Run tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 - [ ] **Step 6: Commit**
@@ -483,7 +483,7 @@ private suspend fun handleSendMessage(arguments: JSONObject): JSONObject {
         ?: return errorResponse("SendMessage not available: no active workspace")
     // Determine sender: if the caller is a known agent, use its name
     // The MCP runtime doesn't pass caller identity, so we default to orchestrator
-    val sendTool = com.example.workspace.SendMessageTool(
+    val sendTool = com.omnichat.workspace.SendMessageTool(
         manager.agentRegistry,
         manager.mailboxService,
         senderAgentName = "orchestrator",
@@ -497,10 +497,10 @@ private suspend fun handleSendMessage(arguments: JSONObject): JSONObject {
 Create `app/src/test/java/com/example/workspace/SendMessageToolTest.kt`:
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.data.MailboxMessage
-import com.example.workspace.mailbox.MailboxService
+import com.omnichat.data.MailboxMessage
+import com.omnichat.workspace.mailbox.MailboxService
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -514,8 +514,8 @@ class SendMessageToolTest {
         // Full integration test requires mock repository
         val tool = SendMessageTool(
             agentRegistry = AgentRegistry(),
-            mailboxService = MailboxService(com.example.data.AppRepository(
-                com.example.data.AppDatabase.getDatabase(
+            mailboxService = MailboxService(com.omnichat.data.AppRepository(
+                com.omnichat.data.AppDatabase.getDatabase(
                     androidx.test.core.app.ApplicationProvider.getApplicationContext()
                 )
             )),
@@ -534,7 +534,7 @@ class SendMessageToolTest {
 - [ ] **Step 4: Run tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 - [ ] **Step 5: Commit**
@@ -610,7 +610,7 @@ subAgentScope = createSubAgentScope()
 - [ ] **Step 4: Run tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 - [ ] **Step 5: Commit**
@@ -678,7 +678,7 @@ viewModelScope.launch {
             teamManager = createTeamManager(wsId)
         }
 
-        val runtimeManager = com.example.mcp.McpRuntimeManager.getInstance(getApplication())
+        val runtimeManager = com.omnichat.mcp.McpRuntimeManager.getInstance(getApplication())
         runtimeManager.waitForStartingServersToFinish()
 
         teamStateCollectorJob?.cancel()
@@ -752,11 +752,11 @@ object BuiltinToolHandler {
      * Set by WorkspaceViewModel on creation, nulled on cleanup.
      */
     interface WorkspaceProvider {
-        fun getAgentTool(): com.example.workspace.AgentTool?
-        fun getOrchestratorContext(): com.example.workspace.AgentContext?
+        fun getAgentTool(): com.omnichat.workspace.AgentTool?
+        fun getOrchestratorContext(): com.omnichat.workspace.AgentContext?
         fun getSandboxPath(): String?
-        fun getAgentRegistry(): com.example.workspace.AgentRegistry
-        fun getMailboxService(): com.example.workspace.mailbox.MailboxService
+        fun getAgentRegistry(): com.omnichat.workspace.AgentRegistry
+        fun getMailboxService(): com.omnichat.workspace.mailbox.MailboxService
         fun getTeamName(): String?
     }
 
@@ -765,7 +765,7 @@ object BuiltinToolHandler {
 
     // Keep backward-compatible accessor
     @Volatile
-    var teamManager: com.example.workspace.TeamManager? = null
+    var teamManager: com.omnichat.workspace.TeamManager? = null
         set(value) {
             field = value
             workspaceProvider = if (value != null) {
@@ -786,7 +786,7 @@ This keeps backward compatibility while introducing a proper interface for futur
 - [ ] **Step 6: Run tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 - [ ] **Step 7: Commit**
@@ -817,9 +817,9 @@ git commit -m "fix(workspace): fix ViewModel race conditions, extract team name 
 Create `app/src/test/java/com/example/workspace/AgentRegistryTest.kt`:
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.omnichat.workspace.lifecycle.AgentLifecycleManager
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -901,9 +901,9 @@ class AgentRegistryTest {
 Create `app/src/test/java/com/example/workspace/AgentLifecycleManagerTest.kt`:
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
-import com.example.workspace.lifecycle.AgentLifecycleManager
+import com.omnichat.workspace.lifecycle.AgentLifecycleManager
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -983,7 +983,7 @@ fun testCompletionMarkerisContainedInOrchestratorPrompt() {
 - [ ] **Step 4: Run all tests**
 
 ```bash
-./gradlew testDebugUnitTest --tests "com.example.workspace.*"
+./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*"
 ```
 
 Expected: All tests pass including new ones.

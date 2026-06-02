@@ -92,7 +92,7 @@ cd omnichat
 ./gradlew testDebugUnitTest
 
 # 单个测试类
-./gradlew testDebugUnitTest --tests "com.example.YourTestClass"
+./gradlew testDebugUnitTest --tests "com.omnichat.YourTestClass"
 
 # Android 仪器测试（需要设备/模拟器）
 ./gradlew connectedDebugAndroidTest

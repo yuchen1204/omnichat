@@ -16,7 +16,7 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 ./gradlew testDebugUnitTest
 
 # Run a single test class
-./gradlew testDebugUnitTest --tests "com.example.YourTestClass"
+./gradlew testDebugUnitTest --tests "com.omnichat.YourTestClass"
 
 # Android instrumented tests (requires device/emulator)
 ./gradlew connectedDebugAndroidTest
@@ -58,15 +58,15 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (16 enti
 
 | Package | Purpose |
 |---------|---------|
-| `com.example` | Entry point (`MainActivity.kt` — note lowercase 'm') |
-| `com.example.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
-| `com.example.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
-| `com.example.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
-| `com.example.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs` |
-| `com.example.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
-| `com.example.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
-| `com.example.ui.theme` | Material 3 theming with DB-driven dynamic color |
-| `com.example.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
+| `com.omnichat` | Entry point (`MainActivity.kt` — note lowercase 'm') |
+| `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
+| `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
+| `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
+| `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs` |
+| `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
+| `com.omnichat.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
+| `com.omnichat.ui.theme` | Material 3 theming with DB-driven dynamic color |
+| `com.omnichat.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
 
 ## Native Code (MCP Runtime)
 

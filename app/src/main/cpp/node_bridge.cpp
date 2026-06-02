@@ -22,7 +22,7 @@
  * 调用此函数会阻塞当前线程直到 Node.js 进程退出。
  * 应在专用后台线程中调用。
  *
- * JNI 签名：com.example.mcp.NodeJsBridge.startNodeWithArguments([Ljava/lang/String;)I
+ * JNI 签名：com.omnichat.mcp.NodeJsBridge.startNodeWithArguments([Ljava/lang/String;)I
  */
 extern "C" JNIEXPORT jint JNICALL
 Java_com_example_mcp_NodeJsBridge_startNodeWithArguments(

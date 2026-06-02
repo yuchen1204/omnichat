@@ -77,12 +77,12 @@
 - [ ] **Step 1: Create AgentTool with schema and call() method**
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import android.util.Log
-import com.example.data.ModelConfig
-import com.example.mcp.McpRuntimeManager
-import com.example.network.ApiClient
+import com.omnichat.data.ModelConfig
+import com.omnichat.mcp.McpRuntimeManager
+import com.omnichat.network.ApiClient
 import org.json.JSONObject
 
 /**
@@ -830,7 +830,7 @@ Update system prompt tests to verify new prompt content.
 Create `app/src/test/java/com/example/workspace/AgentToolTest.kt`:
 
 ```kotlin
-package com.example.workspace
+package com.omnichat.workspace
 
 import org.junit.Assert.*
 import org.junit.Test

@@ -60,7 +60,7 @@ static wchar_t* jstring_to_wchar(JNIEnv* env, jstring jstr) {
  * 动态加载 libpython3.*.so
  * 返回 true 表示加载成功
  *
- * JNI 签名：com.example.mcp.PythonBridge.loadLibpython(String)Z
+ * JNI 签名：com.omnichat.mcp.PythonBridge.loadLibpython(String)Z
  */
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_mcp_PythonBridge_nativeLoadLibpython(
@@ -135,7 +135,7 @@ Java_com_example_mcp_PythonBridge_nativeLoadLibpython(
  * 初始化 Python 解释器
  *
  * @param pythonHome  Python 标准库根目录（assets 解压后的路径）
- * JNI 签名：com.example.mcp.PythonBridge.initializePython(String)Z
+ * JNI 签名：com.omnichat.mcp.PythonBridge.initializePython(String)Z
  */
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_mcp_PythonBridge_nativeInitializePython(
@@ -196,7 +196,7 @@ Java_com_example_mcp_PythonBridge_nativeInitializePython(
  * 执行一段 Python 代码字符串
  * 返回 0 表示成功，非 0 表示有异常
  *
- * JNI 签名：com.example.mcp.PythonBridge.runPythonString(String)I
+ * JNI 签名：com.omnichat.mcp.PythonBridge.runPythonString(String)I
  */
 extern "C" JNIEXPORT jint JNICALL
 Java_com_example_mcp_PythonBridge_nativeRunPythonString(
@@ -231,7 +231,7 @@ Java_com_example_mcp_PythonBridge_nativeRunPythonString(
 /**
  * 检查 Python 是否已初始化
  *
- * JNI 签名：com.example.mcp.PythonBridge.isPythonInitialized()Z
+ * JNI 签名：com.omnichat.mcp.PythonBridge.isPythonInitialized()Z
  */
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_mcp_PythonBridge_isPythonInitialized(

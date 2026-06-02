@@ -256,7 +256,7 @@ class AgentExecutionLoops(
     private val messageBus: MessageBus,
     private val taskManager: TaskManager,
     private val lifecycle: AgentLifecycle,
-    private val mcpRuntimeManager: com.example.mcp.McpRuntimeManager,
+    private val mcpRuntimeManager: com.omnichat.mcp.McpRuntimeManager,
     private val onAgentStatusChanged: (agentName: String, status: AgentStatus) -> Unit,
     private val onError: (message: String) -> Unit,
 ) {
@@ -533,7 +533,7 @@ fun AgentTabBar(
 
 Add import at top of file:
 ```kotlin
-import com.example.workspace.AgentTaskProgress
+import com.omnichat.workspace.AgentTaskProgress
 ```
 
 - [ ] **Step 2: Display progress in tab text**
@@ -597,7 +597,7 @@ Expected: BUILD SUCCESSFUL
 
 - [ ] **Step 1: Run workspace unit tests**
 
-Run: `./gradlew testDebugUnitTest --tests "com.example.workspace.*" 2>&1 | tail -20`
+Run: `./gradlew testDebugUnitTest --tests "com.omnichat.workspace.*" 2>&1 | tail -20`
 Expected: All tests pass (or only pre-existing failures unrelated to this change)
 
 - [ ] **Step 2: Manual verification checklist**

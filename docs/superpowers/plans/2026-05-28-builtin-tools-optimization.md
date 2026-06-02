@@ -31,9 +31,9 @@
 - [ ] **Step 1: 创建 UiFieldRegistry 文件**
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
-import com.example.data.UISettings
+import com.omnichat.data.UISettings
 
 /**
  * 集中定义所有 UI 可调整字段的元数据。
@@ -211,7 +211,7 @@ Expected: BUILD SUCCESSFUL
 - [ ] **Step 1: 创建 ToolSchemaDsl 文件**
 
 ```kotlin
-package com.example.mcp
+package com.omnichat.mcp
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -344,7 +344,7 @@ Expected: BUILD SUCCESSFUL
 在文件顶部 import 区域添加：
 
 ```kotlin
-import com.example.mcp.ToolSchemaDsl.schema
+import com.omnichat.mcp.ToolSchemaDsl.schema
 ```
 
 - [ ] **Step 2: 重构 get_current_time schema**
@@ -408,7 +408,7 @@ import com.example.mcp.ToolSchemaDsl.schema
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "save_color_scheme",
-            description = "Save the current app color scheme as a named preset for easy restoration later. Up to ${com.example.data.ColorSchemePreset.MAX_PRESETS} presets can be saved; if the limit is reached an error is returned — call delete_color_scheme to free up a slot first. Returns the unique schemeId of the newly saved preset.",
+            description = "Save the current app color scheme as a named preset for easy restoration later. Up to ${com.omnichat.data.ColorSchemePreset.MAX_PRESETS} presets can be saved; if the limit is reached an error is returned — call delete_color_scheme to free up a slot first. Returns the unique schemeId of the newly saved preset.",
             inputSchema = schema {
                 prop("name", "string", "Preset name — short and memorable, e.g. \"Deep Ocean Blue\" or \"Minimal White\". Max 30 characters.")
                 prop("description", "string", "Preset summary describing the color style or use case, e.g. \"An immersive dark night theme with deep blue as the primary color\". Max 100 characters.")
@@ -464,7 +464,7 @@ Expected: BUILD SUCCESSFUL
 在文件顶部 import 区域添加：
 
 ```kotlin
-import com.example.mcp.UiFieldRegistry
+import com.omnichat.mcp.UiFieldRegistry
 ```
 
 - [ ] **Step 2: 添加 getRepository 辅助方法**
@@ -895,7 +895,7 @@ val totalCount = repository.getAllMemories().size
 ```kotlin
 val keywords = query.split(" ").filter { it.isNotBlank() }
 val totalCount: Int
-val candidates: List<com.example.data.MemoryItem>
+val candidates: List<com.omnichat.data.MemoryItem>
 if (keywords.isNotEmpty()) {
     // 先获取总数用于显示
     totalCount = repository.getAllMemories().size
