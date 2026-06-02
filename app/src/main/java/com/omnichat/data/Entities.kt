@@ -1,7 +1,6 @@
 package com.omnichat.data
 
 import androidx.room.Entity
-import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -235,20 +234,6 @@ data class MemoryItem(
     indices = [
         Index(value = ["fromMemoryId"]),
         Index(value = ["toMemoryId"])
-    ],
-    foreignKeys = [
-        ForeignKey(
-            entity = MemoryItem::class,
-            parentColumns = ["id"],
-            childColumns = ["fromMemoryId"],
-            onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
-            entity = MemoryItem::class,
-            parentColumns = ["id"],
-            childColumns = ["toMemoryId"],
-            onDelete = ForeignKey.CASCADE
-        )
     ]
 )
 data class MemoryAssociation(
