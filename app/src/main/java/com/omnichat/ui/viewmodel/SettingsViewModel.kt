@@ -107,7 +107,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             for (s in servers) {
                 arr.put(JSONObject().apply {
                     put("name", s.name)
-                    put("runtime", s.runtime)
                     put("command", s.command)
                     put("args", s.args)
                     put("env", s.env)
@@ -307,7 +306,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         repository.insertMcpServer(
                             McpServer(
                                 name = obj.optString("name", "server-$i"),
-                                runtime = obj.optString("runtime", "node"),
                                 command = obj.optString("command", ""),
                                 args = obj.optString("args", "[]"),
                                 env = obj.optString("env", "{}"),
@@ -503,8 +501,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         put("fontSizeScale", s.fontSizeScale)
         put("chatFontSizeScale", s.chatFontSizeScale)
         put("fontFamily", s.fontFamily)
-        put("isNodeEnabled", s.isNodeEnabled)
-        put("isPythonEnabled", s.isPythonEnabled)
         put("enabledMcpGroups", s.enabledMcpGroups)
         put("silentToolCalls", s.silentToolCalls)
         put("uiStrings", s.uiStrings)
@@ -549,8 +545,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             fontSizeScale = obj.optDouble("fontSizeScale", defaults.fontSizeScale.toDouble()).toFloat(),
             chatFontSizeScale = obj.optDouble("chatFontSizeScale", defaults.chatFontSizeScale.toDouble()).toFloat(),
             fontFamily = obj.optString("fontFamily", defaults.fontFamily),
-            isNodeEnabled = obj.optBoolean("isNodeEnabled", defaults.isNodeEnabled),
-            isPythonEnabled = obj.optBoolean("isPythonEnabled", defaults.isPythonEnabled),
             enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
             silentToolCalls = obj.optBoolean("silentToolCalls", defaults.silentToolCalls),
             uiStrings = obj.optString("uiStrings", "{}"),

@@ -9,10 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -27,18 +25,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnichat.data.McpServer
 import com.omnichat.mcp.McpServerStatus
 import com.omnichat.mcp.McpTool
 import com.omnichat.mcp.McpViewModel
-import androidx.compose.ui.res.stringResource
 import com.omnichat.R
 import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.theme.LocalUISettings
-import com.omnichat.ui.theme.resolveFontFamily
 
 @Composable
 fun McpConfigScreen(
@@ -53,7 +48,6 @@ fun McpConfigScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<McpServer?>(null) }
     var showToolsFor by remember { mutableStateOf<Long?>(null) }
-    var showRuntimeInfo by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -61,25 +55,6 @@ fun McpConfigScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // ── 运行时状态栏 ──────────────────────────────────────────────────
-        RuntimeStatusBar(
-            isNodeAvailable = mcpViewModel.isNodeRuntimeAvailable,
-            isPythonReady = mcpViewModel.isPythonRuntimeReady,
-            isNodeEnabled = currentUiSettings?.isNodeEnabled ?: true,
-            isPythonEnabled = currentUiSettings?.isPythonEnabled ?: true,
-            onToggleNode = { enabled ->
-                currentUiSettings?.copy(isNodeEnabled = enabled, updatedAt = System.currentTimeMillis())?.let {
-                    settingsViewModel.updateUISettings(it)
-                }
-            },
-            onTogglePython = { enabled ->
-                currentUiSettings?.copy(isPythonEnabled = enabled, updatedAt = System.currentTimeMillis())?.let {
-                    settingsViewModel.updateUISettings(it)
-                }
-            },
-            onInfoClick = { showRuntimeInfo = true }
-        )
-
         // ── 顶部统计栏 ────────────────────────────────────────────────────
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -243,18 +218,6 @@ fun McpConfigScreen(
         }
     }
 
-    // ── 运行时信息弹窗 ────────────────────────────────────────────────────
-    if (showRuntimeInfo) {
-        RuntimeInfoDialog(
-            isNodeAvailable = mcpViewModel.isNodeRuntimeAvailable,
-            isPythonReady = mcpViewModel.isPythonRuntimeReady,
-            isNodeEnabled = currentUiSettings?.isNodeEnabled ?: true,
-            isPythonEnabled = currentUiSettings?.isPythonEnabled ?: true,
-            pythonStatus = mcpViewModel.pythonRuntimeStatus,
-            onDismiss = { showRuntimeInfo = false }
-        )
-    }
-
     // ── 导入 JSON 对话框 ────────────────────────────────────────────────
     if (showImportDialog) {
         McpImportDialog(
@@ -270,7 +233,6 @@ fun McpConfigScreen(
     if (showAddDialog) {
         McpServerEditDialog(
             server = null,
-            mcpWorkDir = mcpViewModel.mcpWorkDir,
             mcpViewModel = mcpViewModel,
             onDismiss = { showAddDialog = false },
             onSave = { server ->
@@ -283,7 +245,6 @@ fun McpConfigScreen(
     editTarget?.let { server ->
         McpServerEditDialog(
             server = server,
-            mcpWorkDir = mcpViewModel.mcpWorkDir,
             mcpViewModel = mcpViewModel,
             onDismiss = { editTarget = null },
             onSave = { updated ->
@@ -359,7 +320,7 @@ private fun McpServerCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 运行时图标
-                RuntimeBadge(runtime = server.runtime)
+                RuntimeBadge()
                 Spacer(modifier = Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -618,20 +579,9 @@ private fun McpBuiltinGroupsCard(
 // ── 运行时徽章 ────────────────────────────────────────────────────────────
 
 @Composable
-fun RuntimeBadge(runtime: String) {
-    val successColor = com.omnichat.ui.theme.LocalCustomColors.current.success
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val warningColor = com.omnichat.ui.theme.LocalCustomColors.current.warning
+fun RuntimeBadge() {
     val fs = LocalUISettings.current.fontSizeScale
-    
-    val (label, color) = when (runtime) {
-        "node" -> "Node" to successColor
-        "python" -> "Py" to primaryColor
-        "remote_http" -> "HTTP" to MaterialTheme.colorScheme.secondary
-        else -> runtime.take(4).uppercase() to MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    
-    val finalColor = if (runtime == "remote_http") MaterialTheme.colorScheme.secondary else color
+    val color = MaterialTheme.colorScheme.secondary
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
@@ -641,7 +591,7 @@ fun RuntimeBadge(runtime: String) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = label,
+            text = "HTTP",
             fontSize = (10 * fs).sp,
             fontWeight = FontWeight.Bold,
             color = color,
@@ -670,119 +620,6 @@ private fun StatChip(label: String, value: String, color: Color) {
         )
     }
 }
-
-
-
-// ── 运行时状态栏 ──────────────────────────────────────────────────────────
-
-@Composable
-private fun RuntimeStatusBar(
-    isNodeAvailable: Boolean,
-    isPythonReady: Boolean,
-    isNodeEnabled: Boolean,
-    isPythonEnabled: Boolean,
-    onToggleNode: (Boolean) -> Unit,
-    onTogglePython: (Boolean) -> Unit,
-    onInfoClick: () -> Unit
-) {
-    val successColor = com.omnichat.ui.theme.LocalCustomColors.current.success
-    val warningColor = com.omnichat.ui.theme.LocalCustomColors.current.warning
-    
-    val anyEnabled = isNodeEnabled || isPythonEnabled
-    val anyReady = (isNodeEnabled && isNodeAvailable) || (isPythonEnabled && isPythonReady)
-    
-    val barColor = when {
-        allRuntimesReady(isNodeAvailable, isPythonReady, isNodeEnabled, isPythonEnabled) -> successColor.copy(alpha = 0.12f)
-        !anyEnabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        !anyReady -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-        else -> warningColor.copy(alpha = 0.12f)
-    }
-
-    Surface(
-        color = barColor,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Node.js 开关 + 状态
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RuntimeChip(label = "Node", isReady = isNodeAvailable && isNodeEnabled, isEnabled = isNodeEnabled)
-                Spacer(modifier = Modifier.width(4.dp))
-                Switch(
-                    checked = isNodeEnabled,
-                    onCheckedChange = onToggleNode,
-                    modifier = Modifier.scale(0.6f).height(20.dp).width(34.dp)
-                )
-            }
-
-            // Python 开关 + 状态
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RuntimeChip(label = "Python", isReady = isPythonReady && isPythonEnabled, isEnabled = isPythonEnabled)
-                Spacer(modifier = Modifier.width(4.dp))
-                Switch(
-                    checked = isPythonEnabled,
-                    onCheckedChange = onTogglePython,
-                    modifier = Modifier.scale(0.6f).height(20.dp).width(34.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.weight(1f))
-
-            IconButton(onClick = onInfoClick, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-            }
-        }
-    }
-}
-
-private fun allRuntimesReady(node: Boolean, py: Boolean, nodeEnabled: Boolean, pyEnabled: Boolean): Boolean {
-    val nodeOk = !nodeEnabled || node
-    val pyOk = !pyEnabled || py
-    return nodeOk && pyOk && (nodeEnabled || pyEnabled)
-}
-
-@Composable
-private fun RuntimeChip(
-    label: String,
-    isReady: Boolean,
-    isEnabled: Boolean
-) {
-    val successColor = com.omnichat.ui.theme.LocalCustomColors.current.success
-    val color = when {
-        !isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-        isReady -> successColor
-        else -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-    }
-    val fs = LocalUISettings.current.fontSizeScale
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(5.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(color)
-        )
-        Text(
-            text = label,
-            fontSize = (10 * fs).sp,
-            color = color,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
 
 
 // ── 内置工具卡片 ──────────────────────────────────────────────────────────

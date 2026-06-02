@@ -10,14 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,11 +28,10 @@ import androidx.compose.foundation.lazy.items
 import com.omnichat.data.McpServer
 import com.omnichat.mcp.McpTool
 import com.omnichat.mcp.McpViewModel
-import androidx.compose.ui.res.stringResource
 import com.omnichat.R
-import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.resolveFontFamily
+import com.omnichat.ui.theme.uiText
 
 // ── 工具列表弹窗 ──────────────────────────────────────────────────────────
 
@@ -239,7 +236,6 @@ fun McpImportDialog(
 @Composable
 fun McpServerEditDialog(
     server: McpServer?,
-    mcpWorkDir: String = "",
     mcpViewModel: McpViewModel = viewModel(),
     onDismiss: () -> Unit,
     onSave: (McpServer) -> Unit
@@ -247,7 +243,6 @@ fun McpServerEditDialog(
     val isEdit = server != null
 
     var name by remember { mutableStateOf(server?.name ?: "") }
-    var runtime by remember { mutableStateOf(server?.runtime ?: "node") }
     var command by remember { mutableStateOf(server?.command ?: "") }
     var args by remember { mutableStateOf(server?.args ?: "[]") }
     var env by remember { mutableStateOf(server?.env ?: "{}") }
@@ -296,32 +291,12 @@ fun McpServerEditDialog(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 运行时选择
-                Text(
-                    text = uiText("mcp.dialog.8436d4b3", R.string.mcp_dialog_runtime),
-                    fontSize = (13 * fs).sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = resolvedFontFamily,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                RuntimeSelector(selected = runtime, resolvedFontFamily = resolvedFontFamily, onSelect = { runtime = it })
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 运行时说明
-                RuntimeHint(
-                    runtime = runtime,
-                    resolvedFontFamily = resolvedFontFamily,
-                    mcpWorkDir = mcpWorkDir
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
                 // 命令/入口
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it },
-                    label = { Text(commandLabel(runtime), fontFamily = resolvedFontFamily) },
-                    placeholder = { Text(commandPlaceholder(runtime), fontFamily = resolvedFontFamily) },
+                    label = { Text(uiText("mcp.dialog.command.label.remote.http", R.string.mcp_dialog_command_label_remote_http), fontFamily = resolvedFontFamily) },
+                    placeholder = { Text(uiText("mcp.dialog.command.placeholder.remote.http", R.string.mcp_dialog_command_placeholder_remote_http), fontFamily = resolvedFontFamily) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace)
@@ -355,18 +330,10 @@ fun McpServerEditDialog(
                         envError = !isValidJsonObject(it)
                     },
                     label = {
-                        Text(
-                            text = if (runtime == "remote_http") uiText("mcp.dialog.custom.headers", R.string.mcp_dialog_custom_headers)
-                                   else uiText("mcp.dialog.env.vars", R.string.mcp_dialog_env_vars),
-                            fontFamily = resolvedFontFamily
-                        )
+                        Text(uiText("mcp.dialog.custom.headers", R.string.mcp_dialog_custom_headers), fontFamily = resolvedFontFamily)
                     },
                     placeholder = {
-                        Text(
-                            text = if (runtime == "remote_http") "{\"Authorization\": \"Bearer token\", \"X-Api-Key\": \"xxx\"}"
-                                   else "{\"API_KEY\": \"your-key\"}",
-                            fontFamily = resolvedFontFamily
-                        )
+                        Text("{\"Authorization\": \"Bearer token\", \"X-Api-Key\": \"xxx\"}", fontFamily = resolvedFontFamily)
                     },
                     isError = envError,
                     supportingText = if (envError) {
@@ -410,7 +377,6 @@ fun McpServerEditDialog(
                             val saved = McpServer(
                                 id = server?.id ?: 0,
                                 name = name.trim(),
-                                runtime = runtime,
                                 command = command.trim(),
                                 args = args.trim().ifBlank { "[]" },
                                 env = env.trim().ifBlank { "{}" },
@@ -429,93 +395,6 @@ fun McpServerEditDialog(
     }
 }
 
-// ── 运行时选择器 ──────────────────────────────────────────────────────────
-
-@Composable
-fun RuntimeSelector(
-    selected: String,
-    resolvedFontFamily: FontFamily,
-    onSelect: (String) -> Unit
-) {
-    val options = listOf(
-        Triple("node", uiText("mcp.dialog.runtime.node", R.string.mcp_dialog_runtime_node), uiText("mcp.dialog.runtime.node.desc", R.string.mcp_dialog_runtime_node_desc)),
-        Triple("python", uiText("mcp.dialog.runtime.python", R.string.mcp_dialog_runtime_python), uiText("mcp.dialog.runtime.python.desc", R.string.mcp_dialog_runtime_python_desc)),
-        Triple("remote_http", uiText("mcp.dialog.runtime.remote.http", R.string.mcp_dialog_runtime_remote_http), uiText("mcp.dialog.runtime.remote.http.desc", R.string.mcp_dialog_runtime_remote_http_desc))
-    )
-    val fs = LocalUISettings.current.fontSizeScale
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        options.forEach { (value, label, _) ->
-            val isSelected = selected == value
-            FilterChip(
-                selected = isSelected,
-                onClick = { onSelect(value) },
-                label = { Text(label, fontSize = (11 * fs).sp, fontFamily = resolvedFontFamily) },
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-fun RuntimeHint(
-    runtime: String,
-    resolvedFontFamily: FontFamily,
-    mcpWorkDir: String = ""
-) {
-    val nodeHint = stringResource(
-        R.string.mcp_dialog_node_hint,
-        mcpWorkDir
-    )
-    val pythonHint = stringResource(
-        R.string.mcp_dialog_python_hint
-    )
-    val remoteHttpHint = stringResource(
-        R.string.mcp_dialog_remote_http_hint
-    )
-
-    val (icon, text, isError) = when (runtime) {
-        "node" -> Triple(Icons.Default.Info, nodeHint, false)
-        "python" -> Triple(Icons.Default.Info, pythonHint, false)
-        "remote_http" -> Triple(Icons.Default.Info, remoteHttpHint, false)
-        else -> Triple(Icons.Default.Info, "", false)
-    }
-    if (text.isNotBlank()) {
-        val colorScheme = MaterialTheme.colorScheme
-        val containerColor = if (isError) colorScheme.errorContainer.copy(alpha = 0.4f)
-                            else colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        val contentColor = if (isError) colorScheme.onErrorContainer
-                          else colorScheme.onSurfaceVariant
-        val fs = LocalUISettings.current.fontSizeScale
-
-        Surface(
-            color = containerColor,
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(8.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(
-                    icon, null,
-                    modifier = Modifier.size(14.dp).padding(top = 1.dp),
-                    tint = contentColor
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = text,
-                    fontSize = (11 * fs).sp,
-                    fontFamily = resolvedFontFamily,
-                    color = contentColor,
-                    lineHeight = (16 * fs).sp
-                )
-            }
-        }
-    }
-}
-
 // ── 快速示例 Chips ────────────────────────────────────────────────────────
 
 @Composable
@@ -526,15 +405,7 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 
     val examples = listOf(
         McpServer(
-            name = uiText("mcp.example.fetch", R.string.mcp_example_fetch),
-            runtime = "node",
-            command = "mcp_fetch.js",
-            args = "[]",
-            env = "{}"
-        ),
-        McpServer(
             name = uiText("mcp.example.remote", R.string.mcp_example_remote),
-            runtime = "remote_http",
             command = "https://mcp-server-example.vercel.app/sse",
             args = "[]",
             env = "{}"
@@ -549,7 +420,7 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
                 shape = RoundedCornerShape(cornerRadius),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                RuntimeBadge(runtime = example.runtime)
+                RuntimeBadge()
                 Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                     Text(example.name, fontSize = (13 * fs).sp, fontWeight = FontWeight.Medium, fontFamily = resolvedFontFamily)
@@ -570,22 +441,6 @@ fun McpExampleChips(onAdd: (McpServer) -> Unit) {
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
-@Composable
-fun commandLabel(runtime: String) = when (runtime) {
-    "node" -> uiText("mcp.dialog.command.label.node", R.string.mcp_dialog_command_label_node)
-    "python" -> uiText("mcp.dialog.command.label.python", R.string.mcp_dialog_command_label_python)
-    "remote_http" -> uiText("mcp.dialog.command.label.remote.http", R.string.mcp_dialog_command_label_remote_http)
-    else -> uiText("mcp.dialog.command.label.default", R.string.mcp_dialog_command_label_default)
-}
-
-@Composable
-fun commandPlaceholder(runtime: String) = when (runtime) {
-    "node" -> uiText("mcp.dialog.command.placeholder.node", R.string.mcp_dialog_command_placeholder_node)
-    "python" -> uiText("mcp.dialog.command.placeholder.python", R.string.mcp_dialog_command_placeholder_python)
-    "remote_http" -> uiText("mcp.dialog.command.placeholder.remote.http", R.string.mcp_dialog_command_placeholder_remote_http)
-    else -> uiText("mcp.dialog.command.placeholder.default", R.string.mcp_dialog_command_placeholder_default)
-}
-
 fun isValidJsonArray(s: String): Boolean {
     return try {
         org.json.JSONArray(s.trim())
@@ -601,173 +456,5 @@ fun isValidJsonObject(s: String): Boolean {
         true
     } catch (e: Exception) {
         false
-    }
-}
-
-// ── 运行时信息弹窗 ────────────────────────────────────────────────────────
-
-@Composable
-fun RuntimeInfoDialog(
-    isNodeAvailable: Boolean,
-    isPythonReady: Boolean,
-    isNodeEnabled: Boolean,
-    isPythonEnabled: Boolean,
-    pythonStatus: String,
-    onDismiss: () -> Unit
-) {
-    val uiSettings = LocalUISettings.current
-    val fs = uiSettings.fontSizeScale
-    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
-    val cornerRadius = uiSettings.cornerRadiusDp.dp
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(cornerRadius),
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = uiText("mcp.dialog.runtime.details.title", R.string.mcp_dialog_runtime_details_title),
-                        fontSize = (17 * fs).sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = resolvedFontFamily,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Node.js 状态
-                RuntimeInfoSection(
-                    title = uiText("mcp.dialog.node.title", R.string.mcp_dialog_node_title),
-                    isReady = isNodeAvailable,
-                    isEnabled = isNodeEnabled,
-                    statusText = if (!isNodeEnabled) uiText("mcp.dialog.node.disabled", R.string.mcp_dialog_node_disabled)
-                                 else if (isNodeAvailable) uiText("mcp.dialog.node.ok", R.string.mcp_dialog_node_ok)
-                                 else uiText("mcp.dialog.node.missing", R.string.mcp_dialog_node_missing),
-                    instructions = if (!isNodeAvailable && isNodeEnabled) uiText("mcp.dialog.node.instructions", R.string.mcp_dialog_node_instructions) else null,
-                    resolvedFontFamily = resolvedFontFamily
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Python 状态
-                RuntimeInfoSection(
-                    title = uiText("mcp.dialog.python.title", R.string.mcp_dialog_python_title),
-                    isReady = isPythonReady,
-                    isEnabled = isPythonEnabled,
-                    statusText = if (!isPythonEnabled) uiText("mcp.dialog.python.disabled", R.string.mcp_dialog_python_disabled) else pythonStatus,
-                    instructions = if (!isPythonReady && isPythonEnabled) uiText("mcp.dialog.python.instructions", R.string.mcp_dialog_python_instructions) else null,
-                    resolvedFontFamily = resolvedFontFamily
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 远程 HTTP 状态
-                RuntimeInfoSection(
-                    title = uiText("mcp.dialog.remote.http.title", R.string.mcp_dialog_remote_http_title),
-                    isReady = true,
-                    statusText = uiText("mcp.dialog.remote.http.status", R.string.mcp_dialog_remote_http_status),
-                    instructions = uiText("mcp.dialog.remote.http.instructions", R.string.mcp_dialog_remote_http_instructions),
-                    resolvedFontFamily = resolvedFontFamily
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 2).coerceAtLeast(0).dp)
-                ) { Text(uiText("mcp.dialog.c0fd3fa0", R.string.mcp_dialog_got_it), fontFamily = resolvedFontFamily) }
-            }
-        }
-    }
-}
-
-@Composable
-fun RuntimeInfoSection(
-    title: String,
-    isReady: Boolean,
-    isEnabled: Boolean = true,
-    statusText: String,
-    instructions: String?,
-    resolvedFontFamily: FontFamily
-) {
-    val successColor = com.omnichat.ui.theme.LocalCustomColors.current.success
-    val color = when {
-        !isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        isReady -> successColor
-        else -> MaterialTheme.colorScheme.error
-    }
-    val bgColor = when {
-        !isEnabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        isReady -> color.copy(alpha = 0.08f)
-        else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-    }
-    val fs = LocalUISettings.current.fontSizeScale
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(bgColor)
-            .padding(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                when {
-                    !isEnabled -> Icons.Default.Close
-                    isReady -> Icons.Default.Check
-                    else -> Icons.Default.Warning
-                },
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                title,
-                fontSize = (14 * fs).sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = resolvedFontFamily,
-                color = color
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            statusText,
-            fontSize = (12 * fs).sp,
-            color = MaterialTheme.colorScheme.onSurface,
-            lineHeight = (16 * fs).sp
-        )
-        if (instructions != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider(color = color.copy(alpha = 0.2f))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                uiText("mcp.dialog.install.steps", R.string.mcp_dialog_install_steps),
-                fontSize = (11 * fs).sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                instructions,
-                fontSize = (11 * fs).sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = (16 * fs).sp
-            )
-        }
     }
 }

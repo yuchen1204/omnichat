@@ -21,18 +21,6 @@ android {
     // 避免 BuildConfig 中残留 GEMINI_API_KEY 空值（secrets plugin 已移除）
     buildConfigField("String", "GEMINI_API_KEY", "\"\"")
 
-    // 只打包主流 ABI，减小 APK 体积（libnode.so 和 python 二进制都按 ABI 分包）
-    ndk {
-      abiFilters += listOf("arm64-v8a", "x86_64")
-    }
-
-    externalNativeBuild {
-      cmake {
-        cppFlags("-std=c++17")
-        // 使用 c++_shared STL，与 libnode.so 的构建方式一致
-        arguments("-DANDROID_STL=c++_shared")
-      }
-    }
   }
 
   signingConfigs {
@@ -65,28 +53,6 @@ android {
   buildFeatures {
     compose = true
     buildConfig = true
-  }
-
-  // CMake 构建配置（用于 JNI 桥接 libnode.so）
-  externalNativeBuild {
-    cmake {
-      path = file("src/main/cpp/CMakeLists.txt")
-      version = "3.22.1"
-    }
-  }
-
-  // 将 libnode/bin/ 目录下的预编译 .so 文件打包进 APK
-  sourceSets {
-    getByName("main") {
-      jniLibs.srcDirs("src/main/jniLibs")
-    }
-  }
-
-  // 不压缩 .so 文件，让系统可以直接 mmap（加快加载速度）
-  packaging {
-    jniLibs {
-      useLegacyPackaging = false
-    }
   }
 
   testOptions { unitTests { isIncludeAndroidResources = true } }

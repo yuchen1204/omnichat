@@ -11,8 +11,6 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 - **Android Studio**: Hedgehog or later
 - **JDK**: 17+
 - **Android SDK**: 36 (compileSdk: 36, targetSdk: 36, minSdk: 26)
-- **CMake**: 3.22.1
-- **NDK**: 27.0.12077973 (for JNI native bridges)
 - **Kotlin**: 2.2.10
 
 **Environment note:** `gradle.properties` does NOT hardcode JDK path. Set locally or via CI. Override `org.gradle.java.home` if needed. Kotlin compiler runs `in-process` to avoid daemon connection errors.
@@ -60,7 +58,7 @@ MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) wit
 ```
 Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tables, v35)
                                     ↘ ApiClient (OkHttp + SSE, vision support)
-                                    ↘ McpRuntimeManager (Node.js / Python / remote_http via JNI)
+                                    ↘ McpRuntimeManager (remote_http)
 ```
 
 ### Key Architectural Decisions
@@ -70,8 +68,6 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **UI strings** use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", "English default")` pattern with auto-generated `ui_text_keys.json`
 - **Room database** version 35 with 30+ sequential migrations (v4→v35). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
-- **Node.js can start only once per process** (nodejs-mobile limitation) — merge multiple servers into one entry script
-- **Native runtimes are optional**; app degrades gracefully without them
 
 ## Package Structure
 
@@ -80,7 +76,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 | `com.omnichat` | Entry point (`MainActivity.kt` — note lowercase 'm') |
 | `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
 | `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
-| `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `NodeJsBridge`, `PythonBridge`, `PythonRuntime`, `McpScriptManager`, `McpViewModel` |
+| `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `McpViewModel` |
 | `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `AgentHook`, `McpFilePermissionHook`, `WorkspaceSandboxHook`, `LoggingHooks` |
 | `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `WorkspaceScreen`, `WorkspaceToolbar`, `WorkspaceReadyView`, `AgentTabBar`, `AgentMessageArea`, `AgentBubbleMessage`, `OrchestrationToolCallCard`, `TeamTaskPanel`, `InterventionInput`, `AgentPresetConfigScreen`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
 | `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel`, `WorkspaceViewModel` |
@@ -88,20 +84,16 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 | `com.omnichat.ui.theme` | Material 3 theming with DB-driven dynamic color, `UiStrings` |
 | `com.omnichat.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
 
-## Native Code (MCP Runtime)
+## MCP Runtime
 
-- **Node.js**: `libnode.so` (nodejs-mobile) → `NodeJsBridge` (JNI) → TCP socket bridge → MCP JSON-RPC
-- **Python**: `libpython3.14.so` (dlopen via `PythonRuntime`) → `ProcessBuilder` → stdin/stdout MCP JSON-RPC
 - **Remote HTTP**: Direct HTTP/HTTPS connection to remote MCP servers (no native runtime needed)
-- Node.js scripts in `app/src/main/assets/node/`; `McpScriptManager` deploys built-in scripts to `OmniChat/mcp/` on external storage
-- CMake config: `app/src/main/cpp/CMakeLists.txt` with `c++_shared` STL
-- ABI filters: only `arm64-v8a` and `x86_64`
+- Supports both old SSE (2024-11-05) and new Streamable HTTP (2025-03-26) protocols
 
 ## Common Modification Tasks
 
 - **Add Room entity**: Define in `Entities.kt`, add DAO in `Daos.kt`, update `AppDatabase` with new version + migration, expose in `AppRepository`
 - **Add screen/tab**: Add composable in `ui/screens/`, wire into `MainScreen.kt` — either as top-level view or sub-tab inside `SettingsView`
-- **Add MCP server support**: Add runtime config in `McpRuntimeManager`, bridge class following `NodeJsBridge`/`PythonBridge` patterns
+- **Add MCP server support**: Add remote HTTP server config in `McpRuntimeManager`
 - **Add/modify built-in MCP tools**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`). Tools are grouped (core, memory, ui_appearance, ui_text, files, documents, efficiency); `UISettings.enabledMcpGroups` controls active groups
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, use `LocalUiStrings.current` in Compose screens
 - **Add hooks**: Implement `MessageHook`, `McpHook`, or `AgentHook` interface in `com.omnichat.hooks` package, register with `HookManager` (object with register/unregister methods)
