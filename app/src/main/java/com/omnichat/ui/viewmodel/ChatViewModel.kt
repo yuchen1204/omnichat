@@ -287,8 +287,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Hidden memory search instruction
         val totalMemoryCount = memoryEngine.getTotalMemoryCount()
-        if (totalMemoryCount > MEMORY_INJECT_LIMIT) {
-            finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top $MEMORY_INJECT_LIMIT entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
+        if (totalMemoryCount > com.omnichat.memory.MemoryEngine.MEMORY_INJECT_LIMIT) {
+            finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top ${com.omnichat.memory.MemoryEngine.MEMORY_INJECT_LIMIT} entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
         }
 
         return finalSystemPrompt
@@ -578,11 +578,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }.reversed()
                 }
 
-                // 并行：摘要生成 + 获取当前记忆列表（两者无依赖）
-                val currentMemoriesDeferred = kotlinx.coroutines.async {
-                    repository.getAllMemories()
-                }
-
                 val newSummaryText = memoryEngine.generateSessionSummary(
                     recentMessages = recentMessages,
                     previousSummary = prevSummary?.summaryText?.takeIf { it.isNotBlank() },
@@ -600,7 +595,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 )
 
                 // ── Step 2：增量 CRUD ────────────────────────────────────
-                val currentMemories = currentMemoriesDeferred.await()
+                val currentMemories = repository.getAllMemories()
                 val recentRawMessages = allMessages.takeLast(MEMORY_RECENT_RAW_COUNT)
 
                 val crudJson = memoryEngine.generateCrudOps(
@@ -612,24 +607,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 memoryEngine.applyMemoryCrudOps(crudJson, currentMemories, now)
 
-                // ── Step 2.5：冷启动补关联 ──────────────────────────────
+                // ── Step 2.5：冷启动补关联（阈值提高到 5，因为即时关联已覆盖新记忆）──
                 try {
                     val unassociated = repository.getUnassociatedMemories(COLD_START_ASSOC_LIMIT)
-                    if (unassociated.size >= 2) {
+                    if (unassociated.size >= 5) {
                         val backfillJson = memoryEngine.generateAssociationsForUnassociated(unassociated, memoryConfig)
                         if (backfillJson != null) {
                             memoryEngine.applyAssociationsFromJson(backfillJson, unassociated.map { it.id }.toSet())
                         }
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    android.util.Log.e("ChatViewModel", "Association backfill failed: ${e.message}", e)
                 }
 
                 // 裁剪旧审计日志（30 天前）
                 memoryEngine.pruneOldAuditLogs()
 
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.util.Log.e("ChatViewModel", "Memory sync failed: ${e.message}", e)
             } finally {
                 isMemorySyncing = false
                 memorySyncMutex.unlock()
@@ -642,7 +639,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val MEMORY_WINDOW_CHARS = 12_000           // 摘要窗口最大字符数
         private const val MEMORY_RECENT_RAW_COUNT = 20           // Step 2 额外传入的原始消息条数
-        private const val MEMORY_INJECT_LIMIT = 30               // 注入 system prompt 的最大记忆条数
         private const val MAX_TOOL_CALL_DEPTH = 10               // 工具调用最大递归深度，防止无限循环
         private const val COLD_START_ASSOC_LIMIT = 20
     }

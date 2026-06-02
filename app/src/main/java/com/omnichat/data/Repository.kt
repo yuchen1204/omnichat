@@ -68,7 +68,7 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteMemoryById(id: Long) = memoryItemDao.deleteMemoryById(id)
     suspend fun deleteAllUnpinnedMemories() = memoryItemDao.deleteAllUnpinnedMemories()
     suspend fun deleteAllMemories() = memoryItemDao.deleteAllMemories()
-    suspend fun batchDecayConfidence(daysDecay: Int, threshold: Long, now: Long) = memoryItemDao.batchDecayConfidence(daysDecay, threshold, now)
+    suspend fun batchDecayConfidence(now: Long) = memoryItemDao.batchDecayConfidence(now)
 
     // Memory Associations
     suspend fun getRelatedMemories(memoryId: Long): List<RelatedMemoryInfo> {

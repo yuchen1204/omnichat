@@ -115,9 +115,9 @@ interface MemoryItemDao {
     @Query("DELETE FROM memory_items")
     suspend fun deleteAllMemories()
 
-    /** 批量衰减置信度：所有非 pinned 且 lastReinforcedAt 早于 threshold 的记忆，confidence 减去 daysDecay（下限 1） */
-    @Query("UPDATE memory_items SET confidence = MAX(1, confidence - :daysDecay), lastReinforcedAt = :now WHERE pinned = 0 AND lastReinforcedAt < :threshold AND confidence > 1")
-    suspend fun batchDecayConfidence(daysDecay: Int, threshold: Long, now: Long)
+    /** 批量衰减置信度：每行独立计算衰减天数，confidence 减去该行的天数差（下限 1） */
+    @Query("UPDATE memory_items SET confidence = MAX(1, confidence - MAX(0, CAST((:now - lastReinforcedAt) / 86400000 AS INT))), lastReinforcedAt = :now WHERE pinned = 0 AND lastReinforcedAt < :now AND confidence > 1")
+    suspend fun batchDecayConfidence(now: Long)
 }
 
 @Dao
