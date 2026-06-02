@@ -107,7 +107,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             for (s in servers) {
                 arr.put(JSONObject().apply {
                     put("name", s.name)
-                    put("runtime", s.runtime)
                     put("command", s.command)
                     put("args", s.args)
                     put("env", s.env)
@@ -307,7 +306,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         repository.insertMcpServer(
                             McpServer(
                                 name = obj.optString("name", "server-$i"),
-                                runtime = obj.optString("runtime", "node"),
                                 command = obj.optString("command", ""),
                                 args = obj.optString("args", "[]"),
                                 env = obj.optString("env", "{}"),
