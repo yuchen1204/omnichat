@@ -260,7 +260,7 @@ object ApiClient {
     }
 
     /**
-     * Non-streaming API completion for memory manager or text responses
+     * 非流式 API 补全，用于记忆管理器或文本响应
      */
     suspend fun executeCompletion(
         config: ModelConfig,
@@ -344,6 +344,73 @@ object ApiClient {
                     return@withContext messageObj?.optString("content")
                 }
                 null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * 调用 OpenAI 兼容的 /embeddings 端点，批量获取文本的向量表示。
+     * 支持 OpenAI (text-embedding-3-small)、Ollama、vLLM 等兼容接口。
+     *
+     * @param config 模型配置（endpoint, apiKey, customHeaders）
+     * @param input 输入文本列表，支持批量
+     * @param model 嵌入模型 ID，为空时使用 config.selectedModelId
+     * @return 嵌入向量列表，与 input 一一对应；失败返回 null
+     */
+    suspend fun executeEmbedding(
+        config: ModelConfig,
+        input: List<String>,
+        model: String? = null
+    ): List<List<Float>>? = withContext(Dispatchers.IO) {
+        if (input.isEmpty()) return@withContext emptyList()
+
+        val endpoint = config.endpoint.trim().removeSuffix("/")
+        val apiKey = config.apiKey.trim()
+        val embeddingModel = model?.takeIf { it.isNotBlank() } ?: config.selectedModelId
+
+        val body = JSONObject().apply {
+            put("model", embeddingModel)
+            val inputArray = JSONArray()
+            input.forEach { inputArray.put(it) }
+            put("input", inputArray)
+        }
+        val requestBodyJson = body.toString()
+
+        val url = if (endpoint.endsWith("/embeddings")) endpoint else "$endpoint/embeddings"
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .post(requestBodyJson.toRequestBody(mediaTypeJson))
+        if (apiKey.isNotBlank()) {
+            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+        }
+        requestBuilder.applyCustomHeaders(config)
+
+        try {
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+
+                if (!response.isSuccessful) {
+                    checkHtmlResponse(bodyStr)
+                    println("API Embedding Code: ${response.code} error message: $bodyStr")
+                    return@withContext null
+                }
+
+                checkHtmlResponse(bodyStr)
+                val json = JSONObject(bodyStr)
+                val dataArray = json.optJSONArray("data") ?: return@withContext null
+
+                // 按 index 排序确保与输入顺序一致
+                val sorted = (0 until dataArray.length())
+                    .mapNotNull { dataArray.optJSONObject(it) }
+                    .sortedBy { it.optInt("index", 0) }
+
+                sorted.map { item ->
+                    val embeddingArray = item.optJSONArray("embedding") ?: return@map emptyList()
+                    (0 until embeddingArray.length()).map { embeddingArray.getDouble(it).toFloat() }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()

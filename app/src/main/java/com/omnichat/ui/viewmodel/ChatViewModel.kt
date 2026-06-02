@@ -24,6 +24,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     val repository = AppRepository(database)
     private val runtimeManager = com.omnichat.mcp.McpRuntimeManager.getInstance(application)
+    private val memoryEngine = com.omnichat.memory.MemoryEngine(repository, ApiClient)
 
     // Active session selection state
     private val _selectedSessionId = MutableStateFlow<Long?>(null)
@@ -246,16 +247,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 等待正在启动的 MCP 服务就绪，确保获取到正确的工具列表
             runtimeManager.waitForStartingServersToFinish()
 
-            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt)
+            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, processedText)
 
             startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
         }
     }
 
-    private suspend fun generateSystemPrompt(customSystemPrompt: String): String {
-        // 3. Fetch physical long-term memories list (single DB call, reuse for both injection and count)
-        val allMemories = repository.getAllMemories()
-        val localMemories = allMemories.take(MEMORY_INJECT_LIMIT)
+    private suspend fun generateSystemPrompt(customSystemPrompt: String, userMessage: String = ""): String {
+        // 3. Fetch relevant memories via MemoryEngine (embedding-based ranking when available)
+        val localMemories = memoryEngine.selectRelevantMemories(userMessage)
         val memoriesText = if (localMemories.isEmpty()) {
             getApplication<Application>().getString(R.string.no_memories_recorded)
         } else {
@@ -286,7 +286,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
 
         // Hidden memory search instruction
-        val totalMemoryCount = allMemories.size
+        val totalMemoryCount = memoryEngine.getTotalMemoryCount()
         if (totalMemoryCount > MEMORY_INJECT_LIMIT) {
             finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top $MEMORY_INJECT_LIMIT entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
         }
@@ -319,7 +319,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 等待正在启动的 MCP 服务就绪，确保获取到正确的工具列表
             runtimeManager.waitForStartingServersToFinish()
 
-            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt)
+            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, message.content)
 
             // 3. Re-trigger assistant response
             startAssistantResponse(message.sessionId, providerConfig, finalSystemPrompt)
@@ -546,21 +546,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             if (!memorySyncMutex.tryLock()) return@launch
             isMemorySyncing = true
             try {
-                val defaultProvider = repository.getDefaultProvider() ?: return@launch
-
-                // 构建副模型配置
-                val memoryConfig = run {
-                    val memoryProviderId = defaultProvider.memoryProviderId
-                    val memoryProvider = if (memoryProviderId > 0L) {
-                        repository.getConfigById(memoryProviderId) ?: defaultProvider
-                    } else {
-                        defaultProvider
-                    }
-                    memoryProvider.copy(
-                        selectedModelId = defaultProvider.memoryModelId.takeIf { it.isNotBlank() }
-                            ?: defaultProvider.selectedModelId
-                    )
-                }
+                val memoryConfig = memoryEngine.getMemoryModelConfig() ?: return@launch
 
                 val allMessages = repository.getMessagesBySession(sessionId)
                 if (allMessages.size < 2) return@launch
@@ -573,22 +559,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val newMsgCount = allMessages.size - msgCountAtLast
                 val timeSinceLast = now - lastSummarizedAt
 
-                // force=true（手动触发）时跳过节流检查
-                val shouldRun = force || timeSinceLast >= MEMORY_INTERVAL_MS || newMsgCount >= NEW_MESSAGES_THRESHOLD
-                if (!shouldRun) return@launch
-
-                // 衰减非 pinned 记忆的置信度
-                applyConfidenceDecay(now)
-
-                // 预检：新消息内容太少（如全是"好的/嗯/谢谢"）则跳过，避免无效 API 调用
+                // 节流检查
                 if (!force) {
                     val newMessages = allMessages.drop(msgCountAtLast)
                     val newCharsTotal = newMessages.sumOf { it.content.length }
-                    if (newCharsTotal < MIN_NEW_CHARS_THRESHOLD) return@launch
+                    if (!memoryEngine.shouldRunSync(force, timeSinceLast, newMsgCount, newCharsTotal)) return@launch
                 }
 
+                // 衰减非 pinned 记忆的置信度
+                memoryEngine.applyConfidenceDecay(now)
+
                 // ── Step 1：生成本会话的新滚动摘要 ──────────────────────
-                // 按字符数截断而非固定条数，避免长消息撑爆小模型上下文
                 val recentMessages = run {
                     var charCount = 0
                     allMessages.asReversed().takeWhile { msg ->
@@ -596,28 +577,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         charCount <= MEMORY_WINDOW_CHARS
                     }.reversed()
                 }
-                val dialogueFormatted = recentMessages.joinToString("\n") { "${it.role}: ${it.content}" }
-                val prevSummaryText = prevSummary?.summaryText?.takeIf { it.isNotBlank() }
 
-                val summarySystemPrompt =
-                    "You are a conversation analyst. Produce a compact summary of the conversation. " +
-                    "Cover two aspects:\n" +
-                    "1. Topics & conclusions: what was discussed, decisions made, problems solved.\n" +
-                    "2. User signals: any preferences, habits, skills, tools, dislikes, or personal context " +
-                    "the user revealed — even implicitly (e.g. choice of language, frustration with a tool, " +
-                    "repeated patterns). Be specific, not generic.\n" +
-                    "Aim for 4-10 sentences total. No filler or meta-commentary."
-
-                val summaryUserQuery = buildString {
-                    if (prevSummaryText != null) {
-                        append("Previous summary (earlier in this session):\n###\n$prevSummaryText\n###\n\n")
-                    }
-                    append("Recent messages (last ${recentMessages.size}):\n###\n$dialogueFormatted\n###\n\n")
-                    append("Produce an updated summary incorporating both. Return ONLY the summary text.")
+                // 并行：摘要生成 + 获取当前记忆列表（两者无依赖）
+                val currentMemoriesDeferred = kotlinx.coroutines.async {
+                    repository.getAllMemories()
                 }
 
-                val newSummaryText = ApiClient.executeCompletion(memoryConfig, summarySystemPrompt, summaryUserQuery)
-                    ?.trim() ?: return@launch
+                val newSummaryText = memoryEngine.generateSessionSummary(
+                    recentMessages = recentMessages,
+                    previousSummary = prevSummary?.summaryText?.takeIf { it.isNotBlank() },
+                    memoryConfig = memoryConfig
+                ) ?: return@launch
 
                 // 持久化新摘要
                 repository.upsertSessionSummary(
@@ -629,113 +599,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
 
-                // ── Step 2：增量 CRUD — LLM 返回操作列表，客户端事务性 apply ──
-                val currentMemories = repository.getAllMemories()
-                val memoriesFormatted = if (currentMemories.isEmpty()) {
-                    "No existing facts recorded."
-                } else {
-                    currentMemories.joinToString("\n") { item ->
-                        val pinnedTag = if (item.pinned) " [PINNED]" else ""
-                        "${item.id}. (confidence=${item.confidence}${pinnedTag}) ${item.content}"
-                    }
-                }
+                // ── Step 2：增量 CRUD ────────────────────────────────────
+                val currentMemories = currentMemoriesDeferred.await()
+                val recentRawMessages = allMessages.takeLast(MEMORY_RECENT_RAW_COUNT)
 
-                // 最近原始消息片段（最多 MEMORY_RECENT_RAW_COUNT 条），作为摘要的补充
-                // 让 LLM 能看到未经压缩的原始信号，提升偏好提炼准确性
-                val recentRawSnippet = allMessages.takeLast(MEMORY_RECENT_RAW_COUNT)
-                    .joinToString("\n") { "${it.role}: ${it.content}" }
+                val crudJson = memoryEngine.generateCrudOps(
+                    currentMemories = currentMemories,
+                    summaryText = newSummaryText,
+                    recentRawMessages = recentRawMessages,
+                    memoryConfig = memoryConfig
+                ) ?: return@launch
 
-                val factsSystemPrompt = """
-You are a User Preference & Persona Synthesizer.
-Your job: maintain a list of durable, cross-session personal facts about the user.
-Focus ONLY on stable, reusable facts: preferences, skills, habits, goals, dislikes, setup/environment details.
-Ignore transient topics (e.g., a one-off question with no lasting relevance).
+                memoryEngine.applyMemoryCrudOps(crudJson, currentMemories, now)
 
-You will receive:
-- Existing facts (each with an id and confidence score; [PINNED] items must NOT be deleted or updated)
-- A conversation summary (may compress details)
-- Recent raw messages (ground truth — use these to catch signals the summary may have missed)
-
-Output a JSON object with an "ops" array. Each op must be one of:
-  {"op": "ADD",       "content": "<one short sentence>", "tags": ["<tag>"]}
-  {"op": "UPDATE",    "id": <existing_id>, "content": "<revised sentence>", "tags": ["<tag>"]}
-  {"op": "REINFORCE", "id": <existing_id>}
-  {"op": "DELETE",    "id": <existing_id>}
-
-Tag rules (assign 1-2 tags per ADD/UPDATE):
-  - Tags should be short, descriptive keywords in Chinese or English
-  - English tags: max 10 characters (e.g., "preference", "coding", "workflow")
-  - Chinese tags: max 5 characters (e.g., "偏好", "技能", "项目")
-  - Choose tags that best describe the fact's semantic category
-  - You may create new tags or use existing ones for consistency
-
-Rules:
-- ADD new facts not yet captured. IMPORTANT: before adding, check if an existing fact already covers the same information — if so, use REINFORCE or UPDATE instead of ADD. Avoid semantic duplicates.
-- UPDATE facts that need revision (do NOT update [PINNED] items).
-- REINFORCE facts confirmed again without change (boosts confidence).
-- DELETE facts that are clearly contradicted or permanently irrelevant (do NOT delete [PINNED] items).
-- If nothing changed, return {"ops": []}.
-- Return ONLY the raw JSON object, no markdown fences, no commentary.
-
-If two existing facts are meaningfully connected, output an "associations" array alongside "ops":
-  {"from": <id>, "to": <id>, "label": "<label>", "direction": "directed"|"bidirectional"}
-Label vocabulary: related, causes, part_of, contrasts, belongs_to, implies.
-- "related": general semantic connection
-- "causes": one fact leads to or results from another
-- "part_of": one fact is a component/detail of another
-- "contrasts": facts that oppose or conflict
-- "belongs_to": one fact categorizes or contextualizes another
-- "implies": one fact logically implies another
-Only link facts that have a genuine semantic connection. When in doubt, skip.
-Do NOT create associations for newly added facts (they don't have stable IDs yet).
-""".trimIndent()
-
-                val factsUserQuery = buildString {
-                    append("Existing facts:\n###\n$memoriesFormatted\n###\n\n")
-                    append("Conversation summary:\n###\n$newSummaryText\n###\n\n")
-                    append("Recent raw messages (last ${recentRawSnippet.lines().size} lines):\n###\n$recentRawSnippet\n###\n\n")
-                    append("Output the ops JSON now.")
-                }
-
-                val crudJson = ApiClient.executeCompletion(memoryConfig, factsSystemPrompt, factsUserQuery)
-                    ?.trim() ?: return@launch  // API 失败 → 保留旧记忆，直接退出
-
-                // 解析并 apply CRUD ops（解析失败则整体放弃，旧记忆不受影响）
-                applyMemoryCrudOps(crudJson, currentMemories, now)
-
-                // ── Step 2.5：冷启动补关联 — 为无关联边的记忆生成关联 ──────────────
+                // ── Step 2.5：冷启动补关联 ──────────────────────────────
                 try {
                     val unassociated = repository.getUnassociatedMemories(COLD_START_ASSOC_LIMIT)
                     if (unassociated.size >= 2) {
-                        val candidatesFormatted = unassociated.joinToString("\n") { mem ->
-                            "${mem.id}. (confidence=${mem.confidence}) ${mem.content}"
-                        }
-                        val backfillSystemPrompt = """
-You are a memory graph builder. Given a list of facts, identify meaningful connections between them.
-Output a JSON object with an "associations" array:
-  {"from": <id>, "to": <id>, "label": "<label>"}
-Label vocabulary: related, causes, part_of, contrasts, belongs_to, implies.
-- "related": general semantic connection
-- "causes": one fact leads to or results from another
-- "part_of": one fact is a component/detail of another
-- "contrasts": facts that oppose or conflict
-- "belongs_to": one fact categorizes or contextualizes another
-- "implies": one fact logically implies another
-Only link facts with genuine semantic connections. If none qualify, return {"associations": []}.
-Return ONLY the raw JSON object, no markdown fences, no commentary.
-""".trimIndent()
-
-                        val backfillQuery = "Facts:\n###\n$candidatesFormatted\n###\n\nOutput associations JSON now."
-                        val backfillJson = ApiClient.executeCompletion(memoryConfig, backfillSystemPrompt, backfillQuery)
-                            ?.trim()
-
+                        val backfillJson = memoryEngine.generateAssociationsForUnassociated(unassociated, memoryConfig)
                         if (backfillJson != null) {
-                            applyAssociationsFromJson(backfillJson, unassociated.map { it.id }.toSet())
+                            memoryEngine.applyAssociationsFromJson(backfillJson, unassociated.map { it.id }.toSet())
                         }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+
+                // 裁剪旧审计日志（30 天前）
+                memoryEngine.pruneOldAuditLogs()
 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -746,192 +637,14 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
         }
     }
 
-    /**
-     * 对非 pinned 记忆执行置信度衰减：每过一天 confidence -1，下限为 1。
-     * 在 triggerMemorySync() 的 Step 1 之前调用。
-     */
-    private suspend fun applyConfidenceDecay(now: Long) {
-        val allMemories = repository.getAllMemories()
-        for (memory in allMemories) {
-            if (memory.pinned) continue
-            val daysSince = ((now - memory.lastReinforcedAt) / 86_400_000L).toInt()
-            if (daysSince <= 0) continue
-            val newConfidence = maxOf(1, memory.confidence - daysSince)
-            if (newConfidence != memory.confidence) {
-                repository.updateMemory(memory.copy(confidence = newConfidence, lastReinforcedAt = now))
-            }
-        }
-    }
-
-    /**
-     * 解析 LLM 返回的 CRUD JSON 并事务性地 apply 到数据库。
-     * 任何解析异常都会被捕获并静默忽略，确保旧记忆不被破坏。
-     */
-    private suspend fun applyMemoryCrudOps(
-        json: String,
-        existingMemories: List<MemoryItem>,
-        now: Long
-    ) {
-        try {
-            // 清理 LLM 可能输出的 markdown 代码块包裹
-            val cleaned = json
-                .removePrefix("```json").removePrefix("```")
-                .removeSuffix("```").trim()
-
-            val root = org.json.JSONObject(cleaned)
-            val ops = root.optJSONArray("ops") ?: return  // ops 缺失 → 放弃
-
-            val existingById = existingMemories.associateBy { it.id }
-
-            for (i in 0 until ops.length()) {
-                val op = ops.optJSONObject(i) ?: continue
-                when (op.optString("op").uppercase()) {
-                    "ADD" -> {
-                        val content = op.optString("content").trim()
-                        if (content.isNotBlank()) {
-                            // 本地去重：若现有记忆中已有语义相近的条目（词级 Jaccard ≥ 0.55），
-                            // 则改为 REINFORCE 而非重复插入
-                            val duplicate = existingMemories.firstOrNull { existing ->
-                                jaccardSimilarity(content, existing.content) >= DEDUP_SIMILARITY_THRESHOLD
-                            }
-                            if (duplicate != null) {
-                                repository.reinforceMemory(duplicate.id, duplicate.content, now)
-                            } else {
-                                val tags = parseTagsFromJson(op.optJSONArray("tags"))
-                                repository.insertMemory(
-                                    MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags)
-                                )
-                            }
-                        }
-                    }
-                    "UPDATE" -> {
-                        val id = op.optLong("id", -1L)
-                        val content = op.optString("content").trim()
-                        val existing = existingById[id]
-                        if (existing == null) {
-                            Log.w("ChatViewModel", "Memory UPDATE ignored: id=$id not found")
-                        } else if (existing.pinned) {
-                            Log.d("ChatViewModel", "Memory UPDATE ignored: id=$id is pinned")
-                        } else if (content.isBlank()) {
-                            Log.w("ChatViewModel", "Memory UPDATE ignored: id=$id has blank content")
-                        } else {
-                            val tags = parseTagsFromJson(op.optJSONArray("tags"))
-                            repository.updateMemory(
-                                existing.copy(content = content, updatedAt = now, confidence = existing.confidence + 1, tags = tags)
-                            )
-                        }
-                    }
-                    "REINFORCE" -> {
-                        val id = op.optLong("id", -1L)
-                        val existing = existingById[id]
-                        if (existing != null) {
-                            repository.reinforceMemory(id, existing.content, now)
-                        } else {
-                            Log.w("ChatViewModel", "Memory REINFORCE ignored: id=$id not found")
-                        }
-                    }
-                    "DELETE" -> {
-                        val id = op.optLong("id", -1L)
-                        val existing = existingById[id]
-                        if (existing == null) {
-                            Log.w("ChatViewModel", "Memory DELETE ignored: id=$id not found")
-                        } else if (existing.pinned) {
-                            Log.d("ChatViewModel", "Memory DELETE ignored: id=$id is pinned")
-                        } else {
-                            repository.deleteMemoryById(id)
-                        }
-                    }
-                }
-            }
-
-            // Parse and apply associations from the same JSON response
-            val existingIds = existingMemories.map { it.id }.toSet()
-            applyAssociationsFromJson(json, existingIds)
-        } catch (e: Exception) {
-            // JSON 解析失败或任何异常 → 静默忽略，旧记忆完整保留
-            e.printStackTrace()
-        }
-    }
-
-    /**
-     * 解析 associations JSON 数组并存入数据库。
-     * 跳过无效的 id、自关联和未知标签。
-     */
-    private suspend fun applyAssociationsFromJson(json: String, validIds: Set<Long>) {
-        try {
-            val cleaned = json
-                .removePrefix("```json").removePrefix("```")
-                .removeSuffix("```").trim()
-            val root = org.json.JSONObject(cleaned)
-            val associations = root.optJSONArray("associations") ?: return
-
-            for (i in 0 until associations.length()) {
-                val assoc = associations.optJSONObject(i) ?: continue
-                val from = assoc.optLong("from", -1L)
-                val to = assoc.optLong("to", -1L)
-                val label = assoc.optString("label", "related").trim().lowercase()
-                val direction = assoc.optString("direction", "bidirectional").trim().lowercase()
-
-                if (from !in validIds || to !in validIds || from == to) continue
-                if (label !in ASSOC_LABEL_VOCABULARY) continue
-                if (direction !in setOf("bidirectional", "directed")) continue
-
-                repository.insertAssociation(
-                    MemoryAssociation(
-                        fromMemoryId = from,
-                        toMemoryId = to,
-                        relationLabel = label,
-                        direction = direction
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    /**
-     * 词级 Jaccard 相似度：将两个字符串分词后计算交集/并集比例。
-     * 用于 ADD 去重，避免语义相近的记忆条目重复插入。
-     */
-    private fun jaccardSimilarity(a: String, b: String): Double {
-        val tokensA = a.lowercase().split(Regex("\\s+|[,，。.!！?？;；]+")).filter { it.isNotBlank() }.toSet()
-        val tokensB = b.lowercase().split(Regex("\\s+|[,，。.!！?？;；]+")).filter { it.isNotBlank() }.toSet()
-        if (tokensA.isEmpty() && tokensB.isEmpty()) return 1.0
-        if (tokensA.isEmpty() || tokensB.isEmpty()) return 0.0
-        val intersection = tokensA.intersect(tokensB).size
-        val union = tokensA.union(tokensB).size
-        return intersection.toDouble() / union.toDouble()
-    }
-
-    /**
-     * 从 LLM 返回的 tags JSON 数组中解析标签。
-     * 只保留预定义词汇表中的标签，忽略无效条目，最长 100 字符。
-     */
-    private fun parseTagsFromJson(tagsArray: org.json.JSONArray?): String {
-        if (tagsArray == null) return ""
-        val tags = (0 until tagsArray.length())
-            .map { tagsArray.optString(it, "").trim() }
-            .filter { tag ->
-                if (tag.isBlank()) return@filter false
-                // 英文 tag ≤10 字符，中文 tag ≤5 字符
-                val isEnglish = tag.all { it.code < 128 }
-                if (isEnglish) tag.length <= 10 else tag.length <= 5
-            }
-        return tags.joinToString(",").take(100)
-    }
+    // ── 记忆辅助方法已迁移到 com.omnichat.memory.MemoryEngine ─────────
 
     companion object {
-        private const val MEMORY_INTERVAL_MS = 15 * 60 * 1000L  // 15 分钟
-        private const val NEW_MESSAGES_THRESHOLD = 10            // 新增消息达到此数也触发
-        private const val MEMORY_WINDOW_CHARS = 12_000           // 摘要窗口最大字符数（替代固定条数）
+        private const val MEMORY_WINDOW_CHARS = 12_000           // 摘要窗口最大字符数
         private const val MEMORY_RECENT_RAW_COUNT = 20           // Step 2 额外传入的原始消息条数
-        private const val MIN_NEW_CHARS_THRESHOLD = 200          // 新消息总字符数低于此值时跳过同步
-        private const val DEDUP_SIMILARITY_THRESHOLD = 0.55      // ADD 去重的 Jaccard 相似度阈值
         private const val MEMORY_INJECT_LIMIT = 30               // 注入 system prompt 的最大记忆条数
         private const val MAX_TOOL_CALL_DEPTH = 10               // 工具调用最大递归深度，防止无限循环
         private const val COLD_START_ASSOC_LIMIT = 20
-        private val ASSOC_LABEL_VOCABULARY = setOf("related", "causes", "part_of", "contrasts", "belongs_to", "implies")
     }
 
     /**
@@ -1198,7 +911,7 @@ Only output the JSON array, nothing else."""
                             val obj = arr.optJSONObject(i) ?: continue
                             val id = obj.optLong("id", 0)
                             if (id <= 0) continue
-                            val tags = parseTagsFromJson(obj.optJSONArray("tags"))
+                            val tags = memoryEngine.parseTagsFromJson(obj.optJSONArray("tags"))
                             if (tags.isNotBlank()) {
                                 val existing = batch.find { it.id == id }
                                 if (existing != null) {

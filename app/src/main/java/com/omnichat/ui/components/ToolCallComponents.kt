@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Code
@@ -49,7 +48,6 @@ data class UIModelToolMessage(
 )
 
 fun com.omnichat.data.Message.toUIModel() = UIModelToolMessage(role, content, toolCallId, toolCallsJson, timestamp)
-fun com.omnichat.workspace.AgentMessage.toUIModel() = UIModelToolMessage(role, content, toolCallId, toolCallsJson, timestamp)
 
 data class ToolCallInfo(
     val id: String,
@@ -87,7 +85,6 @@ fun buildToolCallLookup(messages: List<UIModelToolMessage>): Map<String, ToolCal
 
 fun getToolIcon(name: String): ImageVector {
     return when (name) {
-        "agent" -> Icons.Default.Hub
         "file_list" -> Icons.Default.Folder
         "file_read" -> Icons.Default.Code
         "file_write", "file_append" -> Icons.Default.Edit
@@ -147,22 +144,6 @@ fun formatToolCallSummary(context: Context, name: String, args: JSONObject): Str
                 "list" -> context.getString(R.string.tool_call_listed_schemes)
                 else -> context.getString(R.string.tool_call_scheme_action)
             }
-        }
-        "agent" -> {
-            val description = args.optString("description")
-            context.getString(R.string.tool_call_delegated_agent, description)
-        }
-        "send_message" -> {
-            val to = args.optString("to")
-            context.getString(R.string.tool_call_sent_message, to)
-        }
-        "task_create" -> {
-            val subject = args.optString("subject")
-            context.getString(R.string.tool_call_created_task, subject)
-        }
-        "task_update" -> {
-            val status = args.optString("status")
-            context.getString(R.string.tool_call_updated_task, status)
         }
         "get_current_time" -> context.getString(R.string.tool_call_got_time)
         "get_ui_capabilities" -> context.getString(R.string.tool_call_got_ui_caps)

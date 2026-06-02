@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import com.omnichat.R
 import com.omnichat.mcp.ToolSchemaDsl.schema
-import com.omnichat.workspace.AgentTool
 private const val TAG = "McpRuntimeManager"
 
 // ── 公开数据类 ────────────────────────────────────────────────────────────
@@ -743,36 +742,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
             description = "List all currently pending (not yet fired) timers created in this session. Returns each timer's ID, label, message, remaining seconds, and scheduled fire time.",
             inputSchema = schema {}
         ),
-        // ── Scratchpad 跨 Agent 共享工具 ──────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "scratchpad_write",
-            description = "Write content to the shared scratchpad. The scratchpad is a shared key-value store for cross-agent collaboration within the current workspace. Each agent can write notes, intermediate results, or coordination data that other agents can read.",
-            inputSchema = schema {
-                prop("key", "string", "A unique key for this entry, e.g. \"design_spec\" or \"api_response\". Only alphanumeric characters and underscores are allowed; other characters are replaced with underscores.")
-                prop("content", "string", "The text content to store.")
-                required("key", "content")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "scratchpad_read",
-            description = "Read content from the shared scratchpad written by a specific agent. Use scratchpad_list first to discover available entries.",
-            inputSchema = schema {
-                prop("agentName", "string", "The name of the agent whose scratchpad entry to read.")
-                prop("key", "string", "The key of the entry to read.")
-                required("agentName", "key")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "scratchpad_list",
-            description = "List all entries in the shared scratchpad. Returns each entry's agent name, key, content preview, and last modified time. Use this to discover what data other agents have shared.",
-            inputSchema = schema {}
-        ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
@@ -810,51 +779,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 }
             }
         ),
-        // ── Agent 工具 ─────────────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = AgentTool.TOOL_NAME,
-            description = "Launch a sub-agent to perform a task independently",
-            inputSchema = AgentTool.TOOL_SCHEMA,
-        ),
-        // ── Inter-Agent Communication ────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = com.omnichat.workspace.SendMessageTool.TOOL_NAME,
-            description = "Send a message to another agent in the workspace. Use '*' as target to broadcast to all agents.",
-            inputSchema = com.omnichat.workspace.SendMessageTool.TOOL_SCHEMA,
-        ),
-        // ── Task Management ──────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = com.omnichat.workspace.TaskTools.TASK_CREATE,
-            description = "Create a new task in the team task list. Tasks can be assigned to specific agents.",
-            inputSchema = com.omnichat.workspace.TaskTools.SCHEMA_CREATE,
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = com.omnichat.workspace.TaskTools.TASK_GET,
-            description = "Get details of a specific task by ID.",
-            inputSchema = com.omnichat.workspace.TaskTools.SCHEMA_GET,
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = com.omnichat.workspace.TaskTools.TASK_LIST,
-            description = "List all tasks in the current workspace.",
-            inputSchema = com.omnichat.workspace.TaskTools.SCHEMA_LIST,
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = com.omnichat.workspace.TaskTools.TASK_UPDATE,
-            description = "Update a task's status or owner.",
-            inputSchema = com.omnichat.workspace.TaskTools.SCHEMA_UPDATE,
-        ),
     )
 
     /**
@@ -883,17 +807,8 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "create_timer" to "efficiency",
         "cancel_timer" to "efficiency",
         "list_timers" to "efficiency",
-        "scratchpad_write" to "core",
-        "scratchpad_read" to "core",
-        "scratchpad_list" to "core",
         "list_mcp_tool_groups" to "core",
         "configure_mcp_tool_groups" to "core",
-        AgentTool.TOOL_NAME to "core",
-        com.omnichat.workspace.SendMessageTool.TOOL_NAME to "core",
-        com.omnichat.workspace.TaskTools.TASK_CREATE to "core",
-        com.omnichat.workspace.TaskTools.TASK_GET to "core",
-        com.omnichat.workspace.TaskTools.TASK_LIST to "core",
-        com.omnichat.workspace.TaskTools.TASK_UPDATE to "core",
     )
 
     /** Internal helper: build a HEX color schema node */

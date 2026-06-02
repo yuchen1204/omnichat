@@ -12,7 +12,6 @@ object HookManager {
 
     private val messageHooks = CopyOnWriteArrayList<MessageHook>()
     private val mcpHooks = CopyOnWriteArrayList<McpHook>()
-    private val agentHooks = CopyOnWriteArrayList<AgentHook>()
 
     // ── 注册与反注册 ────────────────────────────────────────────────────────
 
@@ -38,18 +37,6 @@ object HookManager {
     fun unregisterMcpHook(hook: McpHook) {
         mcpHooks.remove(hook)
         Log.d(TAG, "已注销 McpHook: ${hook.javaClass.simpleName}")
-    }
-
-    fun registerAgentHook(hook: AgentHook) {
-        if (!agentHooks.contains(hook)) {
-            agentHooks.add(hook)
-            Log.d(TAG, "已注册 AgentHook: ${hook.javaClass.simpleName}")
-        }
-    }
-
-    fun unregisterAgentHook(hook: AgentHook) {
-        agentHooks.remove(hook)
-        Log.d(TAG, "已注销 AgentHook: ${hook.javaClass.simpleName}")
     }
 
     // ── 消息分发 ──────────────────────────────────────────────────────────
@@ -129,102 +116,4 @@ object HookManager {
         return currentResult
     }
 
-    // ── Agent 分发 ─────────────────────────────────────────────────────────
-
-    /**
-     * 分发 Agent 单轮对话开始事件。
-     */
-    suspend fun dispatchAgentTurnStart(
-        agentId: String,
-        agentType: String,
-        teamName: String,
-        task: String,
-    ) {
-        for (hook in agentHooks) {
-            try {
-                hook.onAgentTurnStart(agentId, agentType, teamName, task)
-                // 向后兼容：同时触发旧接口
-                @Suppress("DEPRECATION")
-                hook.onAgentStart(agentId, agentType, task)
-            } catch (e: Exception) {
-                Log.e(TAG, "AgentHook.onAgentTurnStart 抛出异常, hook=${hook.javaClass.name}", e)
-            }
-        }
-    }
-
-    /**
-     * 分发 Agent 单轮对话结束事件。
-     */
-    suspend fun dispatchAgentTurnEnd(
-        agentId: String,
-        agentType: String,
-        teamName: String,
-        result: String,
-        toolUseCount: Int,
-        durationMs: Long,
-    ) {
-        for (hook in agentHooks) {
-            try {
-                hook.onAgentTurnEnd(agentId, agentType, teamName, result, toolUseCount, durationMs)
-                // 向后兼容：同时触发旧接口
-                @Suppress("DEPRECATION")
-                hook.onAgentEnd(agentId, result)
-            } catch (e: Exception) {
-                Log.e(TAG, "AgentHook.onAgentTurnEnd 抛出异常, hook=${hook.javaClass.name}", e)
-            }
-        }
-    }
-
-    /**
-     * 分发 Sub-Agent 创建事件。
-     */
-    suspend fun dispatchTeammateSpawned(
-        agentName: String,
-        role: String,
-        teamName: String,
-        color: String,
-    ) {
-        for (hook in agentHooks) {
-            try {
-                hook.onTeammateSpawned(agentName, role, teamName, color)
-            } catch (e: Exception) {
-                Log.e(TAG, "AgentHook.onTeammateSpawned 抛出异常, hook=${hook.javaClass.name}", e)
-            }
-        }
-    }
-
-    /**
-     * 分发 Sub-Agent 销毁事件。
-     */
-    suspend fun dispatchTeammateKilled(
-        agentName: String,
-        teamName: String,
-        reason: String,
-    ) {
-        for (hook in agentHooks) {
-            try {
-                hook.onTeammateKilled(agentName, teamName, reason)
-            } catch (e: Exception) {
-                Log.e(TAG, "AgentHook.onTeammateKilled 抛出异常, hook=${hook.javaClass.name}", e)
-            }
-        }
-    }
-
-    /**
-     * 分发工作区完成事件。
-     */
-    suspend fun dispatchWorkspaceComplete(
-        teamName: String,
-        agentCount: Int,
-        totalDurationMs: Long,
-        orchestratorSummary: String,
-    ) {
-        for (hook in agentHooks) {
-            try {
-                hook.onWorkspaceComplete(teamName, agentCount, totalDurationMs, orchestratorSummary)
-            } catch (e: Exception) {
-                Log.e(TAG, "AgentHook.onWorkspaceComplete 抛出异常, hook=${hook.javaClass.name}", e)
-            }
-        }
-    }
 }

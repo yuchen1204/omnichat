@@ -6,30 +6,9 @@
     <string name="chat_tools_used_count">Used %d tools</string>
     <string name="chat_tool_used">Tool used</string>
     <string name="chat_tools_working_x">Calling tool x%d</string>
-    <string name="workspace_tool_called">Tool result (ID: %s)</string>
-    <string name="workspace_intervention_label">[User Intervention]</string>
-    <string name="workspace_orchestrator_injected">From orchestrator agent</string>
-    <string name="workspace_agent_thinking">%s is thinking…</string>
-    <string name="workspace_agent_empty">%s awaiting task assignment</string>
-    <string name="workspace_agent_waiting_tool">Executing tool…</string>
-    <string name="preset_button_new">New Agent Preset</string>
-    <string name="preset_list_empty">No presets yet. Create presets to assign prompts and models to specific roles!</string>
-    <string name="preset_action_edit">Edit</string>
-    <string name="preset_action_delete">Delete</string>
-    <string name="preset_model_tag">Assigned model: %s</string>
-    <string name="preset_form_new_title">New Agent Preset</string>
-    <string name="preset_form_edit_title">Edit Agent Preset</string>
-    <string name="preset_form_name">Role name (e.g. Poetry Expert) *</string>
-    <string name="preset_form_desc">Description (optional)</string>
-    <string name="preset_form_system_prompt">System Prompt (optional)</string>
-    <string name="preset_form_model_default">None (workspace default)</string>
-    <string name="preset_form_model">Assigned model (optional)</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
-    <string name="preset_dialog_delete_title">Delete Preset</string>
-    <string name="preset_dialog_delete_body">Delete preset \"%s\"? Existing workspace history will not be affected.</string>
     <string name="action_delete">Delete</string>
-    <string name="workspace_tab_orchestrator">Orchestrator Agent</string>
     <string name="dialog_ask_user_title">Clarification</string>
     <string name="dialog_ask_user_options_hint">Choose from the following:</string>
     <string name="dialog_ask_user_custom_input_label">Custom answer</string>
@@ -106,13 +85,6 @@
     <string name="import_confirm_ok">Confirm Import</string>
     <string name="import_confirm_cancel">Cancel</string>
 
-    <!-- ── ui_text_keys.json: Workspace intervention ── -->
-    <string name="workspace_intervention_target_prefix">Send to </string>
-    <string name="workspace_intervention_queued_hint">· Will be delivered after this round</string>
-    <string name="workspace_intervention_hint_orchestrator">Ask the orchestrator, adjust direction, or add requirements…</string>
-    <string name="workspace_intervention_hint_sub">Send intervention message to %s…</string>
-    <string name="action_send">Send</string>
-
     <!-- ── ui_text_keys.json: Permission dialog ── -->
     <string name="dialog_permission_title">File Access Permission</string>
     <string name="dialog_permission_subtitle">MCP Tool Request</string>
@@ -128,12 +100,10 @@
     <string name="tab_settings_models">Models</string>
     <string name="tab_settings_mcp">MCP Tools</string>
     <string name="tab_settings_memory">Memory</string>
-    <string name="tab_settings_presets">Presets</string>
     <string name="tab_settings_data">Data</string>
 
     <!-- ── ui_text_keys.json: Top bar ── -->
     <string name="topbar_title_chat">Chat</string>
-    <string name="topbar_title_workspace">Workspace</string>
     <string name="topbar_title_settings">Settings</string>
     <string name="topbar_provider_prefix">Provider: </string>
     <string name="topbar_menu_open">Open menu</string>
@@ -313,67 +283,24 @@
     <string name="models_select">Select</string>
     <string name="models_secondary_explanation">Runs in background after each conversation to distill memories and generate session titles. Any model from any provider works; a fast, low-cost small model is recommended.</string>
 
-    <!-- ── ui_text_keys.json: Workspace tools ── -->
-    <string name="workspace_tool_agent">Delegate Sub-agent</string>
-    <string name="workspace_tool_generic">Tool Call</string>
-    <string name="workspace_tool_args_hide">Hide Parameters</string>
-    <string name="workspace_tool_args_show">View Parameters</string>
-    <string name="workspace_tool_collapse">Collapse</string>
-    <string name="workspace_tool_expand">Expand Full Text</string>
-
     <!-- ── ui_text_keys.json: Sidebar ── -->
     <string name="sidebar_new_session_default">New Session</string>
     <string name="sidebar_chat_sessions">Chats</string>
     <string name="sidebar_no_sessions">No chats yet. Tap + to create</string>
     <string name="sidebar_rename">Rename</string>
     <string name="sidebar_delete">Delete</string>
-    <string name="sidebar_workspaces">Workspaces</string>
-    <string name="sidebar_no_workspace">Tap + to create a workspace for multi-AI collaboration</string>
     <string name="dialog_delete_session_title">Delete Session</string>
     <string name="dialog_delete_session_body">Delete \"%s\"?\nAll messages will be permanently lost.</string>
     <string name="sidebar_rename_session">Rename Session</string>
     <string name="sidebar_session_name">Session Name</string>
     <string name="sidebar_confirm">Confirm</string>
     <string name="sidebar_cancel">Cancel</string>
-    <string name="dialog_delete_workspace_title">Delete Workspace</string>
-    <string name="dialog_delete_workspace_body">Delete workspace \"%s\"?\nAll collaboration records and metadata will be permanently lost.</string>
     <string name="sidebar_title">OmniChat</string>
     <string name="sidebar_subtitle">Multi-model · Memory · Multi-agent</string>
     <string name="sidebar_new_session">New Session</string>
     <string name="sidebar_not_set">No model configured</string>
     <string name="sidebar_settings">Settings</string>
     <string name="sidebar_reset_colors">Reset to Default Colors</string>
-
-    <!-- ── ui_text_keys.json: Workspace ── -->
-    <string name="workspace_panel_agents">Agent List</string>
-    <string name="workspace_panel_tasks">Task List</string>
-    <string name="workspace_task_blocked_by">Blocked by: %s</string>
-    <string name="workspace_task_status_pending">Pending</string>
-    <string name="workspace_task_status_in_progress">In Progress</string>
-    <string name="workspace_task_status_completed">Completed</string>
-    <string name="workspace_task_status_failed">Failed</string>
-    <string name="workspace_agent_status_idle">Idle</string>
-    <string name="workspace_agent_status_streaming">Streaming</string>
-    <string name="workspace_agent_status_tool">Using Tools</string>
-    <string name="workspace_agent_status_done">Done</string>
-    <string name="workspace_agent_status_error">Error</string>
-    <string name="workspace_setup_model_none">Select Model</string>
-    <string name="workspace_ready_title">Ready</string>
-    <string name="workspace_ready_hint">Describe your task — AI will dispatch multiple agents to collaborate</string>
-    <string name="workspace_sandbox_label">Working Directory</string>
-    <string name="workspace_sandbox_unset">Not set (unrestricted)</string>
-    <string name="workspace_sandbox_placeholder">e.g. /sdcard/OmniChat/workspace</string>
-    <string name="workspace_sandbox_clear">Clear</string>
-    <string name="workspace_setup_task_placeholder">e.g. Write Kotlin code and create sub-agents for review…</string>
-    <string name="workspace_select_hint">Select or create a workspace in the sidebar</string>
-    <string name="workspace_agents_count">%d Agents</string>
-    <string name="workspace_export_log">Export Log</string>
-    <string name="workspace_toggle_task_panel">Task Panel</string>
-    <string name="workspace_phase_planning">Planning</string>
-    <string name="workspace_phase_working">Agents Working</string>
-    <string name="workspace_phase_synthesizing">Synthesizing Results</string>
-    <string name="workspace_phase_awaiting">Awaiting</string>
-    <string name="workspace_status_completed">Completed</string>
 
     <!-- ── Extra: ChatViewModel ── -->
     <string name="default_session_title">Aesthetic Conversation</string>
@@ -395,7 +322,6 @@
     <string name="imported_scheme_name">Imported Scheme</string>
 
     <!-- ── Extra: Compose hardcoded ── -->
-    <string name="sidebar_workspace_unlocked">Multi-agent workspace enabled</string>
     <string name="sidebar_no_model_selected">No model selected</string>
     <string name="time_just_now">just now</string>
     <string name="time_minutes_ago">%d min ago</string>
@@ -404,9 +330,6 @@
     <string name="time_minutes_ago_short">%dm ago</string>
     <string name="time_hours_ago_short">%dh ago</string>
     <string name="time_days_ago_short">%dd ago</string>
-    <string name="preset_name_empty_error">Name cannot be empty</string>
-    <string name="workspace_model_default_format">%s (default)</string>
-    <string name="workspace_tool_calls_count">%d tool calls</string>
 
     <!-- ── Extra: AgentRunner ── -->
     <string name="agent_tool_iteration_limit">Max tool iterations reached (%d), ending this round.</string>
@@ -431,9 +354,6 @@
     <string name="agent_prompt_plan">You are a software architecture and planning expert. Your role is to explore the codebase and design implementation plans.\n\n=== CRITICAL: Read-only mode - File modification prohibited ===\nThis is a read-only planning task. You are strictly prohibited from:\n- Creating new files (no Write, touch, or any file creation)\n- Modifying existing files (no Edit operations)\n- Deleting files (no rm or deletion)\n- Moving or copying files (no mv or cp)\n- Creating temporary files anywhere, including /tmp\n- Using redirect operators (&gt;, &gt;&gt;, |) or heredocs to write files\n- Running any command that changes system state\n\nYour role is limited to exploring the codebase and designing implementation plans. You do not have access to file editing tools — attempting to edit files will fail.\n\nYou will receive a set of requirements along with an optional design perspective.\n\n## Your Process\n\n1. **Understand Requirements**: Focus on the provided requirements, applying the specified perspective throughout the design process.\n\n2. **Comprehensive Exploration**:\n   - Read any files provided in the initial prompt\n   - Use Glob, Grep, and Read to find existing patterns and conventions\n   - Understand the current architecture\n   - Identify similar features as reference\n   - Trace related code paths\n   - Bash only for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n   - Never use Bash for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install or any file creation/modification\n\n3. **Design Solution**:\n   - Create implementation approach based on the specified perspective\n   - Consider trade-offs and architectural decisions\n   - Follow existing patterns where appropriate\n\n4. **Detailed Plan**:\n   - Provide step-by-step implementation strategy\n   - Identify dependencies and sequencing\n   - Anticipate potential challenges\n\n## Required Output\n\nEnd your response with:\n\n### Implementation Key Files\nList 3-5 files most critical to implementing this plan:\n- path/to/file1.kt\n- path/to/file2.kt\n- path/to/file3.kt\n\nRemember: You may only explore and plan. You cannot and are not allowed to write, edit, or modify any files. You do not have access to file editing tools.</string>
     <string name="agent_prompt_verification">You are a verification expert. Your task is not to confirm the implementation works — it is to try to break it.\n\nYou have two documented failure modes. First, verification avoidance: when faced with a check, you find reasons not to run it — you read the code, narrate what you would test, write \"PASS\" and move on. Second, seduced by the first 80%: you see a polished UI or passing test suite and tend to pass it, not noticing that half the buttons are unresponsive, state disappears on refresh, or the backend crashes on bad input. The first 80% is the easy part. Your entire value is finding the last 20%. The caller may spot-check your commands by re-running them — if a PASS step has no command output, or the output doesn\'t match a re-run, your report will be rejected.\n\n=== CRITICAL: Do Not Modify Project ===\nYou are strictly prohibited from:\n- Creating, modifying, or deleting any files in the project directory\n- Installing dependencies or packages\n- Running git write operations (add, commit, push)\n\nYou may write temporary test scripts via Bash redirects in a temporary directory (/tmp or $TMPDIR) — when inline commands are not enough, such as multi-step race harnesses or Playwright tests. Clean up afterward.\n\nCheck what tools you actually have available rather than assuming from this prompt. Depending on the session, you may have browser automation (mcp__claude-in-chrome__*, mcp__playwright__*), WebFetch, or other MCP tools — do not skip capabilities you didn\'t think to check.\n\n=== What You Will Receive ===\nYou will receive: original task description, changed files, approach taken, and optionally a plan file path.\n\n=== Verification Strategy ===\nAdjust strategy based on change type:\n\n**Frontend changes**: Start dev server → check for browser automation tools (mcp__claude-in-chrome__*, mcp__playwright__*) and use them to navigate, screenshot, click, read console → don\'t say \"need real browser\" without trying → curl page subresource samples (image optimization URLs like /_next/image, same-origin API routes, static assets) because HTML can return 200 while everything it references fails → run frontend tests\n**Backend/API changes**: Start server → curl/fetch endpoints → verify response shape matches expected (not just status code) → test error handling → check edge cases\n**CLI/Script changes**: Run with representative inputs → verify stdout/stderr/exit codes → test edge inputs (empty, malformed, boundary) → verify --help / usage output is accurate\n**Infrastructure/Config changes**: Verify syntax → dry-run where possible (terraform plan, kubectl apply --dry-run=server, docker build, nginx -t) → check env vars / secrets are actually referenced, not just defined\n**Library/Package changes**: Build → full test suite → import library from new context and exercise public API as a consumer → verify exported types match README/docs examples\n**Bug fixes**: Reproduce original bug → verify fix → run regression tests → check related feature side effects\n**Data/ML pipelines**: Run with sample inputs → verify output shape/schema/types → test empty input, single row, NaN/null handling → check silent data loss (rows in vs out)\n**Database migrations**: Run migration up → verify schema matches intent → run migration down (reversibility) → test with existing data, not just empty DB\n**Refactoring (no behavior change)**: Existing test suite must pass unchanged → diff public API surface (no new/deleted exports) → spot-check observable behavior is identical (same input → same output)\n**Other change types**: The pattern is always the same — (a) figure out how to directly execute this change (run/invoke/deploy it), (b) check output matches expectation, (c) try to break it with inputs/conditions the implementer didn\'t test. The above strategies are instances of common cases.\n\n=== Required Steps (Universal Baseline) ===\n1. Read the project\'s CLAUDE.md / README for build/test commands and conventions. Check package.json / Makefile / pyproject.toml for script names. If the implementer points to a plan or spec file, read it — this is the success criteria.\n2. Run the build (if applicable). A broken build is an automatic FAIL.\n3. Run the project\'s test suite (if any). Failing tests are an automatic FAIL.\n4. Run linters/type-checkers (if configured) (eslint, tsc, mypy, etc.).\n5. Check for related code regressions.\n\nThen apply the type-specific strategies above. Adjust rigor based on risk: a one-off script doesn\'t need race condition probing; production payment code needs everything.\n\nTest suite results are context, not evidence. Run the suite, record pass/fail, then proceed to your real verification. The implementer is an LLM — its tests may heavily mock, loop-assert, or cover happy paths only, proving nothing about the system actually working end-to-end.\n\n=== Know Your Own Rationalizations ===\nYou will feel the urge to skip checks. These are the excuses you make — recognize them and do the opposite:\n- \"Code reads correctly\" — Reading is not verification. Run it.\n- \"Implementer\'s tests pass\" — The implementer is an LLM. Verify independently.\n- \"This should be fine\" — \"Should\" is not verification. Run it.\n- \"Let me check the code by starting the server\" — No. Start the server and hit the endpoint.\n- \"I don\'t have a browser\" — Did you actually check for mcp__claude-in-chrome__* / mcp__playwright__*? If they exist, use them. If MCP tools fail, troubleshoot (server running? selector correct?). There are fallbacks so you don\'t fabricate your own \"can\'t do it\" story.\n- \"This will take too long\" — That\'s not your call.\nIf you find yourself writing explanations instead of commands, stop. Run commands.\n\n=== Adversarial Probing (Adapt to Change Type) ===\nFunctional testing confirms the happy path. Also try to break it:\n- **Concurrency** (server/API): Parallel requests to create-if-not-exists paths — duplicate sessions? Lost writes?\n- **Edge values**: 0, -1, empty string, very long string, unicode, MAX_INT\n- **Idempotency**: Same mutation request twice — creates duplicates? Error? Correct no-op?\n- **Orphan operations**: Delete/reference non-existent IDs\nThese are seeds, not a checklist — pick those appropriate to your verification.\n\n=== Before PASS ===\nYour report must include at least one adversarial probe you ran (concurrency, boundary, idempotency, orphan operation, or similar) and its result — even if the result is \"handled correctly.\" If all your checks are \"returned 200\" or \"test suite passed,\" you confirmed the happy path, not correctness. Go back and try to break something.\n\n=== Before FAIL ===\nYou found something that looks broken. Before reporting FAIL, check you haven\'t missed that it\'s actually fine:\n- **Handled**: Is there defensive code elsewhere (upstream validation, downstream error recovery) that prevents this issue?\n- **Intentional**: Does the CLAUDE.md / comments / commit message explain this is deliberate?\n- **Not actionable**: Is this a real limitation but it can\'t be fixed without breaking external contracts (stable API, protocol spec, backward compat)? If so, note as observation, not FAIL — a \"bug\" that can\'t be fixed is not actionable.\nDon\'t use these excuses to ignore real problems — but also don\'t FAIL on intentional behavior.\n\n=== Output Format (Required) ===\nEvery check must follow this structure. A check without a Command run block is not a PASS — it is a skip.\n\n### Check: [What you verified]\n**Command run:**\n  [Exact command you executed]\n**Observed output:**\n  [Actual terminal output — copy-paste, not paraphrased. Truncate if very long but preserve relevant portions.]\n**Result: PASS** (or FAIL — with Expected vs Actual)\n\nEnd with the following line (parsed by caller):\n\nVERDICT: PASS\nor\nVERDICT: FAIL\nor\nVERDICT: PARTIAL\n\nPARTIAL is only for environmental limitations (no test framework, tools unavailable, server won\'t start) — not \"I\'m not sure if this is a bug.\" If you can run the check, you must decide PASS or FAIL.\n\nUse the literal string `VERDICT: ` followed by one of `PASS`, `FAIL`, or `PARTIAL`. No markdown bold, no punctuation, no variants.\n- **FAIL**: Include what failed, exact error output, steps to reproduce.\n- **PARTIAL**: What was verified, what couldn\'t be verified and why (missing tools/env), what the implementer should know.</string>
     <string name="agent_verification_critical">CRITICAL: This is a verification task. You must NOT edit, write, or create files in the project directory (tmp allowed for temporary test scripts). You must end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.</string>
-
-    <!-- ── Extra: DB entity defaults ── -->
-    <string name="default_workspace_title">New Workspace</string>
 
     <!-- ── BuiltinToolHandler: Core ── -->
     <string name="tool_unknown_builtin">Unknown built-in tool: %s</string>
@@ -631,10 +551,6 @@
     <string name="tool_call_deleted_scheme">Deleted color scheme: %s</string>
     <string name="tool_call_listed_schemes">Listed saved color schemes</string>
     <string name="tool_call_scheme_action">Color scheme operation</string>
-    <string name="tool_call_delegated_agent">Delegated sub-agent: %s</string>
-    <string name="tool_call_sent_message">Sent message to %s</string>
-    <string name="tool_call_created_task">Created task: %s</string>
-    <string name="tool_call_updated_task">Updated task status: %s</string>
     <string name="tool_call_got_time">Retrieved current system time</string>
     <string name="tool_call_got_ui_caps">Retrieved UI configuration parameters</string>
     <string name="tool_call_reset_ui">Reset UI to default</string>
@@ -654,40 +570,11 @@
     <string name="tool_call_collapse_result">Collapse result</string>
     <string name="tool_call_expand_result">View result</string>
 
-    <!-- ── WorkspaceViewModel: Log Export & Status ── -->
-    <string name="ws_create_failed">Failed to create workspace, please retry</string>
-    <string name="ws_delete_failed">Failed to delete workspace, please retry</string>
-    <string name="ws_log_export_success">Log exported successfully</string>
-    <string name="ws_log_export_failed">Export failed: %s</string>
-    <string name="ws_status_running">Running</string>
-    <string name="ws_status_completed">Completed</string>
-    <string name="ws_active">active</string>
-    <string name="ws_exec_multi_agent">Executing multi-agent collaboration: %s…</string>
-    <string name="ws_start_failed">Failed to start workspace execution, please retry</string>
-    <string name="ws_task_completed">Task completed: %s</string>
-    <string name="ws_log_header">OmniChat Workspace Log</string>
-    <string name="ws_log_info">Workspace Info</string>
-    <string name="ws_log_export_time">Export time: %s</string>
-    <string name="ws_log_session_id">Session ID: %s</string>
-    <string name="ws_log_title">Title: %s</string>
-    <string name="ws_log_status">Status: %s</string>
-    <string name="ws_log_created_at">Created at: %s</string>
-    <string name="ws_log_team_status">Team Status</string>
-    <string name="ws_log_team_name">Team name: %s</string>
-    <string name="ws_log_agent_count">Agent count: %d</string>
-    <string name="ws_log_messages_count">%d messages</string>
-    <string name="ws_log_created_at_time">Created at: %s</string>
-    <string name="ws_log_orchestrator_history">Orchestrator conversation history (%d messages)</string>
-    <string name="ws_log_end">End of log</string>
-    <string name="ws_log_intervention"> [User Intervention]</string>
-    <string name="ws_log_truncated">\n    … (truncated, %d characters total)</string>
-
     <!-- ── ExportImportScreen ── -->
     <string name="processing">Processing…</string>
 
     <!-- ── McpRuntimeManager ── -->
     <string name="builtin_server_name">Built-in Tools</string>
-    <string name="ws_no_model_configs">No model configs available</string>
 
     <!-- ── BuiltinToolHandler ── -->
     <string name="tool_time_format_pattern">MMMM d, yyyy HH:mm:ss (EEEE)</string>

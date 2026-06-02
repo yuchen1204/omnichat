@@ -50,11 +50,6 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".service.WorkspaceForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
         <!-- 定时提醒：AlarmManager 触发的 BroadcastReceiver，进程死亡后仍可被唤起 -->
         <receiver
             android:name=".mcp.AlarmReceiver"

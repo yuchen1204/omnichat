@@ -53,10 +53,10 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 
 ## Architecture
 
-MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with three top-level views: `"chat"`, `"workspace"`, and `"settings"` (toggled via `mutableStateOf`). The `"settings"` view contains a **TabRow with 5 sub-tabs**: 模型配置, MCP工具, 长效记忆, Agent 预设, 数据管理.
+MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with two top-level views: `"chat"` and `"settings"` (toggled via `mutableStateOf`). The `"settings"` view contains a **TabRow with 4 sub-tabs**: 模型配置, MCP工具, 长效记忆, 数据管理.
 
 ```
-Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tables, v35)
+Compose UI (Screens) → ViewModels → AppRepository → Room Database (v37)
                                     ↘ ApiClient (OkHttp + SSE, vision support)
                                     ↘ McpRuntimeManager (remote_http)
 ```
@@ -67,7 +67,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **UI strings** use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", "English default")` pattern with auto-generated `ui_text_keys.json`
-- **Room database** version 35 with 30+ sequential migrations (v4→v35). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
+- **Room database** version 37 with sequential migrations (v4→v37). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
 
 ## Package Structure
 
@@ -77,12 +77,11 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 | `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
 | `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
 | `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `McpViewModel` |
-| `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `AgentHook`, `McpFilePermissionHook`, `WorkspaceSandboxHook`, `LoggingHooks` |
-| `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `WorkspaceScreen`, `WorkspaceToolbar`, `WorkspaceReadyView`, `AgentTabBar`, `AgentMessageArea`, `AgentBubbleMessage`, `OrchestrationToolCallCard`, `TeamTaskPanel`, `InterventionInput`, `AgentPresetConfigScreen`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
-| `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel`, `WorkspaceViewModel` |
+| `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `McpFilePermissionHook`, `LoggingHooks` |
+| `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
+| `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
 | `com.omnichat.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
 | `com.omnichat.ui.theme` | Material 3 theming with DB-driven dynamic color, `UiStrings` |
-| `com.omnichat.workspace` | Multi-agent system: `TeamManager`, `AgentRunner`, `AgentContext`, `TeammateContext`, `AgentTool`, `AgentDefinition`, `AgentToolFilter`, `SendMessageTool`, `TaskTools`, `ToolOrchestrator`, `ProgressTracker`, `WorkspaceModels` |
 
 ## MCP Runtime
 
@@ -96,11 +95,9 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 - **Add MCP server support**: Add remote HTTP server config in `McpRuntimeManager`
 - **Add/modify built-in MCP tools**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`). Tools are grouped (core, memory, ui_appearance, ui_text, files, documents, efficiency); `UISettings.enabledMcpGroups` controls active groups
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, use `LocalUiStrings.current` in Compose screens
-- **Add hooks**: Implement `MessageHook`, `McpHook`, or `AgentHook` interface in `com.omnichat.hooks` package, register with `HookManager` (object with register/unregister methods)
+- **Add hooks**: Implement `MessageHook` or `McpHook` interface in `com.omnichat.hooks` package, register with `HookManager` (object with register/unregister methods)
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; MCP tools in `BuiltinToolHandler` update it
-- **Modify workspace multi-agent logic**: Edit `TeamManager.kt` (facade), `AgentRunner.kt` (per-agent LLM loop), `AgentTool.kt` (SubAgent spawning), `ToolOrchestrator.kt` (tool routing), `TaskTools.kt` (task CRUD), `SendMessageTool.kt` (inter-agent messaging), `AgentDefinition.kt` (agent type registry)
-- **Modify workspace UI**: Edit `WorkspaceScreen.kt` for main layout, `WorkspaceToolbar.kt` for top bar, `AgentTabBar.kt` for agent switching, `AgentMessageArea.kt` for message display, `TeamTaskPanel.kt` for task status, `InterventionInput.kt` for user input to agents
 
 ## Conventions
 
@@ -110,8 +107,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (20 tabl
 - **API keys**: Configured per-provider in the app UI (ModelConfig entity), never hardcoded
 - **Custom HTTP headers**: `ModelConfig.customHeaders` is a JSON object string sent with every API request
 - **Streaming internals**: SSE chunk prefixes `ERROR:`, `INFO:`, `TOOL_CALL_DELTA:`, `RETRY_RESET:` have special handling in `ChatViewModel`. UI updates throttled to 50ms intervals
-- **Vision support**: `Message.imagePath` and `WorkspaceMessage.imagePath` store local image paths. `ApiClient.imageToBase64DataUrl()` auto-compresses and converts to base64
+- **Vision support**: `Message.imagePath` stores local image paths. `ApiClient.imageToBase64DataUrl()` auto-compresses and converts to base64
 - **Storage permissions**: Android 11+ needs `MANAGE_EXTERNAL_STORAGE` (settings page); required for MCP script deployment
 - **Thinking/reasoning support**: `reasoning_effort` (low/medium/high/xhigh) with `budget_tokens`
 - **MCP protocol versions**: Remote HTTP supports both old SSE (2024-11-05) and new Streamable HTTP (2025-03-26)
-- **Workspace (multi-agent)**: Orchestrator pattern — `TeamManager` manages teammates via `TeammateContext` coroutine elements, `AgentTool` spawns isolated SubAgents with configurable `AgentDefinition` (built-in: general-purpose, explore, plan, verification; custom: from `agent_presets` DB), `AgentRunner` implements the core LLM loop per agent with tool filtering via `AgentToolFilter`, `SendMessageTool` enables inter-agent communication, `TaskTools` handles task CRUD with auto-claim and blocking, `ToolOrchestrator` routes tool calls. See `workspace/` package and tests in `app/src/test/java/com/example/workspace/`

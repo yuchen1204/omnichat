@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnichat.data.Session
-import com.omnichat.data.WorkspaceSession
 import com.omnichat.R
 import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.theme.LocalCustomColors
@@ -41,7 +40,6 @@ import com.omnichat.ui.theme.LocalSidebarColors
 import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.resolveFontFamily
 import com.omnichat.ui.viewmodel.ChatViewModel
-import com.omnichat.ui.viewmodel.WorkspaceViewModel
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
@@ -49,18 +47,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun SessionSidebarPanel(
     viewModel: ChatViewModel,
-    workspaceViewModel: WorkspaceViewModel,
     onSessionSelected: () -> Unit,
-    onWorkspaceSelected: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
-
-    val workspaceSessions by workspaceViewModel.workspaceSessions.collectAsStateWithLifecycle()
-    val activeWorkspaceId by workspaceViewModel.selectedWorkspaceId.collectAsStateWithLifecycle()
-    val workspaceError by workspaceViewModel.errorMessage.collectAsStateWithLifecycle()
 
     val uiSettings = LocalUISettings.current
     val sidebarColors = LocalSidebarColors.current
@@ -74,20 +66,8 @@ fun SessionSidebarPanel(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // 彩蛋：点击版本号 5 次解锁 workspace 入口
-    var versionClickCount by remember { mutableIntStateOf(0) }
-    var workspaceUnlocked by remember { mutableStateOf(false) }
-
-    LaunchedEffect(workspaceError) {
-        workspaceError?.let {
-            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show()
-            workspaceViewModel.clearErrorMessage()
-        }
-    }
-
     // 弹窗状态
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
-    var deleteTargetWorkspace by remember { mutableStateOf<WorkspaceSession?>(null) }
     var renameTargetSession by remember { mutableStateOf<Session?>(null) }
     var renameText by remember { mutableStateOf("") }
 
@@ -214,73 +194,6 @@ fun SessionSidebarPanel(
                     )
                 }
             }
-
-            // ── 工作区分区（彩蛋解锁后显示）────────────────────────────
-            if (workspaceUnlocked) {
-                item {
-                    Spacer(Modifier.height(8.dp))
-                    SectionHeader(
-                        label = uiText("sidebar.workspaces", R.string.sidebar_workspaces),
-                        fs = fs,
-                        sidebarColors = sidebarColors,
-                        actionIcon = Icons.Default.Add,
-                        onAction = {
-                            scope.launch {
-                                val newId = workspaceViewModel.createWorkspaceSession()
-                                if (newId > 0) {
-                                    onWorkspaceSelected()
-                                }
-                            }
-                        }
-                    )
-                }
-
-                if (workspaceSessions.isEmpty()) {
-                    item {
-                        EmptyHint(
-                            text = uiText("sidebar.no.workspace", R.string.sidebar_no_workspace),
-                            fs = fs,
-                            sidebarColors = sidebarColors
-                        )
-                    }
-                } else {
-                    items(workspaceSessions, key = { "workspace_${it.id}" }) { ws ->
-                        val isActive = ws.id == activeWorkspaceId
-
-                        SessionListItem(
-                            title = ws.title,
-                            subtitle = formatRelativeTime(ws.lastActiveAt, context),
-                            icon = Icons.Default.Hub,
-                            isActive = isActive,
-                            statusDot = if (ws.isActive) customColors.success else null,
-                            fs = fs,
-                            resolvedFontFamily = resolvedFontFamily,
-                            sidebarColors = sidebarColors,
-                            cornerRadius = cornerRadius,
-                            testTag = "workspace_item_${ws.id}",
-                            onClick = {
-                                workspaceViewModel.selectWorkspaceSession(ws.id)
-                                onWorkspaceSelected()
-                            },
-                            onLongClick = { deleteTargetWorkspace = ws },
-                            trailingContent = {
-                                IconButton(
-                                    onClick = { deleteTargetWorkspace = ws },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = null,
-                                        tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.5f)
-                                               else sidebarColors.onBackground.copy(alpha = 0.3f),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-                        )
-                    }
-                }
-            }
         }
 
         // ── 底部 Footer ────────────────────────────────────────────────
@@ -291,13 +204,6 @@ fun SessionSidebarPanel(
             sidebarColors = sidebarColors,
             cornerRadius = cornerRadius,
             onSettingsClick = onSettingsClick,
-            onVersionClick = {
-                versionClickCount++
-                if (versionClickCount >= 5 && !workspaceUnlocked) {
-                    workspaceUnlocked = true
-                    android.widget.Toast.makeText(context, context.getString(R.string.sidebar_workspace_unlocked), android.widget.Toast.LENGTH_SHORT).show()
-                }
-            },
             context = context
         )
     }
@@ -362,37 +268,6 @@ fun SessionSidebarPanel(
                     onClick = { renameTargetSession = null },
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
                 ) { Text(uiText("sidebar.335fc2b7", R.string.sidebar_cancel), fontFamily = resolvedFontFamily) }
-            }
-        )
-    }
-
-    deleteTargetWorkspace?.let { ws ->
-        AlertDialog(
-            onDismissRequest = { deleteTargetWorkspace = null },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(cornerRadius),
-            icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(uiText("dialog.delete.workspace.title", R.string.dialog_delete_workspace_title), fontFamily = resolvedFontFamily) },
-            text = {
-                Text(
-                    text = uiText("dialog.delete.workspace.body", R.string.dialog_delete_workspace_body).format(ws.title),
-                    fontSize = (14 * fs).sp,
-                    lineHeight = (20 * fs).sp,
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { workspaceViewModel.deleteWorkspaceSession(ws.id); deleteTargetWorkspace = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("action.delete", R.string.action_delete), fontFamily = resolvedFontFamily) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { deleteTargetWorkspace = null },
-                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
-                ) { Text(uiText("action.cancel", R.string.action_cancel), fontFamily = resolvedFontFamily) }
             }
         )
     }
@@ -651,7 +526,6 @@ private fun SidebarFooter(
     sidebarColors: com.omnichat.ui.theme.SidebarColors,
     cornerRadius: androidx.compose.ui.unit.Dp,
     onSettingsClick: () -> Unit,
-    onVersionClick: () -> Unit,
     context: android.content.Context
 ) {
     val customColors = LocalCustomColors.current
@@ -770,22 +644,6 @@ private fun SidebarFooter(
                     contentDescription = uiText("sidebar.7f62f6d8", R.string.sidebar_reset_colors),
                     tint = sidebarColors.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
-                )
-            }
-
-            // 版本号（彩蛋入口）
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)))
-                    .clickable { onVersionClick() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = com.omnichat.BuildConfig.VERSION_NAME,
-                    fontSize = (10 * fs).sp,
-                    color = sidebarColors.onBackground.copy(alpha = 0.3f),
-                    fontFamily = resolvedFontFamily
                 )
             }
         }
