@@ -282,10 +282,52 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v19→v22：中间版本的工作区迁移已被移除，破坏性迁移：删除所有表，由 Room 重建 */
+        private val MIGRATION_19_22 = object : Migration(19, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS memory_audit_log")
+                db.execSQL("DROP TABLE IF EXISTS memory_associations")
+                db.execSQL("DROP TABLE IF EXISTS mcp_file_permissions")
+                db.execSQL("DROP TABLE IF EXISTS color_scheme_presets")
+                db.execSQL("DROP TABLE IF EXISTS ui_settings")
+                db.execSQL("DROP TABLE IF EXISTS mcp_servers")
+                db.execSQL("DROP TABLE IF EXISTS session_summaries")
+                db.execSQL("DROP TABLE IF EXISTS fetched_models")
+                db.execSQL("DROP TABLE IF EXISTS prompt_templates")
+                db.execSQL("DROP TABLE IF EXISTS memory_items")
+                db.execSQL("DROP TABLE IF EXISTS messages")
+                db.execSQL("DROP TABLE IF EXISTS sessions")
+                db.execSQL("DROP TABLE IF EXISTS model_configs")
+                db.execSQL("DROP TABLE IF EXISTS agent_presets")
+                db.execSQL("DROP TABLE IF EXISTS workspace_sessions")
+            }
+        }
+
         /** v22→v23：messages 表新增 imagePath 字段（图片消息支持） */
         private val MIGRATION_22_23 = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE messages ADD COLUMN imagePath TEXT")
+            }
+        }
+
+        /** v23→v25：中间版本的工作区迁移已被移除，破坏性迁移：删除所有表，由 Room 重建 */
+        private val MIGRATION_23_25 = object : Migration(23, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS memory_audit_log")
+                db.execSQL("DROP TABLE IF EXISTS memory_associations")
+                db.execSQL("DROP TABLE IF EXISTS mcp_file_permissions")
+                db.execSQL("DROP TABLE IF EXISTS color_scheme_presets")
+                db.execSQL("DROP TABLE IF EXISTS ui_settings")
+                db.execSQL("DROP TABLE IF EXISTS mcp_servers")
+                db.execSQL("DROP TABLE IF EXISTS session_summaries")
+                db.execSQL("DROP TABLE IF EXISTS fetched_models")
+                db.execSQL("DROP TABLE IF EXISTS prompt_templates")
+                db.execSQL("DROP TABLE IF EXISTS memory_items")
+                db.execSQL("DROP TABLE IF EXISTS messages")
+                db.execSQL("DROP TABLE IF EXISTS sessions")
+                db.execSQL("DROP TABLE IF EXISTS model_configs")
+                db.execSQL("DROP TABLE IF EXISTS agent_presets")
+                db.execSQL("DROP TABLE IF EXISTS workspace_sessions")
             }
         }
 
@@ -332,6 +374,27 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE memory_items ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** v30→v32：中间版本的工作区迁移已被移除，破坏性迁移：删除所有表，由 Room 重建 */
+        private val MIGRATION_30_32 = object : Migration(30, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS memory_audit_log")
+                db.execSQL("DROP TABLE IF EXISTS memory_associations")
+                db.execSQL("DROP TABLE IF EXISTS mcp_file_permissions")
+                db.execSQL("DROP TABLE IF EXISTS color_scheme_presets")
+                db.execSQL("DROP TABLE IF EXISTS ui_settings")
+                db.execSQL("DROP TABLE IF EXISTS mcp_servers")
+                db.execSQL("DROP TABLE IF EXISTS session_summaries")
+                db.execSQL("DROP TABLE IF EXISTS fetched_models")
+                db.execSQL("DROP TABLE IF EXISTS prompt_templates")
+                db.execSQL("DROP TABLE IF EXISTS memory_items")
+                db.execSQL("DROP TABLE IF EXISTS messages")
+                db.execSQL("DROP TABLE IF EXISTS sessions")
+                db.execSQL("DROP TABLE IF EXISTS model_configs")
+                db.execSQL("DROP TABLE IF EXISTS agent_presets")
+                db.execSQL("DROP TABLE IF EXISTS workspace_sessions")
             }
         }
 
@@ -517,12 +580,15 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_16_17,
                         MIGRATION_17_18,
                         MIGRATION_18_19,
+                        MIGRATION_19_22,
                         MIGRATION_22_23,
+                        MIGRATION_23_25,
                         MIGRATION_25_26,
                         MIGRATION_26_27,
                         MIGRATION_27_28,
                         MIGRATION_28_29,
                         MIGRATION_29_30,
+                        MIGRATION_30_32,
                         MIGRATION_32_33,
                         MIGRATION_33_34,
                         MIGRATION_34_35,
@@ -530,9 +596,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_36_37,
                         MIGRATION_37_38
                     )
-                    // 兜底：v1-v36 中间版本（如 v19-v31 的工作区迁移已被移除）触发破坏性迁移。
-                    // v37 及以上版本有完整的迁移脚本。
-                    .fallbackToDestructiveMigrationFrom(dropAllTables = true, *(1..36).toList().toIntArray())
+                    // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。
+                    // v4+ 均有显式迁移脚本（含中间版本的破坏性迁移 MIGRATION_19_22/23_25/30_32）。
+                    .fallbackToDestructiveMigrationFrom(dropAllTables = true, *(1..3).toList().toIntArray())
                     .build()
                 INSTANCE = instance
                 instance
