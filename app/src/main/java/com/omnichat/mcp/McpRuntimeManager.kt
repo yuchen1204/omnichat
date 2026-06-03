@@ -722,6 +722,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 prop("message", "string", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable.")
                 prop("label", "string", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
                 prop("repeat_interval_seconds", "integer", "If provided (≥ 1), the timer repeats at this interval in seconds. Omit or set to 0 for a one-shot timer. Examples: 3600 (every hour), 7200 (every 2 hours), 1800 (every 30 minutes).")
+                prop("task_id", "string", "Optional. Associate this timer with a subAgent task (from delegate_task). When the task completes, this timer is auto-cancelled. Include the taskId in the message so you know what to check when the timer fires.")
                 required("delay_seconds", "message")
             }
         ),
@@ -774,7 +775,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
 - reviewer: 代码审查、质量检查、问题发现
 - tester: 测试用例编写、验证逻辑
 
-任务将在后台执行，完成后结果会插入当前会话。返回一个 taskId 用于追踪。""",
+任务将在后台执行，完成后结果会插入当前会话。返回一个 taskId 用于追踪。
+
+IMPORTANT: After delegating, do NOT immediately call check_task_status — the task runs asynchronously and won't be done yet. Use create_timer(delay_seconds=60, task_id="<taskId>") to set a reminder, then continue with other work. When the timer fires, check status. The result will also appear automatically when complete.""",
             inputSchema = schema {
                 prop("agent_type", "string", "代理类型") {
                     enum("general", "researcher", "coder", "reviewer", "tester")

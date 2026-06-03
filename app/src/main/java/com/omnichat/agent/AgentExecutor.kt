@@ -277,6 +277,8 @@ class AgentExecutor(
             }.toString()
         )
         repository.insertMessage(msg)
+        // 自动取消关联的等待 timer
+        com.omnichat.mcp.TimerManager.cancelByTaskId(context, taskId)
         Log.i(TAG, "任务结果已插入会话: sessionId=$sessionId, taskId=$taskId")
     }
 

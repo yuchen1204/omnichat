@@ -308,6 +308,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // 注入 subAgent 委派行为规则
+        finalSystemPrompt += "\n\n<!-- SUBAGENT DELEGATION RULES -->"
+        finalSystemPrompt += "\nIMPORTANT RULES for delegate_task:"
+        finalSystemPrompt += "\n1. After calling delegate_task, do NOT immediately call check_task_status. The task runs asynchronously and won't be complete yet."
+        finalSystemPrompt += "\n2. Use create_timer with delay_seconds=60 and the taskId in task_id parameter to set a reminder."
+        finalSystemPrompt += "\n3. Continue with other work or tell the user the task has been delegated."
+        finalSystemPrompt += "\n4. When the timer fires, check status with check_task_status. If still running, create another timer."
+        finalSystemPrompt += "\n5. NEVER attempt to do the subAgent's work yourself. Wait for the result."
+        finalSystemPrompt += "\n6. The subAgent result will also appear automatically in the session when complete — the timer is just for proactive checking."
+
         return finalSystemPrompt
     }
 

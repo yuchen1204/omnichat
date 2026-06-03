@@ -987,6 +987,7 @@ object BuiltinToolHandler {
         val label = arguments.optString("label", str(context, R.string.tool_timer_label)).trim()
             .take(30).ifEmpty { str(context, R.string.tool_timer_label) }
         val repeatIntervalSec = arguments.optLong("repeat_interval_seconds", 0L)
+        val linkedTaskId = arguments.optString("task_id").takeIf { it.isNotBlank() }
 
         if (delaySeconds < 1) {
             return errorResponse(str(context, R.string.tool_timer_delay_min))
@@ -1010,7 +1011,8 @@ object BuiltinToolHandler {
             delaySeconds = delaySeconds,
             message = message,
             label = label,
-            repeatIntervalSec = repeatIntervalSec
+            repeatIntervalSec = repeatIntervalSec,
+            linkedTaskId = linkedTaskId
         )
 
         val humanDelay = formatDuration(context, delaySeconds)

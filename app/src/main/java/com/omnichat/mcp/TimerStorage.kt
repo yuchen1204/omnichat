@@ -29,6 +29,7 @@ object TimerStorage {
                 put("fireAtMs", m.fireAtMs)
                 put("createdAtMs", m.createdAtMs)
                 put("repeatIntervalMs", m.repeatIntervalMs)
+                m.linkedTaskId?.let { put("linkedTaskId", it) }
             })
         }
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -54,7 +55,8 @@ object TimerStorage {
                         label = o.optString("label", "AI 定时提醒"),
                         fireAtMs = o.getLong("fireAtMs"),
                         createdAtMs = o.optLong("createdAtMs", System.currentTimeMillis()),
-                        repeatIntervalMs = o.optLong("repeatIntervalMs", 0L)
+                        repeatIntervalMs = o.optLong("repeatIntervalMs", 0L),
+                        linkedTaskId = o.optString("linkedTaskId", "").takeIf { it.isNotBlank() }
                     )
                 } catch (e: Exception) {
                     Log.w(TAG, "[loadAll] 跳过损坏条目: $o", e)
