@@ -760,6 +760,50 @@ class McpRuntimeManager private constructor(private val context: Context) {
             description = "List all available built-in MCP tool groups and their current enabled/disabled status. Use this tool to discover what capabilities are currently available to you or can be activated. Groups: core (essential), ui_appearance (theming/colors), ui_text (i18n), files (storage), documents (office), efficiency (timers), memory (long-term facts).",
             inputSchema = schema {}
         ),
+        // ── subAgent 任务委托工具 ──────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "delegate_task",
+            description = """将任务委托给专门的子代理异步执行。
+
+可用代理类型：
+- general: 通用任务，适合不确定分类的工作
+- researcher: 信息搜索、资料整理、网络检索
+- coder: 代码编写、文件创建/修改
+- reviewer: 代码审查、质量检查、问题发现
+- tester: 测试用例编写、验证逻辑
+
+任务将在后台执行，完成后结果会插入当前会话。返回一个 taskId 用于追踪。""",
+            inputSchema = schema {
+                prop("agent_type", "string", "代理类型") {
+                    enum("general", "researcher", "coder", "reviewer", "tester")
+                }
+                prop("task", "string", "任务描述。清晰说明目标、约束、期望输出格式。")
+                prop("context", "string", "可选。附加上下文：相关文件路径、代码片段、背景信息。")
+                prop("files", "array", "可选。需要操作的文件路径列表。") {
+                    items { }
+                }
+                required("agent_type", "task")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "check_task_status",
+            description = "查询委托任务的执行状态和结果。",
+            inputSchema = schema {
+                prop("task_id", "string", "delegate_task 返回的任务 ID")
+                required("task_id")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "list_agent_tasks",
+            description = "列出当前会话中所有 subAgent 任务及其状态。",
+            inputSchema = schema {}
+        ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
@@ -809,6 +853,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
         "list_timers" to "efficiency",
         "list_mcp_tool_groups" to "core",
         "configure_mcp_tool_groups" to "core",
+        "delegate_task" to "core",
+        "check_task_status" to "core",
+        "list_agent_tasks" to "core",
     )
 
     /** Internal helper: build a HEX color schema node */
