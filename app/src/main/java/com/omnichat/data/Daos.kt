@@ -317,3 +317,18 @@ interface MemoryAuditDao {
     @Query("DELETE FROM memory_audit_log WHERE timestamp < :before")
     suspend fun pruneOlderThan(before: Long)
 }
+
+@Dao
+interface AgentConfigDao {
+    @Query("SELECT * FROM agent_configs")
+    suspend fun getAllConfigs(): List<AgentConfig>
+
+    @Query("SELECT * FROM agent_configs WHERE agentType = :agentType LIMIT 1")
+    suspend fun getConfigByType(agentType: String): AgentConfig?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertConfig(config: AgentConfig)
+
+    @Query("DELETE FROM agent_configs WHERE agentType = :agentType")
+    suspend fun deleteConfigByType(agentType: String)
+}

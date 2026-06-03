@@ -424,3 +424,20 @@ data class McpFilePermission(
     val permissionType: String = "read",
     val createdAt: Long = System.currentTimeMillis()
 )
+
+/**
+ * subAgent 配置。存储每种代理类型的模型设置。
+ *
+ * agentType: "general", "researcher", "coder", "reviewer", "tester"
+ * providerId: 关联的 ModelConfig.id
+ * modelId: 具体模型 ID
+ */
+@Entity(tableName = "agent_configs")
+data class AgentConfig(
+    @PrimaryKey val agentType: String,
+    val providerId: Long,
+    val modelId: String,
+    val isEnabled: Boolean = true,
+    val maxConcurrency: Int = 1,
+    val createdAt: Long = System.currentTimeMillis()
+)
