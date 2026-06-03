@@ -61,15 +61,24 @@ class AgentExecutor(
     // 运行中的任务 Job，用于取消
     private val runningJobs = ConcurrentHashMap<String, Job>()
 
-    // 并发控制：全局最多 3 个并行任务
-    private val globalSemaphore = Semaphore(3)
+    // 并发控制：全局最多 MAX_GLOBAL_PARALLELISM 个并行任务
+    private val globalSemaphore = Semaphore(MAX_GLOBAL_PARALLELISM)
 
     // 每种 agent 类型的信号量（各自最多 1 个并行）
     private val typeSemaphores = AgentPrompts.ALL_TYPES.associateWith { Semaphore(1) }
 
+    // 默认信号量，用于未知 agentType 的回退
+    private val defaultTypeSemaphore = Semaphore(1)
+
     companion object {
         /** 任务超时时间（毫秒） */
         private const val TASK_TIMEOUT_MS = 5 * 60 * 1000L
+
+        /** 全局最大并行任务数 */
+        private const val MAX_GLOBAL_PARALLELISM = 3
+
+        /** agent_result 消息角色常量 */
+        const val ROLE_AGENT_RESULT = "agent_result"
 
         /** 单例 */
         @Volatile
@@ -115,11 +124,11 @@ class AgentExecutor(
         val job = scope.launch {
             try {
                 // 获取并发许可
-                val typeSemaphore = typeSemaphores[agentType] ?: typeSemaphores["general"]!!
+                val typeSemaphore = typeSemaphores[agentType] ?: defaultTypeSemaphore
                 if (!globalSemaphore.tryAcquire()) {
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.FAILED,
-                        error = "全局并发数已达上限（3），请等待其他任务完成"
+                        error = "全局并发数已达上限（$MAX_GLOBAL_PARALLELISM），请等待其他任务完成"
                     ))
                     return@launch
                 }
@@ -262,7 +271,7 @@ class AgentExecutor(
     ) {
         val msg = Message(
             sessionId = sessionId,
-            role = "agent_result",
+            role = ROLE_AGENT_RESULT,
             content = result,
             toolCallId = taskId,
             toolCallsJson = JSONObject().apply {
@@ -320,5 +329,19 @@ class AgentExecutor(
         _taskStates.value = _taskStates.value.filterValues {
             it.status != AgentTaskStatus.COMPLETED && it.status != AgentTaskStatus.FAILED && it.status != AgentTaskStatus.CANCELLED
         }
+    }
+
+    /**
+     * 关闭执行器，释放资源。
+     * 取消所有运行中的任务并清理状态。
+     */
+    fun shutdown() {
+        // 取消所有运行中的任务
+        runningJobs.values.forEach { it.cancel() }
+        runningJobs.clear()
+        // 取消协程作用域
+        scope.cancel()
+        // 清理状态
+        _taskStates.value = emptyMap()
     }
 }
