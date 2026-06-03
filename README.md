@@ -179,6 +179,8 @@ OmniChat supports delegating tasks to specialized AI agents for asynchronous exe
 - **check_task_status** -- Query task execution status
 - **list_agent_tasks** -- List all tasks in current session
 
+**Timer-Based Waiting:** After delegating a task, the main AI agent uses `create_timer` with a `task_id` parameter to set a reminder (e.g., 60 seconds) instead of immediately checking status. When the timer fires, it checks the task status. If the subAgent completes before the timer fires, the timer is automatically cancelled. This prevents the main agent from redundantly doing the subAgent's work.
+
 **Supported Agent Types:**
 | Type | Purpose |
 |------|---------|
