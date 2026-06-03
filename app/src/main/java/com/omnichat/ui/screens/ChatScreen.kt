@@ -352,7 +352,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     }
                 }
 
-                items(processedMessages, key = { 
+                items(processedMessages, key = {
                     when(it) {
                         is com.omnichat.data.Message -> it.id
                         is List<*> -> "group_${(it.firstOrNull() as? com.omnichat.data.Message)?.id}"
@@ -360,10 +360,16 @@ fun ChatView(viewModel: ChatViewModel) {
                     }
                 }) { item ->
                     when (item) {
-                        is com.omnichat.data.Message -> BubbleMessage(
-                            message = item,
-                            onRetry = { viewModel.retryMessage(it) }
-                        )
+                        is com.omnichat.data.Message -> {
+                            if (item.role == com.omnichat.agent.AgentExecutor.ROLE_AGENT_RESULT) {
+                                AgentResultMessage(message = item)
+                            } else {
+                                BubbleMessage(
+                                    message = item,
+                                    onRetry = { viewModel.retryMessage(it) }
+                                )
+                            }
+                        }
                         is com.omnichat.ui.components.SilentToolAggregated -> {
                             SilentToolIndicator(totalCount = item.totalCount)
                         }
@@ -1180,6 +1186,125 @@ fun BubbleMessage(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * subAgent 任务结果消息组件。
+ * 默认折叠显示，可展开查看完整内容。
+ */
+@Composable
+fun AgentResultMessage(
+    message: com.omnichat.data.Message
+) {
+    // 解析 agentType 从 toolCallsJson
+    val agentType = remember(message.toolCallsJson) {
+        try {
+            if (!message.toolCallsJson.isNullOrBlank()) {
+                val json = org.json.JSONObject(message.toolCallsJson)
+                json.optString("agentType", "unknown")
+            } else {
+                "unknown"
+            }
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+
+    // 代理类型名称映射
+    val agentDisplayName = when (agentType) {
+        "general" -> "🤖 General Agent"
+        "researcher" -> "🔍 Researcher"
+        "coder" -> "💻 Coder"
+        "reviewer" -> "👁️ Reviewer"
+        "tester" -> "🧪 Tester"
+        else -> "🤖 Agent"
+    }
+
+    var isExpanded by remember { mutableStateOf(false) }
+    val chatFs = LocalChatFontScale.current
+    val uiSettings = LocalUISettings.current
+    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+
+    // 自定义颜色：使用 secondary 色作为 agent 消息的背景
+    val agentColor = MaterialTheme.colorScheme.secondaryContainer
+    val agentTextColor = MaterialTheme.colorScheme.onSecondaryContainer
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp, horizontal = 12.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Column(
+            modifier = Modifier.widthIn(max = 320.dp)
+        ) {
+            // 标题栏：可点击展开/折叠
+            Surface(
+                color = agentColor,
+                shape = RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp,
+                    bottomStart = if (isExpanded) 4.dp else 16.dp,
+                    bottomEnd = 16.dp
+                ),
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = agentDisplayName,
+                        color = agentTextColor,
+                        fontSize = (13 * chatFs).sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = resolvedFontFamily
+                    )
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "折叠" else "展开",
+                        tint = agentTextColor.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // 展开时显示内容
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    color = agentColor.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(
+                        topStart = 4.dp,
+                        topEnd = 4.dp,
+                        bottomStart = 16.dp,
+                        bottomEnd = 16.dp
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    dev.jeziellago.compose.markdowntext.MarkdownText(
+                        markdown = message.content,
+                        style = androidx.compose.ui.text.TextStyle(
+                            color = agentTextColor,
+                            fontSize = (14 * chatFs).sp,
+                            lineHeight = (20 * chatFs).sp,
+                            fontFamily = resolvedFontFamily
+                        ),
+                        syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
+                        syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp)
+                    )
                 }
             }
         }

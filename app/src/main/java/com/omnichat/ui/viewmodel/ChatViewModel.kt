@@ -345,6 +345,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0) {
         val messageHistory = repository.getMessagesBySession(sessionId)
+            .filter { it.role != com.omnichat.agent.AgentExecutor.ROLE_AGENT_RESULT }
         val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
 
         isStreaming = true

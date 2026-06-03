@@ -6,6 +6,7 @@ import com.omnichat.data.*
 import com.omnichat.network.ApiClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
@@ -269,7 +270,11 @@ class AgentExecutor(
             role = ROLE_AGENT_RESULT,
             content = result,
             toolCallId = taskId,
-            toolCallsJson = null  // agent_result 消息不设置 toolCallsJson
+            toolCallsJson = JSONObject().apply {
+                put("agentType", agentType)
+                put("status", "completed")
+                put("completedAt", System.currentTimeMillis())
+            }.toString()
         )
         repository.insertMessage(msg)
         Log.i(TAG, "任务结果已插入会话: sessionId=$sessionId, taskId=$taskId")
