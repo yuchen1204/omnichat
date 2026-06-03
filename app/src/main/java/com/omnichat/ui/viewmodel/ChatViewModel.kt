@@ -299,11 +299,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val completedTasks = agentExecutor.getCompletedTasksForSession(currentSessionId)
             if (completedTasks.isNotEmpty()) {
                 finalSystemPrompt += "\n\n<!-- COMPLETED SUBAGENT TASKS -->"
-                finalSystemPrompt += "\n以下子代理任务已完成，结果可供参考：\n"
+                finalSystemPrompt += "\nThe following subAgent tasks have completed. Their results are available for reference:\n"
                 completedTasks.forEach { task ->
-                    val resultPreview = task.result?.take(200) ?: "(无结果)"
+                    val resultPreview = task.result?.take(200) ?: "(no result)"
                     finalSystemPrompt += "- [${task.agentType}] ${task.taskDescription.take(50)}... (taskId: ${task.taskId})\n"
-                    finalSystemPrompt += "  结果摘要: $resultPreview\n"
+                    finalSystemPrompt += "  Result summary: $resultPreview\n"
                 }
             }
         }

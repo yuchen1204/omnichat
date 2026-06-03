@@ -128,7 +128,7 @@ class AgentExecutor(
                 if (!globalSemaphore.tryAcquire()) {
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.FAILED,
-                        error = "全局并发数已达上限（$MAX_GLOBAL_PARALLELISM），请等待其他任务完成"
+                        error = "Global concurrency limit reached ($MAX_GLOBAL_PARALLELISM). Please wait for other tasks to complete."
                     ))
                     return@launch
                 }
@@ -136,7 +136,7 @@ class AgentExecutor(
                     globalSemaphore.release()
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.FAILED,
-                        error = "该代理类型（$agentType）已有任务在执行，请等待完成"
+                        error = "Agent type '$agentType' already has a running task. Please wait for it to complete."
                     ))
                     return@launch
                 }
@@ -169,13 +169,14 @@ class AgentExecutor(
             } catch (e: CancellationException) {
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.CANCELLED,
-                    error = "任务被取消"
+                    error = "Task was cancelled"
                 ))
+                throw e  // Rethrow to preserve structured concurrency
             } catch (e: Exception) {
-                Log.e(TAG, "任务执行失败: $taskId", e)
+                Log.e(TAG, "Task execution failed: $taskId", e)
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.FAILED,
-                    error = e.localizedMessage ?: "执行失败"
+                    error = e.localizedMessage ?: "Execution failed"
                 ))
             } finally {
                 runningJobs.remove(taskId)
@@ -198,7 +199,7 @@ class AgentExecutor(
     ): String = withTimeout(TASK_TIMEOUT_MS) {
         // 1. 获取模型配置
         val config = getAgentModelConfig(agentType)
-            ?: throw IllegalStateException("代理类型 $agentType 未配置模型，请在设置中配置")
+            ?: throw IllegalStateException("Agent type $agentType has no model configured. Please configure in settings.")
 
         // 2. 构建系统提示
         val systemPrompt = AgentPrompts.getPrompt(agentType)
@@ -207,13 +208,8 @@ class AgentExecutor(
         val userMessage = buildUserMessage(task, contextStr, files)
 
         // 4. 调用 LLM API（非流式，等待完整结果）
-        val messages = listOf(
-            Message(sessionId = sessionId, role = "system", content = systemPrompt),
-            Message(sessionId = sessionId, role = "user", content = userMessage)
-        )
-
         val result = ApiClient.executeCompletion(config, systemPrompt, userMessage)
-            ?: throw IllegalStateException("LLM 调用返回空结果")
+            ?: throw IllegalStateException("LLM API returned empty result")
 
         result
     }
@@ -316,26 +312,28 @@ class AgentExecutor(
     }
 
     /**
-     * 更新任务状态。
+     * 更新任务状态（线程安全）。
      */
     private fun updateState(taskId: String, state: AgentTaskState) {
-        _taskStates.value = _taskStates.value + (taskId to state)
+        _taskStates.update { it + (taskId to state) }
     }
 
     /**
      * 清理已完成的任务状态（可选，用于内存管理）。
      */
     fun clearCompletedTasks() {
-        _taskStates.value = _taskStates.value.filterValues {
-            it.status != AgentTaskStatus.COMPLETED && it.status != AgentTaskStatus.FAILED && it.status != AgentTaskStatus.CANCELLED
+        _taskStates.update { map ->
+            map.filterValues {
+                it.status != AgentTaskStatus.COMPLETED && it.status != AgentTaskStatus.FAILED && it.status != AgentTaskStatus.CANCELLED
+            }
         }
     }
 
     /**
-     * 关闭执行器，释放资源。
+     * 关闭执行器，释放资源（仅用于测试或应用终止时调用）。
      * 取消所有运行中的任务并清理状态。
      */
-    fun shutdown() {
+    private fun shutdown() {
         // 取消所有运行中的任务
         runningJobs.values.forEach { it.cancel() }
         runningJobs.clear()
