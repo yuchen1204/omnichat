@@ -17,6 +17,7 @@
 ## ✨ 核心特性
 
 - **🔌 MCP 运行时** — 通过 HTTP/HTTPS 连接远程 MCP 服务器，AI 可直接调用外部工具
+- **🤖 subAgent 系统** — 将任务委派给专门的 AI 代理（研究员、编码员、审查员、测试员）异步执行
 - **💾 跨会话记忆系统** — 15 分钟滚动摘要 + 长期记忆项（带置信度评分），AI 真正"记住"你的偏好
 - **🎨 AI 可调整 UI** — Apple 风格色彩方案，AI 可通过 MCP 工具实时修改应用主题、颜色、字体、布局
 - **📷 多媒体能力** — 相机拍照、图片选取、文档生成（docx/xlsx）、AlarmManager 定时器（支持重复任务）
@@ -42,14 +43,14 @@
 ├─────────┴─────────────────┴────────────────────────────────┤
 │                 Data / Repository Layer                      │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │           AppRepository (Room DB v37)                  │  │
+│  │           AppRepository (Room DB v39)                  │  │
 │  └───────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │                   MCP Runtime Layer                          │
-│  ┌───────────────┐                                          │
-│  │  Remote HTTP  │                                          │
-│  │  (SSE+Stream) │                                          │
-│  └───────────────┘                                          │
+│  ┌───────────────┐  ┌──────────────────┐                   │
+│  │  Remote HTTP  │  │  AgentExecutor   │                   │
+│  │  (SSE+Stream) │  │  (subAgent)      │                   │
+│  └───────────────┘  └──────────────────┘                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,8 +104,11 @@ omnichat/
 │   ├── data/                        # 数据层
 │   │   ├── Entities.kt              # Room 实体定义
 │   │   ├── Daos.kt                  # DAO 接口
-│   │   ├── AppDatabase.kt           # 数据库配置 (v37)
+│   │   ├── AppDatabase.kt           # 数据库配置 (v39)
 │   │   └── Repository.kt            # 数据仓库 (AppRepository)
+│   ├── agent/                       # subAgent 系统
+│   │   ├── AgentExecutor.kt         # 任务执行引擎
+│   │   └── AgentPrompts.kt          # 系统提示模板
 │   ├── mcp/                         # MCP 运行时
 │   │   ├── McpRuntimeManager.kt     # 运行时管理器
 │   │   ├── McpPermissionManager.kt  # MCP 权限管理
@@ -136,7 +140,7 @@ omnichat/
 |------|------|
 | 语言 | Kotlin 2.2.10 |
 | UI | Jetpack Compose (Material 3) |
-| 数据库 | Room v2.7.0 (v37) |
+| 数据库 | Room v2.7.0 (v39) |
 | 网络 | OkHttp + SSE + Retrofit 2.12.0 |
 | 序列化 | Moshi 1.15.2 |
 | Firebase | Firebase BOM 34.12.0 |
@@ -165,6 +169,24 @@ omnichat/
 | 图片选取 | 从相册选取图片 |
 | 定时器 | 创建和管理倒计时 / 秒表 |
 | 记忆搜索 | 搜索跨会话记忆 |
+| **subAgent** | **将任务委派给专门的 AI 代理（通用、研究员、编码员、审查员、测试员）** |
+
+### subAgent 系统
+
+OmniChat 支持将任务委派给专门的 AI 代理异步执行：
+
+- **delegate_task** — 将任务分配给指定类型的代理
+- **check_task_status** — 查询任务执行状态
+- **list_agent_tasks** — 列出当前会话所有任务
+
+**支持的代理类型：**
+| 类型 | 用途 |
+|------|------|
+| general | 通用任务 |
+| researcher | 信息搜索与分析 |
+| coder | 代码编写与修改 |
+| reviewer | 代码审查与质量检查 |
+| tester | 测试用例生成 |
 
 ### 添加自定义 MCP 服务器
 

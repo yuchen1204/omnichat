@@ -17,6 +17,7 @@
 ## Core Features
 
 - **MCP Runtime** -- Connect to remote MCP servers via HTTP/HTTPS, enabling AI to invoke external tools
+- **subAgent System** -- Delegate tasks to specialized AI agents (researcher, coder, reviewer, tester) for async execution
 - **Cross-Session Memory System** -- 15-minute rolling summaries + long-term memory items (with confidence scoring), so AI truly "remembers" your preferences
 - **AI-Adjustable UI** -- Apple-inspired color schemes; AI can modify app themes, colors, fonts, and layouts in real time via MCP tools
 - **Multimedia Capabilities** -- Camera capture, image picker, document generation (docx/xlsx), AlarmManager timers (with repeating tasks)
@@ -42,14 +43,14 @@
 +---------+-------------------+--------------------------------+
 |                 Data / Repository Layer                      |
 |  +---------------------------------------------------------+ |
-|  |           AppRepository (Room DB v37)                    | |
+|  |           AppRepository (Room DB v39)                    | |
 |  +---------------------------------------------------------+ |
 +---------------------------------------------------------------+
 |                   MCP Runtime Layer                          |
-|  +---------------+                                           |
-|  |  Remote HTTP  |                                           |
-|  |  (SSE+Stream) |                                           |
-|  +---------------+                                           |
+|  +---------------+  +------------------+                     |
+|  |  Remote HTTP  |  |  AgentExecutor   |                     |
+|  |  (SSE+Stream) |  |  (subAgent)      |                     |
+|  +---------------+  +------------------+                     |
 +---------------------------------------------------------------+
 ```
 
@@ -103,8 +104,11 @@ omnichat/
 |   +-- data/                        # Data layer
 |   |   +-- Entities.kt              # Room entity definitions
 |   |   +-- Daos.kt                  # DAO interfaces
-|   |   +-- AppDatabase.kt           # Database config (v37)
+|   |   +-- AppDatabase.kt           # Database config (v39)
 |   |   +-- Repository.kt            # Repository (AppRepository)
+|   +-- agent/                       # subAgent system
+|   |   +-- AgentExecutor.kt         # Task execution engine
+|   |   +-- AgentPrompts.kt          # System prompt templates
 |   +-- mcp/                         # MCP runtime
 |   |   +-- McpRuntimeManager.kt     # Runtime manager
 |   |   +-- McpPermissionManager.kt  # MCP permission manager
@@ -136,7 +140,7 @@ omnichat/
 |----------|-----------|
 | Language | Kotlin 2.2.10 |
 | UI | Jetpack Compose (Material 3) |
-| Database | Room v2.7.0 (v37) |
+| Database | Room v2.7.0 (v39) |
 | Networking | OkHttp + SSE + Retrofit 2.12.0 |
 | Serialization | Moshi 1.15.2 |
 | Firebase | Firebase BOM 34.12.0 |
@@ -165,6 +169,24 @@ omnichat/
 | Image Picker | Select images from the gallery |
 | Timers | Create and manage countdown / stopwatch timers |
 | Memory Search | Search cross-session memories |
+| **subAgent** | **Delegate tasks to specialized AI agents (general, researcher, coder, reviewer, tester)** |
+
+### subAgent System
+
+OmniChat supports delegating tasks to specialized AI agents for asynchronous execution:
+
+- **delegate_task** -- Assign a task to an agent type
+- **check_task_status** -- Query task execution status
+- **list_agent_tasks** -- List all tasks in current session
+
+**Supported Agent Types:**
+| Type | Purpose |
+|------|---------|
+| general | General-purpose tasks |
+| researcher | Information search and analysis |
+| coder | Code writing and modification |
+| reviewer | Code review and quality checks |
+| tester | Test case generation |
 
 ### Adding Custom MCP Servers
 
