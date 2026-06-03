@@ -26,6 +26,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val repository = AppRepository(database)
     private val runtimeManager = com.omnichat.mcp.McpRuntimeManager.getInstance(application)
     private val memoryEngine = com.omnichat.memory.MemoryEngine(repository, ApiClient)
+    private val agentExecutor = com.omnichat.agent.AgentExecutor.getInstance(application, repository)
 
     // Active session selection state
     private val _selectedSessionId = MutableStateFlow<Long?>(null)
@@ -290,6 +291,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val totalMemoryCount = memoryEngine.getTotalMemoryCount()
         if (totalMemoryCount > com.omnichat.memory.MemoryEngine.MEMORY_INJECT_LIMIT) {
             finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top ${com.omnichat.memory.MemoryEngine.MEMORY_INJECT_LIMIT} entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
+        }
+
+        // 注入已完成的 subAgent 任务摘要
+        val currentSessionId = _selectedSessionId.value
+        if (currentSessionId != null) {
+            val completedTasks = agentExecutor.getCompletedTasksForSession(currentSessionId)
+            if (completedTasks.isNotEmpty()) {
+                finalSystemPrompt += "\n\n<!-- COMPLETED SUBAGENT TASKS -->"
+                finalSystemPrompt += "\n以下子代理任务已完成，结果可供参考：\n"
+                completedTasks.forEach { task ->
+                    val resultPreview = task.result?.take(200) ?: "(无结果)"
+                    finalSystemPrompt += "- [${task.agentType}] ${task.taskDescription.take(50)}... (taskId: ${task.taskId})\n"
+                    finalSystemPrompt += "  结果摘要: $resultPreview\n"
+                }
+            }
         }
 
         return finalSystemPrompt
