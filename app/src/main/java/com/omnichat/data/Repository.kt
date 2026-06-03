@@ -27,6 +27,7 @@ class AppRepository(private val db: AppDatabase) {
     private val mcpFilePermissionDao = db.mcpFilePermissionDao()
     private val memoryAssociationDao = db.memoryAssociationDao()
     private val memoryAuditDao = db.memoryAuditDao()
+    private val agentConfigDao = db.agentConfigDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -172,4 +173,10 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getAllMcpFilePermissions(): List<McpFilePermission> = mcpFilePermissionDao.getAllPermissions()
     suspend fun insertMcpFilePermission(perm: McpFilePermission): Long = mcpFilePermissionDao.insertPermission(perm)
     suspend fun deleteAllMcpFilePermissions() = mcpFilePermissionDao.deleteAllPermissions()
+
+    // Agent Configs
+    suspend fun getAllAgentConfigs(): List<AgentConfig> = agentConfigDao.getAllConfigs()
+    suspend fun getAgentConfigByType(agentType: String): AgentConfig? = agentConfigDao.getConfigByType(agentType)
+    suspend fun upsertAgentConfig(config: AgentConfig) = agentConfigDao.upsertConfig(config)
+    suspend fun deleteAgentConfig(agentType: String) = agentConfigDao.deleteConfigByType(agentType)
 }
