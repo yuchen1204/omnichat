@@ -592,4 +592,28 @@
     <string name="streaming_notification_text">Generating reply…</string>
     <string name="streaming_notification_complete_title">AI reply complete</string>
     <string name="streaming_notification_complete_text">Tap to view</string>
+
+    <!-- subAgent 工具 -->
+    <string name="tool_agent_no_session">No active session. Cannot delegate task.</string>
+    <string name="tool_agent_type_empty">Agent type is required.</string>
+    <string name="tool_agent_type_invalid">Invalid agent type: %1$s. Valid types: %2$s</string>
+    <string name="tool_agent_task_empty">Task description is required.</string>
+    <string name="tool_agent_delegated">Task delegated to %1$s agent. taskId: %2$s\n\nUse check_task_status(\"%3$s\") to check progress, or wait for result to appear in the session.</string>
+    <string name="tool_agent_task_id_empty">Task ID is required.</string>
+    <string name="tool_agent_task_not_found">Task not found: %1$s</string>
+    <string name="tool_agent_status_pending">Pending</string>
+    <string name="tool_agent_status_running">Running</string>
+    <string name="tool_agent_status_completed">Completed</string>
+    <string name="tool_agent_status_failed">Failed</string>
+    <string name="tool_agent_status_cancelled">Cancelled</string>
+    <string name="tool_agent_status_header">Task Status: %1$s</string>
+    <string name="tool_agent_status_type">Agent Type: %1$s</string>
+    <string name="tool_agent_status_status">Status: %1$s</string>
+    <string name="tool_agent_status_task">Task: %1$s</string>
+    <string name="tool_agent_status_started">Started: %1$s</string>
+    <string name="tool_agent_status_completed_at">Completed: %1$s</string>
+    <string name="tool_agent_status_error">Error: %1$s</string>
+    <string name="tool_agent_status_result">Result:</string>
+    <string name="tool_agent_list_empty">No subAgent tasks in this session.</string>
+    <string name="tool_agent_list_header">subAgent Tasks (%1$d):</string>
 </resources>
