@@ -62,6 +62,9 @@ object BuiltinToolHandler {
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
+            "delegate_task" -> handleDelegateTask(context, arguments, sessionId)
+            "check_task_status" -> handleCheckTaskStatus(context, arguments, sessionId)
+            "list_agent_tasks" -> handleListAgentTasks(context, arguments, sessionId)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
     }
@@ -1689,6 +1692,121 @@ object BuiltinToolHandler {
             append("$")
         }
         return name.matches(Regex(regex))
+    }
+
+    // ── subAgent 任务委托工具 ──────────────────────────────────────────────
+
+    private suspend fun handleDelegateTask(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        if (sessionId == null) {
+            return errorResponse(str(context, R.string.tool_agent_no_session))
+        }
+
+        val agentType = arguments.optString("agent_type").trim()
+        val task = arguments.optString("task").trim()
+        val contextStr = arguments.optString("context").takeIf { it.isNotBlank() }
+        val filesArray = arguments.optJSONArray("files")
+        val files = if (filesArray != null) {
+            (0 until filesArray.length()).map { filesArray.optString(it) }.filter { it.isNotBlank() }
+        } else null
+
+        if (agentType.isEmpty()) {
+            return errorResponse(str(context, R.string.tool_agent_type_empty))
+        }
+        if (agentType !in com.omnichat.agent.AgentPrompts.ALL_TYPES) {
+            return errorResponse(str(context, R.string.tool_agent_type_invalid, agentType, com.omnichat.agent.AgentPrompts.ALL_TYPES.joinToString(", ")))
+        }
+        if (task.isEmpty()) {
+            return errorResponse(str(context, R.string.tool_agent_task_empty))
+        }
+
+        val repository = getRepository(context)
+        val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
+
+        val taskId = executor.execute(sessionId, agentType, task, contextStr, files)
+
+        return successResponse(str(context, R.string.tool_agent_delegated, agentType, taskId, taskId))
+    }
+
+    private fun handleCheckTaskStatus(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        val taskId = arguments.optString("task_id").trim()
+        if (taskId.isEmpty()) {
+            return errorResponse(str(context, R.string.tool_agent_task_id_empty))
+        }
+
+        val repository = getRepository(context)
+        val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
+        val state = executor.getStatus(taskId)
+
+        if (state == null) {
+            return errorResponse(str(context, R.string.tool_agent_task_not_found, taskId))
+        }
+
+        val statusText = when (state.status) {
+            com.omnichat.agent.AgentTaskStatus.PENDING -> str(context, R.string.tool_agent_status_pending)
+            com.omnichat.agent.AgentTaskStatus.RUNNING -> str(context, R.string.tool_agent_status_running)
+            com.omnichat.agent.AgentTaskStatus.COMPLETED -> str(context, R.string.tool_agent_status_completed)
+            com.omnichat.agent.AgentTaskStatus.FAILED -> str(context, R.string.tool_agent_status_failed)
+            com.omnichat.agent.AgentTaskStatus.CANCELLED -> str(context, R.string.tool_agent_status_cancelled)
+        }
+
+        val text = buildString {
+            appendLine(str(context, R.string.tool_agent_status_header, taskId))
+            appendLine(str(context, R.string.tool_agent_status_type, state.agentType))
+            appendLine(str(context, R.string.tool_agent_status_status, statusText))
+            appendLine(str(context, R.string.tool_agent_status_task, state.taskDescription.take(100)))
+            if (state.startedAt != null) {
+                appendLine(str(context, R.string.tool_agent_status_started, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(state.startedAt))))
+            }
+            if (state.completedAt != null) {
+                appendLine(str(context, R.string.tool_agent_status_completed_at, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(state.completedAt))))
+            }
+            if (state.error != null) {
+                appendLine(str(context, R.string.tool_agent_status_error, state.error))
+            }
+            if (state.result != null) {
+                appendLine()
+                appendLine(str(context, R.string.tool_agent_status_result))
+                appendLine(state.result)
+            }
+        }
+
+        return successResponse(text.trimEnd())
+    }
+
+    private fun handleListAgentTasks(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        if (sessionId == null) {
+            return errorResponse(str(context, R.string.tool_agent_no_session))
+        }
+
+        val repository = getRepository(context)
+        val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
+        val tasks = executor.getTasksForSession(sessionId)
+
+        if (tasks.isEmpty()) {
+            return successResponse(str(context, R.string.tool_agent_list_empty))
+        }
+
+        val text = buildString {
+            appendLine(str(context, R.string.tool_agent_list_header, tasks.size))
+            appendLine()
+            tasks.forEachIndexed { i, state ->
+                val statusIcon = when (state.status) {
+                    com.omnichat.agent.AgentTaskStatus.PENDING -> "⏳"
+                    com.omnichat.agent.AgentTaskStatus.RUNNING -> "🔄"
+                    com.omnichat.agent.AgentTaskStatus.COMPLETED -> "✅"
+                    com.omnichat.agent.AgentTaskStatus.FAILED -> "❌"
+                    com.omnichat.agent.AgentTaskStatus.CANCELLED -> "🚫"
+                }
+                appendLine("$statusIcon ${i + 1}. [${state.agentType}] ${state.taskDescription.take(50)}...")
+                appendLine("   taskId: ${state.taskId}")
+                appendLine("   status: ${state.status}")
+                if (state.error != null) {
+                    appendLine("   error: ${state.error}")
+                }
+            }
+        }
+
+        return successResponse(text.trimEnd())
     }
 
     /** 构造统一的成功响应 */
