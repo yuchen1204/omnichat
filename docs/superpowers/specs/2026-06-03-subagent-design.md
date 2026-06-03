@@ -1,10 +1,26 @@
 # OmniChat subAgent 功能设计
 
 日期：2026-06-03
+状态：✅ **已实现** (2026-06-03)
 
 ## 概述
 
 为 OmniChat 添加 subAgent 功能，允许 MainAgent 将任务委托给专门的子代理（researcher、coder、reviewer、tester、general）异步执行。采用 MCP 内置工具实现，与现有架构无缝集成。
+
+## 实现状态
+
+| 组件 | 状态 | Commit |
+|------|------|--------|
+| AgentConfig 实体 | ✅ | d6b13a3 |
+| 数据库迁移 v38→v39 | ✅ | 05ce476 |
+| Repository 方法 | ✅ | 2fff1ae |
+| AgentPrompts 模板 | ✅ | 0cbd2be |
+| AgentExecutor 引擎 | ✅ | c68af32 |
+| MCP 工具定义 | ✅ | 62afb31 |
+| BuiltinToolHandler | ✅ | 783b85d |
+| 字符串资源 | ✅ | fb33c30 |
+| ChatViewModel 集成 | ✅ | 3203ec5 |
+| 代码审查修复 | ✅ | 63bc126 |
 
 ## 核心决策
 

@@ -56,9 +56,10 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 MVVM + Repository pattern, no DI framework. Single Activity (`MainActivity`) with two top-level views: `"chat"` and `"settings"` (toggled via `mutableStateOf`). The `"settings"` view contains a **TabRow with 4 sub-tabs**: 模型配置, MCP工具, 长效记忆, 数据管理.
 
 ```
-Compose UI (Screens) → ViewModels → AppRepository → Room Database (v37)
+Compose UI (Screens) → ViewModels → AppRepository → Room Database (v39)
                                     ↘ ApiClient (OkHttp + SSE, vision support)
                                     ↘ McpRuntimeManager (remote_http)
+                                    ↘ AgentExecutor (subAgent async execution)
 ```
 
 ### Key Architectural Decisions
@@ -67,7 +68,8 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (v37)
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **UI strings** use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", "English default")` pattern with auto-generated `ui_text_keys.json`
-- **Room database** version 37 with sequential migrations (v4→v37). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
+- **Room database** version 39 with sequential migrations (v4→v39). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
+- **subAgent system**: Async task execution via `AgentExecutor`. MainAgent delegates tasks via `delegate_task` MCP tool. Results inserted as `agent_result` messages. Supports 5 agent types: general, researcher, coder, reviewer, tester
 
 ## Package Structure
 
@@ -77,6 +79,7 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (v37)
 | `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
 | `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
 | `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `McpViewModel` |
+| `com.omnichat.agent` | subAgent system: `AgentExecutor` (task execution engine), `AgentPrompts` (system prompt templates) |
 | `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `McpFilePermissionHook`, `LoggingHooks` |
 | `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
 | `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
@@ -98,6 +101,9 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (v37)
 - **Add hooks**: Implement `MessageHook` or `McpHook` interface in `com.omnichat.hooks` package, register with `HookManager` (object with register/unregister methods)
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; MCP tools in `BuiltinToolHandler` update it
+- **Add subAgent type**: Add prompt in `AgentPrompts.kt` (`PROMPTS` map), add to `ALL_TYPES` list, update MCP tool enum in `McpRuntimeManager.kt`
+- **Modify subAgent execution**: Modify `AgentExecutor.kt` (`executeTask` method) to change LLM call behavior
+- **Add subAgent tool**: Add tool schema in `McpRuntimeManager.kt`, implement handler in `BuiltinToolHandler.kt`, add string resources in `strings.xml`
 
 ## Conventions
 
