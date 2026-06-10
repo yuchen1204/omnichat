@@ -362,11 +362,7 @@ object BuiltinToolHandler {
         if (!memory.dueDate.isNullOrBlank()) {
             repository.markReminded(memoryId)
         }
-        return JSONObject().apply {
-            put("status", "success")
-            put("message", str(context, R.string.tool_mark_reminded_success))
-            put("memory_id", memoryId)
-        }
+        return successResponse(str(context, R.string.tool_mark_reminded_success))
     }
 
     // ── UI 文字工具 ─────────────────────────────────────────────────────────

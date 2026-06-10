@@ -513,6 +513,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             description = "Mark a time reminder as reminded to prevent repeat reminders. Call this after you have naturally mentioned a pending reminder to the user in your response.",
             inputSchema = schema {
                 prop("memory_id", "integer", "The ID of the memory reminder to mark as reminded")
+                required("memory_id")
             }
         ),
         McpTool(
