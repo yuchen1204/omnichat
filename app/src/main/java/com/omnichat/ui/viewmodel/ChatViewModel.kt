@@ -116,6 +116,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 createNewSession(getApplication<Application>().getString(R.string.default_session_title_display))
             }
         }
+
+        // 监听定时器自动检查事件：linkedTaskId 的定时器触发时，唤醒 MainAgent 检查 subAgent 进度
+        viewModelScope.launch {
+            com.omnichat.mcp.TimerAutoCheckManager.events.collect { event ->
+                handleTimerAutoCheck(event)
+            }
+        }
     }
 
     fun selectSession(sessionId: Long) {
@@ -255,6 +262,48 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 处理定时器自动检查事件：插入提示消息并触发 LLM 检查 subAgent 任务状态。
+     */
+    private suspend fun handleTimerAutoCheck(event: com.omnichat.mcp.TimerAutoCheckManager.AutoCheckEvent) {
+        val sessionId = event.sessionId
+
+        // 如果当前不在该 session，跳过（消息已插入，用户打开时会看到）
+        if (_selectedSessionId.value != sessionId) {
+            android.util.Log.d("ChatViewModel", "[handleTimerAutoCheck] session $sessionId 不是当前 session，跳过自动检查")
+            return
+        }
+
+        // 如果正在流式输出，跳过（消息已插入，下次交互时 LLM 会看到）
+        if (isStreaming) {
+            android.util.Log.d("ChatViewModel", "[handleTimerAutoCheck] 正在流式输出，跳过自动检查")
+            return
+        }
+
+        android.util.Log.i("ChatViewModel", "[handleTimerAutoCheck] 触发自动检查 task=${event.taskId}")
+
+        // 插入提示消息，让 LLM 看到后自动调用 check_task_status
+        val promptMessage = Message(
+            sessionId = sessionId,
+            role = "user",
+            content = getApplication<Application>().getString(
+                R.string.timer_auto_check_prompt, event.taskId
+            )
+        )
+        repository.insertMessage(promptMessage)
+
+        // 获取模型配置
+        val providerConfig = repository.getDefaultProvider() ?: return
+
+        // 构建系统提示并触发 LLM
+        val activeTemplate = repository.getActiveTemplate()
+        val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+        runtimeManager.waitForStartingServersToFinish()
+        val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, promptMessage.content)
+
+        startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+    }
+
     private suspend fun generateSystemPrompt(customSystemPrompt: String, userMessage: String = ""): String {
         // 3. Fetch relevant memories via MemoryEngine (embedding-based ranking when available)
         val localMemories = memoryEngine.selectRelevantMemories(userMessage)
@@ -312,13 +361,55 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         finalSystemPrompt += "\n\n<!-- SUBAGENT DELEGATION RULES -->"
         finalSystemPrompt += "\nIMPORTANT RULES for delegate_task:"
         finalSystemPrompt += "\n1. After calling delegate_task, do NOT immediately call check_task_status. The task runs asynchronously and won't be complete yet."
-        finalSystemPrompt += "\n2. Use create_timer with delay_seconds=60 and the taskId in task_id parameter to set a reminder."
-        finalSystemPrompt += "\n3. Continue with other work or tell the user the task has been delegated."
-        finalSystemPrompt += "\n4. When the timer fires, check status with check_task_status. If still running, create another timer."
-        finalSystemPrompt += "\n5. NEVER attempt to do the subAgent's work yourself. Wait for the result."
-        finalSystemPrompt += "\n6. The subAgent result will also appear automatically in the session when complete — the timer is just for proactive checking."
+        finalSystemPrompt += "\n2. Before creating any timer, ALWAYS call get_current_time first to confirm the current time."
+        finalSystemPrompt += "\n3. Use create_timer(minutes=1, task_id=\"<taskId>\") to set a reminder."
+        finalSystemPrompt += "\n4. Continue with other work or tell the user the task has been delegated."
+        finalSystemPrompt += "\n5. When the timer fires, check status with check_task_status. If still running, create another timer."
+        finalSystemPrompt += "\n6. NEVER attempt to do the subAgent's work yourself. Wait for the result."
+        finalSystemPrompt += "\n7. The subAgent result will also appear automatically in the session when complete — the timer is just for proactive checking."
+
+        // 5. Check for pending time reminders
+        val pendingReminders = memoryEngine.checkPendingReminders()
+        if (pendingReminders.isNotEmpty()) {
+            val remindersText = buildString {
+                appendLine("[PENDING_REMINDERS]")
+                appendLine("以下是你需要主动提醒用户的待办/事件：")
+                pendingReminders.forEach { reminder ->
+                    val status = getDueDateStatus(reminder.dueDate!!)
+                    appendLine("- [$status] ${reminder.content}（原定：${reminder.dueDate}）")
+                }
+                appendLine("请在回复开头自然地提及这些提醒。提醒后调用 mark_reminded 工具标记，不要重复提醒。")
+                appendLine("[/PENDING_REMINDERS]")
+            }
+            finalSystemPrompt += "\n\n$remindersText"
+        }
 
         return finalSystemPrompt
+    }
+
+    /**
+     * 计算截止日期的显示状态。
+     */
+    private fun getDueDateStatus(dueDateStr: String): String {
+        return try {
+            val dueDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(dueDateStr)
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            )
+            if (dueDate == null || today == null) return dueDateStr
+
+            val diffMs = dueDate.time - today.time
+            val diffDays = (diffMs / (24 * 60 * 60 * 1000)).toInt()
+
+            when {
+                diffDays < 0 -> "已过期${-diffDays}天"
+                diffDays == 0 -> "今天"
+                diffDays == 1 -> "明天"
+                else -> "距今${diffDays}天"
+            }
+        } catch (e: Exception) {
+            dueDateStr
+        }
     }
 
     fun retryMessage(message: Message) {
