@@ -118,6 +118,18 @@ interface MemoryItemDao {
     /** 批量衰减置信度：每行独立计算衰减天数，confidence 减去该行的天数差（下限 1） */
     @Query("UPDATE memory_items SET confidence = MAX(1, confidence - MAX(0, CAST((:now - lastReinforcedAt) / 86400000 AS INT))), lastReinforcedAt = :now WHERE pinned = 0 AND lastReinforcedAt < :now AND confidence > 1")
     suspend fun batchDecayConfidence(now: Long)
+
+    /** 查询所有未提醒的到期/即将到期的时间记忆（dueDate <= today） */
+    @Query("SELECT * FROM memory_items WHERE dueDate IS NOT NULL AND reminded = 0 AND dueDate <= :todayStr ORDER BY dueDate ASC")
+    suspend fun getPendingReminders(todayStr: String): List<MemoryItem>
+
+    /** 标记一条时间记忆为已提醒 */
+    @Query("UPDATE memory_items SET reminded = 1 WHERE id = :id")
+    suspend fun markReminded(id: Long)
+
+    /** 自动标记过期超3天仍未提醒的记忆（兜底机制） */
+    @Query("UPDATE memory_items SET reminded = 1 WHERE dueDate IS NOT NULL AND reminded = 0 AND dueDate <= :cutoffStr")
+    suspend fun autoMarkStaleReminders(cutoffStr: String)
 }
 
 @Dao

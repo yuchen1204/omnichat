@@ -27,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // subAgent 模型配置
         AgentConfig::class,
     ],
-    version = 39,
+    version = 40,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -579,6 +579,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v39→v40：时间提醒记忆 — memory_items 加 dueDate / reminded 列 */
+        private val MIGRATION_39_40 = object : Migration(39, 40) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE memory_items ADD COLUMN dueDate TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE memory_items ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -617,8 +625,10 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_35_36,
                         MIGRATION_36_37,
                         MIGRATION_37_38,
-                        MIGRATION_38_39
+                        MIGRATION_38_39,
+                        MIGRATION_39_40
                     )
+                    .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。
                     // v4+ 均有显式迁移脚本（含中间版本的破坏性迁移 MIGRATION_19_22/23_25/30_32）。
                     .fallbackToDestructiveMigrationFrom(dropAllTables = true, *(1..3).toList().toIntArray())

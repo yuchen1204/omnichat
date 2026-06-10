@@ -76,7 +76,11 @@ data class MemoryItem(
     /** LLM 生成的语义标签，逗号分隔，如 "preference,fact" */
     val tags: String = "",
     /** 嵌入向量的 JSON 序列化，如 "[0.1,0.2,...]"，用于语义搜索 */
-    val embedding: String = ""
+    val embedding: String = "",
+    /** 截止日期（ISO 格式 "YYYY-MM-DD"），null 表示非时间记忆 */
+    val dueDate: String? = null,
+    /** 是否已提醒用户，防止重复提醒 */
+    val reminded: Boolean = false
 )
 
 @Entity(
@@ -384,7 +388,7 @@ data class UISettings(
 
     /**
      * 静默工具调用显示模式。
-     * true = 工具调用以紧凑的"工作中..."指示器显示，不展开详情卡片。
+     * true = 工具调用完全隐藏，UI 中不显示任何工具调用痕迹。
      * AI 通过 set_tool_display_mode 工具控制。
      */
     val silentToolCalls: Boolean = false,
