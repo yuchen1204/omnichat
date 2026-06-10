@@ -100,6 +100,25 @@ class MemoryEngine(
     }
 
     /**
+     * 检查待提醒的时间记忆。
+     *
+     * 流程：
+     * 1. 自动标记过期超3天仍未提醒的记忆（兜底）
+     * 2. 查询所有 dueDate <= today 且未提醒的记忆
+     *
+     * @return 待提醒的记忆列表，按 dueDate 升序排列
+     */
+    suspend fun checkPendingReminders(): List<MemoryItem> {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        // Auto-mark stale reminders (overdue 3+ days)
+        val cutoff = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -3) }
+        val cutoffStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cutoff.time)
+        repository.autoMarkStaleReminders(cutoffStr)
+        // Return remaining pending reminders
+        return repository.getPendingReminders(todayStr)
+    }
+
+    /**
      * 从用户消息中提取可能的主题关键词。
      * 简单策略：取最长的几个词作为主题候选。
      */
@@ -222,7 +241,7 @@ You will receive:
 - Recent raw messages (ground truth — use these to catch signals the summary may have missed)
 
 Output a JSON object with an "ops" array. Each op must be one of:
-  {"op": "ADD",       "content": "<one short sentence>", "tags": ["<tag>"]}
+  {"op": "ADD",       "content": "<one short sentence>", "tags": ["<tag>"], "dueDate": "<YYYY-MM-DD or null>"}
   {"op": "UPDATE",    "id": <existing_id>, "content": "<revised sentence>", "tags": ["<tag>"]}
   {"op": "REINFORCE", "id": <existing_id>}
   {"op": "DELETE",    "id": <existing_id>}
@@ -233,6 +252,13 @@ Tag rules (assign 1-2 tags per ADD/UPDATE):
   - Chinese tags: max 5 characters (e.g., "偏好", "技能", "项目")
   - Choose tags that best describe the fact's semantic category
   - You may create new tags or use existing ones for consistency
+
+Time reminder rules (for ADD ops only):
+- If the user mentions a specific future date/deadline, add "dueDate": "YYYY-MM-DD"
+- Specific dates: "下周三" → compute actual date, "6月15号" → "2026-06-15", "明天" → tomorrow's date
+- Vague times ("过几天", "以后", "改天") → do NOT add dueDate, store as normal memory
+- Use tag "deadline" for tasks with deadlines, "event" for meetings/appointments
+- If no specific date is mentioned, omit dueDate entirely (defaults to null)
 
 Rules:
 - ADD new facts not yet captured. IMPORTANT: before adding, check if an existing fact already covers the same information — if so, use REINFORCE or UPDATE instead of ADD. Avoid semantic duplicates.
@@ -299,8 +325,9 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
                                     logAudit(duplicate.id, "REINFORCE", duplicate.content, "sync", duplicate.confidence, duplicate.confidence + 1, now)
                                 } else {
                                     val tags = parseTagsFromJson(op.optJSONArray("tags"))
+                                    val dueDate = op.optString("dueDate", null).takeIf { it != "null" && it.isNotBlank() }
                                     val newId = repository.insertMemory(
-                                        MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags)
+                                        MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags, dueDate = dueDate)
                                     )
                                     logAudit(newId, "ADD", content, "sync", null, 1, now)
                                     if (newId > 0) {
