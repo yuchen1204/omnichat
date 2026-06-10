@@ -585,6 +585,7 @@
     <!-- ── AlarmReceiver ── -->
     <string name="alarm_notification_description">Scheduled reminder created by AI assistant</string>
     <string name="alarm_timer_reminder">⏰ **Reminder**\n\n%s</string>
+    <string name="timer_auto_check_prompt">⏰ Timer fired. Please call check_task_status immediately to check the status of task %s, then report the result to the user.</string>
     <string name="tool_search_match_lines">  (matched lines: %s)</string>
 
     <!-- ── StreamingForegroundService ── -->
@@ -616,4 +617,7 @@
     <string name="tool_agent_status_result">Result:</string>
     <string name="tool_agent_list_empty">No subAgent tasks in this session.</string>
     <string name="tool_agent_list_header">subAgent Tasks (%1$d):</string>
+    <string name="tool_mark_reminded_empty">Please provide a memory_id to mark as reminded.</string>
+    <string name="tool_mark_reminded_success">Reminder marked as reminded successfully.</string>
+    <string name="tool_mark_reminded_not_found">Memory with the given ID was not found.</string>
 </resources>

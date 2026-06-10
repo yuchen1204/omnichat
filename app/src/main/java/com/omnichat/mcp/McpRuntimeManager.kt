@@ -509,6 +509,15 @@ class McpRuntimeManager private constructor(private val context: Context) {
         McpTool(
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
+            name = "mark_reminded",
+            description = "Mark a time reminder as reminded to prevent repeat reminders. Call this after you have naturally mentioned a pending reminder to the user in your response.",
+            inputSchema = schema {
+                prop("memory_id", "integer", "The ID of the memory reminder to mark as reminded")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
             name = "list_ui_texts",
             description = "View all adjustable UI text strings in the app along with their default values (English primary, Chinese secondary) and current AI override values. An optional `query` parameter (e.g. \"mcp\" or \"session\") can be provided to fuzzy-filter results by key or default value.\n\n## Line break tip\n\nYou can use `\\n` in `set_ui_texts` values to insert line breaks. For longer translated strings (e.g. French, German), insert `\\n` at semantic break points to enable automatic wrapping and prevent text from being clipped.",
             inputSchema = schema {
@@ -716,14 +725,20 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "create_timer",
-            description = "Create a timer that fires at a precise time (supports one-shot and repeating). When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Timers survive app restarts and device reboots.\n\nUse this when the user asks to be reminded about something (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\", \"remind me every 2 hours to drink water\").\n\nTime precision: seconds, minutes, hours. You can specify exact combinations like 1 hour 30 minutes 15 seconds.\n\nReturns a `timerId` that can be used with `cancel_timer`.",
+            description = "Create a timer that fires after a delay (supports one-shot and repeating). When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Timers survive app restarts and device reboots.\n\nPREREQUISITE: You MUST call get_current_time first to confirm the current time before creating any timer. This ensures the delay is calculated correctly relative to the actual time.\n\nUse this when the user asks to be reminded about something (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\", \"remind me every 2 hours to drink water\").\n\nSpecify delay using hours, minutes, and/or seconds — at least one must be > 0. For example: hours=1, minutes=30 means 1 hour 30 minutes. Do NOT do math yourself — just pass the human-readable time components directly.\n\nReturns a `timerId` that can be used with `cancel_timer`.",
             inputSchema = schema {
-                prop("delay_seconds", "integer", "Delay in seconds before the first fire. Must be ≥ 1. No upper limit. Examples: 30 (30 seconds), 90 (1 min 30 sec), 3600 (1 hour), 5400 (1 hour 30 min). Combine: hours×3600 + minutes×60 + seconds.")
+                prop("hours", "integer", "Hours component of the delay (default 0). E.g. for \"2 hours 30 minutes\", set hours=2.")
+                prop("minutes", "integer", "Minutes component of the delay (default 0). E.g. for \"45 minutes\", set minutes=45.")
+                prop("seconds", "integer", "Seconds component of the delay (default 0). E.g. for \"90 seconds\", set seconds=90.")
+                prop("delay_seconds", "integer", "Legacy parameter. Prefer using hours/minutes/seconds instead. Total delay in seconds. If hours/minutes/seconds are also provided, they take precedence.")
                 prop("message", "string", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable.")
                 prop("label", "string", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
-                prop("repeat_interval_seconds", "integer", "If provided (≥ 1), the timer repeats at this interval in seconds. Omit or set to 0 for a one-shot timer. Examples: 3600 (every hour), 7200 (every 2 hours), 1800 (every 30 minutes).")
+                prop("repeat_hours", "integer", "Repeat interval: hours component (default 0). E.g. for \"every 2 hours\", set repeat_hours=2.")
+                prop("repeat_minutes", "integer", "Repeat interval: minutes component (default 0). E.g. for \"every 30 minutes\", set repeat_minutes=30.")
+                prop("repeat_seconds", "integer", "Repeat interval: seconds component (default 0). E.g. for \"every 90 seconds\", set repeat_seconds=90.")
+                prop("repeat_interval_seconds", "integer", "Legacy parameter. Prefer repeat_hours/repeat_minutes/repeat_seconds. Repeat interval in seconds. The new params take precedence if provided.")
                 prop("task_id", "string", "Optional. Associate this timer with a subAgent task (from delegate_task). When the task completes, this timer is auto-cancelled. Include the taskId in the message so you know what to check when the timer fires.")
-                required("delay_seconds", "message")
+                required("message")
             }
         ),
         McpTool(
@@ -747,9 +762,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "set_tool_display_mode",
-            description = "Control how tool call results are displayed in the chat. When silent=true, tool calls show a compact \"Working...\" indicator instead of detailed cards. The user can still tap to expand for details. Use this when performing multiple sequential tool calls to avoid flooding the screen. Call set_tool_display_mode(silent=false) to restore the normal detailed display.",
+            description = "Control how tool call results are displayed in the chat. When silent=true, tool calls are completely hidden from the UI — no indicators, no cards, nothing. The tools still execute normally; only the display is suppressed. Use this when performing multiple sequential tool calls to avoid flooding the screen. Call set_tool_display_mode(silent=false) to restore the normal detailed display.",
             inputSchema = schema {
-                prop("silent", "boolean", "true = show compact indicator, false = show full tool call cards (default).")
+                prop("silent", "boolean", "true = completely hide tool calls from UI, false = show full tool call cards (default).")
                 required("silent")
             }
         ),
@@ -777,7 +792,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
 任务将在后台执行，完成后结果会插入当前会话。返回一个 taskId 用于追踪。
 
-IMPORTANT: After delegating, do NOT immediately call check_task_status — the task runs asynchronously and won't be done yet. Use create_timer(delay_seconds=60, task_id="<taskId>") to set a reminder, then continue with other work. When the timer fires, check status. The result will also appear automatically when complete.""",
+IMPORTANT: After delegating, do NOT immediately call check_task_status — the task runs asynchronously and won't be done yet. Use create_timer(minutes=1, task_id="<taskId>") to set a reminder, then continue with other work. When the timer fires, check status. The result will also appear automatically when complete.""",
             inputSchema = schema {
                 prop("agent_type", "string", "代理类型") {
                     enum("general", "researcher", "coder", "reviewer", "tester")
@@ -834,6 +849,7 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
     private val builtinToolGroups = mapOf(
         "get_current_time" to "core",
         "search_memory" to "memory",
+        "mark_reminded" to "memory",
         "get_ui_capabilities" to "ui_appearance",
         "adjust_ui" to "ui_appearance",
         "color_scheme" to "ui_appearance",

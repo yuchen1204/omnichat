@@ -42,6 +42,7 @@ object BuiltinToolHandler {
             "get_current_time" -> handleGetCurrentTime(context, arguments)
             "color_scheme" -> handleColorScheme(context, arguments)
             "search_memory" -> handleSearchMemory(context, arguments)
+            "mark_reminded" -> handleMarkReminded(context, arguments)
             "list_ui_texts" -> handleListUiTexts(context, arguments)
             "set_ui_texts" -> handleSetUiTexts(context, arguments)
             "file_write" -> handleFileWrite(context, arguments)
@@ -348,6 +349,24 @@ object BuiltinToolHandler {
             }
         }
         return successResponse(text.trimEnd())
+    }
+
+    private suspend fun handleMarkReminded(context: Context, arguments: JSONObject): JSONObject {
+        val memoryId = arguments.optLong("memory_id", -1L)
+        if (memoryId <= 0) {
+            return errorResponse(str(context, R.string.tool_mark_reminded_empty))
+        }
+        val repository = getRepository(context)
+        val memory = repository.getMemoryById(memoryId)
+            ?: return errorResponse(str(context, R.string.tool_mark_reminded_not_found))
+        if (!memory.dueDate.isNullOrBlank()) {
+            repository.markReminded(memoryId)
+        }
+        return JSONObject().apply {
+            put("status", "success")
+            put("message", str(context, R.string.tool_mark_reminded_success))
+            put("memory_id", memoryId)
+        }
     }
 
     // ── UI 文字工具 ─────────────────────────────────────────────────────────
@@ -982,11 +1001,33 @@ object BuiltinToolHandler {
     // ── 定时器工具 ──────────────────────────────────────────────────────────
 
     private suspend fun handleCreateTimer(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val delaySeconds = arguments.optLong("delay_seconds", 0L)
+        // 支持新的 hours/minutes/seconds 参数，向后兼容 delay_seconds
+        val hours = arguments.optLong("hours", 0L)
+        val minutes = arguments.optLong("minutes", 0L)
+        val seconds = arguments.optLong("seconds", 0L)
+        val hasNewParams = arguments.has("hours") || arguments.has("minutes") || arguments.has("seconds")
+
+        val delaySeconds = if (hasNewParams) {
+            hours * 3600 + minutes * 60 + seconds
+        } else {
+            arguments.optLong("delay_seconds", 0L)
+        }
+
+        // 重复间隔同理
+        val repeatHours = arguments.optLong("repeat_hours", 0L)
+        val repeatMinutes = arguments.optLong("repeat_minutes", 0L)
+        val repeatSeconds = arguments.optLong("repeat_seconds", 0L)
+        val hasNewRepeatParams = arguments.has("repeat_hours") || arguments.has("repeat_minutes") || arguments.has("repeat_seconds")
+
+        val repeatIntervalSec = if (hasNewRepeatParams) {
+            repeatHours * 3600 + repeatMinutes * 60 + repeatSeconds
+        } else {
+            arguments.optLong("repeat_interval_seconds", 0L)
+        }
+
         val message = arguments.optString("message").trim()
         val label = arguments.optString("label", str(context, R.string.tool_timer_label)).trim()
             .take(30).ifEmpty { str(context, R.string.tool_timer_label) }
-        val repeatIntervalSec = arguments.optLong("repeat_interval_seconds", 0L)
         val linkedTaskId = arguments.optString("task_id").takeIf { it.isNotBlank() }
 
         if (delaySeconds < 1) {
