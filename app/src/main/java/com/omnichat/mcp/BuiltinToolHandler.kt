@@ -1826,6 +1826,11 @@ object BuiltinToolHandler {
             if (state.error != null) {
                 appendLine(str(context, R.string.tool_agent_status_error, state.error))
             }
+            if (state.summary != null) {
+                appendLine()
+                appendLine(str(context, R.string.tool_agent_status_summary))
+                appendLine(state.summary)
+            }
             if (state.result != null) {
                 appendLine()
                 appendLine(str(context, R.string.tool_agent_status_result))

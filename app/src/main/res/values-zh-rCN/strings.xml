@@ -630,6 +630,7 @@
     <string name="tool_agent_status_started">开始时间: %1$s</string>
     <string name="tool_agent_status_completed_at">完成时间: %1$s</string>
     <string name="tool_agent_status_error">错误: %1$s</string>
+    <string name="tool_agent_status_summary">摘要：</string>
     <string name="tool_agent_status_result">结果:</string>
     <string name="tool_agent_list_empty">当前会话没有 subAgent 任务。</string>
     <string name="tool_agent_list_header">subAgent 任务 (%1$d):</string>

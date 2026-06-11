@@ -630,6 +630,7 @@
     <string name="tool_agent_status_started">Started: %1$s</string>
     <string name="tool_agent_status_completed_at">Completed: %1$s</string>
     <string name="tool_agent_status_error">Error: %1$s</string>
+    <string name="tool_agent_status_summary">Summary:</string>
     <string name="tool_agent_status_result">Result:</string>
     <string name="tool_agent_list_empty">No subAgent tasks in this session.</string>
     <string name="tool_agent_list_header">subAgent Tasks (%1$d):</string>
