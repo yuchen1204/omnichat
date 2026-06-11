@@ -93,6 +93,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isFetchingModels by mutableStateOf(false)
         private set
 
+    /**
+     * 当前选中模型是否支持视觉（图片输入）。
+     * 优先从 fetchedModels 查找，找不到时默认 true（不阻止用户操作）。
+     */
+    var currentModelHasVision by mutableStateOf(true)
+        private set
+
+    fun refreshCurrentModelVision() {
+        viewModelScope.launch {
+            val provider = repository.getDefaultProvider() ?: return@launch
+            val modelId = provider.selectedModelId.takeIf { it.isNotBlank() }
+                ?: repository.getModelsByProvider(provider.id).firstOrNull()?.modelId
+                ?: return@launch
+            currentModelHasVision = fetchedModels.find { it.modelId == modelId }?.hasVision ?: true
+        }
+    }
+
     /** 切换当前使用的 Provider 和模型，持久化到数据库，重启后生效 */
     fun setSessionOverrideModel(provider: ModelConfig, modelId: String) {
         viewModelScope.launch {
@@ -100,6 +117,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 先更新 selectedModelId，再切换默认 provider
             repository.updateConfig(provider.copy(selectedModelId = modelId))
             repository.setDefaultProvider(provider.id)
+            refreshCurrentModelVision()
         }
     }
 
@@ -115,6 +133,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 // Pre-create an initial default session
                 createNewSession(getApplication<Application>().getString(R.string.default_session_title_display))
             }
+
+            // 加载已有模型数据并刷新视觉能力状态
+            fetchedModels = repository.getAllFetchedModels()
+            refreshCurrentModelVision()
         }
 
         // 监听定时器自动检查事件：linkedTaskId 的定时器触发时，唤醒 MainAgent 检查 subAgent 进度
@@ -163,18 +185,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * User actions: sends a message and starts streaming response using Primary Chat Model
      */
     fun sendMessage(text: String) {
-        sendMessageWithImage(text, null)
+        sendMessageWithImage(text)
     }
 
     /**
      * 发送带有图片的消息。
      *
      * @param text 文本内容
-     * @param imagePath 图片本地路径（可选）
+     * @param imagePaths 图片本地路径列表（可选）
      */
-    fun sendMessageWithImage(text: String, imagePath: String?) {
+    fun sendMessageWithImage(text: String, imagePaths: List<String> = emptyList()) {
         val sessionId = _selectedSessionId.value ?: return
-        if ((text.isBlank() && imagePath.isNullOrBlank()) || isStreaming) return
+        if ((text.isBlank() && imagePaths.isEmpty()) || isStreaming) return
 
         viewModelScope.launch {
             // Apply hook to user message
@@ -184,12 +206,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            // 1. Insert User Message (with image if provided)
+            // 1. Insert User Message (with images if provided)
+            val pathsJson = if (imagePaths.isNotEmpty()) {
+                org.json.JSONArray(imagePaths).toString()
+            } else null
+
             val userMsg = Message(
                 sessionId = sessionId,
                 role = "user",
                 content = processedText,
-                imagePath = imagePath
+                imagePaths = pathsJson
             )
             repository.insertMessage(userMsg)
 
@@ -773,11 +799,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 解析模型能力。优先级：JSON 元数据 > 模型 ID 规则推断。
+     * 解析模型能力。优先级：JSON 元数据 > models.dev 缓存。
      */
     fun parseModelCapabilities(modelId: String, providerId: Long = 0, json: org.json.JSONObject? = null): FetchedModel {
-        val lower = modelId.lowercase()
-
+        // --- 1. 尝试从 Provider API JSON 元数据提取 ---
         val rawContext: Int = run {
             if (json == null) return@run 0
             json.optJSONObject("top_provider")?.optInt("context_length", 0)?.takeIf { it > 0 }
@@ -795,27 +820,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 ?: 0
         }
 
-        fun formatTokenCount(n: Int): String = when {
-            n <= 0      -> ""
-            n >= 1_000_000 -> "${n / 1_000_000}M"
-            n >= 1_000     -> "${n / 1_000}k"
-            else           -> n.toString()
-        }
-
-        val contextStr: String = if (rawContext > 0) {
-            formatTokenCount(rawContext)
-        } else {
-            when {
-                lower.contains("gemini") -> "1M"
-                lower.contains("claude-3") -> "200k"
-                lower.contains("gpt-4o") -> "128k"
-                lower.contains("deepseek") -> "64k"
-                else -> "128k"
-            }
-        }
-
-        val maxOutputStr: String = formatTokenCount(rawMaxOutput)
-
         var vision = false
         if (json != null) {
             val arch = json.optJSONObject("architecture")
@@ -828,9 +832,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-        }
-        if (!vision) {
-            vision = lower.contains("vision") || lower.contains("gpt-4o") || lower.contains("claude-3") || lower.contains("gemini")
         }
 
         var thinking = false
@@ -846,11 +847,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        if (!thinking) {
-            thinking = lower.contains("r1") || lower.contains("o1") || lower.contains("reasoner")
-        }
 
-        var toolUse: Boolean? = null
+        var toolUseFromJson: Boolean? = null
         if (json != null) {
             val supportedParams = json.optJSONArray("supported_parameters")
             if (supportedParams != null) {
@@ -864,11 +862,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         break
                     }
                 }
-                if (checkedParams) toolUse = hasTools
+                if (checkedParams) toolUseFromJson = hasTools
             }
         }
-        if (toolUse == null) {
-            toolUse = !lower.contains("o1-preview")
+
+        // --- 2. 如果 JSON 元数据未覆盖，使用 models.dev 缓存补充 ---
+        val devInfo = com.omnichat.network.ModelsDevCache.lookup(modelId)
+
+        if (!vision) vision = devInfo?.hasVision == true
+        if (!thinking) thinking = devInfo?.reasoning == true
+        val toolUse = toolUseFromJson ?: devInfo?.toolCall ?: true
+
+        val contextStr: String = run {
+            if (rawContext > 0) {
+                formatTokenCount(rawContext)
+            } else {
+                devInfo?.contextSize?.let { formatTokenCount(it) } ?: "128k"
+            }
+        }
+
+        val maxOutputStr: String = run {
+            if (rawMaxOutput > 0) {
+                formatTokenCount(rawMaxOutput)
+            } else {
+                devInfo?.outputLimit?.let { formatTokenCount(it) } ?: ""
+            }
         }
 
         return FetchedModel(
@@ -877,8 +895,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             contextSize = if (maxOutputStr.isNotEmpty()) "$contextStr / $maxOutputStr out" else contextStr,
             hasThinking = thinking,
             hasVision = vision,
-            hasToolUse = toolUse!!
+            hasToolUse = toolUse
         )
+    }
+
+    private fun formatTokenCount(n: Int): String = when {
+        n <= 0         -> ""
+        n >= 1_000_000 -> "${n / 1_000_000}M"
+        n >= 1_000     -> "${n / 1_000}k"
+        else           -> n.toString()
     }
 
     fun fetchModelsAndSave(endpoint: String, apiKey: String, providerId: Long, customHeaders: String = "{}") {
@@ -887,6 +912,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             modelFetchError = null
             fetchedModels = emptyList()
             try {
+                // 预加载 models.dev 缓存（用于能力检测的第二层）
+                if (com.omnichat.network.ModelsDevCache.needsRefresh()) {
+                    com.omnichat.network.ModelsDevCache.fetchAndCache()
+                }
+
                 val list = ApiClient.fetchOpenAIModels(endpoint, apiKey, customHeaders)
                 if (list.isEmpty()) {
                     modelFetchError = getApplication<Application>().getString(R.string.error_model_fetch_failed)
@@ -896,7 +926,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         parseModelCapabilities(id, providerId, json) 
                     }
                     fetchedModels = parsedList
-                    
+                    refreshCurrentModelVision()
+
                     if (providerId > 0) {
                         repository.deleteModelsByProvider(providerId)
                         parsedList.forEach { model ->

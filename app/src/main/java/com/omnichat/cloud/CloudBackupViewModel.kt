@@ -134,6 +134,32 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun recoverByTotpCode(totpCode: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val result = manager.recover(totpCode)
+            result.fold(
+                onSuccess = { response ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isBound = true,
+                            userId = response.userId,
+                            backups = response.backups,
+                            showRecoveryDialog = false,
+                            showBackupListDialog = true
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = e.message)
+                    }
+                }
+            )
+        }
+    }
+
     fun unbind() {
         manager.unbind()
         _uiState.update {
@@ -184,6 +210,29 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun loadBackupsAndShow() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val result = manager.listBackups()
+            result.fold(
+                onSuccess = { backups ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            backups = backups,
+                            showBackupListDialog = true
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = e.message)
+                    }
+                }
+            )
+        }
+    }
+
     fun restoreBackup(backup: BackupMeta) {
         viewModelScope.launch {
             _uiState.update { it.copy(isRestoring = true, error = null) }
@@ -201,6 +250,26 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
                 onFailure = { e ->
                     _uiState.update {
                         it.copy(isRestoring = false, error = e.message)
+                    }
+                }
+            )
+        }
+    }
+
+    fun deleteBackup(backup: BackupMeta) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val result = manager.deleteBackup(backup.id)
+            result.fold(
+                onSuccess = {
+                    _uiState.update {
+                        it.copy(isLoading = false)
+                    }
+                    loadBackups()
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = e.message)
                     }
                 }
             )

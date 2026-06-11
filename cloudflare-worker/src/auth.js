@@ -1,6 +1,6 @@
 // src/auth.js
 
-const SESSION_TTL = 3600 * 1000; // 1 hour in milliseconds
+const SESSION_TTL = 7 * 24 * 3600 * 1000; // 7 days in milliseconds
 
 /**
  * Create a session token for a user
@@ -15,7 +15,7 @@ export async function createSession(kv, userId) {
   await kv.put(`session:${token}`, JSON.stringify({
     userId,
     expiresAt,
-  }), { expirationTtl: 3600 }); // Also set KV TTL
+  }), { expirationTtl: 7 * 24 * 3600 }); // 7 days KV TTL
 
   return { token, expiresIn: SESSION_TTL / 1000 };
 }

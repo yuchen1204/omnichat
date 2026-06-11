@@ -20,6 +20,7 @@ class CloudBackupRepository(private val context: Context) {
         private const val PREFS_NAME = "cloud_backup"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_SESSION_TOKEN = "session_token"
+        private const val KEY_TOTP_SECRET = "totp_secret"
         private const val KEY_WORKERS_URL = "workers_url"
         private const val DEFAULT_WORKERS_URL = "https://omnichat-cloud-backup.xiaoyuchen031204.workers.dev"
     }
@@ -103,6 +104,7 @@ class CloudBackupRepository(private val context: Context) {
                 prefs.edit()
                     .putString(KEY_SESSION_TOKEN, body.token)
                     .putString(KEY_USER_ID, body.userId)
+                    .putString(KEY_TOTP_SECRET, totpSecret)
                     .apply()
                 Result.success(body)
             } else {
@@ -131,10 +133,32 @@ class CloudBackupRepository(private val context: Context) {
         }
     }
 
+    suspend fun recover(totpCode: String): Result<RecoverResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = getApi().recover(RecoverRequest(totpCode))
+            if (response.isSuccessful) {
+                val body = response.body()!!
+                prefs.edit()
+                    .putString(KEY_SESSION_TOKEN, body.token)
+                    .putString(KEY_USER_ID, body.userId)
+                    .putString(KEY_TOTP_SECRET, body.totpSecret)
+                    .apply()
+                Result.success(body)
+            } else if (response.code() == 404) {
+                Result.failure(Exception("未找到匹配的账号"))
+            } else {
+                Result.failure(Exception("恢复失败: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun unbind() {
         prefs.edit()
             .remove(KEY_USER_ID)
             .remove(KEY_SESSION_TOKEN)
+            .remove(KEY_TOTP_SECRET)
             .apply()
     }
 

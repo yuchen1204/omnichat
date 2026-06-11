@@ -46,12 +46,11 @@ data class Message(
     val toolCallsJson: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     /**
-     * 图片的本地路径或 Base64 数据 URL。
-     * - 本地路径: /storage/emulated/0/Pictures/photo.jpg
-     * - Base64 Data URL: data:image/jpeg;base64,/9j/4AAQ...
+     * 图片路径的 JSON 数组，支持多图。
+     * 格式: ["/storage/emulated/0/Pictures/photo.jpg", "data:image/jpeg;base64,..."]
      * 为 null 时表示纯文本消息。
      */
-    val imagePath: String? = null
+    val imagePaths: String? = null
 )
 
 @Entity(

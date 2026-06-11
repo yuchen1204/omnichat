@@ -28,6 +28,10 @@ class CloudBackupManager(private val context: Context) {
         return repository.verifyForRecovery(totpSecret, totpCode)
     }
 
+    suspend fun recover(totpCode: String): Result<RecoverResponse> {
+        return repository.recover(totpCode)
+    }
+
     fun unbind() {
         repository.unbind()
     }
@@ -53,7 +57,10 @@ class CloudBackupManager(private val context: Context) {
     suspend fun uploadDatabaseBackup(): Result<String> = withContext(Dispatchers.IO) {
         try {
             val dbPath = context.getDatabasePath("ai_chat_memory_db")
-            val data = dbPath.readBytes()
+            val rawData = dbPath.readBytes()
+            // Add OMNIDB_V1 header to match local export format
+            val header = "OMNIDB_V1\n".toByteArray()
+            val data = header + rawData
             val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
                 .format(java.util.Date())
             val filename = "omnichat_db_$timestamp.omnidb"
@@ -83,12 +90,215 @@ class CloudBackupManager(private val context: Context) {
         return repository.listBackups()
     }
 
+    suspend fun deleteBackup(backupId: String): Result<Unit> {
+        return repository.deleteBackup(backupId)
+    }
+
     suspend fun restoreConfigBackup(backupId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val data = repository.downloadBackup(backupId).getOrThrow()
-            // Save to temp file and return path for SettingsViewModel to import
-            val tempFile = File(context.cacheDir, "restore_config.omniconfig")
-            tempFile.writeBytes(data)
+            val json = data.toString(Charsets.UTF_8)
+            val root = org.json.JSONObject(json)
+
+            val appRepo = com.omnichat.data.AppRepository(
+                com.omnichat.data.AppDatabase.getDatabase(context)
+            )
+
+            // Import providers
+            if (root.has("providers")) {
+                val arr = root.getJSONArray("providers")
+                val existing = appRepo.getAllConfigs()
+                for (c in existing) appRepo.deleteConfig(c)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    appRepo.insertConfig(
+                        com.omnichat.data.ModelConfig(
+                            name = obj.optString("name", "provider-$i"),
+                            endpoint = obj.optString("endpoint", ""),
+                            apiKey = obj.optString("apiKey", ""),
+                            selectedModelId = obj.optString("selectedModelId", ""),
+                            memoryModelId = obj.optString("memoryModelId", ""),
+                            memoryProviderId = obj.optLong("memoryProviderId", 0L),
+                            isDefaultProvider = obj.optBoolean("isDefaultProvider", false),
+                            enableThinking = obj.optBoolean("enableThinking", true),
+                            thinkingEffort = obj.optString("thinkingEffort", "medium"),
+                            customHeaders = obj.optString("customHeaders", "{}")
+                        )
+                    )
+                }
+            }
+
+            // Import MCP servers
+            if (root.has("mcpServers")) {
+                val arr = root.getJSONArray("mcpServers")
+                val existing = appRepo.getAllMcpServers()
+                for (s in existing) appRepo.deleteMcpServer(s)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    appRepo.insertMcpServer(
+                        com.omnichat.data.McpServer(
+                            name = obj.optString("name", "server-$i"),
+                            command = obj.optString("command", ""),
+                            args = obj.optString("args", "[]"),
+                            env = obj.optString("env", "{}"),
+                            isEnabled = obj.optBoolean("isEnabled", true)
+                        )
+                    )
+                }
+            }
+
+            // Import MCP file permissions
+            if (root.has("mcpFilePermissions")) {
+                val arr = root.getJSONArray("mcpFilePermissions")
+                appRepo.deleteAllMcpFilePermissions()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    appRepo.insertMcpFilePermission(
+                        com.omnichat.data.McpFilePermission(
+                            path = obj.optString("path", ""),
+                            isAllowed = obj.optBoolean("isAllowed", false)
+                        )
+                    )
+                }
+            }
+
+            // Import memories
+            if (root.has("memories")) {
+                val arr = root.getJSONArray("memories")
+                appRepo.deleteAllMemories()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    appRepo.insertMemory(
+                        com.omnichat.data.MemoryItem(
+                            content = obj.optString("content", ""),
+                            confidence = obj.optInt("confidence", 1),
+                            pinned = obj.optBoolean("pinned", false),
+                            createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                            updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
+                            lastReinforcedAt = obj.optLong("lastReinforcedAt", System.currentTimeMillis()),
+                            tags = obj.optString("tags", "")
+                        )
+                    )
+                }
+            }
+
+            // Import prompt templates
+            if (root.has("promptTemplates")) {
+                val arr = root.getJSONArray("promptTemplates")
+                val existing = appRepo.getAllTemplates()
+                for (t in existing) appRepo.deleteTemplate(t)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    appRepo.insertTemplate(
+                        com.omnichat.data.PromptTemplate(
+                            name = obj.optString("name", "template-$i"),
+                            templateText = obj.optString("templateText", ""),
+                            isActive = obj.optBoolean("isActive", false)
+                        )
+                    )
+                }
+            }
+
+            // Import UI settings
+            if (root.has("uiSettings")) {
+                val obj = root.getJSONObject("uiSettings")
+                val defaults = com.omnichat.data.UISettings()
+                val settings = com.omnichat.data.UISettings(
+                    id = 1L,
+                    primaryColor = obj.optString("primaryColor", defaults.primaryColor),
+                    onPrimaryColor = obj.optString("onPrimaryColor", defaults.onPrimaryColor),
+                    primaryContainerColor = obj.optString("primaryContainerColor", defaults.primaryContainerColor),
+                    onPrimaryContainerColor = obj.optString("onPrimaryContainerColor", defaults.onPrimaryContainerColor),
+                    secondaryColor = obj.optString("secondaryColor", defaults.secondaryColor),
+                    onSecondaryColor = obj.optString("onSecondaryColor", defaults.onSecondaryColor),
+                    secondaryContainerColor = obj.optString("secondaryContainerColor", defaults.secondaryContainerColor),
+                    onSecondaryContainerColor = obj.optString("onSecondaryContainerColor", defaults.onSecondaryContainerColor),
+                    tertiaryColor = obj.optString("tertiaryColor", defaults.tertiaryColor),
+                    onTertiaryColor = obj.optString("onTertiaryColor", defaults.onTertiaryColor),
+                    backgroundColor = obj.optString("backgroundColor", defaults.backgroundColor),
+                    onBackgroundColor = obj.optString("onBackgroundColor", defaults.onBackgroundColor),
+                    surfaceColor = obj.optString("surfaceColor", defaults.surfaceColor),
+                    onSurfaceColor = obj.optString("onSurfaceColor", defaults.onSurfaceColor),
+                    surfaceVariantColor = obj.optString("surfaceVariantColor", defaults.surfaceVariantColor),
+                    onSurfaceVariantColor = obj.optString("onSurfaceVariantColor", defaults.onSurfaceVariantColor),
+                    outlineColor = obj.optString("outlineColor", defaults.outlineColor),
+                    outlineVariantColor = obj.optString("outlineVariantColor", defaults.outlineVariantColor),
+                    errorColor = obj.optString("errorColor", defaults.errorColor),
+                    onErrorColor = obj.optString("onErrorColor", defaults.onErrorColor),
+                    errorContainerColor = obj.optString("errorContainerColor", defaults.errorContainerColor),
+                    onErrorContainerColor = obj.optString("onErrorContainerColor", defaults.onErrorContainerColor),
+                    successColor = obj.optString("successColor", defaults.successColor),
+                    warningColor = obj.optString("warningColor", defaults.warningColor),
+                    infoColor = obj.optString("infoColor", defaults.infoColor),
+                    accentColor = obj.optString("accentColor", defaults.accentColor),
+                    sidebarBackgroundColor = obj.optString("sidebarBackgroundColor", defaults.sidebarBackgroundColor),
+                    sidebarOnBackgroundColor = obj.optString("sidebarOnBackgroundColor", defaults.sidebarOnBackgroundColor),
+                    sidebarActiveColor = obj.optString("sidebarActiveColor", defaults.sidebarActiveColor),
+                    sidebarOnActiveColor = obj.optString("sidebarOnActiveColor", defaults.sidebarOnActiveColor),
+                    cornerRadiusDp = obj.optInt("cornerRadiusDp", defaults.cornerRadiusDp),
+                    spacingMultiplier = obj.optDouble("spacingMultiplier", defaults.spacingMultiplier.toDouble()).toFloat(),
+                    fontSizeScale = obj.optDouble("fontSizeScale", defaults.fontSizeScale.toDouble()).toFloat(),
+                    chatFontSizeScale = obj.optDouble("chatFontSizeScale", defaults.chatFontSizeScale.toDouble()).toFloat(),
+                    fontFamily = obj.optString("fontFamily", defaults.fontFamily),
+                    enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
+                    silentToolCalls = obj.optBoolean("silentToolCalls", defaults.silentToolCalls),
+                    uiStrings = obj.optString("uiStrings", "{}"),
+                    updatedAt = System.currentTimeMillis()
+                )
+                appRepo.upsertUISettings(settings)
+            }
+
+            // Import color scheme presets
+            if (root.has("colorSchemePresets")) {
+                val arr = root.getJSONArray("colorSchemePresets")
+                val existing = appRepo.getAllColorSchemePresets()
+                for (p in existing) appRepo.deleteColorSchemePreset(p.schemeId)
+                val defaults = com.omnichat.data.UISettings()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    if (appRepo.getColorSchemePresetCount() >= com.omnichat.data.ColorSchemePreset.MAX_PRESETS) break
+                    val preset = com.omnichat.data.ColorSchemePreset(
+                        schemeId = obj.optString("schemeId", java.util.UUID.randomUUID().toString()),
+                        name = obj.optString("name", "Imported"),
+                        description = obj.optString("description", ""),
+                        createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                        primaryColor = obj.optString("primaryColor", defaults.primaryColor),
+                        onPrimaryColor = obj.optString("onPrimaryColor", defaults.onPrimaryColor),
+                        primaryContainerColor = obj.optString("primaryContainerColor", defaults.primaryContainerColor),
+                        onPrimaryContainerColor = obj.optString("onPrimaryContainerColor", defaults.onPrimaryContainerColor),
+                        secondaryColor = obj.optString("secondaryColor", defaults.secondaryColor),
+                        onSecondaryColor = obj.optString("onSecondaryColor", defaults.onSecondaryColor),
+                        secondaryContainerColor = obj.optString("secondaryContainerColor", defaults.secondaryContainerColor),
+                        onSecondaryContainerColor = obj.optString("onSecondaryContainerColor", defaults.onSecondaryContainerColor),
+                        tertiaryColor = obj.optString("tertiaryColor", defaults.tertiaryColor),
+                        onTertiaryColor = obj.optString("onTertiaryColor", defaults.onTertiaryColor),
+                        backgroundColor = obj.optString("backgroundColor", defaults.backgroundColor),
+                        onBackgroundColor = obj.optString("onBackgroundColor", defaults.onBackgroundColor),
+                        surfaceColor = obj.optString("surfaceColor", defaults.surfaceColor),
+                        onSurfaceColor = obj.optString("onSurfaceColor", defaults.onSurfaceColor),
+                        surfaceVariantColor = obj.optString("surfaceVariantColor", defaults.surfaceVariantColor),
+                        onSurfaceVariantColor = obj.optString("onSurfaceVariantColor", defaults.onSurfaceVariantColor),
+                        outlineColor = obj.optString("outlineColor", defaults.outlineColor),
+                        outlineVariantColor = obj.optString("outlineVariantColor", defaults.outlineVariantColor),
+                        errorColor = obj.optString("errorColor", defaults.errorColor),
+                        onErrorColor = obj.optString("onErrorColor", defaults.onErrorColor),
+                        errorContainerColor = obj.optString("errorContainerColor", defaults.errorContainerColor),
+                        onErrorContainerColor = obj.optString("onErrorContainerColor", defaults.onErrorContainerColor),
+                        successColor = obj.optString("successColor", defaults.successColor),
+                        warningColor = obj.optString("warningColor", defaults.warningColor),
+                        infoColor = obj.optString("infoColor", defaults.infoColor),
+                        accentColor = obj.optString("accentColor", defaults.accentColor),
+                        sidebarBackgroundColor = obj.optString("sidebarBackgroundColor", defaults.sidebarBackgroundColor),
+                        sidebarOnBackgroundColor = obj.optString("sidebarOnBackgroundColor", defaults.sidebarOnBackgroundColor),
+                        sidebarActiveColor = obj.optString("sidebarActiveColor", defaults.sidebarActiveColor),
+                        sidebarOnActiveColor = obj.optString("sidebarOnActiveColor", defaults.sidebarOnActiveColor),
+                        cornerRadiusDp = obj.optInt("cornerRadiusDp", defaults.cornerRadiusDp),
+                        spacingMultiplier = obj.optDouble("spacingMultiplier", defaults.spacingMultiplier.toDouble()).toFloat()
+                    )
+                    appRepo.insertColorSchemePreset(preset)
+                }
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

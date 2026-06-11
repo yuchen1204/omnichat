@@ -128,17 +128,23 @@ object ApiClient {
      */
     private fun buildMessageContent(context: Context?, msg: com.omnichat.data.Message): Any {
         // 如果没有图片，直接返回文本
-        if (msg.imagePath.isNullOrBlank()) {
+        if (msg.imagePaths.isNullOrBlank()) {
             return msg.content
         }
 
-        // 有图片，构建 multimodal content 数组
-        val imageUrl = imageToBase64DataUrl(context, msg.imagePath)
-        
-        // 如果图片转换失败，直接退化为纯文本
-        if (imageUrl == null) {
-            return msg.content
+        // 解析图片路径 JSON 数组
+        val paths = try {
+            val arr = JSONArray(msg.imagePaths)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (e: Exception) {
+            emptyList()
         }
+
+        if (paths.isEmpty()) return msg.content
+
+        // 转换所有图片为 base64 data URL
+        val imageUrls = paths.mapNotNull { imageToBase64DataUrl(context, it) }
+        if (imageUrls.isEmpty()) return msg.content
 
         val contentArray = JSONArray()
 
@@ -150,13 +156,15 @@ object ApiClient {
             })
         }
 
-        // 添加图片部分
-        contentArray.put(JSONObject().apply {
-            put("type", "image_url")
-            put("image_url", JSONObject().apply {
-                put("url", imageUrl)
+        // 添加所有图片部分
+        for (url in imageUrls) {
+            contentArray.put(JSONObject().apply {
+                put("type", "image_url")
+                put("image_url", JSONObject().apply {
+                    put("url", url)
+                })
             })
-        })
+        }
 
         return contentArray
     }

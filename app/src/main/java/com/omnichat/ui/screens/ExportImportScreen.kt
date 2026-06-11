@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,6 +70,12 @@ fun ExportImportView(
     // ── 数据库备份状态 ──────────────────────────────────────────────────
     var pendingDbImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showDbImportConfirm by remember { mutableStateOf(false) }
+
+    // ── 卡片展开/收起状态 ──────────────────────────────────────────────
+    var exportExpanded by remember { mutableStateOf(false) }
+    var importExpanded by remember { mutableStateOf(false) }
+    var dbBackupExpanded by remember { mutableStateOf(false) }
+    var cloudBackupExpanded by remember { mutableStateOf(false) }
 
     // ── SAF 文件选择器 ────────────────────────────────────────────────────
     val exportLauncher = rememberLauncherForActivityResult(
@@ -192,7 +199,9 @@ fun ExportImportView(
             title = uiText("export.section.export", R.string.export_section_export),
             icon = Icons.Default.Share,
             iconColor = MaterialTheme.colorScheme.primary,
-            fs = fs
+            fs = fs,
+            expanded = exportExpanded,
+            onToggle = { exportExpanded = !exportExpanded }
         ) {
             Text(
                 text = uiText("export.desc", R.string.export_desc),
@@ -276,7 +285,9 @@ fun ExportImportView(
             title = uiText("import.section.import", R.string.import_section_import),
             icon = Icons.Default.Add,
             iconColor = LocalCustomColors.current.success,
-            fs = fs
+            fs = fs,
+            expanded = importExpanded,
+            onToggle = { importExpanded = !importExpanded }
         ) {
             Text(
                 text = uiText("import.desc", R.string.import_desc),
@@ -396,7 +407,9 @@ fun ExportImportView(
             title = uiText("db_backup.section", R.string.db_backup_section),
             icon = Icons.Default.Storage,
             iconColor = MaterialTheme.colorScheme.tertiary,
-            fs = fs
+            fs = fs,
+            expanded = dbBackupExpanded,
+            onToggle = { dbBackupExpanded = !dbBackupExpanded }
         ) {
             Text(
                 text = uiText("db_backup.desc", R.string.db_backup_desc),
@@ -468,7 +481,10 @@ fun ExportImportView(
         }
 
         // ── 云备份卡片 ────────────────────────────────────────────────
-        CloudBackupCard()
+        CloudBackupCard(
+            expanded = cloudBackupExpanded,
+            onToggle = { cloudBackupExpanded = !cloudBackupExpanded }
+        )
 
         // ── 说明卡片 ──────────────────────────────────────────────────────
         Card(
@@ -559,6 +575,8 @@ private fun SectionCard(
     icon: ImageVector,
     iconColor: Color,
     fs: Float,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
@@ -570,7 +588,10 @@ private fun SectionCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggle() }
+                    .padding(bottom = if (expanded) 12.dp else 0.dp)
             ) {
                 Box(
                     modifier = Modifier
@@ -591,10 +612,19 @@ private fun SectionCard(
                     text = title,
                     fontSize = (16 * fs).sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
-            content()
+            AnimatedVisibility(visible = expanded) {
+                Column { content() }
+            }
         }
     }
 }

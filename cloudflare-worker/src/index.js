@@ -1,6 +1,6 @@
 // src/index.js
 import { generateTOTP, verifyTOTP } from './totp.js';
-import { createUser, getUser, findUserByTOTPSecret, saveBackupMeta, listBackups, deleteBackupMeta, uploadToR2, downloadFromR2, deleteFromR2, enforceBackupQuota } from './storage.js';
+import { createUser, getUser, findUserByTOTPSecret, listAllUsers, saveBackupMeta, listBackups, deleteBackupMeta, uploadToR2, downloadFromR2, deleteFromR2, enforceBackupQuota } from './storage.js';
 import { createSession, validateSession } from './auth.js';
 
 export default {
@@ -59,6 +59,47 @@ export default {
         return Response.json({
           userId,
           ...session,
+        }, { headers: corsHeaders });
+      }
+
+      // POST /api/recover - Recover by TOTP code only (search all users)
+      if (path === '/api/recover' && request.method === 'POST') {
+        const { totpCode } = await request.json();
+
+        if (!totpCode || totpCode.length !== 6) {
+          return Response.json({ error: 'Invalid TOTP code format' }, {
+            status: 400,
+            headers: corsHeaders,
+          });
+        }
+
+        // Iterate all users and try to match the TOTP code
+        const users = await listAllUsers(env.WORKERS_KV);
+        let matchedUser = null;
+
+        for (const user of users) {
+          if (verifyTOTP(user.totpSecret, totpCode)) {
+            matchedUser = user;
+            break;
+          }
+        }
+
+        if (!matchedUser) {
+          return Response.json({ error: 'No matching account found' }, {
+            status: 404,
+            headers: corsHeaders,
+          });
+        }
+
+        // Create session and list backups
+        const session = await createSession(env.WORKERS_KV, matchedUser.userId);
+        const backups = await listBackups(env.WORKERS_KV, matchedUser.userId);
+
+        return Response.json({
+          userId: matchedUser.userId,
+          totpSecret: matchedUser.totpSecret,
+          ...session,
+          backups,
         }, { headers: corsHeaders });
       }
 

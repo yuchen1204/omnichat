@@ -1,7 +1,11 @@
 package com.omnichat.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,6 +29,8 @@ import androidx.compose.ui.text.AnnotatedString
 
 @Composable
 fun CloudBackupCard(
+    expanded: Boolean,
+    onToggle: () -> Unit,
     viewModel: CloudBackupViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -41,10 +47,13 @@ fun CloudBackupCard(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header
+            // Header (clickable to toggle)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggle() }
+                    .padding(bottom = if (expanded) 12.dp else 0.dp)
             ) {
                 Box(
                     modifier = Modifier
@@ -64,10 +73,19 @@ fun CloudBackupCard(
                     text = "云备份",
                     fontSize = (16 * fs).sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
+            AnimatedVisibility(visible = expanded) {
+                Column {
             if (!uiState.isBound) {
                 // Unbound state
                 Text(
@@ -136,7 +154,7 @@ fun CloudBackupCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { viewModel.showRecoveryDialog() },
+                        onClick = { viewModel.loadBackupsAndShow() },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -185,6 +203,8 @@ fun CloudBackupCard(
                     )
                 }
             }
+                } // inner Column
+            } // AnimatedVisibility
         }
     }
 
@@ -208,8 +228,8 @@ fun CloudBackupCard(
     if (uiState.showRecoveryDialog) {
         RecoveryDialog(
             isLoading = uiState.isLoading,
-            onVerify = { totpSecret, totpCode ->
-                viewModel.verifyForRecovery(totpSecret, totpCode)
+            onRecover = { totpCode ->
+                viewModel.recoverByTotpCode(totpCode)
             },
             onDismiss = { viewModel.hideRecoveryDialog() },
             fs = fs
@@ -221,6 +241,7 @@ fun CloudBackupCard(
             backups = uiState.backups,
             isRestoring = uiState.isRestoring,
             onRestore = { viewModel.restoreBackup(it) },
+            onDelete = { viewModel.deleteBackup(it) },
             onDismiss = { viewModel.hideBackupListDialog() },
             fs = fs
         )
@@ -340,11 +361,10 @@ private fun BindTotpDialog(
 @Composable
 private fun RecoveryDialog(
     isLoading: Boolean,
-    onVerify: (String, String) -> Unit,
+    onRecover: (String) -> Unit,
     onDismiss: () -> Unit,
     fs: Float
 ) {
-    var totpSecret by remember { mutableStateOf("") }
     var totpCode by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -359,17 +379,15 @@ private fun RecoveryDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
-                    value = totpSecret,
-                    onValueChange = { totpSecret = it },
-                    label = { Text("TOTP 密钥") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                Text(
+                    text = "输入绑定账号时的 TOTP 验证码，系统将自动匹配您的备份",
+                    fontSize = (12 * fs).sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = totpCode,
-                    onValueChange = { totpCode = it },
-                    label = { Text("当前验证码") },
+                    onValueChange = { if (it.length <= 6) totpCode = it },
+                    label = { Text("TOTP 验证码") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -377,8 +395,8 @@ private fun RecoveryDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onVerify(totpSecret, totpCode) },
-                enabled = totpSecret.isNotBlank() && totpCode.length == 6 && !isLoading,
+                onClick = { onRecover(totpCode) },
+                enabled = totpCode.length == 6 && !isLoading,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 if (isLoading) {
@@ -387,7 +405,7 @@ private fun RecoveryDialog(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text("验证并恢复")
+                    Text("查找并恢复")
                 }
             }
         },
@@ -404,9 +422,21 @@ private fun BackupListDialog(
     backups: List<BackupMeta>,
     isRestoring: Boolean,
     onRestore: (BackupMeta) -> Unit,
+    onDelete: (BackupMeta) -> Unit,
     onDismiss: () -> Unit,
     fs: Float
 ) {
+    // Group backups by time period (within 1 hour of each other)
+    val grouped = remember(backups) {
+        backups.sortedByDescending { it.createdAt }.groupBy { backup ->
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = backup.createdAt }
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            cal.timeInMillis
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -415,24 +445,38 @@ private fun BackupListDialog(
             Text("选择要恢复的备份", fontSize = (16 * fs).sp)
         },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (backups.isEmpty()) {
-                    Text(
-                        text = "暂无备份",
-                        fontSize = (12 * fs).sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    backups.forEach { backup ->
-                        BackupItem(
-                            backup = backup,
-                            isRestoring = isRestoring,
-                            onRestore = { onRestore(backup) },
-                            fs = fs
+            if (backups.isEmpty()) {
+                Text(
+                    text = "暂无备份",
+                    fontSize = (12 * fs).sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    grouped.forEach { (timeMillis, group) ->
+                        val timeLabel = formatRelativeTime(timeMillis)
+                        Text(
+                            text = timeLabel,
+                            fontSize = (11 * fs).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = if (grouped.keys.first() == timeMillis) 0.dp else 4.dp)
                         )
+                        group.forEach { backup ->
+                            BackupItem(
+                                backup = backup,
+                                isRestoring = isRestoring,
+                                onRestore = { onRestore(backup) },
+                                onDelete = { onDelete(backup) },
+                                fs = fs
+                            )
+                        }
                     }
                 }
             }
@@ -450,6 +494,7 @@ private fun BackupItem(
     backup: BackupMeta,
     isRestoring: Boolean,
     onRestore: () -> Unit,
+    onDelete: () -> Unit,
     fs: Float
 ) {
     val icon = when (backup.type) {
@@ -483,14 +528,26 @@ private fun BackupItem(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${backup.filename}",
+                    text = backup.filename,
                     fontSize = (12 * fs).sp,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "$typeLabel · ${formatTimestamp(backup.createdAt)}",
+                    text = typeLabel,
                     fontSize = (10 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = onDelete,
+                enabled = !isRestoring,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "删除",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.error
                 )
             }
             Button(
@@ -505,9 +562,23 @@ private fun BackupItem(
     }
 }
 
-private fun formatTimestamp(timestamp: Long): String {
-    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-    return sdf.format(java.util.Date(timestamp))
+private fun formatRelativeTime(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    val minutes = diff / (1000 * 60)
+    val hours = diff / (1000 * 60 * 60)
+    val days = diff / (1000 * 60 * 60 * 24)
+
+    return when {
+        minutes < 1 -> "刚刚"
+        minutes < 60 -> "${minutes}分钟前"
+        hours < 24 -> "${hours}小时前"
+        days < 7 -> "${days}天前"
+        else -> {
+            val sdf = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+            sdf.format(java.util.Date(timestamp))
+        }
+    }
 }
 
 private fun generateQrCodeBitmap(content: String): Bitmap {

@@ -45,6 +45,18 @@ data class ListResponse(
     val backups: List<BackupMeta>
 )
 
+data class RecoverRequest(
+    val totpCode: String
+)
+
+data class RecoverResponse(
+    val userId: String,
+    val totpSecret: String,
+    val token: String,
+    val expiresIn: Long,
+    val backups: List<BackupMeta>
+)
+
 interface CloudBackupApi {
 
     @POST("/api/bindtotp")
@@ -52,6 +64,9 @@ interface CloudBackupApi {
 
     @POST("/api/verify")
     suspend fun verify(@Body request: VerifyRequest): Response<VerifyResponse>
+
+    @POST("/api/recover")
+    suspend fun recover(@Body request: RecoverRequest): Response<RecoverResponse>
 
     @POST("/api/upload")
     suspend fun upload(

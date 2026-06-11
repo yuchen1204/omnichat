@@ -29,7 +29,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 云端备份记录
         CloudBackupRecord::class,
     ],
-    version = 41,
+    version = 42,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -608,6 +608,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages RENAME COLUMN imagePath TO imagePaths")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -648,7 +654,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_37_38,
                         MIGRATION_38_39,
                         MIGRATION_39_40,
-                        MIGRATION_40_41
+                        MIGRATION_40_41,
+                        MIGRATION_41_42
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

@@ -45,6 +45,27 @@ export async function findUserByTOTPSecret(kv, totpSecret) {
 }
 
 /**
+ * List all user IDs
+ * @param {KVNamespace} kv
+ * @returns {Promise<Array<{userId: string, totpSecret: string}>>}
+ */
+export async function listAllUsers(kv) {
+  const list = await kv.list({ prefix: 'user:' });
+  const users = [];
+  for (const key of list.keys) {
+    const data = await kv.get(key.name);
+    if (data) {
+      const user = JSON.parse(data);
+      users.push({
+        userId: key.name.replace('user:', ''),
+        totpSecret: user.totpSecret,
+      });
+    }
+  }
+  return users;
+}
+
+/**
  * Save backup metadata
  * @param {KVNamespace} kv
  * @param {string} userId
