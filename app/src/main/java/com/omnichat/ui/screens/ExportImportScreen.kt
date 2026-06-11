@@ -66,6 +66,10 @@ fun ExportImportView(
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showImportConfirm by remember { mutableStateOf(false) }
 
+    // ── 数据库备份状态 ──────────────────────────────────────────────────
+    var pendingDbImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showDbImportConfirm by remember { mutableStateOf(false) }
+
     // ── SAF 文件选择器 ────────────────────────────────────────────────────
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -95,6 +99,34 @@ fun ExportImportView(
             } else {
                 pendingImportUri = uri
                 showImportConfirm = true
+            }
+        }
+    }
+
+    // ── 数据库备份 SAF 文件选择器 ──────────────────────────────────────
+    val dbExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (uri != null) {
+            settingsViewModel.exportDatabaseBackup(
+                context = context,
+                uri = uri
+            )
+        }
+    }
+
+    val dbImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val fileName = uri.lastPathSegment ?: ""
+            if (!fileName.endsWith(".omnidb", ignoreCase = true)) {
+                settingsViewModel.setError(
+                    context.getString(R.string.db_backup_import_invalid_file)
+                )
+            } else {
+                pendingDbImportUri = uri
+                showDbImportConfirm = true
             }
         }
     }
@@ -359,6 +391,85 @@ fun ExportImportView(
             }
         }
 
+        // ── 数据库备份卡片 ────────────────────────────────────────────────
+        SectionCard(
+            title = uiText("db_backup.section", R.string.db_backup_section),
+            icon = Icons.Default.Storage,
+            iconColor = MaterialTheme.colorScheme.tertiary,
+            fs = fs
+        ) {
+            Text(
+                text = uiText("db_backup.desc", R.string.db_backup_desc),
+                fontSize = (12 * fs).sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = (17 * fs).sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Text(
+                text = uiText("db_backup.includes", R.string.db_backup_includes),
+                fontSize = (11 * fs).sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            val isLoading = status is ExportImportStatus.Loading
+
+            Button(
+                onClick = {
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                    dbExportLauncher.launch("omnichat_db_$timestamp.omnidb")
+                },
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    uiText("db_backup.export_btn", R.string.db_backup_export_btn),
+                    fontSize = (14 * fs).sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FilledTonalButton(
+                onClick = { dbImportLauncher.launch(arrayOf("*/*")) },
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    uiText("db_backup.import_btn", R.string.db_backup_import_btn),
+                    fontSize = (14 * fs).sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // ── 云备份卡片 ────────────────────────────────────────────────
+        CloudBackupCard()
+
         // ── 说明卡片 ──────────────────────────────────────────────────────
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -416,6 +527,25 @@ fun ExportImportView(
             onDismiss = {
                 showImportConfirm = false
                 pendingImportUri = null
+            }
+        )
+    }
+
+    // ── 数据库导入确认对话框 ─────────────────────────────────────────────
+    if (showDbImportConfirm && pendingDbImportUri != null) {
+        DbImportConfirmDialog(
+            fs = fs,
+            onConfirm = {
+                showDbImportConfirm = false
+                settingsViewModel.importDatabaseBackup(
+                    context = context,
+                    uri = pendingDbImportUri!!
+                )
+                pendingDbImportUri = null
+            },
+            onDismiss = {
+                showDbImportConfirm = false
+                pendingDbImportUri = null
             }
         )
     }
@@ -664,6 +794,66 @@ private fun ImportConfirmDialog(
                 shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
             ) {
                 Text(uiText("import.confirm.cancel", R.string.import_confirm_cancel), fontSize = (13 * fs).sp)
+            }
+        }
+    )
+}
+
+@Composable
+private fun DbImportConfirmDialog(
+    fs: Float,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text(
+                uiText("db_backup.import.confirm.title", R.string.db_backup_import_confirm_title),
+                fontSize = (16 * fs).sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = uiText("db_backup.import.confirm.body", R.string.db_backup_import_confirm_body),
+                fontSize = (13 * fs).sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = (18 * fs).sp
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text(
+                    uiText("db_backup.import.confirm.ok", R.string.db_backup_import_confirm_ok),
+                    fontSize = (13 * fs).sp
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape((LocalUISettings.current.cornerRadiusDp - 2).coerceAtLeast(0).dp)
+            ) {
+                Text(
+                    uiText("db_backup.import.confirm.cancel", R.string.db_backup_import_confirm_cancel),
+                    fontSize = (13 * fs).sp
+                )
             }
         }
     )
