@@ -633,6 +633,7 @@
     <string name="tool_agent_status_result">结果:</string>
     <string name="tool_agent_list_empty">当前会话没有 subAgent 任务。</string>
     <string name="tool_agent_list_header">subAgent 任务 (%1$d):</string>
+    <string name="tool_agent_prev_not_completed">上一个任务 %1$s 尚未完成（状态：%2$s）。只能引用已完成的任务。</string>
     <string name="tool_mark_reminded_empty">请提供要标记的记忆 ID。</string>
     <string name="tool_mark_reminded_success">提醒已成功标记为已提醒。</string>
     <string name="tool_mark_reminded_not_found">未找到指定 ID 的记忆。</string>

@@ -1743,6 +1743,7 @@ object BuiltinToolHandler {
         val agentType = arguments.optString("agent_type").trim()
         val task = arguments.optString("task").trim()
         val contextStr = arguments.optString("context").takeIf { it.isNotBlank() }
+        val previousTaskId = arguments.optString("previous_task_id").takeIf { it.isNotBlank() }
         val filesArray = arguments.optJSONArray("files")
         val files = if (filesArray != null) {
             (0 until filesArray.length()).map { filesArray.optString(it) }.filter { it.isNotBlank() }
@@ -1761,7 +1762,30 @@ object BuiltinToolHandler {
         val repository = getRepository(context)
         val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
 
-        val taskId = executor.execute(sessionId, agentType, task, contextStr, files)
+        // 构建附加上下文：合并用户提供的 context 和上一个任务的摘要
+        val enrichedContext = buildString {
+            if (contextStr != null) {
+                appendLine(contextStr)
+            }
+
+            if (previousTaskId != null) {
+                val prevTask = executor.getStatus(previousTaskId)
+                if (prevTask == null) {
+                    return errorResponse(str(context, R.string.tool_agent_task_not_found, previousTaskId))
+                }
+                if (prevTask.status != com.omnichat.agent.AgentTaskStatus.COMPLETED) {
+                    return errorResponse(str(context, R.string.tool_agent_prev_not_completed, previousTaskId, prevTask.status))
+                }
+                val summary = prevTask.summary ?: prevTask.result?.take(500) ?: "(无结果)"
+                if (this@buildString.isNotBlank()) appendLine()
+                appendLine("## 上一个任务的完成情况")
+                appendLine("类型: ${prevTask.agentType}")
+                appendLine("任务: ${prevTask.taskDescription.take(100)}")
+                appendLine("摘要: $summary")
+            }
+        }.takeIf { it.isNotBlank() }
+
+        val taskId = executor.execute(sessionId, agentType, task, enrichedContext, files)
 
         return successResponse(str(context, R.string.tool_agent_delegated, agentType, taskId, taskId))
     }

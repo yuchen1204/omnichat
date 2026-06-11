@@ -633,6 +633,7 @@
     <string name="tool_agent_status_result">Result:</string>
     <string name="tool_agent_list_empty">No subAgent tasks in this session.</string>
     <string name="tool_agent_list_header">subAgent Tasks (%1$d):</string>
+    <string name="tool_agent_prev_not_completed">Previous task %1$s is not completed (status: %2$s). Only completed tasks can be referenced.</string>
     <string name="tool_mark_reminded_empty">Please provide a memory_id to mark as reminded.</string>
     <string name="tool_mark_reminded_success">Reminder marked as reminded successfully.</string>
     <string name="tool_mark_reminded_not_found">Memory with the given ID was not found.</string>
