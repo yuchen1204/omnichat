@@ -803,6 +803,7 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
                 prop("files", "array", "可选。需要操作的文件路径列表。") {
                     items { }
                 }
+                prop("previous_task_id", "string", "可选。引用之前完成的任务 ID，其结构化摘要将作为上下文注入到当前任务中。当任务之间有依赖关系时使用，例如：上一个 coder 任务完成后，将结果传给 tester 任务。")
                 required("agent_type", "task")
             }
         ),
