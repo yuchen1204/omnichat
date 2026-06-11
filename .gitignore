@@ -35,6 +35,9 @@ app/build/
 opencode.json
 metadata.json
 
+### Node ###
+node_modules/
+
 ### Build Outputs ###
 .build-outputs/
 
