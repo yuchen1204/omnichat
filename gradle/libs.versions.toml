@@ -41,6 +41,7 @@ firebaseBom = "34.12.0"
 composeMarkdown = "0.7.2"
 poi = "5.5.1"
 desugar_jdk_libs = "2.1.5"
+work = "2.9.0"
 zxing = "4.3.0"
 
 [libraries]
@@ -96,6 +97,7 @@ compose-markdown = { group = "com.github.jeziellago", name = "compose-markdown",
 poi = { group = "org.apache.poi", name = "poi", version.ref = "poi" }
 poi-ooxml = { group = "org.apache.poi", name = "poi-ooxml", version.ref = "poi" }
 desugarJdkLibs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugar_jdk_libs" }
+work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 zxing-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxing" }
 
 [plugins]

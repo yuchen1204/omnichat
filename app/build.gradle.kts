@@ -191,6 +191,8 @@ dependencies {
   implementation(libs.accompanist.permissions)
   // ZXing for QR code generation
   implementation(libs.zxing.embedded)
+  // WorkManager for periodic background tasks
+  implementation(libs.work.runtime)
   testImplementation("org.json:json:20231013")
   testImplementation("org.mockito:mockito-core:5.11.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
