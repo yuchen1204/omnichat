@@ -18,7 +18,10 @@ import com.omnichat.cloud.BackupMeta
 import com.omnichat.ui.theme.LocalUISettings
 import com.google.zxing.qrcode.QRCodeWriter
 import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 
 @Composable
 fun CloudBackupCard(
@@ -221,4 +224,293 @@ fun CloudBackupCard(
             fs = fs
         )
     }
+}
+
+@Composable
+private fun BindTotpDialog(
+    totpSecret: String?,
+    qrCodeUrl: String?,
+    isLoading: Boolean,
+    onVerify: (String) -> Unit,
+    onDismiss: () -> Unit,
+    fs: Float
+) {
+    var totpCode by remember { mutableStateOf("") }
+    val clipboardManager = LocalClipboardManager.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
+        title = {
+            Text("绑定云备份账号", fontSize = (16 * fs).sp)
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "1. 打开 Google Authenticator\n2. 扫描下方二维码或手动输入密钥",
+                    fontSize = (12 * fs).sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // QR Code
+                if (qrCodeUrl != null) {
+                    val qrCodeBitmap = remember(qrCodeUrl) {
+                        generateQrCodeBitmap(qrCodeUrl)
+                    }
+                    Image(
+                        bitmap = qrCodeBitmap.asImageBitmap(),
+                        contentDescription = "QR Code",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .padding(16.dp)
+                    )
+                }
+
+                // Manual secret
+                if (totpSecret != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "密钥: $totpSecret",
+                            fontSize = (12 * fs).sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(totpSecret))
+                        }) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "复制",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                // TOTP code input
+                OutlinedTextField(
+                    value = totpCode,
+                    onValueChange = { totpCode = it },
+                    label = { Text("输入验证码确认") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onVerify(totpCode) },
+                enabled = totpCode.length == 6 && !isLoading,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("确认绑定")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun RecoveryDialog(
+    isLoading: Boolean,
+    onVerify: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+    fs: Float
+) {
+    var totpSecret by remember { mutableStateOf("") }
+    var totpCode by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
+        title = {
+            Text("恢复云备份数据", fontSize = (16 * fs).sp)
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = totpSecret,
+                    onValueChange = { totpSecret = it },
+                    label = { Text("TOTP 密钥") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = totpCode,
+                    onValueChange = { totpCode = it },
+                    label = { Text("当前验证码") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onVerify(totpSecret, totpCode) },
+                enabled = totpSecret.isNotBlank() && totpCode.length == 6 && !isLoading,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("验证并恢复")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun BackupListDialog(
+    backups: List<BackupMeta>,
+    isRestoring: Boolean,
+    onRestore: (BackupMeta) -> Unit,
+    onDismiss: () -> Unit,
+    fs: Float
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
+        title = {
+            Text("选择要恢复的备份", fontSize = (16 * fs).sp)
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (backups.isEmpty()) {
+                    Text(
+                        text = "暂无备份",
+                        fontSize = (12 * fs).sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    backups.forEach { backup ->
+                        BackupItem(
+                            backup = backup,
+                            isRestoring = isRestoring,
+                            onRestore = { onRestore(backup) },
+                            fs = fs
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+@Composable
+private fun BackupItem(
+    backup: BackupMeta,
+    isRestoring: Boolean,
+    onRestore: () -> Unit,
+    fs: Float
+) {
+    val icon = when (backup.type) {
+        "omnidb" -> Icons.Default.Storage
+        "omniconfig" -> Icons.Default.Settings
+        else -> Icons.Default.FilePresent
+    }
+
+    val typeLabel = when (backup.type) {
+        "omnidb" -> "数据库"
+        "omniconfig" -> "配置"
+        else -> "未知"
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "${backup.filename}",
+                    fontSize = (12 * fs).sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "$typeLabel · ${formatTimestamp(backup.createdAt)}",
+                    fontSize = (10 * fs).sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = onRestore,
+                enabled = !isRestoring,
+                shape = RoundedCornerShape(6.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text("恢复", fontSize = (11 * fs).sp)
+            }
+        }
+    }
+}
+
+private fun formatTimestamp(timestamp: Long): String {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+    return sdf.format(java.util.Date(timestamp))
+}
+
+private fun generateQrCodeBitmap(content: String): Bitmap {
+    val writer = QRCodeWriter()
+    val bitMatrix = writer.encode(content, com.google.zxing.BarcodeFormat.QR_CODE, 512, 512)
+    val width = bitMatrix.width
+    val height = bitMatrix.height
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+    for (x in 0 until width) {
+        for (y in 0 until height) {
+            bitmap.setPixel(x, y, if (bitMatrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        }
+    }
+    return bitmap
 }
