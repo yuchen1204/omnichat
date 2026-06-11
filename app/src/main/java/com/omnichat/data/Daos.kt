@@ -119,8 +119,8 @@ interface MemoryItemDao {
     @Query("UPDATE memory_items SET confidence = MAX(1, confidence - MAX(0, CAST((:now - lastReinforcedAt) / 86400000 AS INT))), lastReinforcedAt = :now WHERE pinned = 0 AND lastReinforcedAt < :now AND confidence > 1")
     suspend fun batchDecayConfidence(now: Long)
 
-    /** 查询所有未提醒的到期/即将到期的时间记忆（dueDate <= today） */
-    @Query("SELECT * FROM memory_items WHERE dueDate IS NOT NULL AND reminded = 0 AND dueDate <= :todayStr ORDER BY dueDate ASC")
+    /** 查询所有未提醒的已过期时间记忆（dueDate < today，不含今天新建的） */
+    @Query("SELECT * FROM memory_items WHERE dueDate IS NOT NULL AND reminded = 0 AND dueDate < :todayStr ORDER BY dueDate ASC")
     suspend fun getPendingReminders(todayStr: String): List<MemoryItem>
 
     /** 标记一条时间记忆为已提醒 */
@@ -343,4 +343,25 @@ interface AgentConfigDao {
 
     @Query("DELETE FROM agent_configs WHERE agentType = :agentType")
     suspend fun deleteConfigByType(agentType: String)
+}
+
+@Dao
+interface CloudBackupDao {
+    @Query("SELECT * FROM cloud_backups WHERE userId = :userId ORDER BY createdAt DESC")
+    fun getBackupsByUser(userId: String): Flow<List<CloudBackupRecord>>
+
+    @Query("SELECT * FROM cloud_backups WHERE backupId = :backupId")
+    suspend fun getBackupById(backupId: String): CloudBackupRecord?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBackup(record: CloudBackupRecord)
+
+    @Delete
+    suspend fun deleteBackup(record: CloudBackupRecord)
+
+    @Query("DELETE FROM cloud_backups WHERE userId = :userId")
+    suspend fun deleteAllBackupsForUser(userId: String)
+
+    @Query("SELECT COUNT(*) FROM cloud_backups WHERE userId = :userId")
+    suspend fun getBackupCount(userId: String): Int
 }
