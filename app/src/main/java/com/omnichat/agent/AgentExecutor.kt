@@ -148,6 +148,8 @@ class AgentExecutor(
                     return@launch
                 }
 
+                // 执行任务（声明在 try 外面，finally 之后仍可访问）
+                var executionResult: TaskExecutionResult? = null
                 try {
                     // 更新状态为 RUNNING
                     updateState(taskId, initialState.copy(
@@ -156,7 +158,7 @@ class AgentExecutor(
                     ))
 
                     // 执行任务（also returns the config used, avoiding duplicate lookup）
-                    val executionResult = executeTask(sessionId, agentType, task, contextStr, files)
+                    executionResult = executeTask(sessionId, agentType, task, contextStr, files)
 
                 } finally {
                     // 释放许可
@@ -166,9 +168,13 @@ class AgentExecutor(
 
                 // --- Below this line, semaphores are released ---
 
+                val result = executionResult?.result
+                    ?: throw IllegalStateException("Task execution did not return a result")
+
                 // 生成结构化摘要 (runs without holding concurrency permits)
                 val summary = try {
-                    generateTaskSummary(agentType, task, executionResult.result, executionResult.config)
+                    val config = executionResult!!.config
+                    generateTaskSummary(agentType, task, result, config)
                 } catch (e: Exception) {
                     Log.w(TAG, "Summary generation failed: ${e.message}")
                     null
@@ -177,13 +183,13 @@ class AgentExecutor(
                 // 更新状态为 COMPLETED
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.COMPLETED,
-                    result = executionResult.result,
+                    result = result,
                     summary = summary,
                     completedAt = System.currentTimeMillis()
                 ))
 
                 // 插入结果消息到主会话
-                insertResultMessage(sessionId, taskId, agentType, executionResult.result)
+                insertResultMessage(sessionId, taskId, agentType, result)
             } catch (e: CancellationException) {
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.CANCELLED,
