@@ -52,9 +52,6 @@ class CloudBackupManager(private val context: Context) {
 
     suspend fun uploadDatabaseBackup(): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val db = AppDatabase.getDatabase(context)
-            db.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
-
             val dbPath = context.getDatabasePath("ai_chat_memory_db")
             val data = dbPath.readBytes()
             val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
