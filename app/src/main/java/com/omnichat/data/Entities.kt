@@ -445,3 +445,12 @@ data class AgentConfig(
     val maxConcurrency: Int = 1,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "cloud_backups")
+data class CloudBackupRecord(
+    @PrimaryKey val backupId: String,
+    val type: String,                   // "omnidb" | "omniconfig"
+    val filename: String,
+    val createdAt: Long,
+    val userId: String
+)
