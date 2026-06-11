@@ -134,7 +134,7 @@ class CloudBackupManager(private val context: Context) {
         return repository.getWorkersUrl()
     }
 
-    private fun generateConfigExport(): String {
+    private suspend fun generateConfigExport(): String {
         val repository = com.omnichat.data.AppRepository(
             com.omnichat.data.AppDatabase.getDatabase(context)
         )
@@ -145,7 +145,7 @@ class CloudBackupManager(private val context: Context) {
 
             // Providers
             val providers = org.json.JSONArray()
-            val allProviders = runBlocking { repository.getAllConfigs() }
+            val allProviders = repository.getAllConfigs()
             for (p in allProviders) {
                 providers.put(org.json.JSONObject().apply {
                     put("name", p.name)
@@ -164,7 +164,7 @@ class CloudBackupManager(private val context: Context) {
 
             // MCP Servers
             val mcpServers = org.json.JSONArray()
-            val allServers = runBlocking { repository.getAllMcpServers() }
+            val allServers = repository.getAllMcpServers()
             for (s in allServers) {
                 mcpServers.put(org.json.JSONObject().apply {
                     put("id", s.id)
@@ -179,7 +179,7 @@ class CloudBackupManager(private val context: Context) {
 
             // MCP File Permissions
             val permissions = org.json.JSONArray()
-            val allPerms = runBlocking { repository.getAllMcpFilePermissions() }
+            val allPerms = repository.getAllMcpFilePermissions()
             for (p in allPerms) {
                 permissions.put(org.json.JSONObject().apply {
                     put("path", p.path)
@@ -191,7 +191,7 @@ class CloudBackupManager(private val context: Context) {
 
             // Memories
             val memories = org.json.JSONArray()
-            val allMemories = runBlocking { repository.getAllMemories() }
+            val allMemories = repository.getAllMemories()
             for (m in allMemories) {
                 memories.put(org.json.JSONObject().apply {
                     put("content", m.content)
@@ -207,7 +207,7 @@ class CloudBackupManager(private val context: Context) {
 
             // Prompt Templates
             val templates = org.json.JSONArray()
-            val allTemplates = runBlocking { repository.getAllTemplates() }
+            val allTemplates = repository.getAllTemplates()
             for (t in allTemplates) {
                 templates.put(org.json.JSONObject().apply {
                     put("name", t.name)
@@ -218,7 +218,7 @@ class CloudBackupManager(private val context: Context) {
             put("promptTemplates", templates)
 
             // UI Settings
-            val uiSettings = runBlocking { repository.getUISettings() }
+            val uiSettings = repository.getUISettings()
             if (uiSettings != null) {
                 put("uiSettings", org.json.JSONObject().apply {
                     put("primaryColor", uiSettings.primaryColor)
@@ -264,7 +264,7 @@ class CloudBackupManager(private val context: Context) {
 
             // Color Scheme Presets
             val presets = org.json.JSONArray()
-            val allPresets = runBlocking { repository.getAllColorSchemePresets() }
+            val allPresets = repository.getAllColorSchemePresets()
             for (p in allPresets) {
                 presets.put(org.json.JSONObject().apply {
                     put("schemeId", p.schemeId)

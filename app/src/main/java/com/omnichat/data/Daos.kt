@@ -348,7 +348,7 @@ interface AgentConfigDao {
 @Dao
 interface CloudBackupDao {
     @Query("SELECT * FROM cloud_backups WHERE userId = :userId ORDER BY createdAt DESC")
-    fun getBackupsByUser(userId: String): Flow<List<CloudBackupRecord>>
+    suspend fun getBackupsByUser(userId: String): List<CloudBackupRecord>
 
     @Query("SELECT * FROM cloud_backups WHERE backupId = :backupId")
     suspend fun getBackupById(backupId: String): CloudBackupRecord?

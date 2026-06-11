@@ -187,7 +187,7 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteAgentConfig(agentType: String) = agentConfigDao.deleteConfigByType(agentType)
 
     // Cloud Backups
-    fun getCloudBackups(userId: String): Flow<List<CloudBackupRecord>> =
+    suspend fun getCloudBackups(userId: String): List<CloudBackupRecord> =
         cloudBackupDao.getBackupsByUser(userId)
 
     suspend fun getCloudBackupById(backupId: String): CloudBackupRecord? =

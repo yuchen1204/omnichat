@@ -6,8 +6,6 @@ import android.util.Base64
 import com.omnichat.data.AppDatabase
 import com.omnichat.data.CloudBackupRecord
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -249,8 +247,8 @@ class CloudBackupRepository(private val context: Context) {
 
     // --- Local Backup Records ---
 
-    fun getLocalBackups(): Flow<List<CloudBackupRecord>> {
-        val uid = userId ?: return flowOf(emptyList())
+    suspend fun getLocalBackups(): List<CloudBackupRecord> {
+        val uid = userId ?: return emptyList()
         return cloudBackupDao.getBackupsByUser(uid)
     }
 
