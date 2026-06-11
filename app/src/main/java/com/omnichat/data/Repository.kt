@@ -28,6 +28,7 @@ class AppRepository(private val db: AppDatabase) {
     private val memoryAssociationDao = db.memoryAssociationDao()
     private val memoryAuditDao = db.memoryAuditDao()
     private val agentConfigDao = db.agentConfigDao()
+    private val cloudBackupDao = db.cloudBackupDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -184,4 +185,23 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getAgentConfigByType(agentType: String): AgentConfig? = agentConfigDao.getConfigByType(agentType)
     suspend fun upsertAgentConfig(config: AgentConfig) = agentConfigDao.upsertConfig(config)
     suspend fun deleteAgentConfig(agentType: String) = agentConfigDao.deleteConfigByType(agentType)
+
+    // Cloud Backups
+    fun getCloudBackups(userId: String): Flow<List<CloudBackupRecord>> =
+        cloudBackupDao.getBackupsByUser(userId)
+
+    suspend fun getCloudBackupById(backupId: String): CloudBackupRecord? =
+        cloudBackupDao.getBackupById(backupId)
+
+    suspend fun insertCloudBackup(record: CloudBackupRecord) =
+        cloudBackupDao.insertBackup(record)
+
+    suspend fun deleteCloudBackup(record: CloudBackupRecord) =
+        cloudBackupDao.deleteBackup(record)
+
+    suspend fun deleteAllCloudBackups(userId: String) =
+        cloudBackupDao.deleteAllBackupsForUser(userId)
+
+    suspend fun getCloudBackupCount(userId: String): Int =
+        cloudBackupDao.getBackupCount(userId)
 }
