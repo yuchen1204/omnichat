@@ -13,6 +13,12 @@ import java.util.concurrent.Semaphore
 
 private const val TAG = "AgentExecutor"
 
+/** Result of task execution with the config used (avoids duplicate lookup). */
+private data class TaskExecutionResult(
+    val result: String,
+    val config: ModelConfig
+)
+
 /** subAgent 任务状态 */
 enum class AgentTaskStatus {
     PENDING,    // 等待执行
@@ -149,34 +155,35 @@ class AgentExecutor(
                         startedAt = System.currentTimeMillis()
                     ))
 
-                    // 执行任务
-                    val result = executeTask(sessionId, agentType, task, contextStr, files)
-
-                    // 生成结构化摘要
-                    val summary = try {
-                        val taskConfig = getAgentModelConfig(agentType)
-                        if (taskConfig != null) generateTaskSummary(agentType, task, result, taskConfig) else null
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Summary generation failed: ${e.message}")
-                        null
-                    }
-
-                    // 更新状态为 COMPLETED
-                    updateState(taskId, initialState.copy(
-                        status = AgentTaskStatus.COMPLETED,
-                        result = result,
-                        summary = summary,
-                        completedAt = System.currentTimeMillis()
-                    ))
-
-                    // 插入结果消息到主会话
-                    insertResultMessage(sessionId, taskId, agentType, result)
+                    // 执行任务（also returns the config used, avoiding duplicate lookup）
+                    val executionResult = executeTask(sessionId, agentType, task, contextStr, files)
 
                 } finally {
                     // 释放许可
                     typeSemaphore.release()
                     globalSemaphore.release()
                 }
+
+                // --- Below this line, semaphores are released ---
+
+                // 生成结构化摘要 (runs without holding concurrency permits)
+                val summary = try {
+                    generateTaskSummary(agentType, task, executionResult.result, executionResult.config)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Summary generation failed: ${e.message}")
+                    null
+                }
+
+                // 更新状态为 COMPLETED
+                updateState(taskId, initialState.copy(
+                    status = AgentTaskStatus.COMPLETED,
+                    result = executionResult.result,
+                    summary = summary,
+                    completedAt = System.currentTimeMillis()
+                ))
+
+                // 插入结果消息到主会话
+                insertResultMessage(sessionId, taskId, agentType, executionResult.result)
             } catch (e: CancellationException) {
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.CANCELLED,
@@ -200,6 +207,8 @@ class AgentExecutor(
 
     /**
      * 执行单个任务的核心逻辑。
+     * Returns both the result and the config used, so the caller can reuse the config
+     * for summary generation without a duplicate lookup.
      */
     private suspend fun executeTask(
         sessionId: Long,
@@ -207,7 +216,7 @@ class AgentExecutor(
         task: String,
         contextStr: String?,
         files: List<String>?
-    ): String = withTimeout(TASK_TIMEOUT_MS) {
+    ): TaskExecutionResult = withTimeout(TASK_TIMEOUT_MS) {
         // 1. 获取模型配置
         val config = getAgentModelConfig(agentType)
             ?: throw IllegalStateException("Agent type $agentType has no model configured. Please configure in settings.")
@@ -222,7 +231,7 @@ class AgentExecutor(
         val result = ApiClient.executeCompletion(config, systemPrompt, userMessage)
             ?: throw IllegalStateException("LLM API returned empty result")
 
-        result
+        TaskExecutionResult(result = result, config = config)
     }
 
     /**
