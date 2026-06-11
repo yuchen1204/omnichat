@@ -352,6 +352,115 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // ── 数据库备份/恢复 ─────────────────────────────────────────────────
+
+    /**
+     * 导出完整数据库文件（.omnidb）
+     * 包含主数据库文件和 WAL/SHM 文件
+     */
+    fun exportDatabaseBackup(context: Context, uri: Uri) {
+        exportImportStatus = ExportImportStatus.Loading
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getDatabase(context)
+                // 先执行 WAL checkpoint，确保数据写入主文件
+                db.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+
+                val dbPath = context.getDatabasePath("ai_chat_memory_db")
+
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    // 写入文件头标记
+                    val header = "OMNIDB_V1\n".toByteArray()
+                    output.write(header)
+
+                    // 写入主数据库文件
+                    dbPath.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                }
+
+                // 同时备份 WAL 和 SHM 文件（如果存在）
+                val walFile = java.io.File(dbPath.path + "-wal")
+                val shmFile = java.io.File(dbPath.path + "-shm")
+
+                if (walFile.exists() && shmFile.exists()) {
+                    // WAL 和 SHM 已通过 checkpoint 合并到主文件，不需要额外备份
+                }
+
+                withContext(Dispatchers.Main) {
+                    exportImportStatus = ExportImportStatus.Success(
+                        getApplication<Application>().getString(R.string.db_backup_export_success)
+                    )
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    exportImportStatus = ExportImportStatus.Error(
+                        getApplication<Application>().getString(R.string.db_backup_export_failed, e.message ?: "")
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 导入数据库备份文件
+     * 替换当前数据库，需要重启应用
+     */
+    fun importDatabaseBackup(context: Context, uri: Uri) {
+        exportImportStatus = ExportImportStatus.Loading
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val db = AppDatabase.getDatabase(context)
+                val dbPath = context.getDatabasePath("ai_chat_memory_db")
+
+                // 读取备份文件
+                val backupData = context.contentResolver.openInputStream(uri)?.use { input ->
+                    // 读取并验证文件头
+                    val header = ByteArray(10)
+                    val headerRead = input.read(header)
+                    val headerStr = String(header, 0, headerRead)
+
+                    if (!headerStr.startsWith("OMNIDB_V1")) {
+                        throw IllegalArgumentException("Invalid backup file format")
+                    }
+
+                    // 读取剩余数据
+                    input.readBytes()
+                } ?: throw IllegalArgumentException("Cannot read backup file")
+
+                // 关闭数据库连接
+                db.close()
+
+                // 备份当前数据库（以防万一）
+                val backupDir = java.io.File(dbPath.parent, "backup_before_import")
+                backupDir.mkdirs()
+                val currentBackup = java.io.File(backupDir, "ai_chat_memory_db_backup_${System.currentTimeMillis()}")
+                dbPath.copyTo(currentBackup, overwrite = true)
+
+                // 写入新数据库
+                dbPath.writeBytes(backupData)
+
+                // 删除 WAL 和 SHM 文件（新数据库不需要）
+                java.io.File(dbPath.path + "-wal").delete()
+                java.io.File(dbPath.path + "-shm").delete()
+
+                withContext(Dispatchers.Main) {
+                    exportImportStatus = ExportImportStatus.Success(
+                        getApplication<Application>().getString(R.string.db_backup_import_success)
+                    )
+                    // 触发应用重启
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    exportImportStatus = ExportImportStatus.Error(
+                        getApplication<Application>().getString(R.string.db_backup_import_failed, e.message ?: "")
+                    )
+                }
+            }
+        }
+    }
+
     // ── JSON 序列化辅助 ──────────────────────────────────────────────────
 
     private fun uiSettingsToJson(s: UISettings): JSONObject = JSONObject().apply {

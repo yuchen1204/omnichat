@@ -54,27 +54,43 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handleFire(context: Context, meta: TimerManager.TimerMeta) {
-        Log.i(TAG, "[handleFire] id=${meta.timerId}, session=${meta.sessionId}, repeat=${meta.repeatIntervalMs}ms")
+        Log.i(TAG, "[handleFire] id=${meta.timerId}, session=${meta.sessionId}, repeat=${meta.repeatIntervalMs}ms, linkedTask=${meta.linkedTaskId}")
 
         // 1. 发送系统通知
         sendNotification(context, meta)
 
-        // 2. 向 session 插入提醒消息
-        scope.launch {
-            try {
-                val db = AppDatabase.getDatabase(context)
-                val repository = AppRepository(db)
-                val content = context.getString(R.string.alarm_timer_reminder, meta.message)
-                repository.insertMessage(
-                    Message(
+        // 2. 关联了 subAgent 任务时，发射自动检查事件唤醒 MainAgent（不插入静态消息，由 LLM 直接响应）
+        //    未关联任务时，插入静态提醒消息
+        if (!meta.linkedTaskId.isNullOrBlank()) {
+            scope.launch {
+                try {
+                    TimerAutoCheckManager.emitAutoCheck(
                         sessionId = meta.sessionId,
-                        role = "assistant",
-                        content = content
+                        taskId = meta.linkedTaskId,
+                        timerMessage = meta.message
                     )
-                )
-                Log.i(TAG, "[handleFire] 消息已插入 session=${meta.sessionId}")
-            } catch (e: Exception) {
-                Log.e(TAG, "[handleFire] 插入消息失败", e)
+                    Log.i(TAG, "[handleFire] 已发射自动检查事件 task=${meta.linkedTaskId}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[handleFire] 发射自动检查事件失败", e)
+                }
+            }
+        } else {
+            scope.launch {
+                try {
+                    val db = AppDatabase.getDatabase(context)
+                    val repository = AppRepository(db)
+                    val content = context.getString(R.string.alarm_timer_reminder, meta.message)
+                    repository.insertMessage(
+                        Message(
+                            sessionId = meta.sessionId,
+                            role = "assistant",
+                            content = content
+                        )
+                    )
+                    Log.i(TAG, "[handleFire] 消息已插入 session=${meta.sessionId}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[handleFire] 插入消息失败", e)
+                }
             }
         }
 

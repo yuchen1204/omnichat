@@ -55,7 +55,7 @@ import com.omnichat.data.MemoryItem
 import com.omnichat.data.ModelConfig
 import com.omnichat.ui.components.ChunkedStreamingText
 import com.omnichat.ui.components.ToolGroupCard
-import com.omnichat.ui.components.SilentToolIndicator
+
 import com.omnichat.ui.components.toUIModel
 import com.omnichat.ui.theme.LocalChatFontScale
 import com.omnichat.ui.theme.LocalUISettings
@@ -282,39 +282,31 @@ fun ChatView(viewModel: ChatViewModel) {
         // --- 聚合 Tool 消息展示逻辑并反转以适应 reverseLayout ---
         val processedMessages = remember(messages, uiSettings.silentToolCalls) {
             val list = mutableListOf<Any>()
-            var currentToolGroup = mutableListOf<com.omnichat.data.Message>()
-            var silentToolCount = 0
-            var silentToolMessages = mutableListOf<com.omnichat.data.Message>()
-
-            fun flushToolGroup() {
-                if (currentToolGroup.isNotEmpty()) {
-                    if (uiSettings.silentToolCalls) {
-                        silentToolCount += currentToolGroup.size
-                        silentToolMessages.addAll(currentToolGroup)
-                    } else {
+            if (uiSettings.silentToolCalls) {
+                // 静默模式：完全跳过 tool 消息，不显示任何工具调用痕迹
+                messages.forEach { msg ->
+                    if (msg.role != "tool") {
+                        list.add(msg)
+                    }
+                }
+            } else {
+                // 正常模式：聚合连续的 tool 消息为一组
+                var currentToolGroup = mutableListOf<com.omnichat.data.Message>()
+                fun flushToolGroup() {
+                    if (currentToolGroup.isNotEmpty()) {
                         list.add(currentToolGroup.toList())
+                        currentToolGroup.clear()
                     }
-                    currentToolGroup.clear()
                 }
-            }
-
-            messages.forEach { msg ->
-                if (msg.role == "tool") {
-                    currentToolGroup.add(msg)
-                } else {
-                    flushToolGroup()
-                    // 静默模式：遇到非 tool 消息时，先输出之前累积的聚合指示器
-                    if (uiSettings.silentToolCalls && silentToolCount > 0) {
-                        list.add(com.omnichat.ui.components.SilentToolAggregated(silentToolCount, silentToolMessages.map { it.toUIModel() }))
-                        silentToolCount = 0
-                        silentToolMessages = mutableListOf()
+                messages.forEach { msg ->
+                    if (msg.role == "tool") {
+                        currentToolGroup.add(msg)
+                    } else {
+                        flushToolGroup()
+                        list.add(msg)
                     }
-                    list.add(msg)
                 }
-            }
-            flushToolGroup()
-            if (uiSettings.silentToolCalls && silentToolCount > 0) {
-                list.add(com.omnichat.ui.components.SilentToolAggregated(silentToolCount, silentToolMessages.map { it.toUIModel() }))
+                flushToolGroup()
             }
             list.reversed()
         }
@@ -370,21 +362,14 @@ fun ChatView(viewModel: ChatViewModel) {
                                 )
                             }
                         }
-                        is com.omnichat.ui.components.SilentToolAggregated -> {
-                            SilentToolIndicator(totalCount = item.totalCount)
-                        }
                         is List<*> -> {
-                            // 渲染工具调用聚合条
+                            // 渲染工具调用聚合条（静默模式下不会出现此分支）
                             @Suppress("UNCHECKED_CAST")
                             val toolMsgs = (item as List<com.omnichat.data.Message>).map { it.toUIModel() }
-                            if (uiSettings.silentToolCalls) {
-                                SilentToolIndicator(totalCount = toolMsgs.size)
-                            } else {
-                                ToolGroupCard(
-                                    messages = toolMsgs,
-                                    allMessages = uiModelMessages
-                                )
-                            }
+                            ToolGroupCard(
+                                messages = toolMsgs,
+                                allMessages = uiModelMessages
+                            )
                         }
                     }
                 }

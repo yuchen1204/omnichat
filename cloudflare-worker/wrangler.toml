@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [[kv_namespaces]]
 binding = "WORKERS_KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "dc77e39b071b4386be9ffb11f314434d"
 
 [[r2_buckets]]
 binding = "BACKUP_R2"

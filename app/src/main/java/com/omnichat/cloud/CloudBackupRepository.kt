@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
 
 class CloudBackupRepository(private val context: Context) {
@@ -21,7 +23,7 @@ class CloudBackupRepository(private val context: Context) {
         private const val KEY_USER_ID = "user_id"
         private const val KEY_SESSION_TOKEN = "session_token"
         private const val KEY_WORKERS_URL = "workers_url"
-        private const val DEFAULT_WORKERS_URL = "https://omnichat-cloud-backup.your-subdomain.workers.dev"
+        private const val DEFAULT_WORKERS_URL = "https://omnichat-cloud-backup.xiaoyuchen031204.workers.dev"
     }
 
     private val prefs: SharedPreferences by lazy {
@@ -43,10 +45,14 @@ class CloudBackupRepository(private val context: Context) {
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .build()
 
+            val moshi = Moshi.Builder()
+                .addLast(KotlinJsonAdapterFactory())
+                .build()
+
             api = Retrofit.Builder()
                 .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
                 .client(client)
-                .addConverterFactory(GsonConverterFactory.create())
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build()
                 .create(CloudBackupApi::class.java)
         }
