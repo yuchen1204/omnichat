@@ -30,8 +30,8 @@ class CloudBackupRepository(private val context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    private val database = AppDatabase.getDatabase(context)
-    private val cloudBackupDao = database.cloudBackupDao()
+    private val database by lazy { AppDatabase.getDatabase(context) }
+    private val cloudBackupDao by lazy { database.cloudBackupDao() }
 
     private var api: CloudBackupApi? = null
 
