@@ -26,8 +26,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemoryAuditEntry::class,
         // subAgent 模型配置
         AgentConfig::class,
+        // 云端备份记录
+        CloudBackupRecord::class,
     ],
-    version = 40,
+    version = 41,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +51,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memoryAuditDao(): MemoryAuditDao
     // subAgent 模型配置 DAO
     abstract fun agentConfigDao(): AgentConfigDao
+    // 云端备份记录 DAO
+    abstract fun cloudBackupDao(): CloudBackupDao
 
     companion object {
         @Volatile
@@ -587,6 +591,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v40→v41：新增 cloud_backups 表（云端备份记录） */
+        private val MIGRATION_40_41 = object : Migration(40, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS cloud_backups (
+                        backupId TEXT NOT NULL PRIMARY KEY,
+                        type TEXT NOT NULL,
+                        filename TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        userId TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -626,7 +647,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_36_37,
                         MIGRATION_37_38,
                         MIGRATION_38_39,
-                        MIGRATION_39_40
+                        MIGRATION_39_40,
+                        MIGRATION_40_41
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。
