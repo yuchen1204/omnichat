@@ -189,6 +189,8 @@ dependencies {
   implementation(libs.androidx.camera.view)
   implementation(libs.androidx.camera.core)
   implementation(libs.accompanist.permissions)
+  // ZXing for QR code generation
+  implementation(libs.zxing.embedded)
   testImplementation("org.json:json:20231013")
   testImplementation("org.mockito:mockito-core:5.11.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
