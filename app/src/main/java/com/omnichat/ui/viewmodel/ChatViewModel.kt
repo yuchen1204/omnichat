@@ -376,9 +376,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 finalSystemPrompt += "\n\n<!-- COMPLETED SUBAGENT TASKS -->"
                 finalSystemPrompt += "\nThe following subAgent tasks have completed. Their results are available for reference:\n"
                 completedTasks.forEach { task ->
-                    val resultPreview = task.result?.take(200) ?: "(no result)"
-                    finalSystemPrompt += "- [${task.agentType}] ${task.taskDescription.take(50)}... (taskId: ${task.taskId})\n"
-                    finalSystemPrompt += "  Result summary: $resultPreview\n"
+                    val summaryPreview = task.summary?.take(500) ?: task.result?.take(300) ?: "(no result)"
+                    finalSystemPrompt += "- [${task.agentType}] ${task.taskDescription.take(80)}... (taskId: ${task.taskId})\n"
+                    finalSystemPrompt += "  Summary: $summaryPreview\n\n"
                 }
             }
         }
