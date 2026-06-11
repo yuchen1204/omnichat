@@ -1,0 +1,11 @@
+name = "omnichat-cloud-backup"
+main = "src/index.js"
+compatibility_date = "2024-06-01"
+
+[env]
+WORKERS_KV_NAMESPACE = "BACKUP_KV"
+R2_BUCKET = "BACKUP_R2"
+
+[env.production]
+WORKERS_KV_NAMESPACE = "BACKUP_KV"
+R2_BUCKET = "BACKUP_R2"
