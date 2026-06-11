@@ -194,6 +194,7 @@ fun CloudBackupCard(
             totpSecret = uiState.totpSecret,
             qrCodeUrl = uiState.qrCodeUrl,
             isLoading = uiState.isLoading,
+            onRequestTotp = { viewModel.bindTotp() },
             onVerify = { code ->
                 uiState.totpSecret?.let { secret ->
                     viewModel.verifyAndBind(secret, code)
@@ -231,12 +232,20 @@ private fun BindTotpDialog(
     totpSecret: String?,
     qrCodeUrl: String?,
     isLoading: Boolean,
+    onRequestTotp: () -> Unit,
     onVerify: (String) -> Unit,
     onDismiss: () -> Unit,
     fs: Float
 ) {
     var totpCode by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
+
+    // Request TOTP when dialog first appears
+    LaunchedEffect(Unit) {
+        if (totpSecret == null && !isLoading) {
+            onRequestTotp()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
