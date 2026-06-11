@@ -30,6 +30,7 @@ data class AgentTaskState(
     val status: AgentTaskStatus,
     val taskDescription: String,
     val result: String? = null,
+    val summary: String? = null,  // structured summary of what was done
     val error: String? = null,
     val startedAt: Long? = null,
     val completedAt: Long? = null
@@ -151,10 +152,20 @@ class AgentExecutor(
                     // 执行任务
                     val result = executeTask(sessionId, agentType, task, contextStr, files)
 
+                    // 生成结构化摘要
+                    val summary = try {
+                        val taskConfig = getAgentModelConfig(agentType)
+                        if (taskConfig != null) generateTaskSummary(agentType, task, result, taskConfig) else null
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Summary generation failed: ${e.message}")
+                        null
+                    }
+
                     // 更新状态为 COMPLETED
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.COMPLETED,
                         result = result,
+                        summary = summary,
                         completedAt = System.currentTimeMillis()
                     ))
 
@@ -212,6 +223,43 @@ class AgentExecutor(
             ?: throw IllegalStateException("LLM API returned empty result")
 
         result
+    }
+
+    /**
+     * 使用 LLM 为已完成的任务生成结构化摘要。
+     */
+    private suspend fun generateTaskSummary(
+        agentType: String,
+        task: String,
+        result: String,
+        config: ModelConfig
+    ): String? {
+        return try {
+            val summaryPrompt = buildString {
+                appendLine("你是一个任务总结器。请根据以下信息生成简洁的结构化摘要。")
+                appendLine()
+                appendLine("## 原始任务")
+                appendLine(task)
+                appendLine()
+                appendLine("## 执行结果")
+                appendLine(result.take(3000))
+                appendLine()
+                appendLine("## 输出格式（严格遵循，不要加任何其他内容）")
+                appendLine("- 完成了什么（1-2 句）")
+                appendLine("- 做了哪些更改（列出具体文件/操作，如无更改则写\"无文件更改\"）")
+                appendLine("- 关键发现（如有）")
+                appendLine("- 建议的后续步骤（如有）")
+            }
+
+            ApiClient.executeCompletion(
+                config,
+                "你是任务总结器。输出简洁的结构化摘要，不要加标题或额外说明。",
+                summaryPrompt
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to generate task summary: ${e.message}")
+            null
+        }
     }
 
     /**
