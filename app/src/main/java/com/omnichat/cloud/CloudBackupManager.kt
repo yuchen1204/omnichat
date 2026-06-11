@@ -145,7 +145,7 @@ class CloudBackupManager(private val context: Context) {
 
             // Providers
             val providers = org.json.JSONArray()
-            val allProviders = runBlocking { repository.getAllModelConfigs() }
+            val allProviders = runBlocking { repository.getAllConfigs() }
             for (p in allProviders) {
                 providers.put(org.json.JSONObject().apply {
                     put("name", p.name)
@@ -171,11 +171,8 @@ class CloudBackupManager(private val context: Context) {
                     put("name", s.name)
                     put("command", s.command)
                     put("args", s.args)
-                    put("runtime", s.runtime)
+                    put("env", s.env)
                     put("isEnabled", s.isEnabled)
-                    put("autoStart", s.autoStart)
-                    put("envVars", s.envVars)
-                    put("customHeaders", s.customHeaders)
                 })
             }
             put("mcpServers", mcpServers)
@@ -186,15 +183,15 @@ class CloudBackupManager(private val context: Context) {
             for (p in allPerms) {
                 permissions.put(org.json.JSONObject().apply {
                     put("path", p.path)
-                    put("permission", p.permission)
-                    put("allowed", p.allowed)
+                    put("isAllowed", p.isAllowed)
+                    put("permissionType", p.permissionType)
                 })
             }
             put("mcpFilePermissions", permissions)
 
             // Memories
             val memories = org.json.JSONArray()
-            val allMemories = runBlocking { repository.getAllMemoryItems() }
+            val allMemories = runBlocking { repository.getAllMemories() }
             for (m in allMemories) {
                 memories.put(org.json.JSONObject().apply {
                     put("content", m.content)
@@ -210,18 +207,18 @@ class CloudBackupManager(private val context: Context) {
 
             // Prompt Templates
             val templates = org.json.JSONArray()
-            val allTemplates = runBlocking { repository.getAllPromptTemplates() }
+            val allTemplates = runBlocking { repository.getAllTemplates() }
             for (t in allTemplates) {
                 templates.put(org.json.JSONObject().apply {
-                    put("title", t.title)
-                    put("promptText", t.promptText)
+                    put("name", t.name)
+                    put("templateText", t.templateText)
                     put("isActive", t.isActive)
                 })
             }
             put("promptTemplates", templates)
 
             // UI Settings
-            val uiSettings = runBlocking { repository.getUiSettings() }
+            val uiSettings = runBlocking { repository.getUISettings() }
             if (uiSettings != null) {
                 put("uiSettings", org.json.JSONObject().apply {
                     put("primaryColor", uiSettings.primaryColor)
