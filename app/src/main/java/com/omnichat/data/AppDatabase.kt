@@ -29,7 +29,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 云端备份记录
         CloudBackupRecord::class,
     ],
-    version = 42,
+    version = 43,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -610,8 +610,116 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_41_42 = object : Migration(41, 42) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE messages RENAME COLUMN imagePath TO imagePaths")
+                // 重建 messages 表：重命名 imagePath → imagePaths（兼容 SQLite < 3.25）
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS messages_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        sessionId INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        toolCallId TEXT,
+                        toolCallsJson TEXT,
+                        timestamp INTEGER NOT NULL,
+                        imagePaths TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_sessionId ON messages(sessionId)")
+                db.execSQL("""
+                    INSERT INTO messages_new (id, sessionId, role, content, toolCallId, toolCallsJson, timestamp, imagePaths)
+                    SELECT id, sessionId, role, content, toolCallId, toolCallsJson, timestamp, imagePath FROM messages
+                """.trimIndent())
+                db.execSQL("DROP TABLE messages")
+                db.execSQL("ALTER TABLE messages_new RENAME TO messages")
             }
+        }
+
+        /** v42→v43：silentToolCalls(Boolean) → silentToolGroups(String)（兼容 SQLite < 3.35） */
+        private val MIGRATION_42_43 = object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 重建 ui_settings 表：移除 silentToolCalls，添加 silentToolGroups
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS ui_settings_new (
+                        id INTEGER PRIMARY KEY NOT NULL,
+                        primaryColor TEXT NOT NULL,
+                        onPrimaryColor TEXT NOT NULL,
+                        primaryContainerColor TEXT NOT NULL,
+                        onPrimaryContainerColor TEXT NOT NULL,
+                        secondaryColor TEXT NOT NULL,
+                        onSecondaryColor TEXT NOT NULL,
+                        secondaryContainerColor TEXT NOT NULL,
+                        onSecondaryContainerColor TEXT NOT NULL,
+                        tertiaryColor TEXT NOT NULL,
+                        onTertiaryColor TEXT NOT NULL,
+                        backgroundColor TEXT NOT NULL,
+                        onBackgroundColor TEXT NOT NULL,
+                        surfaceColor TEXT NOT NULL,
+                        onSurfaceColor TEXT NOT NULL,
+                        surfaceVariantColor TEXT NOT NULL,
+                        onSurfaceVariantColor TEXT NOT NULL,
+                        outlineColor TEXT NOT NULL,
+                        outlineVariantColor TEXT NOT NULL,
+                        errorColor TEXT NOT NULL,
+                        onErrorColor TEXT NOT NULL,
+                        errorContainerColor TEXT NOT NULL,
+                        onErrorContainerColor TEXT NOT NULL,
+                        successColor TEXT NOT NULL,
+                        warningColor TEXT NOT NULL,
+                        infoColor TEXT NOT NULL,
+                        accentColor TEXT NOT NULL,
+                        sidebarBackgroundColor TEXT NOT NULL,
+                        sidebarOnBackgroundColor TEXT NOT NULL,
+                        sidebarActiveColor TEXT NOT NULL,
+                        sidebarOnActiveColor TEXT NOT NULL,
+                        cornerRadiusDp INTEGER NOT NULL,
+                        spacingMultiplier REAL NOT NULL,
+                        fontSizeScale REAL NOT NULL,
+                        chatFontSizeScale REAL NOT NULL,
+                        fontFamily TEXT NOT NULL,
+                        enabledMcpGroups TEXT NOT NULL,
+                        silentToolGroups TEXT NOT NULL DEFAULT '',
+                        updatedAt INTEGER NOT NULL,
+                        uiStrings TEXT NOT NULL
+                    )
+                """.trimIndent())
+                // 旧 silentToolCalls=true → 新 silentToolGroups="*"（静默所有）
+                db.execSQL("""
+                    INSERT INTO ui_settings_new (
+                        id, primaryColor, onPrimaryColor, primaryContainerColor, onPrimaryContainerColor,
+                        secondaryColor, onSecondaryColor, secondaryContainerColor, onSecondaryContainerColor,
+                        tertiaryColor, onTertiaryColor,
+                        backgroundColor, onBackgroundColor, surfaceColor, onSurfaceColor,
+                        surfaceVariantColor, onSurfaceVariantColor, outlineColor, outlineVariantColor,
+                        errorColor, onErrorColor, errorContainerColor, onErrorContainerColor,
+                        successColor, warningColor, infoColor, accentColor,
+                        sidebarBackgroundColor, sidebarOnBackgroundColor, sidebarActiveColor, sidebarOnActiveColor,
+                        cornerRadiusDp, spacingMultiplier, fontSizeScale, chatFontSizeScale, fontFamily,
+                        enabledMcpGroups, silentToolGroups, updatedAt, uiStrings
+                    )
+                    SELECT
+                        id, primaryColor, onPrimaryColor, primaryContainerColor, onPrimaryContainerColor,
+                        secondaryColor, onSecondaryColor, secondaryContainerColor, onSecondaryContainerColor,
+                        tertiaryColor, onTertiaryColor,
+                        backgroundColor, onBackgroundColor, surfaceColor, onSurfaceColor,
+                        surfaceVariantColor, onSurfaceVariantColor, outlineColor, outlineVariantColor,
+                        errorColor, onErrorColor, errorContainerColor, onErrorContainerColor,
+                        successColor, warningColor, infoColor, accentColor,
+                        sidebarBackgroundColor, sidebarOnBackgroundColor, sidebarActiveColor, sidebarOnActiveColor,
+                        cornerRadiusDp, spacingMultiplier, fontSizeScale, chatFontSizeScale, fontFamily,
+                        enabledMcpGroups,
+                        CASE WHEN silentToolCalls = 1 THEN '*' ELSE '' END AS silentToolGroups,
+                        updatedAt, uiStrings
+                    FROM ui_settings
+                """.trimIndent())
+                db.execSQL("DROP TABLE ui_settings")
+                db.execSQL("ALTER TABLE ui_settings_new RENAME TO ui_settings")
+            }
+        }
+
+        /**
+         * 清除单例实例（用于数据库恢复后重新初始化）。
+         */
+        fun clearInstance() {
+            INSTANCE = null
         }
 
         fun getDatabase(context: Context): AppDatabase {
@@ -655,7 +763,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_38_39,
                         MIGRATION_39_40,
                         MIGRATION_40_41,
-                        MIGRATION_41_42
+                        MIGRATION_41_42,
+                        MIGRATION_42_43
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

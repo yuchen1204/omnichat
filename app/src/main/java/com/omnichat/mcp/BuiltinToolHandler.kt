@@ -586,9 +586,9 @@ object BuiltinToolHandler {
     private suspend fun handleSetToolDisplayMode(context: Context, arguments: JSONObject): JSONObject {
         val repository = getRepository(context)
         val current = repository.getUISettings() ?: UISettings()
-        val silent = arguments.optBoolean("silent", false)
-        repository.upsertUISettings(current.copy(silentToolCalls = silent, updatedAt = System.currentTimeMillis()))
-        return if (silent) {
+        val groups = arguments.optString("groups", "")
+        repository.upsertUISettings(current.copy(silentToolGroups = groups, updatedAt = System.currentTimeMillis()))
+        return if (groups.isNotEmpty()) {
             successResponse(str(context, R.string.tool_display_silent_on))
         } else {
             successResponse(str(context, R.string.tool_display_silent_off))
@@ -1773,6 +1773,10 @@ object BuiltinToolHandler {
                 if (prevTask == null) {
                     return errorResponse(str(context, R.string.tool_agent_task_not_found, previousTaskId))
                 }
+                // 验证前一个任务属于当前会话（防止跨会话数据泄露）
+                if (sessionId != null && prevTask.sessionId != sessionId) {
+                    return errorResponse(str(context, R.string.tool_agent_task_not_found, previousTaskId))
+                }
                 if (prevTask.status != com.omnichat.agent.AgentTaskStatus.COMPLETED) {
                     return errorResponse(str(context, R.string.tool_agent_prev_not_completed, previousTaskId, prevTask.status))
                 }
@@ -1801,6 +1805,11 @@ object BuiltinToolHandler {
         val state = executor.getStatus(taskId)
 
         if (state == null) {
+            return errorResponse(str(context, R.string.tool_agent_task_not_found, taskId))
+        }
+
+        // 验证任务属于当前会话（防止跨会话数据泄露）
+        if (sessionId != null && state.sessionId != sessionId) {
             return errorResponse(str(context, R.string.tool_agent_task_not_found, taskId))
         }
 

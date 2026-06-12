@@ -459,14 +459,14 @@ private fun BackupListDialog(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    grouped.forEach { (timeMillis, group) ->
-                        val timeLabel = formatRelativeTime(timeMillis)
+                    grouped.forEach { (groupKey, group) ->
+                        val timeLabel = formatRelativeTime(group.first().createdAt)
                         Text(
                             text = timeLabel,
                             fontSize = (11 * fs).sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = if (grouped.keys.first() == timeMillis) 0.dp else 4.dp)
+                            modifier = Modifier.padding(top = if (grouped.keys.first() == groupKey) 0.dp else 4.dp)
                         )
                         group.forEach { backup ->
                             BackupItem(

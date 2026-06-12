@@ -386,11 +386,14 @@ data class UISettings(
     val enabledMcpGroups: String = "core,ui_appearance,efficiency,memory",
 
     /**
-     * 静默工具调用显示模式。
-     * true = 工具调用完全隐藏，UI 中不显示任何工具调用痕迹。
+     * 静默工具调用：按组隐藏，逗号分隔。
+     * 空字符串 = 不静默（显示所有）。
+     * "*" = 静默所有内置工具。
+     * "files,efficiency" = 静默指定组的工具。
+     * 外部 MCP 工具不受影响。
      * AI 通过 set_tool_display_mode 工具控制。
      */
-    val silentToolCalls: Boolean = false,
+    val silentToolGroups: String = "",
 
     val updatedAt: Long = System.currentTimeMillis(),
 

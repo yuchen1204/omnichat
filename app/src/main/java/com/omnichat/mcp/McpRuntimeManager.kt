@@ -315,6 +315,41 @@ class McpRuntimeManager private constructor(private val context: Context) {
         @Volatile
         private var INSTANCE: McpRuntimeManager? = null
 
+        /**
+         * 内置工具 → 分类组映射（供 UI 层静默过滤使用）
+         */
+        val builtinToolGroups = mapOf(
+            "get_current_time" to "core",
+            "search_memory" to "memory",
+            "mark_reminded" to "memory",
+            "get_ui_capabilities" to "ui_appearance",
+            "adjust_ui" to "ui_appearance",
+            "color_scheme" to "ui_appearance",
+            "list_ui_texts" to "ui_text",
+            "set_ui_texts" to "ui_text",
+            "file_write" to "files",
+            "file_read" to "files",
+            "file_append" to "files",
+            "file_delete" to "files",
+            "file_list" to "files",
+            "file_search" to "files",
+            "file_info" to "files",
+            "file_move" to "files",
+            "file_copy" to "files",
+            "file_mkdir" to "files",
+            "create_document" to "documents",
+            "ask_user" to "core",
+            "create_timer" to "efficiency",
+            "cancel_timer" to "efficiency",
+            "list_timers" to "efficiency",
+            "list_mcp_tool_groups" to "core",
+            "configure_mcp_tool_groups" to "core",
+            "delegate_task" to "core",
+            "check_task_status" to "core",
+            "list_agent_tasks" to "core",
+            "set_tool_display_mode" to "efficiency",
+        )
+
         fun getInstance(context: Context): McpRuntimeManager {
             val instance = INSTANCE ?: synchronized(this) {
                 INSTANCE ?: McpRuntimeManager(context.applicationContext).also { INSTANCE = it }
@@ -763,10 +798,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "set_tool_display_mode",
-            description = "Control how tool call results are displayed in the chat. When silent=true, tool calls are completely hidden from the UI — no indicators, no cards, nothing. The tools still execute normally; only the display is suppressed. Use this when performing multiple sequential tool calls to avoid flooding the screen. Call set_tool_display_mode(silent=false) to restore the normal detailed display.",
+            description = "Control which tool groups are hidden in the chat UI. Tools still execute normally; only the display is suppressed. Use this when performing multiple sequential tool calls to avoid flooding the screen. Call with groups=\"\" to restore normal display for all tools.",
             inputSchema = schema {
-                prop("silent", "boolean", "true = completely hide tool calls from UI, false = show full tool call cards (default).")
-                required("silent")
+                prop("groups", "string", "Comma-separated group names to silence. Empty string = show all (default). '*' = silence all built-in tools. Available groups: core, memory, ui_appearance, ui_text, files, documents, efficiency. External MCP tools are never affected.")
+                required("groups")
             }
         ),
         // ── 运行时工具组管理 ──────────────────────────────────────────────
@@ -843,40 +878,6 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
                 }
             }
         ),
-    )
-
-    /**
-     * 将内置工具映射到分类组
-     */
-    private val builtinToolGroups = mapOf(
-        "get_current_time" to "core",
-        "search_memory" to "memory",
-        "mark_reminded" to "memory",
-        "get_ui_capabilities" to "ui_appearance",
-        "adjust_ui" to "ui_appearance",
-        "color_scheme" to "ui_appearance",
-        "list_ui_texts" to "ui_text",
-        "set_ui_texts" to "ui_text",
-        "file_write" to "files",
-        "file_read" to "files",
-        "file_append" to "files",
-        "file_delete" to "files",
-        "file_list" to "files",
-        "file_search" to "files",
-        "file_info" to "files",
-        "file_move" to "files",
-        "file_copy" to "files",
-        "file_mkdir" to "files",
-        "create_document" to "documents",
-        "ask_user" to "core",
-        "create_timer" to "efficiency",
-        "cancel_timer" to "efficiency",
-        "list_timers" to "efficiency",
-        "list_mcp_tool_groups" to "core",
-        "configure_mcp_tool_groups" to "core",
-        "delegate_task" to "core",
-        "check_task_status" to "core",
-        "list_agent_tasks" to "core",
     )
 
     /** Internal helper: build a HEX color schema node */

@@ -177,10 +177,24 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
             val result = manager.uploadAllBackups()
             result.fold(
                 onSuccess = {
-                    _uiState.update {
-                        it.copy(isUploading = false, success = "备份成功")
-                    }
-                    loadBackups()
+                    // Load backups first, then update UI
+                    val listResult = manager.listBackups()
+                    listResult.fold(
+                        onSuccess = { backups ->
+                            _uiState.update {
+                                it.copy(
+                                    isUploading = false,
+                                    success = "备份成功",
+                                    backups = backups
+                                )
+                            }
+                        },
+                        onFailure = {
+                            _uiState.update {
+                                it.copy(isUploading = false, success = "备份成功")
+                            }
+                        }
+                    )
                 },
                 onFailure = { e ->
                     _uiState.update {

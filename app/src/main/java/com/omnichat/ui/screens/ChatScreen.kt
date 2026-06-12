@@ -66,6 +66,8 @@ import androidx.compose.ui.res.stringResource
 import com.omnichat.R
 import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.viewmodel.ChatViewModel
+import com.omnichat.mcp.McpRuntimeManager
+import org.json.JSONArray
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -175,7 +177,43 @@ fun ChatView(viewModel: ChatViewModel) {
     }
 
     // 新消息到来时的自动滚动（使用 scrollToItem 避免动画与用户手势冲突）
-    LaunchedEffect(messages.size) {
+    // 注意：静默模式下 tool 消息不渲染，需要用过滤后的数量，否则隐藏 tool 消息也会触发滚动
+    val visibleMessageCount = remember(messages, uiSettings.silentToolGroups) {
+        val silentGroups = uiSettings.silentToolGroups
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (silentGroups.isEmpty()) {
+            messages.size
+        } else {
+            val wildcard = silentGroups.contains("*")
+            // 构建 toolCallId → group 查找表
+            val toolGroupLookup = mutableMapOf<String, String>()
+            messages.forEach { msg ->
+                if (msg.role == "assistant" && !msg.toolCallsJson.isNullOrBlank()) {
+                    try {
+                        val arr = JSONArray(msg.toolCallsJson)
+                        for (i in 0 until arr.length()) {
+                            val item = arr.optJSONObject(i) ?: continue
+                            val id = item.optString("id")
+                            val function = item.optJSONObject("function") ?: continue
+                            val name = function.optString("name")
+                            val group = McpRuntimeManager.builtinToolGroups[name]
+                            if (id.isNotEmpty() && group != null) {
+                                toolGroupLookup[id] = group
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+            messages.count { msg ->
+                if (msg.role != "tool") true
+                else {
+                    val group = msg.toolCallId?.let { toolGroupLookup[it] }
+                    !wildcard && (group == null || group !in silentGroups)
+                }
+            }
+        }
+    }
+    LaunchedEffect(visibleMessageCount) {
         if (autoScrollEnabled && messages.isNotEmpty()) {
             listState.scrollToItem(0)
         }
@@ -281,12 +319,38 @@ fun ChatView(viewModel: ChatViewModel) {
         }
 
         // --- 聚合 Tool 消息展示逻辑并反转以适应 reverseLayout ---
-        val processedMessages = remember(messages, uiSettings.silentToolCalls) {
+        val processedMessages = remember(messages, uiSettings.silentToolGroups) {
             val list = mutableListOf<Any>()
-            if (uiSettings.silentToolCalls) {
-                // 静默模式：完全跳过 tool 消息，不显示任何工具调用痕迹
+            val silentGroups = uiSettings.silentToolGroups
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            if (silentGroups.isNotEmpty()) {
+                // 构建 toolCallId → toolName 查找表
+                val toolNameLookup = mutableMapOf<String, String>()
                 messages.forEach { msg ->
-                    if (msg.role != "tool") {
+                    if (msg.role == "assistant" && !msg.toolCallsJson.isNullOrBlank()) {
+                        try {
+                            val arr = JSONArray(msg.toolCallsJson)
+                            for (i in 0 until arr.length()) {
+                                val item = arr.optJSONObject(i) ?: continue
+                                val id = item.optString("id")
+                                val function = item.optJSONObject("function") ?: continue
+                                val name = function.optString("name")
+                                if (id.isNotEmpty() && name.isNotEmpty()) {
+                                    toolNameLookup[id] = name
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+                // 按组过滤 tool 消息
+                val wildcard = silentGroups.contains("*")
+                messages.forEach { msg ->
+                    if (msg.role == "tool") {
+                        val toolName = msg.toolCallId?.let { toolNameLookup[it] }
+                        val group = toolName?.let { McpRuntimeManager.builtinToolGroups[it] }
+                        val shouldSilence = wildcard || (group != null && group in silentGroups)
+                        if (!shouldSilence) list.add(msg)
+                    } else {
                         list.add(msg)
                     }
                 }

@@ -1,6 +1,6 @@
 // src/index.js
 import { generateTOTP, verifyTOTP } from './totp.js';
-import { createUser, getUser, findUserByTOTPSecret, listAllUsers, saveBackupMeta, listBackups, deleteBackupMeta, uploadToR2, downloadFromR2, deleteFromR2, enforceBackupQuota } from './storage.js';
+import { createUser, getUser, findUserByTOTPSecret, listAllUsers, saveBackupMeta, listBackups, getBackupMeta, deleteBackupMeta, uploadToR2, downloadFromR2, deleteFromR2, enforceBackupQuota } from './storage.js';
 import { createSession, validateSession } from './auth.js';
 
 export default {
@@ -123,7 +123,7 @@ export default {
 
       // POST /api/upload - Upload backup
       if (path === '/api/upload' && request.method === 'POST') {
-        const { type, data, filename } = await request.json();
+        const { type, data, filename, groupId } = await request.json();
 
         if (!['omnidb', 'omniconfig'].includes(type)) {
           return Response.json({ error: 'Invalid backup type' }, {
@@ -148,6 +148,7 @@ export default {
           type,
           size: dataBytes.length,
           filename,
+          groupId: groupId || null,
         });
 
         await enforceBackupQuota(env.WORKERS_KV, env.BACKUP_R2, userId);
@@ -166,8 +167,7 @@ export default {
       // GET /api/download/:backupId - Download backup
       if (path.startsWith('/api/download/') && request.method === 'GET') {
         const backupId = path.split('/').pop();
-        const meta = await listBackups(env.WORKERS_KV, userId);
-        const backup = meta.find(b => b.id === backupId);
+        const backup = await getBackupMeta(env.WORKERS_KV, userId, backupId);
 
         if (!backup) {
           return Response.json({ error: 'Backup not found' }, {
@@ -196,8 +196,7 @@ export default {
       // DELETE /api/delete/:backupId - Delete backup
       if (path.startsWith('/api/delete/') && request.method === 'DELETE') {
         const backupId = path.split('/').pop();
-        const backups = await listBackups(env.WORKERS_KV, userId);
-        const backup = backups.find(b => b.id === backupId);
+        const backup = await getBackupMeta(env.WORKERS_KV, userId, backupId);
 
         if (!backup) {
           return Response.json({ error: 'Backup not found' }, {

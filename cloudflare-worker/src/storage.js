@@ -70,7 +70,7 @@ export async function listAllUsers(kv) {
  * @param {KVNamespace} kv
  * @param {string} userId
  * @param {string} backupId
- * @param {{ type: string, size: number, filename: string }} meta
+ * @param {{ type: string, size: number, filename: string, groupId?: string }} meta
  */
 export async function saveBackupMeta(kv, userId, backupId, meta) {
   await kv.put(`backup:${userId}:${backupId}`, JSON.stringify({
@@ -162,16 +162,35 @@ export async function deleteFromR2(bucket, userId, backupId, type) {
 }
 
 /**
- * Enforce backup quota (max 5), delete oldest if exceeded
+ * Enforce backup quota (max 5 groups), delete oldest groups if exceeded.
+ * A group is a set of backups sharing the same groupId (omniconfig + omnidb).
  * @param {KVNamespace} kv
  * @param {R2Bucket} bucket
  * @param {string} userId
+ * @param {number} maxGroups - max number of backup groups to keep
  */
-export async function enforceBackupQuota(kv, bucket, userId, maxBackups = 5) {
+export async function enforceBackupQuota(kv, bucket, userId, maxGroups = 5) {
   const backups = await listBackups(kv, userId);
-  while (backups.length > maxBackups) {
-    const oldest = backups.shift();
-    await deleteFromR2(bucket, userId, oldest.id, oldest.type);
-    await deleteBackupMeta(kv, userId, oldest.id);
+
+  // Group backups by groupId
+  const groups = new Map();
+  for (const b of backups) {
+    const gid = b.groupId || b.id; // fallback for legacy backups without groupId
+    if (!groups.has(gid)) {
+      groups.set(gid, { groupId: gid, createdAt: b.createdAt, items: [] });
+    }
+    groups.get(gid).items.push(b);
+  }
+
+  // Sort groups by oldest first
+  const sortedGroups = [...groups.values()].sort((a, b) => a.createdAt - b.createdAt);
+
+  // Delete oldest groups until within quota
+  while (sortedGroups.length > maxGroups) {
+    const oldest = sortedGroups.shift();
+    for (const item of oldest.items) {
+      await deleteFromR2(bucket, userId, item.id, item.type);
+      await deleteBackupMeta(kv, userId, item.id);
+    }
   }
 }

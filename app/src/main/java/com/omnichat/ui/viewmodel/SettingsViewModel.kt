@@ -500,7 +500,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         put("chatFontSizeScale", s.chatFontSizeScale)
         put("fontFamily", s.fontFamily)
         put("enabledMcpGroups", s.enabledMcpGroups)
-        put("silentToolCalls", s.silentToolCalls)
+        put("silentToolGroups", s.silentToolGroups)
         put("uiStrings", s.uiStrings)
     }
 
@@ -544,7 +544,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             chatFontSizeScale = obj.optDouble("chatFontSizeScale", defaults.chatFontSizeScale.toDouble()).toFloat(),
             fontFamily = obj.optString("fontFamily", defaults.fontFamily),
             enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
-            silentToolCalls = obj.optBoolean("silentToolCalls", defaults.silentToolCalls),
+            silentToolGroups = obj.optString("silentToolGroups", defaults.silentToolGroups),
             uiStrings = obj.optString("uiStrings", "{}"),
             updatedAt = System.currentTimeMillis()
         )

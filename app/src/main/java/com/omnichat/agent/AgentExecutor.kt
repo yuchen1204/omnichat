@@ -171,22 +171,37 @@ class AgentExecutor(
                 val result = executionResult?.result
                     ?: throw IllegalStateException("Task execution did not return a result")
 
+                // 立即标记为 COMPLETED（关闭 previous_task_id 竞态窗口）
+                // summary 异步生成后更新
+                updateState(taskId, initialState.copy(
+                    status = AgentTaskStatus.COMPLETED,
+                    result = result,
+                    completedAt = System.currentTimeMillis()
+                ))
+
                 // 生成结构化摘要 (runs without holding concurrency permits)
                 val summary = try {
                     val config = executionResult!!.config
                     generateTaskSummary(agentType, task, result, config)
+                } catch (e: CancellationException) {
+                    throw e  // Must rethrow per Kotlin coroutines convention
                 } catch (e: Exception) {
                     Log.w(TAG, "Summary generation failed: ${e.message}")
                     null
                 }
 
-                // 更新状态为 COMPLETED
-                updateState(taskId, initialState.copy(
-                    status = AgentTaskStatus.COMPLETED,
-                    result = result,
-                    summary = summary,
-                    completedAt = System.currentTimeMillis()
-                ))
+                // 更新 summary 字段
+                if (summary != null) {
+                    updateState(taskId, initialState.copy(
+                        status = AgentTaskStatus.COMPLETED,
+                        result = result,
+                        summary = summary,
+                        completedAt = System.currentTimeMillis()
+                    ))
+                }
+
+                // 自动清理超过 30 分钟的旧任务，防止内存无限增长
+                cleanupOldTasks()
 
                 // 插入结果消息到主会话
                 insertResultMessage(sessionId, taskId, agentType, result)
@@ -390,6 +405,27 @@ class AgentExecutor(
         _taskStates.update { map ->
             map.filterValues {
                 it.status != AgentTaskStatus.COMPLETED && it.status != AgentTaskStatus.FAILED && it.status != AgentTaskStatus.CANCELLED
+            }
+        }
+    }
+
+    /**
+     * 自动清理超过 30 分钟的已完成任务（防止内存无限增长）。
+     * 保留最近的任务以供上下文注入使用。
+     */
+    private fun cleanupOldTasks() {
+        val cutoff = System.currentTimeMillis() - 30 * 60 * 1000L
+        _taskStates.update { map ->
+            map.filter { (_, state) ->
+                // 保留所有非终态任务
+                if (state.status != AgentTaskStatus.COMPLETED &&
+                    state.status != AgentTaskStatus.FAILED &&
+                    state.status != AgentTaskStatus.CANCELLED) {
+                    return@filter true
+                }
+                // 保留最近 30 分钟的终态任务
+                val completedAt = state.completedAt ?: return@filter true
+                completedAt > cutoff
             }
         }
     }

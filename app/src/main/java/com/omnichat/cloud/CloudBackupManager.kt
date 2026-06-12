@@ -38,7 +38,7 @@ class CloudBackupManager(private val context: Context) {
 
     // --- Backup ---
 
-    suspend fun uploadConfigBackup(): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun uploadConfigBackup(groupId: String? = null): Result<String> = withContext(Dispatchers.IO) {
         try {
             // Generate config export (same logic as SettingsViewModel.exportToUri)
             val configJson = generateConfigExport()
@@ -47,15 +47,19 @@ class CloudBackupManager(private val context: Context) {
                 .format(java.util.Date())
             val filename = "omnichat_config_$timestamp.omniconfig"
 
-            val result = repository.uploadBackup("omniconfig", data, filename)
+            val result = repository.uploadBackup("omniconfig", data, filename, groupId)
             result.map { it.backupId }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun uploadDatabaseBackup(): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun uploadDatabaseBackup(groupId: String? = null): Result<String> = withContext(Dispatchers.IO) {
         try {
+            // Checkpoint WAL to ensure all committed data is in the main file
+            val db = AppDatabase.getDatabase(context)
+            db.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
+
             val dbPath = context.getDatabasePath("ai_chat_memory_db")
             val rawData = dbPath.readBytes()
             // Add OMNIDB_V1 header to match local export format
@@ -65,7 +69,7 @@ class CloudBackupManager(private val context: Context) {
                 .format(java.util.Date())
             val filename = "omnichat_db_$timestamp.omnidb"
 
-            val result = repository.uploadBackup("omnidb", data, filename)
+            val result = repository.uploadBackup("omnidb", data, filename, groupId)
             result.map { it.backupId }
         } catch (e: Exception) {
             Result.failure(e)
@@ -73,8 +77,9 @@ class CloudBackupManager(private val context: Context) {
     }
 
     suspend fun uploadAllBackups(): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
-        val configResult = uploadConfigBackup()
-        val dbResult = uploadDatabaseBackup()
+        val groupId = java.util.UUID.randomUUID().toString()
+        val configResult = uploadConfigBackup(groupId)
+        val dbResult = uploadDatabaseBackup(groupId)
 
         if (configResult.isSuccess && dbResult.isSuccess) {
             Result.success(configResult.getOrThrow() to dbResult.getOrThrow())
@@ -100,33 +105,36 @@ class CloudBackupManager(private val context: Context) {
             val json = data.toString(Charsets.UTF_8)
             val root = org.json.JSONObject(json)
 
-            val appRepo = com.omnichat.data.AppRepository(
-                com.omnichat.data.AppDatabase.getDatabase(context)
-            )
+            val db = com.omnichat.data.AppDatabase.getDatabase(context)
+            val appRepo = com.omnichat.data.AppRepository(db)
 
-            // Import providers
-            if (root.has("providers")) {
-                val arr = root.getJSONArray("providers")
-                val existing = appRepo.getAllConfigs()
-                for (c in existing) appRepo.deleteConfig(c)
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    appRepo.insertConfig(
-                        com.omnichat.data.ModelConfig(
-                            name = obj.optString("name", "provider-$i"),
-                            endpoint = obj.optString("endpoint", ""),
-                            apiKey = obj.optString("apiKey", ""),
-                            selectedModelId = obj.optString("selectedModelId", ""),
-                            memoryModelId = obj.optString("memoryModelId", ""),
-                            memoryProviderId = obj.optLong("memoryProviderId", 0L),
-                            isDefaultProvider = obj.optBoolean("isDefaultProvider", false),
-                            enableThinking = obj.optBoolean("enableThinking", true),
-                            thinkingEffort = obj.optString("thinkingEffort", "medium"),
-                            customHeaders = obj.optString("customHeaders", "{}")
+            // Wrap entire restore in a transaction so partial failure rolls back
+            db.openHelper.writableDatabase.beginTransaction()
+            try {
+                // Import providers
+                if (root.has("providers")) {
+                    val arr = root.getJSONArray("providers")
+                    val existing = appRepo.getAllConfigs()
+                    for (c in existing) appRepo.deleteConfig(c)
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        appRepo.insertConfig(
+                            com.omnichat.data.ModelConfig(
+                                name = obj.optString("name", "provider-$i"),
+                                endpoint = obj.optString("endpoint", ""),
+                                apiKey = obj.optString("apiKey", ""),
+                                selectedModelId = obj.optString("selectedModelId", ""),
+                                memoryModelId = obj.optString("memoryModelId", ""),
+                                memoryProviderId = obj.optLong("memoryProviderId", 0L),
+                                isDefaultProvider = obj.optBoolean("isDefaultProvider", false),
+                                enableThinking = obj.optBoolean("enableThinking", true),
+                                thinkingEffort = obj.optString("thinkingEffort", "medium"),
+                                customHeaders = obj.optString("customHeaders", "{}"),
+                                embeddingModelId = obj.optString("embeddingModelId", "")
+                            )
                         )
-                    )
+                    }
                 }
-            }
 
             // Import MCP servers
             if (root.has("mcpServers")) {
@@ -156,7 +164,8 @@ class CloudBackupManager(private val context: Context) {
                     appRepo.insertMcpFilePermission(
                         com.omnichat.data.McpFilePermission(
                             path = obj.optString("path", ""),
-                            isAllowed = obj.optBoolean("isAllowed", false)
+                            isAllowed = obj.optBoolean("isAllowed", false),
+                            permissionType = obj.optString("permissionType", "read")
                         )
                     )
                 }
@@ -176,7 +185,10 @@ class CloudBackupManager(private val context: Context) {
                             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                             updatedAt = obj.optLong("updatedAt", System.currentTimeMillis()),
                             lastReinforcedAt = obj.optLong("lastReinforcedAt", System.currentTimeMillis()),
-                            tags = obj.optString("tags", "")
+                            tags = obj.optString("tags", ""),
+                            embedding = obj.optString("embedding", ""),
+                            dueDate = obj.optString("dueDate", "").takeIf { it.isNotEmpty() },
+                            reminded = obj.optBoolean("reminded", false)
                         )
                     )
                 }
@@ -241,7 +253,7 @@ class CloudBackupManager(private val context: Context) {
                     chatFontSizeScale = obj.optDouble("chatFontSizeScale", defaults.chatFontSizeScale.toDouble()).toFloat(),
                     fontFamily = obj.optString("fontFamily", defaults.fontFamily),
                     enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
-                    silentToolCalls = obj.optBoolean("silentToolCalls", defaults.silentToolCalls),
+                    silentToolGroups = obj.optString("silentToolGroups", defaults.silentToolGroups),
                     uiStrings = obj.optString("uiStrings", "{}"),
                     updatedAt = System.currentTimeMillis()
                 )
@@ -299,6 +311,11 @@ class CloudBackupManager(private val context: Context) {
                 }
             }
 
+            db.openHelper.writableDatabase.setTransactionSuccessful()
+            } finally {
+                db.openHelper.writableDatabase.endTransaction()
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -314,12 +331,17 @@ class CloudBackupManager(private val context: Context) {
                 return@withContext Result.failure(Exception("Invalid backup file"))
             }
 
+            // Strip OMNIDB_V1 header (10 bytes: "OMNIDB_V1\n")
+            val headerSize = "OMNIDB_V1\n".toByteArray().size
+            val dbData = if (data.size > headerSize) data.copyOfRange(headerSize, data.size) else data
+
             // Close database, replace file, restart app
             val db = AppDatabase.getDatabase(context)
             db.close()
+            AppDatabase.clearInstance()
 
             val dbPath = context.getDatabasePath("ai_chat_memory_db")
-            dbPath.writeBytes(data)
+            dbPath.writeBytes(dbData)
 
             // Delete WAL/SHM
             File(dbPath.path + "-wal").delete()
@@ -365,6 +387,7 @@ class CloudBackupManager(private val context: Context) {
                     put("enableThinking", p.enableThinking)
                     put("thinkingEffort", p.thinkingEffort)
                     put("customHeaders", p.customHeaders)
+                    put("embeddingModelId", p.embeddingModelId)
                 })
             }
             put("providers", providers)
@@ -407,7 +430,10 @@ class CloudBackupManager(private val context: Context) {
                     put("tags", m.tags)
                     put("createdAt", m.createdAt)
                     put("updatedAt", m.updatedAt)
+                    put("lastReinforcedAt", m.lastReinforcedAt)
                     put("embedding", m.embedding)
+                    put("dueDate", m.dueDate ?: org.json.JSONObject.NULL)
+                    put("reminded", m.reminded)
                 })
             }
             put("memories", memories)
@@ -464,7 +490,7 @@ class CloudBackupManager(private val context: Context) {
                     put("chatFontSizeScale", uiSettings.chatFontSizeScale)
                     put("fontFamily", uiSettings.fontFamily)
                     put("enabledMcpGroups", uiSettings.enabledMcpGroups)
-                    put("silentToolCalls", uiSettings.silentToolCalls)
+                    put("silentToolGroups", uiSettings.silentToolGroups)
                     put("uiStrings", uiSettings.uiStrings)
                 })
             }

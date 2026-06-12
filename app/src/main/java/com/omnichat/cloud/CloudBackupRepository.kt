@@ -32,31 +32,33 @@ class CloudBackupRepository(private val context: Context) {
     private val database by lazy { AppDatabase.getDatabase(context) }
     private val cloudBackupDao by lazy { database.cloudBackupDao() }
 
+    @Volatile
     private var api: CloudBackupApi? = null
 
     private fun getApi(): CloudBackupApi {
         val baseUrl = prefs.getString(KEY_WORKERS_URL, DEFAULT_WORKERS_URL) ?: DEFAULT_WORKERS_URL
 
-        if (api == null) {
-            val client = OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
-                .build()
+        return api ?: synchronized(this) {
+            api ?: run {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .writeTimeout(60, TimeUnit.SECONDS)
+                    .build()
 
-            val moshi = Moshi.Builder()
-                .addLast(KotlinJsonAdapterFactory())
-                .build()
+                val moshi = Moshi.Builder()
+                    .addLast(KotlinJsonAdapterFactory())
+                    .build()
 
-            api = Retrofit.Builder()
-                .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
-                .client(client)
-                .addConverterFactory(MoshiConverterFactory.create(moshi))
-                .build()
-                .create(CloudBackupApi::class.java)
+                Retrofit.Builder()
+                    .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
+                    .client(client)
+                    .addConverterFactory(MoshiConverterFactory.create(moshi))
+                    .build()
+                    .create(CloudBackupApi::class.java)
+                    .also { api = it }
+            }
         }
-
-        return api!!
     }
 
     // --- User Management ---
@@ -167,7 +169,8 @@ class CloudBackupRepository(private val context: Context) {
     suspend fun uploadBackup(
         type: String,
         data: ByteArray,
-        filename: String
+        filename: String,
+        groupId: String? = null
     ): Result<UploadResponse> = withContext(Dispatchers.IO) {
         try {
             val token = sessionToken ?: return@withContext Result.failure(Exception("Not bound"))
@@ -175,7 +178,7 @@ class CloudBackupRepository(private val context: Context) {
 
             val response = getApi().upload(
                 token = "Bearer $token",
-                request = UploadRequest(type, base64Data, filename)
+                request = UploadRequest(type, base64Data, filename, groupId)
             )
 
             if (response.isSuccessful) {
