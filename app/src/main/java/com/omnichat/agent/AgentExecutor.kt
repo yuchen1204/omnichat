@@ -6,6 +6,7 @@ import com.omnichat.data.*
 import com.omnichat.network.ApiClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -18,6 +19,19 @@ private data class TaskExecutionResult(
     val result: String,
     val config: ModelConfig
 )
+
+/**
+ * Coroutine context element that identifies the current SubAgent caller.
+ * Used by McpRuntimeManager.callTool() to determine if a tool call needs approval.
+ */
+data class AgentCallerContext(
+    val agentType: String,
+    val taskContext: String,
+    val agentMode: String,
+    val sessionId: Long
+) : kotlin.coroutines.AbstractCoroutineContextElement(AgentCallerContext) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<AgentCallerContext>
+}
 
 /** subAgent 任务状态 */
 enum class AgentTaskStatus {
@@ -49,11 +63,11 @@ data class AgentTaskState(
  * - 管理任务生命周期（创建、执行、取消、查询）
  * - 调用 LLM API 执行任务
  * - 将结果插入主会话
- * - 维护任务状态流
+ * - 维护任务状态流（内存缓存 + Room 持久化）
  *
  * 并发控制：
- * - 每种 agent 类型默认最大并行数 = 1
- * - 全局最大并行数 = 3
+ * - 全局最大并行数 = [MAX_GLOBAL_PARALLELISM]
+ * - 每种 agent 类型最大并行数从 [AgentConfig.maxConcurrency] 读取，默认 1
  */
 class AgentExecutor(
     private val context: Context,
@@ -61,7 +75,7 @@ class AgentExecutor(
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // 任务状态管理
+    // 任务状态管理（内存缓存，加速读取）
     private val _taskStates = MutableStateFlow<Map<String, AgentTaskState>>(emptyMap())
     val taskStates: StateFlow<Map<String, AgentTaskState>> = _taskStates.asStateFlow()
 
@@ -71,11 +85,24 @@ class AgentExecutor(
     // 并发控制：全局最多 MAX_GLOBAL_PARALLELISM 个并行任务
     private val globalSemaphore = Semaphore(MAX_GLOBAL_PARALLELISM)
 
-    // 每种 agent 类型的信号量（各自最多 1 个并行）
-    private val typeSemaphores = AgentPrompts.ALL_TYPES.associateWith { Semaphore(1) }
+    // 每种 agent 类型的信号量，按需从 AgentConfig.maxConcurrency 动态创建
+    private val typeSemaphores = ConcurrentHashMap<String, Semaphore>()
 
     // 默认信号量，用于未知 agentType 的回退
     private val defaultTypeSemaphore = Semaphore(1)
+
+    /**
+     * 获取指定 agent 类型的信号量，按需从 DB 配置创建。
+     * 首次调用时读取 AgentConfig.maxConcurrency 并缓存。
+     */
+    private suspend fun getOrCreateTypeSemaphore(agentType: String): Semaphore {
+        typeSemaphores[agentType]?.let { return it }
+        val agentConfig = repository.getAgentConfigByType(agentType)
+        val maxConcurrency = agentConfig?.maxConcurrency?.takeIf { it > 0 } ?: 1
+        val semaphore = Semaphore(maxConcurrency)
+        typeSemaphores.putIfAbsent(agentType, semaphore)?.let { return it }
+        return semaphore
+    }
 
     companion object {
         /** 任务超时时间（毫秒） */
@@ -130,8 +157,8 @@ class AgentExecutor(
         // 启动执行协程
         val job = scope.launch {
             try {
-                // 获取并发许可
-                val typeSemaphore = typeSemaphores[agentType] ?: defaultTypeSemaphore
+                // 获取并发许可（按需从 DB 配置动态创建信号量）
+                val typeSemaphore = getOrCreateTypeSemaphore(agentType)
                 if (!globalSemaphore.tryAcquire()) {
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.FAILED,
@@ -227,7 +254,7 @@ class AgentExecutor(
     }
 
     /**
-     * 执行单个任务的核心逻辑。
+     * 执行单个任务的核心逻辑（升级为 AgentTeam 迭代执行循环）。
      * Returns both the result and the config used, so the caller can reuse the config
      * for summary generation without a duplicate lookup.
      */
@@ -238,21 +265,99 @@ class AgentExecutor(
         contextStr: String?,
         files: List<String>?
     ): TaskExecutionResult = withTimeout(TASK_TIMEOUT_MS) {
-        // 1. 获取模型配置
-        val config = getAgentModelConfig(agentType)
-            ?: throw IllegalStateException("Agent type $agentType has no model configured. Please configure in settings.")
+        val session = repository.getSessionById(sessionId)
+        val agentMode = session?.agentMode ?: "GENERAL"
 
-        // 2. 构建系统提示
-        val systemPrompt = AgentPrompts.getPrompt(agentType)
+        val callerCtx = AgentCallerContext(
+            agentType = agentType,
+            taskContext = task,
+            agentMode = agentMode,
+            sessionId = sessionId
+        )
 
-        // 3. 构建用户消息
-        val userMessage = buildUserMessage(task, contextStr, files)
+        withContext(callerCtx) {
+            // 1. 获取模型配置
+            val config = getAgentModelConfig(agentType)
+                ?: throw IllegalStateException("Agent type $agentType has no model configured. Please configure in settings.")
 
-        // 4. 调用 LLM API（非流式，等待完整结果）
-        val result = ApiClient.executeCompletion(config, systemPrompt, userMessage)
-            ?: throw IllegalStateException("LLM API returned empty result")
+            // 2. 构建系统提示
+            val systemPrompt = AgentPrompts.getPrompt(agentType)
 
-        TaskExecutionResult(result = result, config = config)
+            // 3. 构建用户消息
+            val userMessage = buildUserMessage(task, contextStr, files)
+
+            // 4. 获取所有可用 MCP 工具
+            val mcpManager = com.omnichat.mcp.McpRuntimeManager.getInstance(context)
+            val toolsArray = mcpManager.getAllToolsAsOpenAiFormat()
+
+            // 5. 初始化消息历史
+            val messages = org.json.JSONArray()
+            messages.put(JSONObject().apply {
+                put("role", "user")
+                put("content", userMessage)
+            })
+
+            var finalResult = ""
+            var iteration = 0
+            val maxIterations = 10
+
+            while (iteration < maxIterations) {
+                iteration++
+                Log.i(TAG, "Agent [$agentType] 迭代执行: 第 $iteration 次调用 API")
+
+                // 调用支持工具的非流式接口
+                val responseMsg = ApiClient.executeMessageCompletion(config, systemPrompt, messages, toolsArray)
+                    ?: throw IllegalStateException("LLM API returned empty result")
+
+                // 保存助手的原始回复（包含 content 和 tool_calls）
+                messages.put(responseMsg)
+
+                val content = responseMsg.optString("content", "")
+                val toolCalls = responseMsg.optJSONArray("tool_calls")
+
+                // 如果没有工具调用，则认为任务完成
+                if (toolCalls == null || toolCalls.length() == 0) {
+                    finalResult = content
+                    break
+                }
+
+                // 本地执行工具调用
+                for (i in 0 until toolCalls.length()) {
+                    val toolCall = toolCalls.optJSONObject(i) ?: continue
+                    val toolCallId = toolCall.optString("id")
+                    val function = toolCall.optJSONObject("function") ?: continue
+                    val name = function.optString("name")
+                    val argumentsStr = function.optString("arguments", "{}")
+                    val arguments = try { JSONObject(argumentsStr) } catch (e: Exception) { JSONObject() }
+
+                    Log.i(TAG, "Agent [$agentType] 调用工具: $name")
+                    val toolResultObj = try {
+                        val serverId = mcpManager.findServerIdForTool(name)
+                        if (serverId != null) {
+                            mcpManager.callTool(serverId, name, arguments, sessionId) ?: JSONObject().apply { put("error", "No result returned") }
+                        } else {
+                            JSONObject().apply { put("error", "Tool not found: $name") }
+                        }
+                    } catch (e: Exception) {
+                        JSONObject().apply { put("error", e.localizedMessage ?: "Unknown error") }
+                    }
+
+                    // 添加工具调用结果到消息历史
+                    messages.put(JSONObject().apply {
+                        put("role", "tool")
+                        put("tool_call_id", toolCallId)
+                        put("content", toolResultObj.toString())
+                    })
+                }
+            }
+
+            if (iteration >= maxIterations) {
+                Log.w(TAG, "Agent [$agentType] 达到了最大迭代次数 ($maxIterations)")
+                finalResult += "\n\n(注意: 已达到最大迭代次数，任务可能未完全完成)"
+            }
+
+            TaskExecutionResult(result = finalResult, config = config)
+        }
     }
 
     /**
@@ -369,33 +474,80 @@ class AgentExecutor(
     }
 
     /**
-     * 获取任务状态。
+     * 获取任务状态。优先读内存缓存，回退到 DB。
      */
-    fun getStatus(taskId: String): AgentTaskState? {
-        return _taskStates.value[taskId]
+    suspend fun getStatus(taskId: String): AgentTaskState? {
+        // 内存缓存命中
+        _taskStates.value[taskId]?.let { return it }
+        // 回退到 DB
+        return repository.getAgentTaskById(taskId)?.let { it.toTaskState() }
     }
 
     /**
-     * 获取指定会话的所有任务。
+     * 获取指定会话的所有任务。优先读内存，回退到 DB。
      */
-    fun getTasksForSession(sessionId: Long): List<AgentTaskState> {
-        return _taskStates.value.values.filter { it.sessionId == sessionId }
+    suspend fun getTasksForSession(sessionId: Long): List<AgentTaskState> {
+        val memoryTasks = _taskStates.value.values.filter { it.sessionId == sessionId }
+        if (memoryTasks.isNotEmpty()) return memoryTasks
+        // 回退到 DB
+        return repository.getAgentTasksBySession(sessionId).map { it.toTaskState() }
     }
 
     /**
      * 获取指定会话已完成的任务（用于注入系统提示）。
      */
-    fun getCompletedTasksForSession(sessionId: Long): List<AgentTaskState> {
-        return _taskStates.value.values.filter {
+    suspend fun getCompletedTasksForSession(sessionId: Long): List<AgentTaskState> {
+        val memoryTasks = _taskStates.value.values.filter {
             it.sessionId == sessionId && it.status == AgentTaskStatus.COMPLETED
         }
+        if (memoryTasks.isNotEmpty()) return memoryTasks
+        // 回退到 DB
+        return repository.getCompletedAgentTasksBySession(sessionId).map { it.toTaskState() }
     }
 
     /**
-     * 更新任务状态（线程安全）。
+     * 将 DB 实体转换为内存状态对象。
+     */
+    private fun AgentTaskEntity.toTaskState() = AgentTaskState(
+        taskId = taskId,
+        sessionId = sessionId,
+        agentType = agentType,
+        status = try { AgentTaskStatus.valueOf(status) } catch (_: Exception) { AgentTaskStatus.COMPLETED },
+        taskDescription = taskDescription,
+        result = result,
+        summary = summary,
+        error = error,
+        startedAt = startedAt,
+        completedAt = completedAt
+    )
+
+    /**
+     * 更新任务状态（线程安全），同时异步持久化到 Room。
+     * 内存更新是同步的（非 suspend），DB 写入是 fire-and-forget。
      */
     private fun updateState(taskId: String, state: AgentTaskState) {
         _taskStates.update { it + (taskId to state) }
+        // 异步持久化到 Room（失败不影响内存状态）
+        scope.launch {
+            try {
+                repository.upsertAgentTask(
+                    AgentTaskEntity(
+                        taskId = state.taskId,
+                        sessionId = state.sessionId,
+                        agentType = state.agentType,
+                        status = state.status.name,
+                        taskDescription = state.taskDescription,
+                        result = state.result,
+                        summary = state.summary,
+                        error = state.error,
+                        startedAt = state.startedAt,
+                        completedAt = state.completedAt
+                    )
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to persist task state to DB: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -411,9 +563,9 @@ class AgentExecutor(
 
     /**
      * 自动清理超过 30 分钟的已完成任务（防止内存无限增长）。
-     * 保留最近的任务以供上下文注入使用。
+     * 同时清理内存缓存和 DB 中的终态任务。
      */
-    private fun cleanupOldTasks() {
+    private suspend fun cleanupOldTasks() {
         val cutoff = System.currentTimeMillis() - 30 * 60 * 1000L
         _taskStates.update { map ->
             map.filter { (_, state) ->
@@ -427,6 +579,12 @@ class AgentExecutor(
                 val completedAt = state.completedAt ?: return@filter true
                 completedAt > cutoff
             }
+        }
+        // 清理 DB 中的旧终态任务
+        try {
+            repository.deleteOldTerminatedAgentTasks(cutoff)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to cleanup old tasks from DB: ${e.message}")
         }
     }
 
