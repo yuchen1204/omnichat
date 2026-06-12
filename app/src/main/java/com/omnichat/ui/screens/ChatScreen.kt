@@ -83,6 +83,11 @@ fun ChatView(viewModel: ChatViewModel) {
     val mcpServerStates by viewModel.mcpServerStates.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // Agent mode toggle support
+    val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+    val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
+    val currentSession = sessions.find { it.id == activeSessionId }
+
     // 字体设置
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale  // 全局 UI 字体缩放
@@ -529,13 +534,14 @@ fun ChatView(viewModel: ChatViewModel) {
                         )
 
                         // 工具按钮行
+                        val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
+                        val toolBtnBorder = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                        val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
-                            val toolBtnBorder = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                            val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
 
                             // 切换模型按钮
                             OutlinedCard(
@@ -641,6 +647,42 @@ fun ChatView(viewModel: ChatViewModel) {
                                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                                     )
                                 }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Agent Mode Toggle
+                        OutlinedCard(
+                            modifier = Modifier.clickable {
+                                val newMode = if (currentSession?.agentMode == "AUTO") "GENERAL" else "AUTO"
+                                if (activeSessionId != null) {
+                                    viewModel.toggleAgentMode(activeSessionId!!, newMode)
+                                }
+                            },
+                            shape = toolBtnShape,
+                            border = toolBtnBorder,
+                            colors = if (currentSession?.agentMode == "AUTO")
+                                CardDefaults.outlinedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            else toolBtnColors
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Icon(
+                                    imageVector = if (currentSession?.agentMode == "AUTO")
+                                        Icons.Default.FlashOn else Icons.Default.Shield,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (currentSession?.agentMode == "AUTO")
+                                        uiText("chat.auto_mode", R.string.chat_auto_mode)
+                                    else uiText("chat.general_mode", R.string.chat_general_mode),
+                                    fontSize = 12.sp
+                                )
                             }
                         }
                     }

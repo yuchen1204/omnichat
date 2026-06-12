@@ -26,6 +26,8 @@
     <string name="chat_switch_model">Switch Model</string>
     <string name="chat_select_image">Select Image</string>
     <string name="chat_take_photo">Take Photo</string>
+    <string name="chat_general_mode">General</string>
+    <string name="chat_auto_mode">Auto</string>
     <string name="chat_selected_image">Image selected</string>
     <string name="chat_image_attached">Image attached</string>
     <string name="chat_remove_image">Remove image</string>

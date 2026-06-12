@@ -26,6 +26,8 @@
     <string name="chat_switch_model">切换模型</string>
     <string name="chat_select_image">选择图片</string>
     <string name="chat_take_photo">拍照</string>
+    <string name="chat_general_mode">通用模式</string>
+    <string name="chat_auto_mode">自动模式</string>
     <string name="chat_selected_image">已选图片</string>
     <string name="chat_image_attached">已添加图片</string>
     <string name="chat_remove_image">移除图片</string>
