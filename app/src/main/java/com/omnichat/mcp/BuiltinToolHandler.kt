@@ -66,6 +66,10 @@ object BuiltinToolHandler {
             "delegate_task" -> handleDelegateTask(context, arguments, sessionId)
             "check_task_status" -> handleCheckTaskStatus(context, arguments, sessionId)
             "list_agent_tasks" -> handleListAgentTasks(context, arguments, sessionId)
+            "send_message" -> handleSendMessage(arguments)
+            "read_inbox" -> handleReadInbox(arguments)
+            "manage_task_board" -> handleManageTaskBoard(arguments)
+            "approve_agent_request" -> handleApproveAgentRequest(arguments)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
     }
@@ -1794,7 +1798,7 @@ object BuiltinToolHandler {
         return successResponse(str(context, R.string.tool_agent_delegated, agentType, taskId, taskId))
     }
 
-    private fun handleCheckTaskStatus(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+    private suspend fun handleCheckTaskStatus(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         val taskId = arguments.optString("task_id").trim()
         if (taskId.isEmpty()) {
             return errorResponse(str(context, R.string.tool_agent_task_id_empty))
@@ -1850,7 +1854,7 @@ object BuiltinToolHandler {
         return successResponse(text.trimEnd())
     }
 
-    private fun handleListAgentTasks(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+    private suspend fun handleListAgentTasks(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         if (sessionId == null) {
             return errorResponse(str(context, R.string.tool_agent_no_session))
         }
@@ -1981,4 +1985,114 @@ object BuiltinToolHandler {
 
 
     // bigramTokenize 已迁移到 com.omnichat.memory.MemoryTokenizer.tokenize()
+    // ── subAgent 相关辅助工具 ───────────────────────────────────────────────
+
+    private fun handleSendMessage(arguments: JSONObject): JSONObject {
+        val to = arguments.optString("to")
+        val content = arguments.optString("content")
+        if (to.isBlank() || content.isBlank()) {
+            return errorResponse("Missing 'to' or 'content'")
+        }
+        com.omnichat.agent.AgentTeamManager.sendMessage("another_agent", to, content)
+        return successResponse("Message sent to $to")
+    }
+
+    private fun handleReadInbox(arguments: JSONObject): JSONObject {
+        val agentName = arguments.optString("agent_name")
+        val clear = arguments.optBoolean("clear", false)
+        if (agentName.isBlank()) {
+            return errorResponse("Missing 'agent_name'")
+        }
+        val messages = com.omnichat.agent.AgentTeamManager.readInbox(agentName)
+        if (clear) {
+            com.omnichat.agent.AgentTeamManager.clearInbox(agentName)
+        }
+        val jsonArray = JSONArray()
+        messages.forEach { msg ->
+            jsonArray.put(JSONObject().apply {
+                put("from", msg.from)
+                put("content", msg.content)
+                put("timestamp", msg.timestamp)
+            })
+        }
+        return JSONObject().apply { put("messages", jsonArray) }
+    }
+
+    private fun handleManageTaskBoard(arguments: JSONObject): JSONObject {
+        val action = arguments.optString("action")
+        val taskId = arguments.optString("task_id")
+        return when (action) {
+            "create" -> {
+                val description = arguments.optString("description")
+                if (taskId.isBlank() || description.isBlank()) return errorResponse("Missing task_id or description")
+                com.omnichat.agent.AgentTeamManager.createTask(taskId, description)
+                successResponse("Task $taskId created.")
+            }
+            "claim" -> {
+                val assignee = arguments.optString("assignee")
+                if (taskId.isBlank() || assignee.isBlank()) return errorResponse("Missing task_id or assignee")
+                if (com.omnichat.agent.AgentTeamManager.claimTask(taskId, assignee)) {
+                    successResponse("Task $taskId claimed by $assignee.")
+                } else {
+                    errorResponse("Task $taskId not found or already claimed.")
+                }
+            }
+            "complete" -> {
+                if (taskId.isBlank()) return errorResponse("Missing task_id")
+                if (com.omnichat.agent.AgentTeamManager.completeTask(taskId)) {
+                    successResponse("Task $taskId marked as completed.")
+                } else {
+                    errorResponse("Task $taskId not found.")
+                }
+            }
+            "list" -> {
+                val tasks = com.omnichat.agent.AgentTeamManager.listTasks()
+                val array = JSONArray()
+                tasks.forEach { t ->
+                    array.put(JSONObject().apply {
+                        put("id", t.id)
+                        put("description", t.description)
+                        put("assignee", t.assignee ?: "unassigned")
+                        put("status", t.status)
+                    })
+                }
+                JSONObject().apply { put("tasks", array) }
+            }
+            else -> errorResponse("Unknown action: $action")
+        }
+    }
+
+    // ── Agent Approval 工具 ──────────────────────────────────────────────
+
+    /**
+     * Handle approve_agent_request tool calls from MainAgent.
+     * Resolves a pending approval request from a SubAgent.
+     */
+    private fun handleApproveAgentRequest(arguments: JSONObject): JSONObject {
+        val decision = arguments.optString("decision", "")
+        val reason = arguments.optString("reason", "")
+        if (decision !in listOf("approve", "reject")) {
+            return errorResponse("Invalid decision: '$decision'. Must be 'approve' or 'reject'.")
+        }
+        if (reason.isBlank()) {
+            return errorResponse("Missing required field: reason")
+        }
+
+        val alternative = arguments.optString("alternative", "").ifBlank { null }
+
+        // Find the first pending request
+        val pending = com.omnichat.agent.AgentApprovalChannel.pendingRequests.value.firstOrNull()
+            ?: return errorResponse("No pending approval requests.")
+
+        val approvalDecision = com.omnichat.agent.AgentApprovalDecision(
+            decision = decision,
+            reason = reason,
+            alternative = alternative
+        )
+        com.omnichat.agent.AgentApprovalChannel.respond(pending.requestId, approvalDecision)
+
+        val action = if (decision == "approve") "Approved" else "Rejected"
+        return successResponse("$action request from ${pending.agentType} (${pending.toolName}): $reason")
+    }
+
 }
