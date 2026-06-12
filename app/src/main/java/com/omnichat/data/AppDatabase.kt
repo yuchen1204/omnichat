@@ -28,8 +28,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AgentConfig::class,
         // 云端备份记录
         CloudBackupRecord::class,
+        // subAgent 任务状态持久化
+        AgentTaskEntity::class,
     ],
-    version = 43,
+    version = 45,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -53,6 +55,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun agentConfigDao(): AgentConfigDao
     // 云端备份记录 DAO
     abstract fun cloudBackupDao(): CloudBackupDao
+    // subAgent 任务状态 DAO
+    abstract fun agentTaskDao(): AgentTaskDao
 
     companion object {
         @Volatile
@@ -715,6 +719,37 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v43→v44：新增 agent_tasks 表（subAgent 任务状态持久化） */
+        private val MIGRATION_43_44 = object : Migration(43, 44) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_tasks (
+                        taskId TEXT NOT NULL PRIMARY KEY,
+                        sessionId INTEGER NOT NULL,
+                        agentType TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        taskDescription TEXT NOT NULL,
+                        result TEXT,
+                        summary TEXT,
+                        error TEXT,
+                        startedAt INTEGER,
+                        completedAt INTEGER,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_tasks_sessionId ON agent_tasks(sessionId)")
+            }
+        }
+
+        /** v44→v45：add agentMode column to sessions */
+        private val MIGRATION_44_45 = object : Migration(44, 45) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN agentMode TEXT NOT NULL DEFAULT 'GENERAL'")
+            }
+        }
+
         /**
          * 清除单例实例（用于数据库恢复后重新初始化）。
          */
@@ -764,7 +799,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_39_40,
                         MIGRATION_40_41,
                         MIGRATION_41_42,
-                        MIGRATION_42_43
+                        MIGRATION_42_43,
+                        MIGRATION_43_44,
+                        MIGRATION_44_45
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

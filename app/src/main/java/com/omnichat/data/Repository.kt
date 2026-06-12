@@ -2,6 +2,7 @@ package com.omnichat.data
 
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * 记忆关联展开结果：包含关联的记忆条目、关系标签和方向。
@@ -28,6 +29,7 @@ class AppRepository(private val db: AppDatabase) {
     private val memoryAssociationDao = db.memoryAssociationDao()
     private val memoryAuditDao = db.memoryAuditDao()
     private val agentConfigDao = db.agentConfigDao()
+    private val agentTaskDao = db.agentTaskDao()
     private val cloudBackupDao = db.cloudBackupDao()
 
     // Model Configs
@@ -48,6 +50,12 @@ class AppRepository(private val db: AppDatabase) {
         messageDao.deleteMessagesBySession(id)
         sessionSummaryDao.deleteSummaryBySession(id)
         sessionDao.deleteSessionById(id)
+    }
+
+    suspend fun updateAgentMode(id: Long, mode: String) = sessionDao.updateAgentMode(id, mode)
+
+    suspend fun getSessionById(id: Long): Session? {
+        return sessionDao.getAllSessionsFlow().first().find { it.id == id }
     }
 
     // Messages
@@ -185,6 +193,14 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getAgentConfigByType(agentType: String): AgentConfig? = agentConfigDao.getConfigByType(agentType)
     suspend fun upsertAgentConfig(config: AgentConfig) = agentConfigDao.upsertConfig(config)
     suspend fun deleteAgentConfig(agentType: String) = agentConfigDao.deleteConfigByType(agentType)
+
+    // Agent Tasks (subAgent 状态持久化)
+    suspend fun getAgentTaskById(taskId: String): AgentTaskEntity? = agentTaskDao.getTaskById(taskId)
+    suspend fun getAgentTasksBySession(sessionId: Long): List<AgentTaskEntity> = agentTaskDao.getTasksBySession(sessionId)
+    suspend fun getCompletedAgentTasksBySession(sessionId: Long): List<AgentTaskEntity> = agentTaskDao.getCompletedTasksBySession(sessionId)
+    suspend fun upsertAgentTask(task: AgentTaskEntity) = agentTaskDao.upsertTask(task)
+    suspend fun deleteOldTerminatedAgentTasks(before: Long) = agentTaskDao.deleteOldTerminatedTasks(before)
+    suspend fun deleteAgentTasksBySession(sessionId: Long) = agentTaskDao.deleteTasksBySession(sessionId)
 
     // Cloud Backups
     suspend fun getCloudBackups(userId: String): List<CloudBackupRecord> =

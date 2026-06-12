@@ -1,5 +1,6 @@
 package com.omnichat.data
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -9,6 +10,7 @@ import androidx.room.PrimaryKey
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Entity(tableName = "model_configs")
+@Immutable
 data class ModelConfig(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -26,11 +28,15 @@ data class ModelConfig(
     val embeddingModelId: String = ""
 )
 
+enum class AgentMode { GENERAL, AUTO }
+
 @Entity(tableName = "sessions")
+@Immutable
 data class Session(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val agentMode: String = "GENERAL"
 )
 
 @Entity(
@@ -60,6 +66,7 @@ data class Message(
         Index(value = ["updatedAt"])
     ]
 )
+@Immutable
 data class MemoryItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val content: String,
@@ -119,6 +126,7 @@ data class MemoryAuditEntry(
 )
 
 @Entity(tableName = "prompt_templates")
+@Immutable
 data class PromptTemplate(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -445,6 +453,29 @@ data class AgentConfig(
     val modelId: String,
     val isEnabled: Boolean = true,
     val maxConcurrency: Int = 1,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * subAgent 任务状态持久化。
+ * 与 [Message(role="agent_result")] 配合：Message 存完整结果文本，本表存任务元数据（状态、错误、摘要等）。
+ * App 重启后可恢复未完成任务状态。
+ */
+@Entity(
+    tableName = "agent_tasks",
+    indices = [Index(value = ["sessionId"])]
+)
+data class AgentTaskEntity(
+    @PrimaryKey val taskId: String,
+    val sessionId: Long,
+    val agentType: String,
+    val status: String,          // "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"
+    val taskDescription: String,
+    val result: String? = null,
+    val summary: String? = null,
+    val error: String? = null,
+    val startedAt: Long? = null,
+    val completedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
