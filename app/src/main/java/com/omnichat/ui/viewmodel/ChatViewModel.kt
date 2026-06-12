@@ -63,6 +63,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // MCP server states — 用于 ChatView 显示 MCP 启动状态提示
     val mcpServerStates = runtimeManager.serverStates
 
+    // SubAgent approval state: pending approval prompt for MainAgent
+    private val _pendingApprovalPrompt = MutableStateFlow<String?>(null)
+    val pendingApprovalPrompt: StateFlow<String?> = _pendingApprovalPrompt.asStateFlow()
+
     // Real-time operations UI state
     var isStreaming by mutableStateOf(false)
         private set
@@ -145,6 +149,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 handleTimerAutoCheck(event)
             }
         }
+
+        // Observe SubAgent approval requests
+        observeApprovalRequests()
+    }
+
+    private fun observeApprovalRequests() {
+        viewModelScope.launch {
+            com.omnichat.agent.AgentApprovalChannel.pendingRequests.collect { requests ->
+                if (requests.isNotEmpty()) {
+                    val request = requests.last()
+                    val approvalPrompt = buildString {
+                        appendLine("[SubAgent Request for Approval]")
+                        appendLine("Agent Type: ${request.agentType}")
+                        appendLine("Task: ${request.taskContext.take(200)}")
+                        appendLine("Action: ${request.toolName}")
+                        appendLine("Arguments: ${request.args.toString(2).take(500)}")
+                        appendLine("---")
+                        appendLine("Please review this request. Call approve_agent_request with your decision.")
+                    }
+                    _pendingApprovalPrompt.value = approvalPrompt
+                } else {
+                    _pendingApprovalPrompt.value = null
+                }
+            }
+        }
     }
 
     fun selectSession(sessionId: Long) {
@@ -178,6 +207,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (newTitle.isBlank()) return
         viewModelScope.launch {
             repository.updateSessionTitle(sessionId, newTitle.trim())
+        }
+    }
+
+    fun toggleAgentMode(sessionId: Long, mode: String) {
+        viewModelScope.launch {
+            repository.updateAgentMode(sessionId, mode)
+            if (mode == "GENERAL") {
+                com.omnichat.agent.AgentApprovalChannel.approveAllPending()
+            }
         }
     }
 
@@ -410,7 +448,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             finalSystemPrompt += "\n\n$remindersText"
         }
 
-        return finalSystemPrompt
+        // Inject SubAgent approval prompt if pending
+        val approvalPrompt = _pendingApprovalPrompt.value
+        return if (approvalPrompt != null) {
+            "$finalSystemPrompt\n\n$approvalPrompt"
+        } else {
+            finalSystemPrompt
+        }
     }
 
     /**
@@ -642,6 +686,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             
+            // Clear approval prompt after MainAgent processes it
+            if (_pendingApprovalPrompt.value != null) {
+                _pendingApprovalPrompt.value = null
+            }
+
             if (hasNewResults) {
                 // Trigger the follow-up turn with depth limit to prevent infinite loops
                 if (toolCallDepth < MAX_TOOL_CALL_DEPTH) {
