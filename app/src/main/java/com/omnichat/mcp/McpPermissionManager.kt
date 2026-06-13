@@ -81,6 +81,13 @@ object McpPermissionManager {
         path: String,
         accessType: FileAccessType = FileAccessType.READ
     ): Boolean {
+        // Auto Mode: bypass all permission checks for SubAgents
+        val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
+        if (callerCtx != null && callerCtx.agentMode == "AUTO") {
+            Log.d(TAG, "Auto-approving path $path for ${callerCtx.agentType} in AUTO mode")
+            return true
+        }
+
         val canonicalPath = try {
             File(path).canonicalPath
         } catch (e: Exception) {
