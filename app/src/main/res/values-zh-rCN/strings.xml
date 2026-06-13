@@ -27,7 +27,12 @@
     <string name="chat_select_image">选择图片</string>
     <string name="chat_take_photo">拍照</string>
     <string name="chat_general_mode">通用模式</string>
-    <string name="chat_auto_mode">自动模式</string>
+    <string name="chat_yolo_mode">YOLO</string>
+    <string name="yolo_warning_title">⚠️ 实验性功能</string>
+    <string name="yolo_warning_message">YOLO 模式将跳过所有文件权限检查，并允许 MainAgent 自动审批 SubAgent 的操作。此为实验性功能，使用风险自负。</string>
+    <string name="yolo_warning_cancel">取消</string>
+    <string name="yolo_warning_confirm">确定</string>
+    <string name="yolo_warning_dont_remind">不再提醒</string>
     <string name="chat_selected_image">已选图片</string>
     <string name="chat_image_attached">已添加图片</string>
     <string name="chat_remove_image">移除图片</string>

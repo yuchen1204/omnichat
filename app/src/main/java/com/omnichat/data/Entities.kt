@@ -411,7 +411,12 @@ data class UISettings(
      * 格式示例：`{"topbar_title_chat":"Chat","nav_settings":"Settings"}`
      * 完整字段列表见 [com.omnichat.ui.theme.UiStrings]。
      */
-    val uiStrings: String = "{}"
+    val uiStrings: String = "{}",
+
+    /**
+     * 是否隐藏 Yolo Mode 实验性功能警告弹窗。
+     */
+    val hideYoloWarning: Boolean = false
 )
 
 /**

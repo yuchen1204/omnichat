@@ -27,7 +27,12 @@
     <string name="chat_select_image">Select Image</string>
     <string name="chat_take_photo">Take Photo</string>
     <string name="chat_general_mode">General</string>
-    <string name="chat_auto_mode">Auto</string>
+    <string name="chat_yolo_mode">Yolo</string>
+    <string name="yolo_warning_title">⚠️ Experimental Feature</string>
+    <string name="yolo_warning_message">Yolo Mode bypasses all file permission checks and lets MainAgent auto-approve SubAgent actions. This is an experimental feature — use at your own risk.</string>
+    <string name="yolo_warning_cancel">Cancel</string>
+    <string name="yolo_warning_confirm">OK</string>
+    <string name="yolo_warning_dont_remind">Don\'t remind again</string>
     <string name="chat_selected_image">Image selected</string>
     <string name="chat_image_attached">Image attached</string>
     <string name="chat_remove_image">Remove image</string>

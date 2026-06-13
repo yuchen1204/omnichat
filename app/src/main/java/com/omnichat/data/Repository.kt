@@ -54,6 +54,15 @@ class AppRepository(private val db: AppDatabase) {
 
     suspend fun updateAgentMode(id: Long, mode: String) = sessionDao.updateAgentMode(id, mode)
 
+    suspend fun updateHideYoloWarning(hide: Boolean) {
+        val current = uiSettingsDao.getSettings() ?: UISettings()
+        uiSettingsDao.upsertSettings(current.copy(hideYoloWarning = hide))
+    }
+
+    suspend fun getHideYoloWarning(): Boolean {
+        return uiSettingsDao.getSettings()?.hideYoloWarning ?: false
+    }
+
     suspend fun getSessionById(id: Long): Session? {
         return sessionDao.getAllSessionsFlow().first().find { it.id == id }
     }

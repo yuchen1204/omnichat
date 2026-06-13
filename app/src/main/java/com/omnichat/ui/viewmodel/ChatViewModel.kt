@@ -210,12 +210,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleAgentMode(sessionId: Long, mode: String) {
+    fun setAgentMode(sessionId: Long, mode: String) {
         viewModelScope.launch {
             repository.updateAgentMode(sessionId, mode)
             if (mode == "GENERAL") {
                 com.omnichat.agent.AgentApprovalChannel.approveAllPending()
             }
+        }
+    }
+
+    private val _hideYoloWarning = MutableStateFlow(false)
+    val hideYoloWarning: StateFlow<Boolean> = _hideYoloWarning.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _hideYoloWarning.value = repository.getHideYoloWarning()
+        }
+    }
+
+    fun setHideYoloWarning(hide: Boolean) {
+        viewModelScope.launch {
+            repository.updateHideYoloWarning(hide)
+            _hideYoloWarning.value = hide
         }
     }
 

@@ -102,6 +102,9 @@ fun ChatView(viewModel: ChatViewModel) {
     var showToolbar by remember { mutableStateOf(false) }
     // 模型选择器弹窗
     var showModelPicker by remember { mutableStateOf(false) }
+    // Yolo Mode 警告弹窗
+    var showYoloWarning by remember { mutableStateOf(false) }
+    val hideYoloWarning by viewModel.hideYoloWarning.collectAsStateWithLifecycle()
 
     // 图片选择相关状态（支持多图）
     var selectedImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -652,12 +655,19 @@ fun ChatView(viewModel: ChatViewModel) {
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Agent Mode Toggle
+                        // Agent Mode Toggle (Yolo Mode)
                         OutlinedCard(
                             modifier = Modifier.clickable {
-                                val newMode = if (currentSession?.agentMode == "AUTO") "GENERAL" else "AUTO"
-                                if (activeSessionId != null) {
-                                    viewModel.toggleAgentMode(activeSessionId!!, newMode)
+                                if (activeSessionId == null) return@clickable
+                                if (currentSession?.agentMode == "AUTO") {
+                                    // 关闭 Yolo Mode 直接切换
+                                    viewModel.setAgentMode(activeSessionId!!, "GENERAL")
+                                } else if (hideYoloWarning) {
+                                    // 已选不再提醒，直接开启
+                                    viewModel.setAgentMode(activeSessionId!!, "AUTO")
+                                } else {
+                                    // 显示警告弹窗
+                                    showYoloWarning = true
                                 }
                             },
                             shape = toolBtnShape,
@@ -679,7 +689,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (currentSession?.agentMode == "AUTO")
-                                        uiText("chat.auto_mode", R.string.chat_auto_mode)
+                                        uiText("chat.yolo_mode", R.string.chat_yolo_mode)
                                     else uiText("chat.general_mode", R.string.chat_general_mode),
                                     fontSize = 12.sp
                                 )
@@ -893,6 +903,62 @@ fun ChatView(viewModel: ChatViewModel) {
                 showToolbar = false
             },
             onDismiss = { showModelPicker = false }
+        )
+    }
+
+    // Yolo Mode 实验性功能警告弹窗
+    if (showYoloWarning) {
+        var dontRemind by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showYoloWarning = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text(text = stringResource(R.string.yolo_warning_title))
+            },
+            text = {
+                Column {
+                    Text(text = stringResource(R.string.yolo_warning_message))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = dontRemind,
+                            onCheckedChange = { dontRemind = it }
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.yolo_warning_dont_remind),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (activeSessionId != null) {
+                        viewModel.setAgentMode(activeSessionId!!, "AUTO")
+                    }
+                    if (dontRemind) {
+                        viewModel.setHideYoloWarning(true)
+                    }
+                    showYoloWarning = false
+                }) {
+                    Text(text = stringResource(R.string.yolo_warning_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showYoloWarning = false }) {
+                    Text(text = stringResource(R.string.yolo_warning_cancel))
+                }
+            }
         )
     }
 }
