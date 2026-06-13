@@ -908,14 +908,17 @@ fun ChatView(viewModel: ChatViewModel) {
 
     // Yolo Mode 实验性功能警告弹窗
     if (showYoloWarning) {
+        val uiSettingsForDialog = LocalUISettings.current
         var dontRemind by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showYoloWarning = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(uiSettingsForDialog.cornerRadiusDp.dp),
             icon = {
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    tint = com.omnichat.ui.theme.LocalCustomColors.current.warning
                 )
             },
             title = {
