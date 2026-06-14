@@ -99,7 +99,7 @@ class CloudBackupManager(private val context: Context) {
     ): Result<String> {
         return try {
             val database = AppDatabase.getDatabase(context)
-            database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+            database.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
 
             val dbFile = context.getDatabasePath("ai_chat_memory_db")
             val databaseBytes = dbFile.readBytes()

@@ -367,7 +367,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             try {
                 val db = AppDatabase.getDatabase(context)
                 // 先执行 WAL checkpoint，确保数据写入主文件
-                db.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+                db.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
 
                 val dbPath = context.getDatabasePath("ai_chat_memory_db")
 
@@ -415,7 +415,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             try {
                 val database = AppDatabase.getDatabase(context)
                 // Checkpoint WAL before reading database
-                database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+                database.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
 
                 val dbFile = context.getDatabasePath("ai_chat_memory_db")
                 val databaseBytes = dbFile.readBytes()
