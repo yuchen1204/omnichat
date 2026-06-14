@@ -18,6 +18,9 @@ import com.omnichat.data.MemoryItem
 import com.omnichat.data.ModelConfig
 import com.omnichat.data.PromptTemplate
 import com.omnichat.data.UISettings
+import com.omnichat.data.OmnifileFormat
+import java.io.BufferedInputStream
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -399,6 +402,138 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Export data as omnifile format.
+     * @param sections Sections to include. Empty = full export (all sections).
+     */
+    fun exportOmnifile(context: Context, uri: Uri, sections: List<String>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            exportImportStatus = ExportImportStatus.Loading
+            try {
+                val database = AppDatabase.getDatabase(context)
+                // Checkpoint WAL before reading database
+                database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+
+                val dbFile = context.getDatabasePath("ai_chat_memory_db")
+                val databaseBytes = dbFile.readBytes()
+
+                val exportType = if (sections.isEmpty()) {
+                    OmnifileFormat.ExportType.FULL
+                } else {
+                    OmnifileFormat.ExportType.SELECTIVE
+                }
+
+                val metadata = OmnifileFormat.OmnifileMetadata(
+                    exportType = exportType,
+                    includedSections = if (sections.isEmpty()) {
+                        OmnifileFormat.CATEGORY_PROVIDER_MCP +
+                        OmnifileFormat.CATEGORY_MEMORY_PROMPTS +
+                        OmnifileFormat.CATEGORY_THEME_UI +
+                        OmnifileFormat.CATEGORY_CHAT_HISTORY
+                    } else {
+                        sections
+                    }
+                )
+
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    OmnifileFormat.writeOmnifile(output, metadata, databaseBytes)
+                }
+
+                exportImportStatus = ExportImportStatus.Success("Export complete")
+            } catch (e: Exception) {
+                exportImportStatus = ExportImportStatus.Error("Export failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Import from any supported format (omnifile, omnidb, omniconfig).
+     * Auto-detects format and delegates to the appropriate handler.
+     */
+    fun importAutoDetect(
+        context: Context,
+        uri: Uri,
+        importProviders: Boolean,
+        importMcp: Boolean,
+        importMemory: Boolean,
+        importColorSchemes: Boolean,
+        replaceExisting: Boolean
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            exportImportStatus = ExportImportStatus.Loading
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                    ?: throw IllegalArgumentException("Cannot open file")
+
+                val bufferedStream = BufferedInputStream(inputStream)
+                bufferedStream.mark(1024)
+
+                val format = OmnifileFormat.detectFormat(bufferedStream)
+                bufferedStream.reset()
+
+                when (format) {
+                    OmnifileFormat.FileFormat.OMNIFILE -> {
+                        importOmnifile(context, bufferedStream, replaceExisting)
+                    }
+                    OmnifileFormat.FileFormat.OMNIDB -> {
+                        bufferedStream.close()
+                        importDatabaseBackup(context, uri)
+                        return@launch // importDatabaseBackup handles status
+                    }
+                    OmnifileFormat.FileFormat.OMNICONFIG -> {
+                        bufferedStream.close()
+                        importFromUri(context, uri, importProviders, importMcp,
+                            importMemory, importColorSchemes, replaceExisting)
+                        return@launch // importFromUri handles status
+                    }
+                    OmnifileFormat.FileFormat.UNKNOWN -> {
+                        bufferedStream.close()
+                        exportImportStatus = ExportImportStatus.Error("Unrecognized file format")
+                    }
+                }
+            } catch (e: Exception) {
+                exportImportStatus = ExportImportStatus.Error("Import failed: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun importOmnifile(
+        context: Context,
+        inputStream: InputStream,
+        replaceExisting: Boolean
+    ) {
+        try {
+            val (metadata, databaseBytes) = OmnifileFormat.readOmnifile(inputStream)
+
+            // Close existing database before replacing
+            val database = AppDatabase.getDatabase(context)
+            database.close()
+
+            val dbFile = context.getDatabasePath("ai_chat_memory_db")
+            val dbWalFile = context.getDatabasePath("ai_chat_memory_db-wal")
+            val dbShmFile = context.getDatabasePath("ai_chat_memory_db-shm")
+
+            // Backup current database
+            val backupFile = java.io.File(dbFile.absolutePath + ".backup")
+            if (dbFile.exists()) {
+                dbFile.copyTo(backupFile, overwrite = true)
+            }
+
+            // Write new database
+            dbFile.writeBytes(databaseBytes)
+
+            // Delete WAL and SHM files
+            if (dbWalFile.exists()) dbWalFile.delete()
+            if (dbShmFile.exists()) dbShmFile.delete()
+
+            exportImportStatus = ExportImportStatus.Success(
+                "Import complete (${metadata.exportType}, ${metadata.includedSections.size} sections)"
+            )
+        } catch (e: Exception) {
+            exportImportStatus = ExportImportStatus.Error("Omnifile import failed: ${e.message}")
         }
     }
 
