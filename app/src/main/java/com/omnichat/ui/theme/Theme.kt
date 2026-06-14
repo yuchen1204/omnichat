@@ -12,6 +12,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -28,6 +29,7 @@ val LocalUISettings = staticCompositionLocalOf { UISettings() }
 /**
  * 扩展色板（Material 3 之外的语义色）。AI 通过 `adjust_ui` 工具可以修改其中所有项。
  */
+@Stable
 data class CustomColors(
     val success: Color,
     val warning: Color,
@@ -47,6 +49,7 @@ val LocalCustomColors = staticCompositionLocalOf {
 /**
  * 侧边栏专属色板。AI 可以通过修改 sidebarBackgroundColor 等字段来自定义侧边栏外观。
  */
+@Stable
 data class SidebarColors(
     val background: Color,
     val onBackground: Color,

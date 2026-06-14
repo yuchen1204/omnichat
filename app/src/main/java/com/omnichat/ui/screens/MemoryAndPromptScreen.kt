@@ -162,7 +162,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
 
                 // 3. 列表标题和操作按钮（两行布局，避免溢出）
                 item {
-                    val untaggedCount = memories.count { it.tags.isBlank() }
+                    val untaggedCount = remember(memories) { memories.count { it.tags.isBlank() } }
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = uiText("memory.list.title", R.string.memory_list_title).format(memories.size),
@@ -231,7 +231,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                         }
                     }
                 } else {
-                    items(memories) { memory ->
+                    items(memories, key = { it.id }) { memory ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -274,9 +274,10 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     if (memory.tags.isNotBlank()) {
+                                        val parsedTags = remember(memory.tags) { memory.tags.split(",").filter { it.isNotBlank() } }
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            memory.tags.split(",").filter { it.isNotBlank() }.forEach { tag ->
+                                            parsedTags.forEach { tag ->
                                                 SuggestionChip(
                                                     onClick = {},
                                                     label = {
@@ -415,7 +416,7 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(templates) { template ->
+                items(templates, key = { it.id }) { template ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()

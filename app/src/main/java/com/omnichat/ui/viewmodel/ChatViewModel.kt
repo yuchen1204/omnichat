@@ -117,10 +117,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     /** 切换当前使用的 Provider 和模型，持久化到数据库，重启后生效 */
     fun setSessionOverrideModel(provider: ModelConfig, modelId: String) {
         viewModelScope.launch {
-            // BUG-017: 使用 DAO 的 @Transaction 方法保证原子性，避免手动迭代的竞态窗口
-            // 先更新 selectedModelId，再切换默认 provider
-            repository.updateConfig(provider.copy(selectedModelId = modelId))
-            repository.setDefaultProvider(provider.id)
+            // 直接在一次 updateConfig 中同时设置 selectedModelId 和 isDefaultProvider，
+            // 避免调用 setDefaultProvider（toggle 语义）导致已是 default 的 provider 被取消。
+            repository.updateConfig(provider.copy(selectedModelId = modelId, isDefaultProvider = true))
             refreshCurrentModelVision()
         }
     }
@@ -295,39 +294,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
                 return@launch
-            }
-
-            // Generate title using memory model of default provider
-            val currentSession = sessions.value.find { it.id == sessionId }
-            val zhDefault = getApplication<Application>().getString(R.string.default_session_title)
-            val newSession = getApplication<Application>().getString(R.string.new_session)
-            if (currentSession != null && (currentSession.title.startsWith(zhDefault) || currentSession.title.startsWith(newSession)
-                    || currentSession.title.startsWith("Aesthetic Conversation") || currentSession.title.startsWith("New Session"))) {
-                try {
-                    val defaultForTitle = repository.getDefaultProvider()
-                    val titleConfig = if (defaultForTitle != null) {
-                        val memoryProviderId = defaultForTitle.memoryProviderId
-                        val memoryProvider = if (memoryProviderId > 0L) {
-                            repository.getConfigById(memoryProviderId) ?: defaultForTitle
-                        } else {
-                            defaultForTitle
-                        }
-                        memoryProvider.copy(
-                            selectedModelId = defaultForTitle.memoryModelId.takeIf { it.isNotBlank() }
-                                ?: defaultForTitle.selectedModelId
-                        )
-                    } else {
-                        providerConfig
-                    }
-                    val prompt = "Generate a very short (max 10 words) descriptive title for a conversation that starts with the attached user message. Return ONLY the title without quotes, markdown headers, or other text."
-                    val generatedTitle = ApiClient.executeCompletion(titleConfig, prompt, text)
-                    val finalTitle = generatedTitle?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
-                        ?: (if (text.length > 15) text.take(15) + "..." else text)
-                    repository.updateSessionTitle(sessionId, finalTitle.replace("\n", ""))
-                } catch(e: Exception) {
-                    val shortenedText = if (text.length > 15) text.take(15) + "..." else text
-                    repository.updateSessionTitle(sessionId, shortenedText.replace("\n", ""))
-                }
             }
 
             val activeTemplate = repository.getActiveTemplate()
@@ -530,6 +496,84 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 根据用户第一条消息和 AI 第一条回复生成会话标题。
+     * 仅在会话标题仍为默认值时触发。
+     */
+    private suspend fun generateSessionTitle(sessionId: Long, assistantContent: String) {
+        android.util.Log.d("TitleGen", "generateSessionTitle called, sessionId=$sessionId, assistantContent.length=${assistantContent.length}")
+        val currentSession = repository.getSessionById(sessionId) ?: run {
+            android.util.Log.d("TitleGen", "currentSession is null, returning")
+            return
+        }
+
+        // 只有当前两条消息（用户第一条 + AI 第一条）时才生成标题
+        val messages = repository.getMessagesBySession(sessionId)
+        android.util.Log.d("TitleGen", "messages.size=${messages.size}")
+        if (messages.size > 2) {
+            android.util.Log.d("TitleGen", "messages.size > 2, already has title, returning")
+            return
+        }
+        val firstUserMsg = messages.firstOrNull { it.role == "user" } ?: run {
+            android.util.Log.d("TitleGen", "firstUserMsg is null, returning")
+            return
+        }
+
+        // 构造标题生成的用户内容：用户消息 + AI 回复摘要
+        val userText = buildString {
+            if (firstUserMsg.content.isNotBlank()) {
+                append(firstUserMsg.content.take(200))
+            }
+            if (!firstUserMsg.imagePaths.isNullOrBlank()) {
+                try {
+                    val arr = org.json.JSONArray(firstUserMsg.imagePaths)
+                    if (arr.length() > 0) {
+                        if (isNotEmpty()) append("\n")
+                        append("[User attached ${arr.length()} image(s)]")
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        val assistantText = assistantContent.take(200)
+
+        val titleContent = buildString {
+            if (userText.isNotBlank()) append("User: $userText")
+            if (assistantText.isNotBlank()) {
+                if (isNotEmpty()) append("\n")
+                append("Assistant: $assistantText")
+            }
+        }
+        android.util.Log.d("TitleGen", "titleContent=$titleContent")
+        if (titleContent.isBlank()) return
+
+        try {
+            val defaultForTitle = repository.getDefaultProvider() ?: run {
+                android.util.Log.d("TitleGen", "defaultForTitle is null, returning")
+                return
+            }
+            val memoryProviderId = defaultForTitle.memoryProviderId
+            val memoryProvider = if (memoryProviderId > 0L) {
+                repository.getConfigById(memoryProviderId) ?: defaultForTitle
+            } else {
+                defaultForTitle
+            }
+            val titleConfig = memoryProvider.copy(
+                selectedModelId = defaultForTitle.memoryModelId.takeIf { it.isNotBlank() }
+                    ?: defaultForTitle.selectedModelId
+            )
+            android.util.Log.d("TitleGen", "Calling executeCompletion with model=${titleConfig.selectedModelId}")
+            val prompt = "Generate a very short (max 10 words) descriptive title for the following conversation. Return ONLY the title without quotes, markdown headers, or other text."
+            val generatedTitle = ApiClient.executeCompletion(titleConfig, prompt, titleContent)
+            android.util.Log.d("TitleGen", "generatedTitle=$generatedTitle")
+            val finalTitle = generatedTitle?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
+                ?: if (titleContent.length > 15) titleContent.take(15) + "..." else titleContent
+            android.util.Log.d("TitleGen", "finalTitle=$finalTitle")
+            repository.updateSessionTitle(sessionId, finalTitle.replace("\n", ""))
+        } catch (e: Exception) {
+            android.util.Log.e("TitleGen", "Error generating title", e)
+        }
+    }
+
     private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0) {
         val messageHistory = repository.getMessagesBySession(sessionId)
             .filter { it.role != com.omnichat.agent.AgentExecutor.ROLE_AGENT_RESULT }
@@ -659,6 +703,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     toolCallsJson = toolCallsJson
                 )
             )
+        }
+
+        // 首次回复后生成会话标题（结合用户第一条消息和 AI 第一条回复）
+        android.util.Log.d("TitleGen", "After assistant response: toolCallDepth=$toolCallDepth, sessionId=$sessionId")
+        if (toolCallDepth == 0) {
+            generateSessionTitle(sessionId, processedContent)
         }
         
         val wasOnlyToolCalls = processedContent.isEmpty() && accumulatedToolCalls.isNotEmpty()

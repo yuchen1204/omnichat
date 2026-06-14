@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnichat.mcp.McpViewModel
 import com.omnichat.ui.theme.LocalUISettings
+import com.omnichat.ui.theme.LocalWindowSizeClass
 import com.omnichat.ui.theme.resolveFontFamily
 import androidx.compose.ui.res.stringResource
 import com.omnichat.R
@@ -75,6 +77,7 @@ fun MainScreen(
             Card(
                 shape = RoundedCornerShape(cornerPerm),
                 modifier = Modifier
+                    .widthIn(max = 560.dp)
                     .fillMaxWidth(0.92f)
                     .wrapContentHeight(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -196,38 +199,20 @@ fun MainScreen(
     val spacingMultiplier = uiSettings.spacingMultiplier
 
     val sidebarColors = com.omnichat.ui.theme.LocalSidebarColors.current
+    val windowSizeClass = LocalWindowSizeClass.current
+    val isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = sidebarColors.background,
-                drawerShape = RoundedCornerShape(topEnd = uiSettings.cornerRadiusDp.dp, bottomEnd = uiSettings.cornerRadiusDp.dp)
-            ) {
-                SessionSidebarPanel(
-                    viewModel = viewModel,
-                    onSessionSelected = {
-                        currentTab = "chat"
-                        scope.launch { drawerState.close() }
-                    },
-                    onSettingsClick = {
-                        currentTab = "settings"
-                        scope.launch { drawerState.close() }
-                    }
-                )
-            }
-        },
-        modifier = modifier
-    ) {
+    // 内容区域的 Scaffold，共享给两种布局模式
+    @Composable
+    fun ContentScaffold(onOpenDrawer: () -> Unit) {
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
                 MainTopAppBar(
                     currentTab = currentTab,
                     viewModel = viewModel,
-                    onOpenDrawer = {
-                        scope.launch { drawerState.open() }
-                    }
+                    onOpenDrawer = onOpenDrawer,
+                    isExpandedScreen = isExpandedScreen
                 )
             }
         ) { paddingValues ->
@@ -235,14 +220,74 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .padding(16.dp * (spacingMultiplier - 1f)) // 应用 AI 间距调整
-                    .consumeWindowInsets(paddingValues)
+                    .padding(16.dp * (spacingMultiplier - 1f))
+                    .consumeWindowInsets(paddingValues),
+                contentAlignment = Alignment.TopCenter
             ) {
-                when (currentTab) {
-                    "chat" -> ChatView(viewModel)
-                    "settings" -> SettingsView(viewModel, mcpViewModel)
+                Box(
+                    modifier = Modifier.widthIn(max = 720.dp).fillMaxHeight()
+                ) {
+                    when (currentTab) {
+                        "chat" -> ChatView(viewModel)
+                        "settings" -> SettingsView(viewModel, mcpViewModel)
+                    }
                 }
             }
+        }
+    }
+
+    // 侧边栏内容，共享给两种布局模式
+    @Composable
+    fun SidebarContent(onSessionSelected: () -> Unit, onSettingsClick: () -> Unit) {
+        SessionSidebarPanel(
+            viewModel = viewModel,
+            onSessionSelected = onSessionSelected,
+            onSettingsClick = onSettingsClick
+        )
+    }
+
+    if (isExpandedScreen) {
+        // 宽屏：PermanentNavigationDrawer，侧边栏常驻左侧
+        PermanentNavigationDrawer(
+            drawerContent = {
+                PermanentDrawerSheet(
+                    drawerContainerColor = sidebarColors.background,
+                    modifier = Modifier.width(280.dp)
+                ) {
+                    SidebarContent(
+                        onSessionSelected = { currentTab = "chat" },
+                        onSettingsClick = { currentTab = "settings" }
+                    )
+                }
+            },
+            modifier = modifier
+        ) {
+            ContentScaffold(onOpenDrawer = { /* 宽屏不需要打开抽屉 */ })
+        }
+    } else {
+        // 窄屏：ModalNavigationDrawer，抽屉滑出
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerContainerColor = sidebarColors.background,
+                    drawerShape = RoundedCornerShape(topEnd = uiSettings.cornerRadiusDp.dp, bottomEnd = uiSettings.cornerRadiusDp.dp)
+                ) {
+                    SidebarContent(
+                        onSessionSelected = {
+                            currentTab = "chat"
+                            scope.launch { drawerState.close() }
+                        },
+                        onSettingsClick = {
+                            currentTab = "settings"
+                            scope.launch { drawerState.close() }
+                        }
+                    )
+                }
+            },
+            modifier = modifier
+        ) {
+            ContentScaffold(onOpenDrawer = { scope.launch { drawerState.open() } })
         }
     }
 }
@@ -306,7 +351,8 @@ fun SettingsView(
 fun MainTopAppBar(
     currentTab: String,
     viewModel: ChatViewModel,
-    onOpenDrawer: () -> Unit
+    onOpenDrawer: () -> Unit,
+    isExpandedScreen: Boolean = false
 ) {
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     val isSyncing = viewModel.isMemorySyncing
@@ -352,12 +398,14 @@ fun MainTopAppBar(
                 }
             },
             navigationIcon = {
-                IconButton(onClick = onOpenDrawer) {
-                    Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = uiText("topbar.menu.open", R.string.topbar_menu_open),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                if (!isExpandedScreen) {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = uiText("topbar.menu.open", R.string.topbar_menu_open),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             },
             actions = {

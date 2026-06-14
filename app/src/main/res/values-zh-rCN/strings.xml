@@ -623,6 +623,8 @@
     <string name="tool_agent_type_invalid">无效的代理类型: %1$s。有效类型: %2$s</string>
     <string name="tool_agent_task_empty">任务描述不能为空。</string>
     <string name="tool_agent_delegated">任务已委托给 %1$s 代理。taskId: %2$s\n\n请不要立即查询状态——任务正在异步执行中。请使用 create_timer(delay_seconds=60, task_id=\"%3$s\") 设置提醒，然后继续其他工作。任务完成后结果会自动出现在会话中。</string>
+    <string name="tool_agent_delegation_failed">委托任务给 %1$s 代理失败: %2$s</string>
+    <string name="tool_agent_delegation_depth_exceeded">委托深度超出限制（最大 %1$d 层）。SubAgent 不能再向更深层的子代理委托任务。</string>
     <string name="tool_agent_task_id_empty">任务 ID 不能为空。</string>
     <string name="tool_agent_task_not_found">任务不存在: %1$s</string>
     <string name="tool_agent_status_pending">等待中</string>

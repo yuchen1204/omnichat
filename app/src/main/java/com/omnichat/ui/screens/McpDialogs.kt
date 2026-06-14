@@ -49,6 +49,7 @@ fun McpToolsDialog(
         Card(
             shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -144,6 +145,7 @@ fun McpImportDialog(
         Card(
             shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(0.7f),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -260,6 +262,7 @@ fun McpServerEditDialog(
         Card(
             shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

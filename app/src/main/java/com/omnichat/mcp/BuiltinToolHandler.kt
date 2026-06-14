@@ -66,8 +66,14 @@ object BuiltinToolHandler {
             "delegate_task" -> handleDelegateTask(context, arguments, sessionId)
             "check_task_status" -> handleCheckTaskStatus(context, arguments, sessionId)
             "list_agent_tasks" -> handleListAgentTasks(context, arguments, sessionId)
-            "send_message" -> handleSendMessage(arguments)
-            "read_inbox" -> handleReadInbox(arguments)
+            "send_message" -> {
+                val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
+                handleSendMessage(arguments, callerCtx?.agentType)
+            }
+            "read_inbox" -> {
+                val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
+                handleReadInbox(arguments, callerCtx?.agentType)
+            }
             "manage_task_board" -> handleManageTaskBoard(arguments)
             "approve_agent_request" -> handleApproveAgentRequest(arguments)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
@@ -1766,6 +1772,12 @@ object BuiltinToolHandler {
         val repository = getRepository(context)
         val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
 
+        // 读取当前委托深度，防止递归委托超出限制
+        val currentDepth = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]?.depth ?: 0
+        if (currentDepth >= com.omnichat.agent.AgentExecutor.MAX_DELEGATION_DEPTH) {
+            return errorResponse(str(context, R.string.tool_agent_delegation_depth_exceeded, com.omnichat.agent.AgentExecutor.MAX_DELEGATION_DEPTH))
+        }
+
         // 构建附加上下文：合并用户提供的 context 和上一个任务的摘要
         val enrichedContext = buildString {
             if (contextStr != null) {
@@ -1793,7 +1805,15 @@ object BuiltinToolHandler {
             }
         }.takeIf { it.isNotBlank() }
 
-        val taskId = executor.execute(sessionId, agentType, task, enrichedContext, files)
+        val taskId = executor.execute(sessionId, agentType, task, enrichedContext, files, currentDepth + 1)
+
+        // 检查任务是否因信号量耗尽等原因立即失败
+        // execute() 是异步的，短暂等待让协程有机会启动并检查信号量
+        kotlinx.coroutines.delay(100)
+        val taskState = executor.getStatus(taskId)
+        if (taskState != null && taskState.status == com.omnichat.agent.AgentTaskStatus.FAILED) {
+            return errorResponse(str(context, R.string.tool_agent_delegation_failed, agentType, taskState.error ?: "Unknown error"))
+        }
 
         return successResponse(str(context, R.string.tool_agent_delegated, agentType, taskId, taskId))
     }
@@ -1987,21 +2007,22 @@ object BuiltinToolHandler {
     // bigramTokenize 已迁移到 com.omnichat.memory.MemoryTokenizer.tokenize()
     // ── subAgent 相关辅助工具 ───────────────────────────────────────────────
 
-    private fun handleSendMessage(arguments: JSONObject): JSONObject {
+    private fun handleSendMessage(arguments: JSONObject, senderAgentType: String?): JSONObject {
         val to = arguments.optString("to")
         val content = arguments.optString("content")
         if (to.isBlank() || content.isBlank()) {
             return errorResponse("Missing 'to' or 'content'")
         }
-        com.omnichat.agent.AgentTeamManager.sendMessage("another_agent", to, content)
-        return successResponse("Message sent to $to")
+        val sender = senderAgentType ?: "unknown_agent"
+        com.omnichat.agent.AgentTeamManager.sendMessage(sender, to, content)
+        return successResponse("Message sent to $to from $sender")
     }
 
-    private fun handleReadInbox(arguments: JSONObject): JSONObject {
-        val agentName = arguments.optString("agent_name")
+    private fun handleReadInbox(arguments: JSONObject, callerAgentType: String?): JSONObject {
+        val agentName = arguments.optString("agent_name").takeIf { it.isNotBlank() } ?: callerAgentType
         val clear = arguments.optBoolean("clear", false)
-        if (agentName.isBlank()) {
-            return errorResponse("Missing 'agent_name'")
+        if (agentName.isNullOrBlank()) {
+            return errorResponse("Missing 'agent_name' and no agent context available")
         }
         val messages = com.omnichat.agent.AgentTeamManager.readInbox(agentName)
         if (clear) {
@@ -2015,7 +2036,7 @@ object BuiltinToolHandler {
                 put("timestamp", msg.timestamp)
             })
         }
-        return JSONObject().apply { put("messages", jsonArray) }
+        return successResponse(jsonArray.toString())
     }
 
     private fun handleManageTaskBoard(arguments: JSONObject): JSONObject {
@@ -2056,7 +2077,7 @@ object BuiltinToolHandler {
                         put("status", t.status)
                     })
                 }
-                JSONObject().apply { put("tasks", array) }
+                successResponse(array.toString())
             }
             else -> errorResponse("Unknown action: $action")
         }

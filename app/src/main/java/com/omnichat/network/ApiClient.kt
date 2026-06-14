@@ -360,6 +360,96 @@ object ApiClient {
     }
 
     /**
+     * 非流式 API 补全，支持传入完整的历史消息列表，并返回完整的 message JSONObject（包含 content 和 tool_calls），
+     * 用于 AgentTeam 的多轮工具调用。
+     */
+    suspend fun executeMessageCompletion(
+        config: ModelConfig,
+        systemPrompt: String,
+        messages: JSONArray,
+        tools: JSONArray? = null
+    ): JSONObject? = withContext(Dispatchers.IO) {
+        val endpoint = config.endpoint.trim().removeSuffix("/")
+        val apiKey = config.apiKey.trim()
+        val model = config.selectedModelId
+
+        val body = JSONObject().apply {
+            put("model", model)
+            
+            // Inject thinking configuration parameters
+            if (config.enableThinking) {
+                val effort = config.thinkingEffort
+                put("reasoning_effort", if (effort == "xhigh") "high" else effort)
+                
+                put("thinking", JSONObject().apply {
+                    put("type", "enabled")
+                    put("budget_tokens", when(effort) {
+                        "low" -> 1024
+                        "medium" -> 2048
+                        "high" -> 4096
+                        "xhigh" -> 8192
+                        else -> 2048
+                    })
+                })
+            } else {
+                put("exclude_thinking", true)
+                put("thinking", JSONObject().apply {
+                    put("type", "disabled")
+                })
+            }
+
+            if (tools != null && tools.length() > 0) {
+                put("tools", tools)
+            }
+
+            val messagesArray = JSONArray()
+            if (systemPrompt.isNotBlank()) {
+                messagesArray.put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+            }
+            for (i in 0 until messages.length()) {
+                messagesArray.put(messages.optJSONObject(i))
+            }
+            put("messages", messagesArray)
+        }
+        val requestBodyJson = body.toString()
+
+        val url = if (endpoint.endsWith("/chat/completions")) endpoint else "$endpoint/chat/completions"
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .post(requestBodyJson.toRequestBody(mediaTypeJson))
+        if (apiKey.isNotBlank()) {
+            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+        }
+        requestBuilder.applyCustomHeaders(config)
+
+        try {
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                
+                if (!response.isSuccessful) {
+                    checkHtmlResponse(bodyStr)
+                    println("API Completion Code: ${response.code} error message: $bodyStr")
+                    return@withContext null
+                }
+                
+                checkHtmlResponse(bodyStr)
+                val json = JSONObject(bodyStr)
+                val choicesArr = json.optJSONArray("choices")
+                if (choicesArr != null && choicesArr.length() > 0) {
+                    return@withContext choicesArr.optJSONObject(0)?.optJSONObject("message")
+                }
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
      * 调用 OpenAI 兼容的 /embeddings 端点，批量获取文本的向量表示。
      * 支持 OpenAI (text-embedding-3-small)、Ollama、vLLM 等兼容接口。
      *

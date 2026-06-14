@@ -453,6 +453,7 @@ fun ModelConfigDialog(
             tonalElevation = 0.dp,
             shadowElevation = 6.dp,
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .padding(vertical = 16.dp)
         ) {
@@ -927,6 +928,7 @@ fun ProviderModelPicker(
             tonalElevation = 0.dp,
             shadowElevation = 6.dp,
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f)
         ) {

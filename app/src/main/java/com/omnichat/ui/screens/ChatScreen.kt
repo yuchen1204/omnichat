@@ -152,20 +152,13 @@ fun ChatView(viewModel: ChatViewModel) {
         cameraPermissionState.value = isGranted
     }
 
-    // 相机启动器
+    // 相机启动器（全分辨率拍照）
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null) {
-            // 将拍摄的图片保存到临时文件
-            val tempFile = java.io.File(
-                context.cacheDir,
-                "camera_${System.currentTimeMillis()}.jpg"
-            )
-            java.io.FileOutputStream(tempFile).use { out ->
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
-            }
-            selectedImagePaths = selectedImagePaths + tempFile.absolutePath
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempCameraUri != null) {
+            selectedImagePaths = selectedImagePaths + tempCameraUri.toString()
         }
     }
 
@@ -617,7 +610,20 @@ fun ChatView(viewModel: ChatViewModel) {
                                 modifier = Modifier
                                     .clickable(enabled = currentModelHasVision) {
                                         if (cameraPermissionState.value) {
-                                            cameraLauncher.launch(null)
+                                            // 创建临时文件并获取 content:// URI
+                                            val imagesDir = java.io.File(context.cacheDir, "images")
+                                            imagesDir.mkdirs()
+                                            val tempFile = java.io.File(
+                                                imagesDir,
+                                                "camera_${System.currentTimeMillis()}.jpg"
+                                            )
+                                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                tempFile
+                                            )
+                                            tempCameraUri = uri
+                                            cameraLauncher.launch(uri)
                                         } else {
                                             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                                         }

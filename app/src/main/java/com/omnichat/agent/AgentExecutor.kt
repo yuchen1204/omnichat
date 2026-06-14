@@ -26,9 +26,11 @@ private data class TaskExecutionResult(
  */
 data class AgentCallerContext(
     val agentType: String,
+    val agentName: String,
     val taskContext: String,
     val agentMode: String,
-    val sessionId: Long
+    val sessionId: Long,
+    val depth: Int = 0
 ) : kotlin.coroutines.AbstractCoroutineContextElement(AgentCallerContext) {
     companion object Key : kotlin.coroutines.CoroutineContext.Key<AgentCallerContext>
 }
@@ -111,6 +113,9 @@ class AgentExecutor(
         /** 全局最大并行任务数 */
         private const val MAX_GLOBAL_PARALLELISM = 3
 
+        /** 最大递归委托深度（防止 subAgent 无限递归调用 delegate_task） */
+        const val MAX_DELEGATION_DEPTH = 3
+
         /** agent_result 消息角色常量 */
         const val ROLE_AGENT_RESULT = "agent_result"
 
@@ -140,9 +145,24 @@ class AgentExecutor(
         agentType: String,
         task: String,
         contextStr: String?,
-        files: List<String>?
+        files: List<String>?,
+        depth: Int = 0
     ): String {
         val taskId = UUID.randomUUID().toString()
+
+        // 检查递归深度
+        if (depth > MAX_DELEGATION_DEPTH) {
+            val initialState = AgentTaskState(
+                taskId = taskId,
+                sessionId = sessionId,
+                agentType = agentType,
+                status = AgentTaskStatus.FAILED,
+                taskDescription = task,
+                error = "Delegation depth exceeded (max $MAX_DELEGATION_DEPTH). Tasks cannot delegate to sub-agents beyond this depth."
+            )
+            updateState(taskId, initialState)
+            return taskId
+        }
 
         // 创建初始状态
         val initialState = AgentTaskState(
@@ -185,7 +205,7 @@ class AgentExecutor(
                     ))
 
                     // 执行任务（also returns the config used, avoiding duplicate lookup）
-                    executionResult = executeTask(sessionId, agentType, task, contextStr, files)
+                    executionResult = executeTask(sessionId, agentType, task, contextStr, files, depth)
 
                 } finally {
                     // 释放许可
@@ -263,16 +283,19 @@ class AgentExecutor(
         agentType: String,
         task: String,
         contextStr: String?,
-        files: List<String>?
+        files: List<String>?,
+        depth: Int = 0
     ): TaskExecutionResult = withTimeout(TASK_TIMEOUT_MS) {
         val session = repository.getSessionById(sessionId)
         val agentMode = session?.agentMode ?: "GENERAL"
 
         val callerCtx = AgentCallerContext(
             agentType = agentType,
+            agentName = agentType,  // 使用 agentType 作为 agent 名称
             taskContext = task,
             agentMode = agentMode,
-            sessionId = sessionId
+            sessionId = sessionId,
+            depth = depth
         )
 
         withContext(callerCtx) {

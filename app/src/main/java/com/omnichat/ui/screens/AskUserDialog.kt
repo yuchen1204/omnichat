@@ -44,6 +44,7 @@ fun AskUserDialog(
         Card(
             shape = RoundedCornerShape(cornerRadius),
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(0.8f),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)

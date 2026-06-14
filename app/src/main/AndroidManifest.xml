@@ -36,6 +36,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:hardwareAccelerated="true"
         android:theme="@style/Theme.MyApplication"
         android:usesCleartextTraffic="true">
         <activity
@@ -43,7 +44,9 @@
             android:exported="true"
             android:label="@string/app_name"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.MyApplication">
+            android:theme="@style/Theme.MyApplication"
+            android:configChanges="density|screenSize|screenLayout|orientation|keyboardHidden|keyboard|smallestScreenSize|uiMode"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -56,6 +59,17 @@
             android:name=".StreamingForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!-- FileProvider: 相机拍照需要通过 content:// URI 传递文件路径 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- 定时提醒：AlarmManager 触发的 BroadcastReceiver，进程死亡后仍可被唤起 -->
         <receiver

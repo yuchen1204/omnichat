@@ -119,7 +119,6 @@ fun SessionSidebarPanel(
             } else {
                 items(sessions, key = { "session_${it.id}" }) { session ->
                     val isActive = session.id == activeSessionId
-                    var showItemMenu by remember { mutableStateOf(false) }
 
                     SessionListItem(
                         title = session.title,
@@ -136,60 +135,21 @@ fun SessionSidebarPanel(
                             viewModel.selectSession(session.id)
                             onSessionSelected()
                         },
-                        onLongClick = { showItemMenu = true },
+                        onLongClick = {},
                         trailingContent = {
-                            Box {
-                                IconButton(
-                                    onClick = { showItemMenu = true },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = null,
-                                        tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.6f)
-                                               else sidebarColors.onBackground.copy(alpha = 0.4f),
-                                        modifier = Modifier.size(15.dp)
-                                    )
+                            SessionTrailingMenu(
+                                isActive = isActive,
+                                fs = fs,
+                                sidebarColors = sidebarColors,
+                                cornerRadius = cornerRadius,
+                                onRename = {
+                                    renameTargetSession = session
+                                    renameText = session.title
+                                },
+                                onDelete = {
+                                    deleteTargetSession = session
                                 }
-                                DropdownMenu(
-                                    expanded = showItemMenu,
-                                    onDismissRequest = { showItemMenu = false },
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    shape = RoundedCornerShape(cornerRadius.coerceIn(8.dp, 16.dp)),
-                                    offset = DpOffset(x = (-80).dp, y = 0.dp),
-                                ) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(15.dp))
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(uiText("sidebar.286eb70c", R.string.sidebar_rename), fontSize = (13 * fs).sp)
-                                            }
-                                        },
-                                        onClick = {
-                                            renameTargetSession = session
-                                            renameText = session.title
-                                            showItemMenu = false
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(Icons.Default.Delete, null,
-                                                    modifier = Modifier.size(15.dp),
-                                                    tint = MaterialTheme.colorScheme.error)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(uiText("sidebar.7c7e3e24", R.string.sidebar_delete), fontSize = (13 * fs).sp,
-                                                    color = MaterialTheme.colorScheme.error)
-                                            }
-                                        },
-                                        onClick = {
-                                            deleteTargetSession = session
-                                            showItemMenu = false
-                                        }
-                                    )
-                                }
-                            }
+                            )
                         }
                     )
                 }
@@ -490,6 +450,76 @@ private fun SessionListItem(
 
             // 尾部操作
             trailingContent()
+        }
+    }
+}
+
+// ── 列表条目尾部菜单（独立 composable，避免父级重组时重建） ─────────────────
+
+@Composable
+private fun SessionTrailingMenu(
+    isActive: Boolean,
+    fs: Float,
+    sidebarColors: com.omnichat.ui.theme.SidebarColors,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showItemMenu by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(
+            onClick = { showItemMenu = true },
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = null,
+                tint = if (isActive) sidebarColors.onActiveBackground.copy(alpha = 0.6f)
+                       else sidebarColors.onBackground.copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
+        }
+        DropdownMenu(
+            expanded = showItemMenu,
+            onDismissRequest = { showItemMenu = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(cornerRadius.coerceIn(8.dp, 16.dp)),
+            offset = DpOffset(x = (-80).dp, y = 0.dp),
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(uiText("sidebar.286eb70c", R.string.sidebar_rename), fontSize = (13 * fs).sp)
+                    }
+                },
+                onClick = {
+                    onRename()
+                    showItemMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Delete, null,
+                            modifier = Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            uiText("sidebar.7c7e3e24", R.string.sidebar_delete), fontSize = (13 * fs).sp,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
+                onClick = {
+                    onDelete()
+                    showItemMenu = false
+                }
+            )
         }
     }
 }

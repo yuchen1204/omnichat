@@ -623,6 +623,8 @@
     <string name="tool_agent_type_invalid">Invalid agent type: %1$s. Valid types: %2$s</string>
     <string name="tool_agent_task_empty">Task description is required.</string>
     <string name="tool_agent_delegated">Task delegated to %1$s agent. taskId: %2$s\n\nDo NOT check status immediately — the task is running asynchronously. Use create_timer(delay_seconds=60, task_id=\"%3$s\") to set a reminder, then continue with other work. The result will appear automatically when complete.</string>
+    <string name="tool_agent_delegation_failed">Failed to delegate task to %1$s agent: %2$s</string>
+    <string name="tool_agent_delegation_depth_exceeded">Delegation depth exceeded (max %1$d). Sub-agents cannot delegate tasks to further sub-agents beyond this depth.</string>
     <string name="tool_agent_task_id_empty">Task ID is required.</string>
     <string name="tool_agent_task_not_found">Task not found: %1$s</string>
     <string name="tool_agent_status_pending">Pending</string>

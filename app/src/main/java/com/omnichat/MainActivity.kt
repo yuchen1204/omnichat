@@ -12,6 +12,8 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import com.omnichat.ui.viewmodel.SettingsViewModel
 import com.omnichat.mcp.TimerManager
 import com.omnichat.StreamingForegroundService
 
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 class MainActivity : AppCompatActivity() {
 
     private val mcpRuntimeManager by lazy { com.omnichat.mcp.McpRuntimeManager.getInstance(applicationContext) }
@@ -76,12 +79,17 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             val uiSettings by settingsViewModel.uiSettings.collectAsState()
-            
+            val windowSizeClass = calculateWindowSizeClass(this)
+
             MyApplicationTheme(uiSettings = uiSettings) {
-                val viewModel: ChatViewModel = viewModel()
-                MainScreen(
-                    viewModel = viewModel
-                )
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.omnichat.ui.theme.LocalWindowSizeClass provides windowSizeClass
+                ) {
+                    val viewModel: ChatViewModel = viewModel()
+                    MainScreen(
+                        viewModel = viewModel
+                    )
+                }
             }
         }
     }
