@@ -1,6 +1,7 @@
 package com.omnichat.data
 
 import androidx.compose.runtime.Immutable
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -416,7 +417,13 @@ data class UISettings(
     /**
      * 是否隐藏 Yolo Mode 实验性功能警告弹窗。
      */
-    val hideYoloWarning: Boolean = false
+    val hideYoloWarning: Boolean = false,
+
+    @ColumnInfo(name = "cloudBackupFrequency")
+    val cloudBackupFrequency: String = "H6",
+
+    @ColumnInfo(name = "cloudBackupSections")
+    val cloudBackupSections: String = """["providers","mcpServers","mcpFilePermissions","memories","promptTemplates","uiSettings","colorSchemePresets"]"""
 )
 
 /**
