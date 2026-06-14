@@ -125,7 +125,7 @@ export default {
       if (path === '/api/upload' && request.method === 'POST') {
         const { type, data, filename, groupId } = await request.json();
 
-        if (!['omnidb', 'omniconfig'].includes(type)) {
+        if (!['omnidb', 'omniconfig', 'omnifile'].includes(type)) {
           return Response.json({ error: 'Invalid backup type' }, {
             status: 400,
             headers: corsHeaders,
