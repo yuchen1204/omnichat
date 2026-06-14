@@ -683,6 +683,20 @@
     <string name="cloud_bind_success">Bound successfully</string>
     <string name="cloud_backup_success">Backup successful</string>
     <string name="cloud_restore_success">Restore successful</string>
+
+    <!-- Cloud Backup frequency/content -->
+    <string name="cloud_backup_frequency">Auto backup frequency</string>
+    <string name="cloud_backup_content">Backup content</string>
+    <string name="cloud_freq_manual">Manual</string>
+    <string name="cloud_freq_3h">3h</string>
+    <string name="cloud_freq_6h">6h</string>
+    <string name="cloud_freq_12h">12h</string>
+    <string name="cloud_freq_24h">24h</string>
+    <string name="cloud_section_provider_mcp">Provider &amp; MCP</string>
+    <string name="cloud_section_memory_prompts">Memory &amp; Prompts</string>
+    <string name="cloud_section_theme_ui">Theme &amp; UI</string>
+    <string name="cloud_section_chat_history">Chat History</string>
+
     <string name="cancel">Cancel</string>
 
     <!-- ChatScreen content descriptions -->

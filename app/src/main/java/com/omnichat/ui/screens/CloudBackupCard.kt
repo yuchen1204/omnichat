@@ -2,6 +2,7 @@ package com.omnichat.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +37,8 @@ import com.omnichat.ui.theme.uiText
 fun CloudBackupCard(
     expanded: Boolean,
     onToggle: () -> Unit,
+    onFrequencyChange: (String) -> Unit = {},
+    onSectionToggle: (String) -> Unit = {},
     viewModel: CloudBackupViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -173,6 +177,76 @@ fun CloudBackupCard(
                         )
                     ) {
                         Text(stringResource(R.string.cloud_unbind), fontSize = (14 * fs).sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Backup frequency selector
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        text = stringResource(R.string.cloud_backup_frequency),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val frequencies = listOf("MANUAL" to R.string.cloud_freq_manual,
+                            "H3" to R.string.cloud_freq_3h, "H6" to R.string.cloud_freq_6h,
+                            "H12" to R.string.cloud_freq_12h, "H24" to R.string.cloud_freq_24h)
+                        frequencies.forEach { (freq, resId) ->
+                            val isSelected = uiState.backupFrequency == freq
+                            val bgColor = if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(bgColor)
+                                    .clickable { onFrequencyChange(freq) }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = stringResource(resId),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = textColor)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Backup content checkboxes
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        text = stringResource(R.string.cloud_backup_content),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val sections = listOf(
+                        "providers" to R.string.cloud_section_provider_mcp,
+                        "memories" to R.string.cloud_section_memory_prompts,
+                        "uiSettings" to R.string.cloud_section_theme_ui,
+                        "sessions" to R.string.cloud_section_chat_history
+                    )
+                    sections.forEach { (section, resId) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(
+                                checked = uiState.backupSections.contains(section),
+                                onCheckedChange = { onSectionToggle(section) }
+                            )
+                            Text(text = stringResource(resId),
+                                style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

@@ -683,6 +683,20 @@
     <string name="cloud_bind_success">绑定成功</string>
     <string name="cloud_backup_success">备份成功</string>
     <string name="cloud_restore_success">恢复成功</string>
+
+    <!-- Cloud Backup frequency/content -->
+    <string name="cloud_backup_frequency">自动备份频率</string>
+    <string name="cloud_backup_content">备份内容</string>
+    <string name="cloud_freq_manual">手动</string>
+    <string name="cloud_freq_3h">3小时</string>
+    <string name="cloud_freq_6h">6小时</string>
+    <string name="cloud_freq_12h">12小时</string>
+    <string name="cloud_freq_24h">24小时</string>
+    <string name="cloud_section_provider_mcp">Provider &amp; MCP</string>
+    <string name="cloud_section_memory_prompts">记忆 &amp; 提示词</string>
+    <string name="cloud_section_theme_ui">主题 &amp; UI</string>
+    <string name="cloud_section_chat_history">聊天记录</string>
+
     <string name="cancel">取消</string>
 
     <!-- ChatScreen content descriptions -->

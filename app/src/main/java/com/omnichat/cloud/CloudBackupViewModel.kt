@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnichat.R
+import com.omnichat.data.AppDatabase
+import com.omnichat.worker.CloudBackupWorker
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -20,7 +22,12 @@ data class CloudBackupUiState(
     val backups: List<BackupMeta> = emptyList(),
     val showBindDialog: Boolean = false,
     val showRecoveryDialog: Boolean = false,
-    val showBackupListDialog: Boolean = false
+    val showBackupListDialog: Boolean = false,
+    val backupFrequency: String = "H6",
+    val backupSections: Set<String> = setOf(
+        "providers", "mcpServers", "mcpFilePermissions",
+        "memories", "promptTemplates", "uiSettings", "colorSchemePresets"
+    )
 )
 
 class CloudBackupViewModel(application: Application) : AndroidViewModel(application) {
@@ -36,6 +43,26 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
                 isBound = manager.isBound,
                 userId = manager.userId
             )
+        }
+
+        viewModelScope.launch {
+            val database = AppDatabase.getDatabase(application)
+            val settings = database.uiSettingsDao().getSettings()
+            settings?.let {
+                val frequency = it.cloudBackupFrequency
+                val sections = try {
+                    org.json.JSONArray(it.cloudBackupSections).let { arr ->
+                        (0 until arr.length()).map { i -> arr.getString(i) }.toSet()
+                    }
+                } catch (_: Exception) { _uiState.value.backupSections }
+
+                _uiState.update { state ->
+                    state.copy(
+                        backupFrequency = frequency,
+                        backupSections = sections
+                    )
+                }
+            }
         }
     }
 
@@ -175,34 +202,52 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
     fun uploadBackup() {
         viewModelScope.launch {
             _uiState.update { it.copy(isUploading = true, error = null) }
-            val result = manager.uploadAllBackups()
-            result.fold(
-                onSuccess = {
-                    // Load backups first, then update UI
-                    val listResult = manager.listBackups()
-                    listResult.fold(
-                        onSuccess = { backups ->
-                            _uiState.update {
-                                it.copy(
-                                    isUploading = false,
-                                    success = getApplication<Application>().getString(R.string.cloud_backup_success),
-                                    backups = backups
-                                )
-                            }
-                        },
-                        onFailure = {
-                            _uiState.update {
-                                it.copy(isUploading = false, success = getApplication<Application>().getString(R.string.cloud_backup_success))
-                            }
-                        }
+            val sections = _uiState.value.backupSections.toList()
+            val result = manager.uploadOmnifileBackup(sections = sections)
+            result.onSuccess {
+                loadBackups()
+                _uiState.update { state ->
+                    state.copy(
+                        isUploading = false,
+                        success = getApplication<Application>().getString(R.string.cloud_backup_success)
                     )
-                },
-                onFailure = { e ->
-                    _uiState.update {
-                        it.copy(isUploading = false, error = e.message)
-                    }
                 }
-            )
+            }.onFailure { e ->
+                _uiState.update { state ->
+                    state.copy(isUploading = false, error = e.message)
+                }
+            }
+        }
+    }
+
+    fun updateBackupFrequency(frequency: String) {
+        _uiState.update { it.copy(backupFrequency = frequency) }
+        viewModelScope.launch {
+            val database = AppDatabase.getDatabase(getApplication())
+            val current = database.uiSettingsDao().getSettings()
+            current?.let {
+                database.uiSettingsDao().upsertSettings(it.copy(cloudBackupFrequency = frequency))
+            }
+            CloudBackupWorker.enqueuePeriodicWork(getApplication(), frequency)
+        }
+    }
+
+    fun toggleBackupSection(section: String) {
+        _uiState.update { state ->
+            val newSections = if (state.backupSections.contains(section)) {
+                state.backupSections - section
+            } else {
+                state.backupSections + section
+            }
+            state.copy(backupSections = newSections)
+        }
+        viewModelScope.launch {
+            val database = AppDatabase.getDatabase(getApplication())
+            val current = database.uiSettingsDao().getSettings()
+            current?.let {
+                val sectionsJson = org.json.JSONArray(_uiState.value.backupSections.toList()).toString()
+                database.uiSettingsDao().upsertSettings(it.copy(cloudBackupSections = sectionsJson))
+            }
         }
     }
 
