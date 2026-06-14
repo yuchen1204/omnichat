@@ -714,4 +714,9 @@
     <string name="agent_task_label">任务: %1$s</string>
     <string name="agent_summary_label">摘要: %1$s</string>
     <string name="agent_no_result">(无结果)</string>
+
+    <!-- Update banner -->
+    <string name="sidebar_update_available">发现新版本</string>
+    <string name="sidebar_update_version">当前: %1$s → 最新: %2$s</string>
+    <string name="sidebar_update_dismiss">关闭</string>
 </resources>

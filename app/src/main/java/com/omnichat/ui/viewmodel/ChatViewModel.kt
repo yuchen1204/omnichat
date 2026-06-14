@@ -20,6 +20,8 @@ import java.util.Locale
 import com.omnichat.R
 import com.omnichat.mcp.AskUserManager
 import com.omnichat.StreamingForegroundService
+import com.omnichat.BuildConfig
+import com.omnichat.update.UpdateChecker
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
@@ -51,6 +53,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // Model configurations flow
     val modelConfigs: StateFlow<List<ModelConfig>> = repository.allConfigs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // ── 版本更新检查 ────────────────────────────────────────────────────
+    /** 最新可用版本号（null = 尚未检查或无新版本） */
+    var latestVersion by mutableStateOf<String?>(null)
+        private set
+    /** 是否正在检查更新 */
+    var isCheckingUpdate by mutableStateOf(false)
+        private set
 
     // Memory items flow
     val memories: StateFlow<List<MemoryItem>> = repository.allMemories
@@ -151,6 +161,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Observe SubAgent approval requests
         observeApprovalRequests()
+
+        // 检查版本更新
+        checkForUpdate()
     }
 
     private fun observeApprovalRequests() {
@@ -173,6 +186,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    // ── 版本更新检查 ────────────────────────────────────────────────────
+
+    fun checkForUpdate() {
+        if (isCheckingUpdate) return
+        isCheckingUpdate = true
+        viewModelScope.launch {
+            try {
+                val remote = UpdateChecker.fetchLatestVersion() ?: return@launch
+                val local = BuildConfig.VERSION_NAME
+                val ctx = getApplication<Application>()
+                if (UpdateChecker.isNewer(local, remote) && !UpdateChecker.isDismissed(ctx, remote)) {
+                    latestVersion = remote
+                }
+            } catch (_: Exception) {
+                // 静默失败，不打扰用户
+            } finally {
+                isCheckingUpdate = false
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        val version = latestVersion ?: return
+        val ctx = getApplication<Application>()
+        UpdateChecker.dismiss(ctx, version)
+        latestVersion = null
     }
 
     fun selectSession(sessionId: Long) {

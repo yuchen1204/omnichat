@@ -41,6 +41,7 @@ import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.resolveFontFamily
 import com.omnichat.ui.viewmodel.ChatViewModel
 import androidx.compose.ui.res.stringResource
+import com.omnichat.BuildConfig
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -53,6 +54,7 @@ fun SessionSidebarPanel(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
+    val latestVersion = viewModel.latestVersion
 
     val uiSettings = LocalUISettings.current
     val sidebarColors = LocalSidebarColors.current
@@ -88,6 +90,18 @@ fun SessionSidebarPanel(
                 onSessionSelected()
             }
         )
+
+        // ── 版本更新提示条 ──────────────────────────────────────────────
+        latestVersion?.let { version ->
+            UpdateBanner(
+                currentVersion = BuildConfig.VERSION_NAME,
+                latestVersion = version,
+                fs = fs,
+                resolvedFontFamily = resolvedFontFamily,
+                sidebarColors = sidebarColors,
+                onDismiss = { viewModel.dismissUpdate() }
+            )
+        }
 
         // ── 列表区域 ───────────────────────────────────────────────────
         LazyColumn(
@@ -313,6 +327,67 @@ private fun SidebarHeader(
         color = sidebarColors.onBackground.copy(alpha = 0.06f),
         thickness = 0.5.dp
     )
+}
+
+// ── 版本更新提示条 ────────────────────────────────────────────────────────────
+
+@Composable
+private fun UpdateBanner(
+    currentVersion: String,
+    latestVersion: String,
+    fs: Float,
+    resolvedFontFamily: androidx.compose.ui.text.font.FontFamily,
+    sidebarColors: com.omnichat.ui.theme.SidebarColors,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        color = sidebarColors.activeBackground.copy(alpha = 0.18f),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.SystemUpdate,
+                contentDescription = null,
+                tint = sidebarColors.onBackground.copy(alpha = 0.7f),
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(7.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = uiText("sidebar.update_available", R.string.sidebar_update_available),
+                    fontSize = (11.5f * fs).sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = resolvedFontFamily,
+                    color = sidebarColors.onBackground
+                )
+                Text(
+                    text = uiText("sidebar.update_version", R.string.sidebar_update_version).format(currentVersion, latestVersion),
+                    fontSize = (9.5f * fs).sp,
+                    fontFamily = resolvedFontFamily,
+                    color = sidebarColors.onBackground.copy(alpha = 0.55f)
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(22.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = uiText("sidebar.update_dismiss", R.string.sidebar_update_dismiss),
+                    tint = sidebarColors.onBackground.copy(alpha = 0.45f),
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+        }
+    }
 }
 
 // ── 分区标题 ────────────────────────────────────────────────────────────────

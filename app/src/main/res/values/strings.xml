@@ -714,4 +714,9 @@
     <string name="agent_task_label">Task: %1$s</string>
     <string name="agent_summary_label">Summary: %1$s</string>
     <string name="agent_no_result">(No result)</string>
+
+    <!-- Update banner -->
+    <string name="sidebar_update_available">New version available</string>
+    <string name="sidebar_update_version">Current: %1$s → Latest: %2$s</string>
+    <string name="sidebar_update_dismiss">Dismiss</string>
 </resources>

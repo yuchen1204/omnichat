@@ -13,8 +13,17 @@ android {
     applicationId = "com.omnichat"
     minSdk = 26
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+
+    // CI 通过环境变量 VERSION_NAME 传入版本号（如 "1.2.3"），本地编译使用默认值
+    val ciVersion = System.getenv("VERSION_NAME")
+    if (ciVersion != null && ciVersion.isNotBlank()) {
+        versionName = ciVersion
+        // 将语义版本号转为整数 versionCode，如 "1.2.3" → 10203
+        versionCode = ciVersion.split(".").fold(0) { acc, part -> acc * 100 + (part.toIntOrNull() ?: 0) }
+    } else {
+        versionCode = 1
+        versionName = "1.0"
+    }
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
