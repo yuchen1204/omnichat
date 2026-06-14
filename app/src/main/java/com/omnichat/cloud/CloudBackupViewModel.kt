@@ -3,6 +3,7 @@ package com.omnichat.cloud
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.omnichat.R
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -95,7 +96,7 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
                             showBindDialog = false,
                             totpSecret = null,
                             qrCodeUrl = null,
-                            success = "绑定成功"
+                            success = getApplication<Application>().getString(R.string.cloud_bind_success)
                         )
                     }
                 },
@@ -184,14 +185,14 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
                             _uiState.update {
                                 it.copy(
                                     isUploading = false,
-                                    success = "备份成功",
+                                    success = getApplication<Application>().getString(R.string.cloud_backup_success),
                                     backups = backups
                                 )
                             }
                         },
                         onFailure = {
                             _uiState.update {
-                                it.copy(isUploading = false, success = "备份成功")
+                                it.copy(isUploading = false, success = getApplication<Application>().getString(R.string.cloud_backup_success))
                             }
                         }
                     )
@@ -258,7 +259,7 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
             result.fold(
                 onSuccess = {
                     _uiState.update {
-                        it.copy(isRestoring = false, success = "恢复成功")
+                        it.copy(isRestoring = false, success = getApplication<Application>().getString(R.string.cloud_restore_success))
                     }
                 },
                 onFailure = { e ->

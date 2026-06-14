@@ -25,7 +25,11 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import com.omnichat.R
+import com.omnichat.ui.theme.uiText
 
 @Composable
 fun CloudBackupCard(
@@ -70,7 +74,7 @@ fun CloudBackupCard(
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "云备份",
+                    text = uiText("cloud.title", R.string.cloud_backup, "云备份"),
                     fontSize = (16 * fs).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -78,7 +82,7 @@ fun CloudBackupCard(
                 )
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "收起" else "展开",
+                    contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
@@ -89,7 +93,7 @@ fun CloudBackupCard(
             if (!uiState.isBound) {
                 // Unbound state
                 Text(
-                    text = "绑定账号后可自动/手动备份到云端 (Cloudflare R2 存储)",
+                    text = stringResource(R.string.cloud_backup_desc_unbound),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -104,25 +108,25 @@ fun CloudBackupCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("绑定账号", fontSize = (14 * fs).sp)
+                        Text(stringResource(R.string.cloud_bind_account), fontSize = (14 * fs).sp)
                     }
                     OutlinedButton(
                         onClick = { viewModel.showRecoveryDialog() },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("恢复数据", fontSize = (14 * fs).sp)
+                        Text(stringResource(R.string.cloud_restore_data), fontSize = (14 * fs).sp)
                     }
                 }
             } else {
                 // Bound state
                 Text(
-                    text = "用户 ID: ${uiState.userId?.take(8)}...",
+                    text = stringResource(R.string.cloud_user_id, uiState.userId?.take(8) ?: ""),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "自动备份: 每5小时 · 云端保留5份",
+                    text = stringResource(R.string.cloud_backup_desc_bound, "5h", 5),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -142,7 +146,7 @@ fun CloudBackupCard(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
-                        if (uiState.isUploading) "备份中..." else "立即备份",
+                        if (uiState.isUploading) stringResource(R.string.cloud_backing_up) else stringResource(R.string.cloud_backup_now),
                         fontSize = (14 * fs).sp
                     )
                 }
@@ -158,7 +162,7 @@ fun CloudBackupCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("恢复", fontSize = (14 * fs).sp)
+                        Text(stringResource(R.string.cloud_recover), fontSize = (14 * fs).sp)
                     }
                     OutlinedButton(
                         onClick = { viewModel.unbind() },
@@ -168,7 +172,7 @@ fun CloudBackupCard(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                     ) {
-                        Text("解绑", fontSize = (14 * fs).sp)
+                        Text(stringResource(R.string.cloud_unbind), fontSize = (14 * fs).sp)
                     }
                 }
             }
@@ -273,7 +277,7 @@ private fun BindTotpDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         title = {
-            Text("绑定云备份账号", fontSize = (16 * fs).sp)
+            Text(stringResource(R.string.cloud_bind_title), fontSize = (16 * fs).sp)
         },
         text = {
             Column(
@@ -281,7 +285,7 @@ private fun BindTotpDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "1. 打开 Google Authenticator\n2. 扫描下方二维码或手动输入密钥",
+                    text = stringResource(R.string.cloud_bind_instructions),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -308,7 +312,7 @@ private fun BindTotpDialog(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "密钥: $totpSecret",
+                            text = stringResource(R.string.cloud_secret_key, totpSecret),
                             fontSize = (12 * fs).sp,
                             modifier = Modifier.weight(1f)
                         )
@@ -317,7 +321,7 @@ private fun BindTotpDialog(
                         }) {
                             Icon(
                                 Icons.Default.ContentCopy,
-                                contentDescription = "复制",
+                                contentDescription = stringResource(R.string.cloud_copy),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -328,7 +332,7 @@ private fun BindTotpDialog(
                 OutlinedTextField(
                     value = totpCode,
                     onValueChange = { totpCode = it },
-                    label = { Text("输入验证码确认") },
+                    label = { Text(stringResource(R.string.cloud_input_code_confirm)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -346,13 +350,13 @@ private fun BindTotpDialog(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text("确认绑定")
+                    Text(stringResource(R.string.cloud_confirm_bind))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -372,7 +376,7 @@ private fun RecoveryDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         title = {
-            Text("恢复云备份数据", fontSize = (16 * fs).sp)
+            Text(stringResource(R.string.cloud_recover_title), fontSize = (16 * fs).sp)
         },
         text = {
             Column(
@@ -380,14 +384,14 @@ private fun RecoveryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "输入绑定账号时的 TOTP 验证码，系统将自动匹配您的备份",
+                    text = stringResource(R.string.cloud_recover_desc),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = totpCode,
                     onValueChange = { if (it.length <= 6) totpCode = it },
-                    label = { Text("TOTP 验证码") },
+                    label = { Text(stringResource(R.string.cloud_totp_code)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -405,13 +409,13 @@ private fun RecoveryDialog(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text("查找并恢复")
+                    Text(stringResource(R.string.cloud_find_and_restore))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -426,6 +430,7 @@ private fun BackupListDialog(
     onDismiss: () -> Unit,
     fs: Float
 ) {
+    val context = LocalContext.current
     // Group backups by time period (within 1 hour of each other)
     val grouped = remember(backups) {
         backups.sortedByDescending { it.createdAt }.groupBy { backup ->
@@ -442,12 +447,12 @@ private fun BackupListDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         title = {
-            Text("选择要恢复的备份", fontSize = (16 * fs).sp)
+            Text(stringResource(R.string.cloud_select_backup), fontSize = (16 * fs).sp)
         },
         text = {
             if (backups.isEmpty()) {
                 Text(
-                    text = "暂无备份",
+                    text = stringResource(R.string.cloud_no_backups),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -460,7 +465,7 @@ private fun BackupListDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     grouped.forEach { (groupKey, group) ->
-                        val timeLabel = formatRelativeTime(group.first().createdAt)
+                        val timeLabel = formatRelativeTime(context, group.first().createdAt)
                         Text(
                             text = timeLabel,
                             fontSize = (11 * fs).sp,
@@ -483,7 +488,7 @@ private fun BackupListDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("关闭")
+                Text(stringResource(R.string.cloud_close))
             }
         }
     )
@@ -504,9 +509,9 @@ private fun BackupItem(
     }
 
     val typeLabel = when (backup.type) {
-        "omnidb" -> "数据库"
-        "omniconfig" -> "配置"
-        else -> "未知"
+        "omnidb" -> stringResource(R.string.cloud_type_database)
+        "omniconfig" -> stringResource(R.string.cloud_type_config)
+        else -> stringResource(R.string.cloud_type_unknown)
     }
 
     Surface(
@@ -545,7 +550,7 @@ private fun BackupItem(
             ) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = "删除",
+                    contentDescription = stringResource(R.string.cloud_delete),
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.error
                 )
@@ -556,13 +561,13 @@ private fun BackupItem(
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                Text("恢复", fontSize = (11 * fs).sp)
+                Text(stringResource(R.string.cloud_recover), fontSize = (11 * fs).sp)
             }
         }
     }
 }
 
-private fun formatRelativeTime(timestamp: Long): String {
+private fun formatRelativeTime(context: android.content.Context, timestamp: Long): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
     val minutes = diff / (1000 * 60)
@@ -570,10 +575,10 @@ private fun formatRelativeTime(timestamp: Long): String {
     val days = diff / (1000 * 60 * 60 * 24)
 
     return when {
-        minutes < 1 -> "刚刚"
-        minutes < 60 -> "${minutes}分钟前"
-        hours < 24 -> "${hours}小时前"
-        days < 7 -> "${days}天前"
+        minutes < 1 -> context.getString(R.string.cloud_time_just_now)
+        minutes < 60 -> context.getString(R.string.cloud_time_minutes_ago, minutes)
+        hours < 24 -> context.getString(R.string.cloud_time_hours_ago, hours)
+        days < 7 -> context.getString(R.string.cloud_time_days_ago, days)
         else -> {
             val sdf = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
             sdf.format(java.util.Date(timestamp))
