@@ -647,4 +647,57 @@
     <string name="tool_mark_reminded_empty">请提供要标记的记忆 ID。</string>
     <string name="tool_mark_reminded_success">提醒已成功标记为已提醒。</string>
     <string name="tool_mark_reminded_not_found">未找到指定 ID 的记忆。</string>
+
+    <!-- Cloud Backup -->
+    <string name="cloud_backup">云备份</string>
+    <string name="cloud_backup_desc_unbound">绑定账号后可自动/手动备份到云端 (Cloudflare R2 存储)</string>
+    <string name="cloud_backup_desc_bound">自动备份: 每%1$s · 云端保留%2$d份</string>
+    <string name="cloud_bind_account">绑定账号</string>
+    <string name="cloud_restore_data">恢复数据</string>
+    <string name="cloud_backing_up">备份中…</string>
+    <string name="cloud_backup_now">立即备份</string>
+    <string name="cloud_recover">恢复</string>
+    <string name="cloud_unbind">解绑</string>
+    <string name="cloud_user_id">用户 ID: %1$s…</string>
+    <string name="cloud_bind_title">绑定云备份账号</string>
+    <string name="cloud_bind_instructions">1. 打开 Google Authenticator\n2. 扫描下方二维码或手动输入密钥</string>
+    <string name="cloud_secret_key">密钥: %1$s</string>
+    <string name="cloud_copy">复制</string>
+    <string name="cloud_input_code_confirm">输入验证码确认</string>
+    <string name="cloud_confirm_bind">确认绑定</string>
+    <string name="cloud_recover_title">恢复云备份数据</string>
+    <string name="cloud_recover_desc">输入绑定账号时的 TOTP 验证码，系统将自动匹配您的备份</string>
+    <string name="cloud_totp_code">TOTP 验证码</string>
+    <string name="cloud_find_and_restore">查找并恢复</string>
+    <string name="cloud_select_backup">选择要恢复的备份</string>
+    <string name="cloud_no_backups">暂无备份</string>
+    <string name="cloud_close">关闭</string>
+    <string name="cloud_type_database">数据库</string>
+    <string name="cloud_type_config">配置</string>
+    <string name="cloud_type_unknown">未知</string>
+    <string name="cloud_delete">删除</string>
+    <string name="cloud_time_just_now">刚刚</string>
+    <string name="cloud_time_minutes_ago">%d分钟前</string>
+    <string name="cloud_time_hours_ago">%d小时前</string>
+    <string name="cloud_time_days_ago">%d天前</string>
+    <string name="cloud_bind_success">绑定成功</string>
+    <string name="cloud_backup_success">备份成功</string>
+    <string name="cloud_restore_success">恢复成功</string>
+    <string name="cancel">取消</string>
+
+    <!-- ChatScreen content descriptions -->
+    <string name="image_n">图片 %d</string>
+    <string name="remove">移除</string>
+    <string name="collapse">折叠</string>
+    <string name="expand">展开</string>
+
+    <!-- ExportImportScreen -->
+    <string name="collapse_expand">收起/展开</string>
+
+    <!-- BuiltinToolHandler agent context labels -->
+    <string name="agent_prev_task_header">## 上一个任务的完成情况</string>
+    <string name="agent_type_label">类型: %1$s</string>
+    <string name="agent_task_label">任务: %1$s</string>
+    <string name="agent_summary_label">摘要: %1$s</string>
+    <string name="agent_no_result">(无结果)</string>
 </resources>

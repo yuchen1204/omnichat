@@ -647,4 +647,57 @@
     <string name="tool_mark_reminded_empty">Please provide a memory_id to mark as reminded.</string>
     <string name="tool_mark_reminded_success">Reminder marked as reminded successfully.</string>
     <string name="tool_mark_reminded_not_found">Memory with the given ID was not found.</string>
+
+    <!-- Cloud Backup -->
+    <string name="cloud_backup">Cloud Backup</string>
+    <string name="cloud_backup_desc_unbound">Bind account to enable auto/manual backup to cloud (Cloudflare R2)</string>
+    <string name="cloud_backup_desc_bound">Auto backup: every %1$s · %2$d copies retained</string>
+    <string name="cloud_bind_account">Bind Account</string>
+    <string name="cloud_restore_data">Restore Data</string>
+    <string name="cloud_backing_up">Backing up…</string>
+    <string name="cloud_backup_now">Backup Now</string>
+    <string name="cloud_recover">Recover</string>
+    <string name="cloud_unbind">Unbind</string>
+    <string name="cloud_user_id">User ID: %1$s…</string>
+    <string name="cloud_bind_title">Bind Cloud Backup Account</string>
+    <string name="cloud_bind_instructions">1. Open Google Authenticator\n2. Scan QR code or enter secret key manually</string>
+    <string name="cloud_secret_key">Secret: %1$s</string>
+    <string name="cloud_copy">Copy</string>
+    <string name="cloud_input_code_confirm">Enter code to confirm</string>
+    <string name="cloud_confirm_bind">Confirm Bind</string>
+    <string name="cloud_recover_title">Recover Cloud Backup Data</string>
+    <string name="cloud_recover_desc">Enter the TOTP code from when you bound the account. System will match your backup automatically.</string>
+    <string name="cloud_totp_code">TOTP Code</string>
+    <string name="cloud_find_and_restore">Find &amp; Restore</string>
+    <string name="cloud_select_backup">Select backup to restore</string>
+    <string name="cloud_no_backups">No backups yet</string>
+    <string name="cloud_close">Close</string>
+    <string name="cloud_type_database">Database</string>
+    <string name="cloud_type_config">Config</string>
+    <string name="cloud_type_unknown">Unknown</string>
+    <string name="cloud_delete">Delete</string>
+    <string name="cloud_time_just_now">Just now</string>
+    <string name="cloud_time_minutes_ago">%d min ago</string>
+    <string name="cloud_time_hours_ago">%d h ago</string>
+    <string name="cloud_time_days_ago">%d days ago</string>
+    <string name="cloud_bind_success">Bound successfully</string>
+    <string name="cloud_backup_success">Backup successful</string>
+    <string name="cloud_restore_success">Restore successful</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- ChatScreen content descriptions -->
+    <string name="image_n">Image %d</string>
+    <string name="remove">Remove</string>
+    <string name="collapse">Collapse</string>
+    <string name="expand">Expand</string>
+
+    <!-- ExportImportScreen -->
+    <string name="collapse_expand">Collapse/Expand</string>
+
+    <!-- BuiltinToolHandler agent context labels -->
+    <string name="agent_prev_task_header">## Previous Task Completion Status</string>
+    <string name="agent_type_label">Type: %1$s</string>
+    <string name="agent_task_label">Task: %1$s</string>
+    <string name="agent_summary_label">Summary: %1$s</string>
+    <string name="agent_no_result">(No result)</string>
 </resources>
