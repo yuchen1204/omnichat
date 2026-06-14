@@ -77,6 +77,13 @@ fun ExportImportView(
     var dbBackupExpanded by remember { mutableStateOf(false) }
     var cloudBackupExpanded by remember { mutableStateOf(false) }
 
+    // Omnifile export section selection
+    var omnifileExportSections by remember { mutableStateOf(
+        setOf("providers", "mcpServers", "mcpFilePermissions",
+              "uiSettings", "colorSchemePresets")
+    ) }
+    var omnifileIncludeChatHistory by remember { mutableStateOf(false) }
+
     // ── SAF 文件选择器 ────────────────────────────────────────────────────
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -97,9 +104,10 @@ fun ExportImportView(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            // Validate .omniconfig extension
+            // Validate file extension (.omnifile, .omnidb, or .omniconfig)
             val fileName = uri.lastPathSegment ?: ""
-            if (!fileName.endsWith(".omniconfig", ignoreCase = true)) {
+            val validExtensions = listOf(".omnifile", ".omnidb", ".omniconfig")
+            if (!validExtensions.any { fileName.endsWith(it, ignoreCase = true) }) {
                 settingsViewModel.setError(
                     context.getString(R.string.import_invalid_file)
                 )
@@ -135,6 +143,32 @@ fun ExportImportView(
                 pendingDbImportUri = uri
                 showDbImportConfirm = true
             }
+        }
+    }
+
+    // Omnifile export launcher
+    val omnifileExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        uri?.let {
+            val sections = omnifileExportSections.toMutableList()
+            if (omnifileIncludeChatHistory) {
+                sections.addAll(listOf("sessions", "messages", "sessionSummaries"))
+            }
+            settingsViewModel.exportOmnifile(context, it, sections)
+        }
+    }
+
+    // Omnifile import launcher (auto-detect)
+    val omnifileImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            settingsViewModel.importAutoDetect(
+                context, it,
+                importProviders, importMcp, importMemory, importColorSchemes,
+                replaceExisting
+            )
         }
     }
 
@@ -256,7 +290,7 @@ fun ExportImportView(
             Button(
                 onClick = {
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                    exportLauncher.launch("omnichat_config_$timestamp.omniconfig")
+                    omnifileExportLauncher.launch("omnichat_backup_$timestamp.omnifile")
                 },
                 enabled = !nothingSelected && !isLoading,
                 modifier = Modifier.fillMaxWidth(),
@@ -379,7 +413,7 @@ fun ExportImportView(
             val isLoading = status is ExportImportStatus.Loading
 
             FilledTonalButton(
-                onClick = { importLauncher.launch(arrayOf("*/*")) },
+                onClick = { omnifileImportLauncher.launch(arrayOf("*/*")) },
                 enabled = !nothingSelected && !isLoading,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
