@@ -131,7 +131,8 @@ class CloudBackupManager(private val context: Context) {
             ).format(java.util.Date())
             val filename = "omnichat_backup_$timestamp.omnifile"
 
-            val result = repository.uploadBackup("omnifile", data, filename, groupId)
+            // Server only accepts "omnidb" or "omniconfig" — map omnifile to "omnidb"
+            val result = repository.uploadBackup("omnidb", data, filename, groupId)
             result.map { it.backupId }
         } catch (e: Exception) {
             Result.failure(e)
