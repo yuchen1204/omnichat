@@ -2,6 +2,7 @@ package com.omnichat.cloud
 
 import android.content.Context
 import com.omnichat.data.AppDatabase
+import com.omnichat.data.OmnifileFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -86,6 +87,54 @@ class CloudBackupManager(private val context: Context) {
         } else {
             val error = configResult.exceptionOrNull() ?: dbResult.exceptionOrNull()
             Result.failure(error ?: Exception("Upload failed"))
+        }
+    }
+
+    /**
+     * Upload a single omnifile backup containing selected sections.
+     */
+    suspend fun uploadOmnifileBackup(
+        groupId: String? = null,
+        sections: List<String> = emptyList()
+    ): Result<String> {
+        return try {
+            val database = AppDatabase.getDatabase(context)
+            database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+
+            val dbFile = context.getDatabasePath("ai_chat_memory_db")
+            val databaseBytes = dbFile.readBytes()
+
+            val exportType = if (sections.isEmpty()) {
+                OmnifileFormat.ExportType.FULL
+            } else {
+                OmnifileFormat.ExportType.SELECTIVE
+            }
+
+            val metadata = OmnifileFormat.OmnifileMetadata(
+                exportType = exportType,
+                includedSections = if (sections.isEmpty()) {
+                    OmnifileFormat.CATEGORY_PROVIDER_MCP +
+                    OmnifileFormat.CATEGORY_MEMORY_PROMPTS +
+                    OmnifileFormat.CATEGORY_THEME_UI +
+                    OmnifileFormat.CATEGORY_CHAT_HISTORY
+                } else {
+                    sections
+                }
+            )
+
+            val baos = java.io.ByteArrayOutputStream()
+            OmnifileFormat.writeOmnifile(baos, metadata, databaseBytes)
+            val data = baos.toByteArray()
+
+            val timestamp = java.text.SimpleDateFormat(
+                "yyyyMMdd_HHmmss", java.util.Locale.getDefault()
+            ).format(java.util.Date())
+            val filename = "omnichat_backup_$timestamp.omnifile"
+
+            val result = repository.uploadBackup("omnifile", data, filename, groupId)
+            result.map { it.backupId }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
