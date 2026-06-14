@@ -759,7 +759,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                 ) {
                                     AsyncImage(
                                         model = path,
-                                        contentDescription = "图片 ${index + 1}",
+                                        contentDescription = stringResource(R.string.image_n, index + 1),
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
                                     )
@@ -776,7 +776,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
-                                            contentDescription = "移除",
+                                            contentDescription = stringResource(R.string.remove),
                                             tint = MaterialTheme.colorScheme.error,
                                             modifier = Modifier.size(12.dp)
                                         )
@@ -1507,7 +1507,7 @@ fun AgentResultMessage(
                     )
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "折叠" else "展开",
+                        contentDescription = stringResource(if (isExpanded) R.string.collapse else R.string.expand),
                         tint = agentTextColor.copy(alpha = 0.7f),
                         modifier = Modifier.size(18.dp)
                     )
