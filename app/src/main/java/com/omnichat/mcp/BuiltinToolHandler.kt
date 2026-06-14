@@ -1796,12 +1796,12 @@ object BuiltinToolHandler {
                 if (prevTask.status != com.omnichat.agent.AgentTaskStatus.COMPLETED) {
                     return errorResponse(str(context, R.string.tool_agent_prev_not_completed, previousTaskId, prevTask.status))
                 }
-                val summary = prevTask.summary ?: prevTask.result?.take(500) ?: "(无结果)"
+                val summary = prevTask.summary ?: prevTask.result?.take(500) ?: context.getString(R.string.agent_no_result)
                 if (this@buildString.isNotBlank()) appendLine()
-                appendLine("## 上一个任务的完成情况")
-                appendLine("类型: ${prevTask.agentType}")
-                appendLine("任务: ${prevTask.taskDescription.take(100)}")
-                appendLine("摘要: $summary")
+                appendLine(context.getString(R.string.agent_prev_task_header))
+                appendLine(context.getString(R.string.agent_type_label, prevTask.agentType))
+                appendLine(context.getString(R.string.agent_task_label, prevTask.taskDescription.take(100)))
+                appendLine(context.getString(R.string.agent_summary_label, summary))
             }
         }.takeIf { it.isNotBlank() }
 
