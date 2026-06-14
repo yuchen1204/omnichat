@@ -86,7 +86,7 @@ fun CloudBackupCard(
                 )
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
+                    contentDescription = if (expanded) uiText("cloud.collapse", R.string.collapse, "折叠") else uiText("cloud.expand", R.string.expand, "展开"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
@@ -97,7 +97,7 @@ fun CloudBackupCard(
             if (!uiState.isBound) {
                 // Unbound state
                 Text(
-                    text = stringResource(R.string.cloud_backup_desc_unbound),
+                    text = uiText("cloud.desc_unbound", R.string.cloud_backup_desc_unbound, "绑定账号后可自动/手动备份到云端 (Cloudflare R2 存储)"),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -112,25 +112,25 @@ fun CloudBackupCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text(stringResource(R.string.cloud_bind_account), fontSize = (14 * fs).sp)
+                        Text(uiText("cloud.bind_account", R.string.cloud_bind_account, "绑定账号"), fontSize = (14 * fs).sp)
                     }
                     OutlinedButton(
                         onClick = { viewModel.showRecoveryDialog() },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text(stringResource(R.string.cloud_restore_data), fontSize = (14 * fs).sp)
+                        Text(uiText("cloud.restore_data", R.string.cloud_restore_data, "恢复数据"), fontSize = (14 * fs).sp)
                     }
                 }
             } else {
                 // Bound state
                 Text(
-                    text = stringResource(R.string.cloud_user_id, uiState.userId?.take(8) ?: ""),
+                    text = uiText("cloud.user_id", R.string.cloud_user_id, "用户 ID: %1\$s…").format(uiState.userId?.take(8) ?: ""),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = stringResource(R.string.cloud_backup_desc_bound, "5h", 5),
+                    text = uiText("cloud.desc_bound", R.string.cloud_backup_desc_bound, "自动备份: 每%1\$s · 云端保留%2\$d份").format("5h", 5),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -150,7 +150,7 @@ fun CloudBackupCard(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
-                        if (uiState.isUploading) stringResource(R.string.cloud_backing_up) else stringResource(R.string.cloud_backup_now),
+                        if (uiState.isUploading) uiText("cloud.backing_up", R.string.cloud_backing_up, "备份中…") else uiText("cloud.backup_now", R.string.cloud_backup_now, "立即备份"),
                         fontSize = (14 * fs).sp
                     )
                 }
@@ -166,7 +166,7 @@ fun CloudBackupCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text(stringResource(R.string.cloud_recover), fontSize = (14 * fs).sp)
+                        Text(uiText("cloud.recover", R.string.cloud_recover, "恢复"), fontSize = (14 * fs).sp)
                     }
                     OutlinedButton(
                         onClick = { viewModel.unbind() },
@@ -176,7 +176,7 @@ fun CloudBackupCard(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                     ) {
-                        Text(stringResource(R.string.cloud_unbind), fontSize = (14 * fs).sp)
+                        Text(uiText("cloud.unbind", R.string.cloud_unbind, "解绑"), fontSize = (14 * fs).sp)
                     }
                 }
 
@@ -185,7 +185,7 @@ fun CloudBackupCard(
                 // Backup frequency selector
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(
-                        text = stringResource(R.string.cloud_backup_frequency),
+                        text = uiText("cloud.frequency", R.string.cloud_backup_frequency, "自动备份频率"),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -194,10 +194,14 @@ fun CloudBackupCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        val frequencies = listOf("MANUAL" to R.string.cloud_freq_manual,
-                            "H3" to R.string.cloud_freq_3h, "H6" to R.string.cloud_freq_6h,
-                            "H12" to R.string.cloud_freq_12h, "H24" to R.string.cloud_freq_24h)
-                        frequencies.forEach { (freq, resId) ->
+                        val frequencies = listOf(
+                            "MANUAL" to Triple("cloud.freq_manual", R.string.cloud_freq_manual, "手动"),
+                            "H3" to Triple("cloud.freq_3h", R.string.cloud_freq_3h, "3小时"),
+                            "H6" to Triple("cloud.freq_6h", R.string.cloud_freq_6h, "6小时"),
+                            "H12" to Triple("cloud.freq_12h", R.string.cloud_freq_12h, "12小时"),
+                            "H24" to Triple("cloud.freq_24h", R.string.cloud_freq_24h, "24小时")
+                        )
+                        frequencies.forEach { (freq, triple) ->
                             val isSelected = uiState.backupFrequency == freq
                             val bgColor = if (isSelected) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.surfaceVariant
@@ -211,7 +215,7 @@ fun CloudBackupCard(
                                     .padding(horizontal = 10.dp, vertical = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = stringResource(resId),
+                                Text(text = uiText(triple.first, triple.second, triple.third),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = textColor)
                             }
@@ -224,7 +228,7 @@ fun CloudBackupCard(
                 // Backup content checkboxes
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(
-                        text = stringResource(R.string.cloud_backup_content),
+                        text = uiText("cloud.content", R.string.cloud_backup_content, "备份内容"),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -244,7 +248,7 @@ fun CloudBackupCard(
                                 checked = uiState.backupSections.contains(section),
                                 onCheckedChange = { onSectionToggle(section) }
                             )
-                            Text(text = stringResource(resId),
+                            Text(text = uiText("cloud.section_" + section, resId, section),
                                 style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -351,7 +355,7 @@ private fun BindTotpDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         title = {
-            Text(stringResource(R.string.cloud_bind_title), fontSize = (16 * fs).sp)
+            Text(uiText("cloud.bind_title", R.string.cloud_bind_title, "绑定云备份账号"), fontSize = (16 * fs).sp)
         },
         text = {
             Column(
@@ -359,7 +363,7 @@ private fun BindTotpDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.cloud_bind_instructions),
+                    text = uiText("cloud.bind_instructions", R.string.cloud_bind_instructions, "1. 打开 Google Authenticator\n2. 扫描下方二维码或手动输入密钥"),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -386,7 +390,7 @@ private fun BindTotpDialog(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = stringResource(R.string.cloud_secret_key, totpSecret),
+                            text = uiText("cloud.secret_key", R.string.cloud_secret_key, "密钥: %1\$s").format(totpSecret),
                             fontSize = (12 * fs).sp,
                             modifier = Modifier.weight(1f)
                         )
@@ -395,7 +399,7 @@ private fun BindTotpDialog(
                         }) {
                             Icon(
                                 Icons.Default.ContentCopy,
-                                contentDescription = stringResource(R.string.cloud_copy),
+                                contentDescription = uiText("cloud.copy", R.string.cloud_copy, "复制"),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -406,7 +410,7 @@ private fun BindTotpDialog(
                 OutlinedTextField(
                     value = totpCode,
                     onValueChange = { totpCode = it },
-                    label = { Text(stringResource(R.string.cloud_input_code_confirm)) },
+                    label = { Text(uiText("cloud.input_code_confirm", R.string.cloud_input_code_confirm, "输入验证码确认")) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -424,13 +428,13 @@ private fun BindTotpDialog(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text(stringResource(R.string.cloud_confirm_bind))
+                    Text(uiText("cloud.confirm_bind", R.string.cloud_confirm_bind, "确认绑定"))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
+                Text(uiText("cloud.cancel", R.string.cancel, "取消"))
             }
         }
     )
@@ -450,7 +454,7 @@ private fun RecoveryDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         title = {
-            Text(stringResource(R.string.cloud_recover_title), fontSize = (16 * fs).sp)
+            Text(uiText("cloud.recover_title", R.string.cloud_recover_title, "恢复云备份数据"), fontSize = (16 * fs).sp)
         },
         text = {
             Column(
@@ -458,14 +462,14 @@ private fun RecoveryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.cloud_recover_desc),
+                    text = uiText("cloud.recover_desc", R.string.cloud_recover_desc, "输入绑定账号时的 TOTP 验证码，系统将自动匹配您的备份"),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = totpCode,
                     onValueChange = { if (it.length <= 6) totpCode = it },
-                    label = { Text(stringResource(R.string.cloud_totp_code)) },
+                    label = { Text(uiText("cloud.totp_code", R.string.cloud_totp_code, "TOTP 验证码")) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -483,13 +487,13 @@ private fun RecoveryDialog(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text(stringResource(R.string.cloud_find_and_restore))
+                    Text(uiText("cloud.find_and_restore", R.string.cloud_find_and_restore, "查找并恢复"))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
+                Text(uiText("cloud.cancel", R.string.cancel, "取消"))
             }
         }
     )
@@ -521,12 +525,12 @@ private fun BackupListDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(LocalUISettings.current.cornerRadiusDp.dp),
         title = {
-            Text(stringResource(R.string.cloud_select_backup), fontSize = (16 * fs).sp)
+            Text(uiText("cloud.select_backup", R.string.cloud_select_backup, "选择要恢复的备份"), fontSize = (16 * fs).sp)
         },
         text = {
             if (backups.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.cloud_no_backups),
+                    text = uiText("cloud.no_backups", R.string.cloud_no_backups, "暂无备份"),
                     fontSize = (12 * fs).sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -562,7 +566,7 @@ private fun BackupListDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cloud_close))
+                Text(uiText("cloud.close", R.string.cloud_close, "关闭"))
             }
         }
     )
@@ -583,9 +587,9 @@ private fun BackupItem(
     }
 
     val typeLabel = when (backup.type) {
-        "omnidb" -> stringResource(R.string.cloud_type_database)
-        "omniconfig" -> stringResource(R.string.cloud_type_config)
-        else -> stringResource(R.string.cloud_type_unknown)
+        "omnidb" -> uiText("cloud.type_database", R.string.cloud_type_database, "数据库")
+        "omniconfig" -> uiText("cloud.type_config", R.string.cloud_type_config, "配置")
+        else -> uiText("cloud.type_unknown", R.string.cloud_type_unknown, "未知")
     }
 
     Surface(
@@ -624,7 +628,7 @@ private fun BackupItem(
             ) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.cloud_delete),
+                    contentDescription = uiText("cloud.delete", R.string.cloud_delete, "删除"),
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.error
                 )
@@ -635,7 +639,7 @@ private fun BackupItem(
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                Text(stringResource(R.string.cloud_recover), fontSize = (11 * fs).sp)
+                Text(uiText("cloud.recover", R.string.cloud_recover, "恢复"), fontSize = (11 * fs).sp)
             }
         }
     }
