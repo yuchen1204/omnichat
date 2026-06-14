@@ -26,6 +26,10 @@ import com.omnichat.ui.viewmodel.SettingsViewModel
 
 import com.omnichat.mcp.TimerManager
 import com.omnichat.StreamingForegroundService
+import com.omnichat.worker.CloudBackupWorker
+import com.omnichat.data.AppDatabase
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 class MainActivity : AppCompatActivity() {
@@ -72,6 +76,14 @@ class MainActivity : AppCompatActivity() {
         com.omnichat.hooks.HookManager.registerMcpHook(
             com.omnichat.hooks.McpFilePermissionHook(applicationContext)
         )
+
+        // Schedule cloud backup based on saved settings
+        lifecycleScope.launch {
+            val database = AppDatabase.getDatabase(applicationContext)
+            val settings = database.uiSettingsDao().getSettings()
+            val frequency = settings?.cloudBackupFrequency ?: "H6"
+            CloudBackupWorker.enqueuePeriodicWork(applicationContext, frequency)
+        }
 
         // 在 Activity 创建时立即触发 MCP 运行时自动启动（已启用的 server 在数据库就绪后会被自动启动）。
         // 这样不依赖任何 ViewModel 或 Composable 的初始化时机，确保 MCP 在应用启动后第一时间运行。
