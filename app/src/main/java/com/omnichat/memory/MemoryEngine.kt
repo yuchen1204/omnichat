@@ -325,7 +325,7 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
                                     logAudit(duplicate.id, "REINFORCE", duplicate.content, "sync", duplicate.confidence, duplicate.confidence + 1, now)
                                 } else {
                                     val tags = parseTagsFromJson(op.optJSONArray("tags"))
-                                    val dueDate = op.optString("dueDate", null).takeIf { it != "null" && it.isNotBlank() }
+                                    val dueDate = op.optString("dueDate", null)?.takeIf { it != "null" && it.isNotBlank() }
                                     val newId = repository.insertMemory(
                                         MemoryItem(content = content, createdAt = now, updatedAt = now, confidence = 1, tags = tags, dueDate = dueDate)
                                     )
