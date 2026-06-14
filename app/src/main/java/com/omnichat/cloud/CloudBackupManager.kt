@@ -96,8 +96,8 @@ class CloudBackupManager(private val context: Context) {
     suspend fun uploadOmnifileBackup(
         groupId: String? = null,
         sections: List<String> = emptyList()
-    ): Result<String> {
-        return try {
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
             val database = AppDatabase.getDatabase(context)
             database.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
 
