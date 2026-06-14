@@ -33,6 +33,7 @@ import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.theme.LocalCustomColors
 import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.resolveFontFamily
+import com.omnichat.cloud.CloudBackupViewModel
 import com.omnichat.ui.viewmodel.ExportImportStatus
 import com.omnichat.ui.viewmodel.SettingsViewModel
 import androidx.compose.ui.res.stringResource
@@ -515,9 +516,12 @@ fun ExportImportView(
         }
 
         // ── 云备份卡片 ────────────────────────────────────────────────
+        val cloudBackupViewModel: CloudBackupViewModel = viewModel()
         CloudBackupCard(
             expanded = cloudBackupExpanded,
-            onToggle = { cloudBackupExpanded = !cloudBackupExpanded }
+            onToggle = { cloudBackupExpanded = !cloudBackupExpanded },
+            onFrequencyChange = { cloudBackupViewModel.updateBackupFrequency(it) },
+            onSectionToggle = { cloudBackupViewModel.toggleBackupSection(it) }
         )
 
         // ── 说明卡片 ──────────────────────────────────────────────────────
