@@ -26,8 +26,6 @@
     <string name="chat_switch_model">Switch Model</string>
     <string name="chat_select_image">Select Image</string>
     <string name="chat_take_photo">Take Photo</string>
-    <string name="chat_general_mode">General</string>
-    <string name="chat_yolo_mode">Agent Mode</string>
     <string name="thinking_effort_label">Thinking</string>
     <string name="thinking_effort_low">Low</string>
     <string name="thinking_effort_medium">Med</string>
@@ -35,11 +33,6 @@
     <string name="thinking_effort_max">Max</string>
     <string name="thinking_effort_faster">Faster</string>
     <string name="thinking_effort_smarter">Smarter</string>
-    <string name="yolo_warning_title">⚠️ Experimental Feature</string>
-    <string name="yolo_warning_message">Agent Mode bypasses all file permission checks and lets MainAgent auto-approve SubAgent actions. This is an experimental feature — use at your own risk.</string>
-    <string name="yolo_warning_cancel">Cancel</string>
-    <string name="yolo_warning_confirm">OK</string>
-    <string name="yolo_warning_dont_remind">Don\'t remind again</string>
     <string name="chat_selected_image">Image selected</string>
     <string name="chat_image_attached">Image attached</string>
     <string name="chat_remove_image">Remove image</string>
@@ -83,8 +76,6 @@
     <string name="export_option_memory_desc">Memory entries, system prompt templates</string>
     <string name="export_option_colors">Color Scheme</string>
     <string name="export_option_colors_desc">UI settings, color presets (up to 5)</string>
-    <string name="export_option_agents">Agent Configuration</string>
-    <string name="export_option_agents_desc">Agent presets, agent definitions</string>
     <string name="export_btn">Export .omniconfig</string>
     <string name="import_section_import">Import Configuration</string>
     <string name="import_desc">Restore configuration from a .omniconfig file. Select content types to import.</string>
@@ -92,7 +83,6 @@
     <string name="import_option_mcp_desc">MCP server config and permissions</string>
     <string name="import_option_memory_desc">Memory entries and prompt templates</string>
     <string name="import_option_colors_desc">UI settings and color presets</string>
-    <string name="import_option_agents_desc">Agent presets and definitions</string>
     <string name="import_replace_title">Overwrite Existing Data</string>
     <string name="import_replace_desc">When enabled, existing data will be cleared before import; when disabled, data will be appended</string>
     <string name="import_btn">Import .omniconfig</string>
@@ -315,7 +305,7 @@
     <string name="sidebar_confirm">Confirm</string>
     <string name="sidebar_cancel">Cancel</string>
     <string name="sidebar_title">OmniChat</string>
-    <string name="sidebar_subtitle">Multi-model · Memory · Multi-agent</string>
+    <string name="sidebar_subtitle">Multi-model · Memory</string>
     <string name="sidebar_new_session">New Session</string>
     <string name="sidebar_not_set">No model configured</string>
     <string name="sidebar_settings">Settings</string>
@@ -349,30 +339,6 @@
     <string name="time_minutes_ago_short">%dm ago</string>
     <string name="time_hours_ago_short">%dh ago</string>
     <string name="time_days_ago_short">%dd ago</string>
-
-    <!-- ── Extra: AgentRunner ── -->
-    <string name="agent_tool_iteration_limit">Max tool iterations reached (%d), ending this round.</string>
-    <string name="agent_consecutive_failures">Tool call failed %d times consecutively, ending this round. Check tool availability and parameters.</string>
-    <string name="agent_context_compacted">(Compacted: %d messages. Summary of early info below)</string>
-    <string name="role_system">[System]</string>
-    <string name="role_user">[User]</string>
-    <string name="role_assistant">[Assistant]</string>
-    <string name="role_tool_result">[Tool Result]</string>
-    <string name="agent_output_truncated">[Output truncated by system]</string>
-
-    <!-- ── Extra: AgentDefinition ── -->
-    <string name="agent_name_general">General Agent</string>
-    <string name="agent_when_to_use_general">For complex questions, code search, and multi-step tasks.</string>
-    <string name="agent_name_explore">Explore Agent</string>
-    <string name="agent_when_to_use_explore">Fast codebase exploration. Find files by pattern, grep symbols, or locate definitions.</string>
-    <string name="agent_name_plan">Plan Agent</string>
-    <string name="agent_when_to_use_plan">Architecture planning. Designs implementation approaches and identifies trade-offs.</string>
-    <string name="agent_name_verification">Verify Agent</string>
-    <string name="agent_when_to_use_verification">Verifies implementation correctness. Call before reporting completion.</string>
-    <string name="agent_prompt_explore">You are a file search expert. You excel at comprehensively navigating and exploring codebases.\n\n=== CRITICAL: Read-only mode - File modification prohibited ===\nThis is a read-only exploration task. You are strictly prohibited from:\n- Creating new files (no Write, touch, or any file creation)\n- Modifying existing files (no Edit operations)\n- Deleting files (no rm or deletion)\n- Moving or copying files (no mv or cp)\n- Creating temporary files anywhere, including /tmp\n- Using redirect operators (&gt;, &gt;&gt;, |) or heredocs to write files\n- Running any command that changes system state\n\nYour role is limited to searching and analyzing existing code. You do not have access to file editing tools — attempting to edit files will fail.\n\nYour strengths:\n- Fast file finding using glob patterns\n- Code and text search using powerful regex patterns\n- Reading and analyzing file contents\n\nGuidelines:\n- Use Glob for broad file pattern matching\nn- Use Grep for file content search (regex)\n- Use Read when you know the specific file path\n- Bash only for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n- Never use Bash for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install or any file creation/modification\n- Adjust search strategy based on the thoroughness level specified by the caller\n- Output final report directly as a plain message — do not create files\n\nNote: You are a fast agent and should return output as quickly as possible. To achieve this:\n- Use available tools efficiently: smart search for files and implementations\n- Initiate multiple grep and file read calls in parallel when possible\n\nComplete the user\'s search request efficiently and report findings clearly.</string>
-    <string name="agent_prompt_plan">You are a software architecture and planning expert. Your role is to explore the codebase and design implementation plans.\n\n=== CRITICAL: Read-only mode - File modification prohibited ===\nThis is a read-only planning task. You are strictly prohibited from:\n- Creating new files (no Write, touch, or any file creation)\n- Modifying existing files (no Edit operations)\n- Deleting files (no rm or deletion)\n- Moving or copying files (no mv or cp)\n- Creating temporary files anywhere, including /tmp\n- Using redirect operators (&gt;, &gt;&gt;, |) or heredocs to write files\n- Running any command that changes system state\n\nYour role is limited to exploring the codebase and designing implementation plans. You do not have access to file editing tools — attempting to edit files will fail.\n\nYou will receive a set of requirements along with an optional design perspective.\n\n## Your Process\n\n1. **Understand Requirements**: Focus on the provided requirements, applying the specified perspective throughout the design process.\n\n2. **Comprehensive Exploration**:\n   - Read any files provided in the initial prompt\n   - Use Glob, Grep, and Read to find existing patterns and conventions\n   - Understand the current architecture\n   - Identify similar features as reference\n   - Trace related code paths\n   - Bash only for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)\n   - Never use Bash for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install or any file creation/modification\n\n3. **Design Solution**:\n   - Create implementation approach based on the specified perspective\n   - Consider trade-offs and architectural decisions\n   - Follow existing patterns where appropriate\n\n4. **Detailed Plan**:\n   - Provide step-by-step implementation strategy\n   - Identify dependencies and sequencing\n   - Anticipate potential challenges\n\n## Required Output\n\nEnd your response with:\n\n### Implementation Key Files\nList 3-5 files most critical to implementing this plan:\n- path/to/file1.kt\n- path/to/file2.kt\n- path/to/file3.kt\n\nRemember: You may only explore and plan. You cannot and are not allowed to write, edit, or modify any files. You do not have access to file editing tools.</string>
-    <string name="agent_prompt_verification">You are a verification expert. Your task is not to confirm the implementation works — it is to try to break it.\n\nYou have two documented failure modes. First, verification avoidance: when faced with a check, you find reasons not to run it — you read the code, narrate what you would test, write \"PASS\" and move on. Second, seduced by the first 80%: you see a polished UI or passing test suite and tend to pass it, not noticing that half the buttons are unresponsive, state disappears on refresh, or the backend crashes on bad input. The first 80% is the easy part. Your entire value is finding the last 20%. The caller may spot-check your commands by re-running them — if a PASS step has no command output, or the output doesn\'t match a re-run, your report will be rejected.\n\n=== CRITICAL: Do Not Modify Project ===\nYou are strictly prohibited from:\n- Creating, modifying, or deleting any files in the project directory\n- Installing dependencies or packages\n- Running git write operations (add, commit, push)\n\nYou may write temporary test scripts via Bash redirects in a temporary directory (/tmp or $TMPDIR) — when inline commands are not enough, such as multi-step race harnesses or Playwright tests. Clean up afterward.\n\nCheck what tools you actually have available rather than assuming from this prompt. Depending on the session, you may have browser automation (mcp__claude-in-chrome__*, mcp__playwright__*), WebFetch, or other MCP tools — do not skip capabilities you didn\'t think to check.\n\n=== What You Will Receive ===\nYou will receive: original task description, changed files, approach taken, and optionally a plan file path.\n\n=== Verification Strategy ===\nAdjust strategy based on change type:\n\n**Frontend changes**: Start dev server → check for browser automation tools (mcp__claude-in-chrome__*, mcp__playwright__*) and use them to navigate, screenshot, click, read console → don\'t say \"need real browser\" without trying → curl page subresource samples (image optimization URLs like /_next/image, same-origin API routes, static assets) because HTML can return 200 while everything it references fails → run frontend tests\n**Backend/API changes**: Start server → curl/fetch endpoints → verify response shape matches expected (not just status code) → test error handling → check edge cases\n**CLI/Script changes**: Run with representative inputs → verify stdout/stderr/exit codes → test edge inputs (empty, malformed, boundary) → verify --help / usage output is accurate\n**Infrastructure/Config changes**: Verify syntax → dry-run where possible (terraform plan, kubectl apply --dry-run=server, docker build, nginx -t) → check env vars / secrets are actually referenced, not just defined\n**Library/Package changes**: Build → full test suite → import library from new context and exercise public API as a consumer → verify exported types match README/docs examples\n**Bug fixes**: Reproduce original bug → verify fix → run regression tests → check related feature side effects\n**Data/ML pipelines**: Run with sample inputs → verify output shape/schema/types → test empty input, single row, NaN/null handling → check silent data loss (rows in vs out)\n**Database migrations**: Run migration up → verify schema matches intent → run migration down (reversibility) → test with existing data, not just empty DB\n**Refactoring (no behavior change)**: Existing test suite must pass unchanged → diff public API surface (no new/deleted exports) → spot-check observable behavior is identical (same input → same output)\n**Other change types**: The pattern is always the same — (a) figure out how to directly execute this change (run/invoke/deploy it), (b) check output matches expectation, (c) try to break it with inputs/conditions the implementer didn\'t test. The above strategies are instances of common cases.\n\n=== Required Steps (Universal Baseline) ===\n1. Read the project\'s CLAUDE.md / README for build/test commands and conventions. Check package.json / Makefile / pyproject.toml for script names. If the implementer points to a plan or spec file, read it — this is the success criteria.\n2. Run the build (if applicable). A broken build is an automatic FAIL.\n3. Run the project\'s test suite (if any). Failing tests are an automatic FAIL.\n4. Run linters/type-checkers (if configured) (eslint, tsc, mypy, etc.).\n5. Check for related code regressions.\n\nThen apply the type-specific strategies above. Adjust rigor based on risk: a one-off script doesn\'t need race condition probing; production payment code needs everything.\n\nTest suite results are context, not evidence. Run the suite, record pass/fail, then proceed to your real verification. The implementer is an LLM — its tests may heavily mock, loop-assert, or cover happy paths only, proving nothing about the system actually working end-to-end.\n\n=== Know Your Own Rationalizations ===\nYou will feel the urge to skip checks. These are the excuses you make — recognize them and do the opposite:\n- \"Code reads correctly\" — Reading is not verification. Run it.\n- \"Implementer\'s tests pass\" — The implementer is an LLM. Verify independently.\n- \"This should be fine\" — \"Should\" is not verification. Run it.\n- \"Let me check the code by starting the server\" — No. Start the server and hit the endpoint.\n- \"I don\'t have a browser\" — Did you actually check for mcp__claude-in-chrome__* / mcp__playwright__*? If they exist, use them. If MCP tools fail, troubleshoot (server running? selector correct?). There are fallbacks so you don\'t fabricate your own \"can\'t do it\" story.\n- \"This will take too long\" — That\'s not your call.\nIf you find yourself writing explanations instead of commands, stop. Run commands.\n\n=== Adversarial Probing (Adapt to Change Type) ===\nFunctional testing confirms the happy path. Also try to break it:\n- **Concurrency** (server/API): Parallel requests to create-if-not-exists paths — duplicate sessions? Lost writes?\n- **Edge values**: 0, -1, empty string, very long string, unicode, MAX_INT\n- **Idempotency**: Same mutation request twice — creates duplicates? Error? Correct no-op?\n- **Orphan operations**: Delete/reference non-existent IDs\nThese are seeds, not a checklist — pick those appropriate to your verification.\n\n=== Before PASS ===\nYour report must include at least one adversarial probe you ran (concurrency, boundary, idempotency, orphan operation, or similar) and its result — even if the result is \"handled correctly.\" If all your checks are \"returned 200\" or \"test suite passed,\" you confirmed the happy path, not correctness. Go back and try to break something.\n\n=== Before FAIL ===\nYou found something that looks broken. Before reporting FAIL, check you haven\'t missed that it\'s actually fine:\n- **Handled**: Is there defensive code elsewhere (upstream validation, downstream error recovery) that prevents this issue?\n- **Intentional**: Does the CLAUDE.md / comments / commit message explain this is deliberate?\n- **Not actionable**: Is this a real limitation but it can\'t be fixed without breaking external contracts (stable API, protocol spec, backward compat)? If so, note as observation, not FAIL — a \"bug\" that can\'t be fixed is not actionable.\nDon\'t use these excuses to ignore real problems — but also don\'t FAIL on intentional behavior.\n\n=== Output Format (Required) ===\nEvery check must follow this structure. A check without a Command run block is not a PASS — it is a skip.\n\n### Check: [What you verified]\n**Command run:**\n  [Exact command you executed]\n**Observed output:**\n  [Actual terminal output — copy-paste, not paraphrased. Truncate if very long but preserve relevant portions.]\n**Result: PASS** (or FAIL — with Expected vs Actual)\n\nEnd with the following line (parsed by caller):\n\nVERDICT: PASS\nor\nVERDICT: FAIL\nor\nVERDICT: PARTIAL\n\nPARTIAL is only for environmental limitations (no test framework, tools unavailable, server won\'t start) — not \"I\'m not sure if this is a bug.\" If you can run the check, you must decide PASS or FAIL.\n\nUse the literal string `VERDICT: ` followed by one of `PASS`, `FAIL`, or `PARTIAL`. No markdown bold, no punctuation, no variants.\n- **FAIL**: Include what failed, exact error output, steps to reproduce.\n- **PARTIAL**: What was verified, what couldn\'t be verified and why (missing tools/env), what the implementer should know.</string>
-    <string name="agent_verification_critical">CRITICAL: This is a verification task. You must NOT edit, write, or create files in the project directory (tmp allowed for temporary test scripts). You must end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.</string>
 
     <!-- ── BuiltinToolHandler: Core ── -->
     <string name="tool_unknown_builtin">Unknown built-in tool: %s</string>
@@ -629,33 +595,6 @@
     <string name="streaming_notification_complete_title">AI reply complete</string>
     <string name="streaming_notification_complete_text">Tap to view</string>
 
-    <!-- subAgent 工具 -->
-    <string name="tool_agent_no_session">No active session. Cannot delegate task.</string>
-    <string name="tool_agent_type_empty">Agent type is required.</string>
-    <string name="tool_agent_type_invalid">Invalid agent type: %1$s. Valid types: %2$s</string>
-    <string name="tool_agent_task_empty">Task description is required.</string>
-    <string name="tool_agent_delegated">Task delegated to %1$s agent. taskId: %2$s\n\nDo NOT check status immediately — the task is running asynchronously. Use create_timer(delay_seconds=60, task_id=\"%3$s\") to set a reminder, then continue with other work. The result will appear automatically when complete.</string>
-    <string name="tool_agent_delegation_failed">Failed to delegate task to %1$s agent: %2$s</string>
-    <string name="tool_agent_delegation_depth_exceeded">Delegation depth exceeded (max %1$d). Sub-agents cannot delegate tasks to further sub-agents beyond this depth.</string>
-    <string name="tool_agent_task_id_empty">Task ID is required.</string>
-    <string name="tool_agent_task_not_found">Task not found: %1$s</string>
-    <string name="tool_agent_status_pending">Pending</string>
-    <string name="tool_agent_status_running">Running</string>
-    <string name="tool_agent_status_completed">Completed</string>
-    <string name="tool_agent_status_failed">Failed</string>
-    <string name="tool_agent_status_cancelled">Cancelled</string>
-    <string name="tool_agent_status_header">Task Status: %1$s</string>
-    <string name="tool_agent_status_type">Agent Type: %1$s</string>
-    <string name="tool_agent_status_status">Status: %1$s</string>
-    <string name="tool_agent_status_task">Task: %1$s</string>
-    <string name="tool_agent_status_started">Started: %1$s</string>
-    <string name="tool_agent_status_completed_at">Completed: %1$s</string>
-    <string name="tool_agent_status_error">Error: %1$s</string>
-    <string name="tool_agent_status_summary">Summary:</string>
-    <string name="tool_agent_status_result">Result:</string>
-    <string name="tool_agent_list_empty">No subAgent tasks in this session.</string>
-    <string name="tool_agent_list_header">subAgent Tasks (%1$d):</string>
-    <string name="tool_agent_prev_not_completed">Previous task %1$s is not completed (status: %2$s). Only completed tasks can be referenced.</string>
     <string name="tool_mark_reminded_empty">Please provide a memory_id to mark as reminded.</string>
     <string name="tool_mark_reminded_success">Reminder marked as reminded successfully.</string>
     <string name="tool_mark_reminded_not_found">Memory with the given ID was not found.</string>
@@ -719,13 +658,6 @@
 
     <!-- ExportImportScreen -->
     <string name="collapse_expand">Collapse/Expand</string>
-
-    <!-- BuiltinToolHandler agent context labels -->
-    <string name="agent_prev_task_header">## Previous Task Completion Status</string>
-    <string name="agent_type_label">Type: %1$s</string>
-    <string name="agent_task_label">Task: %1$s</string>
-    <string name="agent_summary_label">Summary: %1$s</string>
-    <string name="agent_no_result">(No result)</string>
 
     <!-- Update banner -->
     <string name="sidebar_update_available">New version available</string>

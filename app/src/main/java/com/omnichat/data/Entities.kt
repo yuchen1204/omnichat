@@ -29,15 +29,12 @@ data class ModelConfig(
     val embeddingModelId: String = ""
 )
 
-enum class AgentMode { GENERAL, AUTO }
-
 @Entity(tableName = "sessions")
 @Immutable
 data class Session(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val agentMode: String = "GENERAL",
     val thinkingEffort: String = "low"
 )
 
@@ -415,17 +412,6 @@ data class UISettings(
      */
     val uiStrings: String = "{}",
 
-    /**
-     * 是否隐藏 Agent Mode 实验性功能警告弹窗。
-     */
-    val hideAgentModeWarning: Boolean = false,
-
-    /**
-     * SubAgent 工具调用最大迭代次数（每次 delegate_task 内部 agentic loop 的上限）。
-     * 范围 1–50，默认 10。AI 通过 set_max_tool_calls 工具调整。
-     */
-    val maxToolCalls: Int = 10,
-
     @ColumnInfo(name = "cloudBackupFrequency")
     val cloudBackupFrequency: String = "H6",
 
@@ -455,46 +441,6 @@ data class McpFilePermission(
     val isAllowed: Boolean,
     /** 权限类型：read = 只读访问，write = 读写访问 */
     val permissionType: String = "read",
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-/**
- * subAgent 配置。存储每种代理类型的模型设置。
- *
- * agentType: "general", "researcher", "coder", "reviewer", "tester"
- * providerId: 关联的 ModelConfig.id
- * modelId: 具体模型 ID
- */
-@Entity(tableName = "agent_configs")
-data class AgentConfig(
-    @PrimaryKey val agentType: String,
-    val providerId: Long,
-    val modelId: String,
-    val isEnabled: Boolean = true,
-    val maxConcurrency: Int = 1,
-    val createdAt: Long = System.currentTimeMillis()
-)
-
-/**
- * subAgent 任务状态持久化。
- * 与 [Message(role="agent_result")] 配合：Message 存完整结果文本，本表存任务元数据（状态、错误、摘要等）。
- * App 重启后可恢复未完成任务状态。
- */
-@Entity(
-    tableName = "agent_tasks",
-    indices = [Index(value = ["sessionId"])]
-)
-data class AgentTaskEntity(
-    @PrimaryKey val taskId: String,
-    val sessionId: Long,
-    val agentType: String,
-    val status: String,          // "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"
-    val taskDescription: String,
-    val result: String? = null,
-    val summary: String? = null,
-    val error: String? = null,
-    val startedAt: Long? = null,
-    val completedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 

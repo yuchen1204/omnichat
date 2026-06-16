@@ -62,9 +62,6 @@ interface SessionDao {
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun deleteSessionById(id: Long)
 
-    @Query("UPDATE sessions SET agentMode = :mode WHERE id = :id")
-    suspend fun updateAgentMode(id: Long, mode: String)
-
     @Query("UPDATE sessions SET thinkingEffort = :effort WHERE id = :id")
     suspend fun updateThinkingEffort(id: Long, effort: String)
 }
@@ -354,42 +351,6 @@ interface MemoryAuditDao {
 
     @Query("DELETE FROM memory_audit_log WHERE timestamp < :before")
     suspend fun pruneOlderThan(before: Long)
-}
-
-@Dao
-interface AgentConfigDao {
-    @Query("SELECT * FROM agent_configs")
-    suspend fun getAllConfigs(): List<AgentConfig>
-
-    @Query("SELECT * FROM agent_configs WHERE agentType = :agentType LIMIT 1")
-    suspend fun getConfigByType(agentType: String): AgentConfig?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertConfig(config: AgentConfig)
-
-    @Query("DELETE FROM agent_configs WHERE agentType = :agentType")
-    suspend fun deleteConfigByType(agentType: String)
-}
-
-@Dao
-interface AgentTaskDao {
-    @Query("SELECT * FROM agent_tasks WHERE taskId = :taskId LIMIT 1")
-    suspend fun getTaskById(taskId: String): AgentTaskEntity?
-
-    @Query("SELECT * FROM agent_tasks WHERE sessionId = :sessionId ORDER BY createdAt ASC")
-    suspend fun getTasksBySession(sessionId: Long): List<AgentTaskEntity>
-
-    @Query("SELECT * FROM agent_tasks WHERE sessionId = :sessionId AND status = 'COMPLETED' ORDER BY createdAt ASC")
-    suspend fun getCompletedTasksBySession(sessionId: Long): List<AgentTaskEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertTask(task: AgentTaskEntity)
-
-    @Query("DELETE FROM agent_tasks WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED') AND completedAt < :before")
-    suspend fun deleteOldTerminatedTasks(before: Long)
-
-    @Query("DELETE FROM agent_tasks WHERE sessionId = :sessionId")
-    suspend fun deleteTasksBySession(sessionId: Long)
 }
 
 @Dao

@@ -63,20 +63,6 @@ object BuiltinToolHandler {
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
-            "set_max_tool_calls" -> handleSetMaxToolCalls(context, arguments)
-            "delegate_task" -> handleDelegateTask(context, arguments, sessionId)
-            "check_task_status" -> handleCheckTaskStatus(context, arguments, sessionId)
-            "list_agent_tasks" -> handleListAgentTasks(context, arguments, sessionId)
-            "send_message" -> {
-                val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
-                handleSendMessage(arguments, callerCtx?.agentType)
-            }
-            "read_inbox" -> {
-                val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
-                handleReadInbox(arguments, callerCtx?.agentType)
-            }
-            "manage_task_board" -> handleManageTaskBoard(arguments)
-            "approve_agent_request" -> handleApproveAgentRequest(arguments)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
     }
@@ -604,17 +590,6 @@ object BuiltinToolHandler {
         } else {
             successResponse(str(context, R.string.tool_display_silent_off))
         }
-    }
-
-    private suspend fun handleSetMaxToolCalls(context: Context, arguments: JSONObject): JSONObject {
-        val maxCalls = arguments.optInt("max_calls", -1)
-        if (maxCalls !in 1..50) {
-            return errorResponse("max_calls must be between 1 and 50, got: $maxCalls")
-        }
-        val repository = getRepository(context)
-        val current = repository.getUISettings() ?: UISettings()
-        repository.upsertUISettings(current.copy(maxToolCalls = maxCalls, updatedAt = System.currentTimeMillis()))
-        return successResponse("Max tool calls per SubAgent task set to $maxCalls")
     }
 
     // ── 文件系统工具 ────────────────────────────────────────────────────────
@@ -1755,192 +1730,6 @@ object BuiltinToolHandler {
         return name.matches(Regex(regex))
     }
 
-    // ── subAgent 任务委托工具 ──────────────────────────────────────────────
-
-    private suspend fun handleDelegateTask(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        if (sessionId == null) {
-            return errorResponse(str(context, R.string.tool_agent_no_session))
-        }
-
-        val agentType = arguments.optString("agent_type").trim()
-        val task = arguments.optString("task").trim()
-        val contextStr = arguments.optString("context").takeIf { it.isNotBlank() }
-        val previousTaskId = arguments.optString("previous_task_id").takeIf { it.isNotBlank() }
-        val filesArray = arguments.optJSONArray("files")
-        val files = if (filesArray != null) {
-            (0 until filesArray.length()).map { filesArray.optString(it) }.filter { it.isNotBlank() }
-        } else null
-
-        if (agentType.isEmpty()) {
-            return errorResponse(str(context, R.string.tool_agent_type_empty))
-        }
-        if (agentType !in com.omnichat.agent.AgentPrompts.ALL_TYPES) {
-            return errorResponse(str(context, R.string.tool_agent_type_invalid, agentType, com.omnichat.agent.AgentPrompts.ALL_TYPES.joinToString(", ")))
-        }
-        if (task.isEmpty()) {
-            return errorResponse(str(context, R.string.tool_agent_task_empty))
-        }
-
-        val repository = getRepository(context)
-        val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
-
-        // 读取当前委托深度，防止递归委托超出限制
-        val currentDepth = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]?.depth ?: 0
-        if (currentDepth >= com.omnichat.agent.AgentExecutor.MAX_DELEGATION_DEPTH) {
-            return errorResponse(str(context, R.string.tool_agent_delegation_depth_exceeded, com.omnichat.agent.AgentExecutor.MAX_DELEGATION_DEPTH))
-        }
-
-        // 构建附加上下文：合并用户提供的 context 和上一个任务的摘要
-        val enrichedContext = buildString {
-            if (contextStr != null) {
-                appendLine(contextStr)
-            }
-
-            if (previousTaskId != null) {
-                val prevTask = executor.getStatus(previousTaskId)
-                if (prevTask == null) {
-                    return errorResponse(str(context, R.string.tool_agent_task_not_found, previousTaskId))
-                }
-                // 验证前一个任务属于当前会话（防止跨会话数据泄露）
-                if (sessionId != null && prevTask.sessionId != sessionId) {
-                    return errorResponse(str(context, R.string.tool_agent_task_not_found, previousTaskId))
-                }
-                if (prevTask.status != com.omnichat.agent.AgentTaskStatus.COMPLETED) {
-                    return errorResponse(str(context, R.string.tool_agent_prev_not_completed, previousTaskId, prevTask.status))
-                }
-                val summary = prevTask.summary ?: prevTask.result?.take(500) ?: context.getString(R.string.agent_no_result)
-                if (this@buildString.isNotBlank()) appendLine()
-                appendLine(context.getString(R.string.agent_prev_task_header))
-                appendLine(context.getString(R.string.agent_type_label, prevTask.agentType))
-                appendLine(context.getString(R.string.agent_task_label, prevTask.taskDescription.take(100)))
-                appendLine(context.getString(R.string.agent_summary_label, summary))
-            }
-        }.takeIf { it.isNotBlank() }
-
-        val taskId = executor.execute(sessionId, agentType, task, enrichedContext, files, currentDepth + 1)
-
-        // execute() 返回 null 表示并发限制导致立即拒绝（信号量已同步检查）
-        if (taskId == null) {
-            return errorResponse(str(context, R.string.tool_agent_delegation_failed, agentType, "Concurrency limit reached"))
-        }
-
-        return successResponse(str(context, R.string.tool_agent_delegated, agentType, taskId, taskId))
-    }
-
-    private suspend fun handleCheckTaskStatus(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val taskId = arguments.optString("task_id").trim()
-        if (taskId.isEmpty()) {
-            return errorResponse(str(context, R.string.tool_agent_task_id_empty))
-        }
-
-        val repository = getRepository(context)
-        val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
-        val state = executor.getStatus(taskId)
-
-        if (state == null) {
-            return errorResponse(str(context, R.string.tool_agent_task_not_found, taskId))
-        }
-
-        // 验证任务属于当前会话（防止跨会话数据泄露）
-        if (sessionId != null && state.sessionId != sessionId) {
-            return errorResponse(str(context, R.string.tool_agent_task_not_found, taskId))
-        }
-
-        val statusText = when (state.status) {
-            com.omnichat.agent.AgentTaskStatus.PENDING -> str(context, R.string.tool_agent_status_pending)
-            com.omnichat.agent.AgentTaskStatus.RUNNING -> str(context, R.string.tool_agent_status_running)
-            com.omnichat.agent.AgentTaskStatus.COMPLETED -> str(context, R.string.tool_agent_status_completed)
-            com.omnichat.agent.AgentTaskStatus.FAILED -> str(context, R.string.tool_agent_status_failed)
-            com.omnichat.agent.AgentTaskStatus.CANCELLED -> str(context, R.string.tool_agent_status_cancelled)
-        }
-
-        val text = buildString {
-            appendLine(str(context, R.string.tool_agent_status_header, taskId))
-            appendLine(str(context, R.string.tool_agent_status_type, state.agentType))
-            appendLine(str(context, R.string.tool_agent_status_status, statusText))
-            appendLine(str(context, R.string.tool_agent_status_task, state.taskDescription.take(100)))
-            if (state.startedAt != null) {
-                appendLine(str(context, R.string.tool_agent_status_started, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(state.startedAt))))
-            }
-            if (state.completedAt != null) {
-                appendLine(str(context, R.string.tool_agent_status_completed_at, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(state.completedAt))))
-            }
-            if (state.error != null) {
-                appendLine(str(context, R.string.tool_agent_status_error, state.error))
-            }
-            if (state.summary != null) {
-                appendLine()
-                appendLine(str(context, R.string.tool_agent_status_summary))
-                appendLine(state.summary)
-            }
-            if (state.result != null) {
-                appendLine()
-                appendLine(str(context, R.string.tool_agent_status_result))
-                appendLine(state.result)
-            }
-        }
-
-        return successResponse(text.trimEnd())
-    }
-
-    private suspend fun handleListAgentTasks(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        if (sessionId == null) {
-            return errorResponse(str(context, R.string.tool_agent_no_session))
-        }
-
-        val repository = getRepository(context)
-        val executor = com.omnichat.agent.AgentExecutor.getInstance(context, repository)
-        val tasks = executor.getTasksForSession(sessionId)
-
-        if (tasks.isEmpty()) {
-            return successResponse(str(context, R.string.tool_agent_list_empty))
-        }
-
-        val text = buildString {
-            appendLine(str(context, R.string.tool_agent_list_header, tasks.size))
-            appendLine()
-            tasks.forEachIndexed { i, state ->
-                val statusIcon = when (state.status) {
-                    com.omnichat.agent.AgentTaskStatus.PENDING -> "⏳"
-                    com.omnichat.agent.AgentTaskStatus.RUNNING -> "🔄"
-                    com.omnichat.agent.AgentTaskStatus.COMPLETED -> "✅"
-                    com.omnichat.agent.AgentTaskStatus.FAILED -> "❌"
-                    com.omnichat.agent.AgentTaskStatus.CANCELLED -> "🚫"
-                }
-                appendLine("$statusIcon ${i + 1}. [${state.agentType}] ${state.taskDescription.take(50)}...")
-                appendLine("   taskId: ${state.taskId}")
-                appendLine("   status: ${state.status}")
-                if (state.error != null) {
-                    appendLine("   error: ${state.error}")
-                }
-            }
-        }
-
-        return successResponse(text.trimEnd())
-    }
-
-    /** 构造统一的成功响应 */
-    private fun successResponse(text: String): JSONObject = JSONObject().apply {
-        put("content", JSONArray().apply {
-            put(JSONObject().apply {
-                put("type", "text")
-                put("text", text)
-            })
-        })
-    }
-
-    /** 构造统一的错误响应 */
-    private fun errorResponse(message: String): JSONObject = JSONObject().apply {
-        put("content", JSONArray().apply {
-            put(JSONObject().apply {
-                put("type", "text")
-                put("text", message)
-            })
-        })
-        put("isError", true)
-    }
-
-    // 使用 UiFieldRegistry 生成 capabilities 响应，消除硬编码字段列表
     private fun buildUiCapabilitiesResponse(context: Context, current: UISettings): JSONObject {
         data class Field(val name: String, val currentValue: Any?, val purpose: String, val constraint: String)
 
@@ -2012,124 +1801,22 @@ object BuiltinToolHandler {
         }
     }
 
-
-    // bigramTokenize 已迁移到 com.omnichat.memory.MemoryTokenizer.tokenize()
-    // ── subAgent 相关辅助工具 ───────────────────────────────────────────────
-
-    private fun handleSendMessage(arguments: JSONObject, senderAgentType: String?): JSONObject {
-        val to = arguments.optString("to")
-        val content = arguments.optString("content")
-        if (to.isBlank() || content.isBlank()) {
-            return errorResponse("Missing 'to' or 'content'")
-        }
-        val sender = senderAgentType ?: "unknown_agent"
-        com.omnichat.agent.AgentTeamManager.sendMessage(sender, to, content)
-        return successResponse("Message sent to $to from $sender")
-    }
-
-    private fun handleReadInbox(arguments: JSONObject, callerAgentType: String?): JSONObject {
-        val agentName = arguments.optString("agent_name").takeIf { it.isNotBlank() } ?: callerAgentType
-        val clear = arguments.optBoolean("clear", false)
-        if (agentName.isNullOrBlank()) {
-            return errorResponse("Missing 'agent_name' and no agent context available")
-        }
-        val messages = if (clear) {
-            com.omnichat.agent.AgentTeamManager.readAndClearInbox(agentName)
-        } else {
-            com.omnichat.agent.AgentTeamManager.readInbox(agentName)
-        }
-        val jsonArray = JSONArray()
-        messages.forEach { msg ->
-            jsonArray.put(JSONObject().apply {
-                put("from", msg.from)
-                put("content", msg.content)
-                put("timestamp", msg.timestamp)
+    private fun successResponse(text: String): JSONObject = JSONObject().apply {
+        put("content", org.json.JSONArray().apply {
+            put(JSONObject().apply {
+                put("type", "text")
+                put("text", text)
             })
-        }
-        return successResponse(jsonArray.toString())
+        })
     }
 
-    private fun handleManageTaskBoard(arguments: JSONObject): JSONObject {
-        val action = arguments.optString("action")
-        val taskId = arguments.optString("task_id")
-        return when (action) {
-            "create" -> {
-                val description = arguments.optString("description")
-                if (taskId.isBlank() || description.isBlank()) return errorResponse("Missing task_id or description")
-                com.omnichat.agent.AgentTeamManager.createTask(taskId, description)
-                successResponse("Task $taskId created.")
-            }
-            "claim" -> {
-                val assignee = arguments.optString("assignee")
-                if (taskId.isBlank() || assignee.isBlank()) return errorResponse("Missing task_id or assignee")
-                if (com.omnichat.agent.AgentTeamManager.claimTask(taskId, assignee)) {
-                    successResponse("Task $taskId claimed by $assignee.")
-                } else {
-                    errorResponse("Task $taskId not found or already claimed.")
-                }
-            }
-            "complete" -> {
-                if (taskId.isBlank()) return errorResponse("Missing task_id")
-                if (com.omnichat.agent.AgentTeamManager.completeTask(taskId)) {
-                    successResponse("Task $taskId marked as completed.")
-                } else {
-                    errorResponse("Task $taskId not found.")
-                }
-            }
-            "list" -> {
-                val tasks = com.omnichat.agent.AgentTeamManager.listTasks()
-                val array = JSONArray()
-                tasks.forEach { t ->
-                    array.put(JSONObject().apply {
-                        put("id", t.id)
-                        put("description", t.description)
-                        put("assignee", t.assignee ?: "unassigned")
-                        put("status", t.status)
-                    })
-                }
-                successResponse(array.toString())
-            }
-            else -> errorResponse("Unknown action: $action")
-        }
+    private fun errorResponse(message: String): JSONObject = JSONObject().apply {
+        put("content", org.json.JSONArray().apply {
+            put(JSONObject().apply {
+                put("type", "text")
+                put("text", "Error: $message")
+            })
+        })
+        put("isError", true)
     }
-
-    // ── Agent Approval 工具 ──────────────────────────────────────────────
-
-    /**
-     * Handle approve_agent_request tool calls from MainAgent.
-     * Resolves a pending approval request from a SubAgent.
-     */
-    private fun handleApproveAgentRequest(arguments: JSONObject): JSONObject {
-        val requestId = arguments.optString("request_id", "")
-        if (requestId.isBlank()) {
-            return errorResponse("Missing required field: request_id")
-        }
-
-        val decision = arguments.optString("decision", "")
-        val reason = arguments.optString("reason", "")
-        if (decision !in listOf("approve", "reject")) {
-            return errorResponse("Invalid decision: '$decision'. Must be 'approve' or 'reject'.")
-        }
-        if (reason.isBlank()) {
-            return errorResponse("Missing required field: reason")
-        }
-
-        val alternative = arguments.optString("alternative", "").ifBlank { null }
-
-        // Find the pending request by ID
-        val pending = com.omnichat.agent.AgentApprovalChannel.pendingRequests.value
-            .firstOrNull { it.requestId == requestId }
-            ?: return errorResponse("No pending approval request with id '$requestId'.")
-
-        val approvalDecision = com.omnichat.agent.AgentApprovalDecision(
-            decision = decision,
-            reason = reason,
-            alternative = alternative
-        )
-        com.omnichat.agent.AgentApprovalChannel.respond(pending.requestId, approvalDecision)
-
-        val action = if (decision == "approve") "Approved" else "Rejected"
-        return successResponse("$action request from ${pending.agentType} (${pending.toolName}): $reason")
-    }
-
 }

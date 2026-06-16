@@ -344,15 +344,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             "list_timers" to "efficiency",
             "list_mcp_tool_groups" to "core",
             "configure_mcp_tool_groups" to "core",
-            "delegate_task" to "core",
-            "check_task_status" to "core",
-            "list_agent_tasks" to "core",
             "set_tool_display_mode" to "efficiency",
-            "set_max_tool_calls" to "efficiency",
-            "approve_agent_request" to "core",
-            "send_message" to "core",
-            "read_inbox" to "core",
-            "manage_task_board" to "core",
         )
 
         fun getInstance(context: Context): McpRuntimeManager {
@@ -778,7 +770,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 prop("repeat_minutes", "integer", "Repeat interval: minutes component (default 0). E.g. for \"every 30 minutes\", set repeat_minutes=30.")
                 prop("repeat_seconds", "integer", "Repeat interval: seconds component (default 0). E.g. for \"every 90 seconds\", set repeat_seconds=90.")
                 prop("repeat_interval_seconds", "integer", "Legacy parameter. Prefer repeat_hours/repeat_minutes/repeat_seconds. Repeat interval in seconds. The new params take precedence if provided.")
-                prop("task_id", "string", "Optional. Associate this timer with a subAgent task (from delegate_task). When the task completes, this timer is auto-cancelled. Include the taskId in the message so you know what to check when the timer fires.")
+                prop("task_id", "string", "Optional. Associate this timer with a task ID. When the task completes, this timer is auto-cancelled.")
                 required("message")
             }
         ),
@@ -809,16 +801,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 required("groups")
             }
         ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "set_max_tool_calls",
-            description = "Adjust the maximum number of tool-call iterations per SubAgent task (delegate_task). Each iteration allows the LLM to call one or more tools and receive results before the next round. Increase for complex multi-step tasks; decrease to cap resource usage. Current default is 10.",
-            inputSchema = schema {
-                prop("max_calls", "integer", "Maximum tool-call iterations per SubAgent task. Range: 1–50. Default: 10.")
-                required("max_calls")
-            }
-        ),
         // ── 运行时工具组管理 ──────────────────────────────────────────────
         McpTool(
             serverId = BUILTIN_SERVER_ID,
@@ -826,93 +808,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
             name = "list_mcp_tool_groups",
             description = "List all available built-in MCP tool groups and their current enabled/disabled status. Use this tool to discover what capabilities are currently available to you or can be activated. Groups: core (essential), ui_appearance (theming/colors), ui_text (i18n), files (storage), documents (office), efficiency (timers), memory (long-term facts).",
             inputSchema = schema {}
-        ),
-        // ── subAgent 任务委托工具 ──────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "delegate_task",
-            description = """将任务委托给专门的子代理异步执行。
-
-可用代理类型：
-- general: 通用任务，适合不确定分类的工作
-- researcher: 信息搜索、资料整理、网络检索
-- coder: 代码编写、文件创建/修改（遵循 TDD）
-- reviewer: 代码审查、质量检查、问题发现（两阶段审查）
-- tester: 测试用例编写、验证逻辑（TDD 对齐）
-- planner: 编写详细的实现计划
-- orchestrator: 协调多 agent 工作流
-
-任务将在后台执行，完成后结果会插入当前会话。返回一个 taskId 用于追踪。
-
-IMPORTANT: After delegating, do NOT immediately call check_task_status — the task runs asynchronously and won't be done yet. Use create_timer(minutes=1, task_id="<taskId>") to set a reminder, then continue with other work. When the timer fires, check status. The result will also appear automatically when complete.""",
-            inputSchema = schema {
-                prop("agent_type", "string", "代理类型") {
-                    enum("general", "researcher", "coder", "reviewer", "tester", "planner", "orchestrator")
-                }
-                prop("task", "string", "任务描述。清晰说明目标、约束、期望输出格式。")
-                prop("context", "string", "可选。附加上下文：相关文件路径、代码片段、背景信息。")
-                prop("files", "array", "可选。需要操作的文件路径列表。") {
-                    items { }
-                }
-                prop("previous_task_id", "string", "可选。引用之前完成的任务 ID，其结构化摘要将作为上下文注入到当前任务中。当任务之间有依赖关系时使用，例如：上一个 coder 任务完成后，将结果传给 tester 任务。")
-                required("agent_type", "task")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "check_task_status",
-            description = "查询委托任务的执行状态和结果。",
-            inputSchema = schema {
-                prop("task_id", "string", "delegate_task 返回的任务 ID")
-                required("task_id")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "list_agent_tasks",
-            description = "列出当前会话中所有 subAgent 任务及其状态。",
-            inputSchema = schema {}
-        ),
-        // ── Agent Team 协作工具 ──────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "send_message",
-            description = "向指定的 Agent 发送消息。",
-            inputSchema = schema {
-                prop("to", "string", "接收消息的 Agent 名称或 ID。可以使用 'main' 发送给主会话。")
-                prop("content", "string", "消息内容")
-                required("to", "content")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "read_inbox",
-            description = "读取你的收件箱中的消息，并可选择清空收件箱。",
-            inputSchema = schema {
-                prop("agent_name", "string", "你的 Agent 名称或 ID")
-                prop("clear", "boolean", "读取后是否清空收件箱")
-                required("agent_name")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "manage_task_board",
-            description = "管理团队共享的任务板。可以创建、认领、完成任务，或者列出所有任务。",
-            inputSchema = schema {
-                prop("action", "string", "操作类型: create, claim, complete, list") {
-                    enum("create", "claim", "complete", "list")
-                }
-                prop("task_id", "string", "任务 ID (操作为 create, claim, complete 时必填)")
-                prop("description", "string", "任务描述 (操作为 create 时必填)")
-                prop("assignee", "string", "认领者的 Agent 名称 (操作为 claim 时必填)")
-                required("action", "task_id")
-            }
         ),
         McpTool(
             serverId = BUILTIN_SERVER_ID,
@@ -931,22 +826,6 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
                         enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory")
                     }
                 }
-            }
-        ),
-        // ── Agent Approval 工具 ──────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "approve_agent_request",
-            description = "Review and approve or reject a SubAgent's file operation request. You will see the SubAgent's task context and the specific file operation it wants to perform. Approve if the operation is safe and appropriate. Reject with an alternative instruction if it's not.",
-            inputSchema = schema {
-                prop("request_id", "string", "The ID of the pending approval request to respond to (from the approval prompt)")
-                prop("decision", "string", "Whether to allow the SubAgent to proceed") {
-                    enum("approve", "reject")
-                }
-                prop("reason", "string", "Explanation of your decision")
-                prop("alternative", "string", "If rejecting: an alternative instruction for the SubAgent to follow instead")
-                required("request_id", "decision", "reason")
             }
         ),
     )
@@ -1136,35 +1015,6 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
 
     suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject? {
         Log.d(TAG, "[callTool] serverId=$serverId, tool=$toolName")
-
-        // Agent approval check for SubAgents in AUTO mode
-        if (sessionId != null && com.omnichat.hooks.AgentApprovalHook.isAutoModeFileTool(toolName)) {
-            val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
-            if (callerCtx != null && callerCtx.agentMode == "AUTO") {
-                Log.d(TAG, "[callTool] Intercepting $toolName from ${callerCtx.agentType} in AUTO mode")
-                val request = com.omnichat.agent.AgentApprovalRequest(
-                    toolName = toolName,
-                    args = arguments,
-                    taskContext = callerCtx.taskContext,
-                    agentType = callerCtx.agentType,
-                    sessionId = sessionId
-                )
-                val decision = com.omnichat.agent.AgentApprovalChannel.requestApproval(request)
-                if (decision.decision != "approve") {
-                    val alternative = decision.alternative ?: "Try a different approach."
-                    Log.d(TAG, "[callTool] Rejected: ${decision.reason}")
-                    return JSONObject().apply {
-                        put("content", org.json.JSONArray().apply {
-                            put(JSONObject().apply {
-                                put("type", "text")
-                                put("text", "Request denied by MainAgent. Alternative instruction: $alternative")
-                            })
-                        })
-                    }
-                }
-                Log.d(TAG, "[callTool] Approved: ${decision.reason}")
-            }
-        }
 
         // 1. Dispatch Before Execute Hook
         val processedArgs = com.omnichat.hooks.HookManager.dispatchBeforeToolExecute(toolName, arguments)

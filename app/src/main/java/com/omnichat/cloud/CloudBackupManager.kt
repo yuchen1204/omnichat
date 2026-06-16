@@ -303,7 +303,6 @@ class CloudBackupManager(private val context: Context) {
                     fontFamily = obj.optString("fontFamily", defaults.fontFamily),
                     enabledMcpGroups = obj.optString("enabledMcpGroups", defaults.enabledMcpGroups),
                     silentToolGroups = obj.optString("silentToolGroups", defaults.silentToolGroups),
-                    maxToolCalls = obj.optInt("maxToolCalls", defaults.maxToolCalls),
                     uiStrings = obj.optString("uiStrings", "{}"),
                     updatedAt = System.currentTimeMillis()
                 )
@@ -541,7 +540,6 @@ class CloudBackupManager(private val context: Context) {
                     put("fontFamily", uiSettings.fontFamily)
                     put("enabledMcpGroups", uiSettings.enabledMcpGroups)
                     put("silentToolGroups", uiSettings.silentToolGroups)
-                    put("maxToolCalls", uiSettings.maxToolCalls)
                     put("uiStrings", uiSettings.uiStrings)
                 })
             }

@@ -28,8 +28,6 @@ class AppRepository(private val db: AppDatabase) {
     private val mcpFilePermissionDao = db.mcpFilePermissionDao()
     private val memoryAssociationDao = db.memoryAssociationDao()
     private val memoryAuditDao = db.memoryAuditDao()
-    private val agentConfigDao = db.agentConfigDao()
-    private val agentTaskDao = db.agentTaskDao()
     private val cloudBackupDao = db.cloudBackupDao()
 
     // Model Configs
@@ -53,18 +51,7 @@ class AppRepository(private val db: AppDatabase) {
         sessionDao.deleteSessionById(id)
     }
 
-    suspend fun updateAgentMode(id: Long, mode: String) = sessionDao.updateAgentMode(id, mode)
-
     suspend fun updateSessionThinkingEffort(id: Long, effort: String) = sessionDao.updateThinkingEffort(id, effort)
-
-    suspend fun updateHideAgentModeWarning(hide: Boolean) {
-        val current = uiSettingsDao.getSettings() ?: UISettings()
-        uiSettingsDao.upsertSettings(current.copy(hideAgentModeWarning = hide))
-    }
-
-    suspend fun getHideAgentModeWarning(): Boolean {
-        return uiSettingsDao.getSettings()?.hideAgentModeWarning ?: false
-    }
 
     suspend fun getSessionById(id: Long): Session? {
         return sessionDao.getAllSessionsFlow().first().find { it.id == id }
@@ -203,20 +190,6 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getAllMcpFilePermissions(): List<McpFilePermission> = mcpFilePermissionDao.getAllPermissions()
     suspend fun insertMcpFilePermission(perm: McpFilePermission): Long = mcpFilePermissionDao.insertPermission(perm)
     suspend fun deleteAllMcpFilePermissions() = mcpFilePermissionDao.deleteAllPermissions()
-
-    // Agent Configs
-    suspend fun getAllAgentConfigs(): List<AgentConfig> = agentConfigDao.getAllConfigs()
-    suspend fun getAgentConfigByType(agentType: String): AgentConfig? = agentConfigDao.getConfigByType(agentType)
-    suspend fun upsertAgentConfig(config: AgentConfig) = agentConfigDao.upsertConfig(config)
-    suspend fun deleteAgentConfig(agentType: String) = agentConfigDao.deleteConfigByType(agentType)
-
-    // Agent Tasks (subAgent 状态持久化)
-    suspend fun getAgentTaskById(taskId: String): AgentTaskEntity? = agentTaskDao.getTaskById(taskId)
-    suspend fun getAgentTasksBySession(sessionId: Long): List<AgentTaskEntity> = agentTaskDao.getTasksBySession(sessionId)
-    suspend fun getCompletedAgentTasksBySession(sessionId: Long): List<AgentTaskEntity> = agentTaskDao.getCompletedTasksBySession(sessionId)
-    suspend fun upsertAgentTask(task: AgentTaskEntity) = agentTaskDao.upsertTask(task)
-    suspend fun deleteOldTerminatedAgentTasks(before: Long) = agentTaskDao.deleteOldTerminatedTasks(before)
-    suspend fun deleteAgentTasksBySession(sessionId: Long) = agentTaskDao.deleteTasksBySession(sessionId)
 
     // Cloud Backups
     suspend fun getCloudBackups(userId: String): List<CloudBackupRecord> =

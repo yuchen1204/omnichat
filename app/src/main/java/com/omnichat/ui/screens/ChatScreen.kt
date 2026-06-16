@@ -106,9 +106,6 @@ fun ChatView(viewModel: ChatViewModel) {
     var showToolbar by remember { mutableStateOf(false) }
     // 模型选择器弹窗
     var showModelPicker by remember { mutableStateOf(false) }
-    // Agent Mode 警告弹窗
-    var showAgentModeWarning by remember { mutableStateOf(false) }
-    val hideAgentModeWarning by viewModel.hideAgentModeWarning.collectAsStateWithLifecycle()
 
     // 图片选择相关状态（支持多图）
     var selectedImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -439,15 +436,11 @@ fun ChatView(viewModel: ChatViewModel) {
                 }) { item ->
                     when (item) {
                         is com.omnichat.data.Message -> {
-                            if (item.role == com.omnichat.agent.AgentExecutor.ROLE_AGENT_RESULT) {
-                                AgentResultMessage(message = item)
-                            } else {
-                                BubbleMessage(
-                                    message = item,
-                                    onRetry = { viewModel.retryMessage(it) },
-                                    onEdit = { viewModel.editMessage(it) }
-                                )
-                            }
+                            BubbleMessage(
+                                message = item,
+                                onRetry = { viewModel.retryMessage(it) },
+                                onEdit = { viewModel.editMessage(it) }
+                            )
                         }
                         is List<*> -> {
                             // 渲染工具调用聚合条（静默模式下不会出现此分支）
@@ -625,53 +618,6 @@ fun ChatView(viewModel: ChatViewModel) {
                                         fontWeight = FontWeight.Medium,
                                         color = if (currentModelHasVision) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    )
-                                }
-                            }
-
-                            // 模式切换按钮
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        if (activeSessionId == null) return@clickable
-                                        if (currentSession?.agentMode == "AUTO") {
-                                            viewModel.setAgentMode(activeSessionId!!, "GENERAL")
-                                        } else if (hideAgentModeWarning) {
-                                            viewModel.setAgentMode(activeSessionId!!, "AUTO")
-                                        } else {
-                                            showAgentModeWarning = true
-                                        }
-                                    },
-                                shape = toolBtnShape,
-                                border = toolBtnBorder,
-                                colors = if (currentSession?.agentMode == "AUTO")
-                                    CardDefaults.outlinedCardColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                else toolBtnColors
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = if (currentSession?.agentMode == "AUTO")
-                                            Icons.Default.FlashOn else Icons.Default.Shield,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (currentSession?.agentMode == "AUTO")
-                                            uiText("chat.yolo_mode", R.string.chat_yolo_mode)
-                                        else uiText("chat.general_mode", R.string.chat_general_mode),
-                                        fontSize = (12 * fs).sp,
-                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }
@@ -1051,65 +997,6 @@ fun ChatView(viewModel: ChatViewModel) {
                 showToolbar = false
             },
             onDismiss = { showModelPicker = false }
-        )
-    }
-
-    // Agent Mode 实验性功能警告弹窗
-    if (showAgentModeWarning) {
-        val uiSettingsForDialog = LocalUISettings.current
-        var dontRemind by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { showAgentModeWarning = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(uiSettingsForDialog.cornerRadiusDp.dp),
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = com.omnichat.ui.theme.LocalCustomColors.current.warning
-                )
-            },
-            title = {
-                Text(text = stringResource(R.string.yolo_warning_title))
-            },
-            text = {
-                Column {
-                    Text(text = stringResource(R.string.yolo_warning_message))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Checkbox(
-                            checked = dontRemind,
-                            onCheckedChange = { dontRemind = it }
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.yolo_warning_dont_remind),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (activeSessionId != null) {
-                        viewModel.setAgentMode(activeSessionId!!, "AUTO")
-                    }
-                    if (dontRemind) {
-                        viewModel.setHideAgentModeWarning(true)
-                    }
-                    showAgentModeWarning = false
-                }) {
-                    Text(text = stringResource(R.string.yolo_warning_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAgentModeWarning = false }) {
-                    Text(text = stringResource(R.string.yolo_warning_cancel))
-                }
-            }
         )
     }
 }
@@ -1574,125 +1461,6 @@ fun BubbleMessage(
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-/**
- * subAgent 任务结果消息组件。
- * 默认折叠显示，可展开查看完整内容。
- */
-@Composable
-fun AgentResultMessage(
-    message: com.omnichat.data.Message
-) {
-    // 解析 agentType 从 toolCallsJson
-    val agentType = remember(message.toolCallsJson) {
-        try {
-            if (!message.toolCallsJson.isNullOrBlank()) {
-                val json = org.json.JSONObject(message.toolCallsJson)
-                json.optString("agentType", "unknown")
-            } else {
-                "unknown"
-            }
-        } catch (e: Exception) {
-            "unknown"
-        }
-    }
-
-    // 代理类型名称映射
-    val agentDisplayName = when (agentType) {
-        "general" -> "🤖 General Agent"
-        "researcher" -> "🔍 Researcher"
-        "coder" -> "💻 Coder"
-        "reviewer" -> "👁️ Reviewer"
-        "tester" -> "🧪 Tester"
-        else -> "🤖 Agent"
-    }
-
-    var isExpanded by remember { mutableStateOf(false) }
-    val chatFs = LocalChatFontScale.current
-    val uiSettings = LocalUISettings.current
-    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
-
-    // 自定义颜色：使用 secondary 色作为 agent 消息的背景
-    val agentColor = MaterialTheme.colorScheme.secondaryContainer
-    val agentTextColor = MaterialTheme.colorScheme.onSecondaryContainer
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp, horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        Column(
-            modifier = Modifier.widthIn(max = 320.dp)
-        ) {
-            // 标题栏：可点击展开/折叠
-            Surface(
-                color = agentColor,
-                shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isExpanded) 4.dp else 16.dp,
-                    bottomEnd = 16.dp
-                ),
-                tonalElevation = 2.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = agentDisplayName,
-                        color = agentTextColor,
-                        fontSize = (13 * chatFs).sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = resolvedFontFamily
-                    )
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = stringResource(if (isExpanded) R.string.collapse else R.string.expand),
-                        tint = agentTextColor.copy(alpha = 0.7f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
-            // 展开时显示内容
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Surface(
-                    color = agentColor.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(
-                        topStart = 4.dp,
-                        topEnd = 4.dp,
-                        bottomStart = 16.dp,
-                        bottomEnd = 16.dp
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    dev.jeziellago.compose.markdowntext.MarkdownText(
-                        markdown = message.content,
-                        style = androidx.compose.ui.text.TextStyle(
-                            color = agentTextColor,
-                            fontSize = (14 * chatFs).sp,
-                            lineHeight = (20 * chatFs).sp,
-                            fontFamily = resolvedFontFamily
-                        ),
-                        syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
-                        syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp)
-                    )
                 }
             }
         }

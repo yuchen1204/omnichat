@@ -30,7 +30,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val repository = AppRepository(database)
     private val runtimeManager = com.omnichat.mcp.McpRuntimeManager.getInstance(application)
     private val memoryEngine = com.omnichat.memory.MemoryEngine(repository, ApiClient)
-    private val agentExecutor = com.omnichat.agent.AgentExecutor.getInstance(application, repository)
 
     // Active session selection state
     private val _selectedSessionId = MutableStateFlow<Long?>(null)
@@ -74,10 +73,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     // MCP server states — 用于 ChatView 显示 MCP 启动状态提示
     val mcpServerStates = runtimeManager.serverStates
-
-    // SubAgent approval state: pending approval prompt for MainAgent
-    private val _pendingApprovalPrompt = MutableStateFlow<String?>(null)
-    val pendingApprovalPrompt: StateFlow<String?> = _pendingApprovalPrompt.asStateFlow()
 
     // Real-time operations UI state
     var isStreaming by mutableStateOf(false)
@@ -169,36 +164,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Observe SubAgent approval requests
-        observeApprovalRequests()
-
         // 检查版本更新
         checkForUpdate()
-    }
-
-    private fun observeApprovalRequests() {
-        viewModelScope.launch {
-            com.omnichat.agent.AgentApprovalChannel.pendingRequests.collect { requests ->
-                if (requests.isNotEmpty()) {
-                    val approvalPrompt = buildString {
-                        appendLine("[SubAgent Requests for Approval]")
-                        requests.forEach { request ->
-                            appendLine("---")
-                            appendLine("Request ID: ${request.requestId}")
-                            appendLine("Agent Type: ${request.agentType}")
-                            appendLine("Task: ${request.taskContext.take(200)}")
-                            appendLine("Action: ${request.toolName}")
-                            appendLine("Arguments: ${request.args.toString(2).take(500)}")
-                        }
-                        appendLine("---")
-                        appendLine("Review each request above. Call approve_agent_request for each with the request_id and your decision (approve/reject).")
-                    }
-                    _pendingApprovalPrompt.value = approvalPrompt
-                } else {
-                    _pendingApprovalPrompt.value = null
-                }
-            }
-        }
     }
 
     // ── 版本更新检查 ────────────────────────────────────────────────────
@@ -263,35 +230,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setAgentMode(sessionId: Long, mode: String) {
-        viewModelScope.launch {
-            repository.updateAgentMode(sessionId, mode)
-            if (mode == "GENERAL") {
-                _pendingApprovalPrompt.value = null
-                com.omnichat.agent.AgentApprovalChannel.approveAllPending()
-            }
-        }
-    }
-
     fun setThinkingEffort(sessionId: Long, effort: String) {
         viewModelScope.launch {
             repository.updateSessionThinkingEffort(sessionId, effort)
-        }
-    }
-
-    private val _hideAgentModeWarning = MutableStateFlow(false)
-    val hideAgentModeWarning: StateFlow<Boolean> = _hideAgentModeWarning.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            _hideAgentModeWarning.value = repository.getHideAgentModeWarning()
-        }
-    }
-
-    fun setHideAgentModeWarning(hide: Boolean) {
-        viewModelScope.launch {
-            repository.updateHideAgentModeWarning(hide)
-            _hideAgentModeWarning.value = hide
         }
     }
 
@@ -497,32 +438,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             finalSystemPrompt += "\n\n<!-- MEMORY SEARCH HINT: The cross-session memory above only shows the top ${com.omnichat.memory.MemoryEngine.MEMORY_INJECT_LIMIT} entries (by confidence) out of $totalMemoryCount total stored memories. If the user asks about something not covered by the injected memories, proactively call the [search_memory] tool with relevant keywords to retrieve additional matching memories before answering. -->"
         }
 
-        // 注入已完成的 subAgent 任务摘要
-        val currentSessionId = _selectedSessionId.value
-        if (currentSessionId != null) {
-            val completedTasks = agentExecutor.getCompletedTasksForSession(currentSessionId)
-            if (completedTasks.isNotEmpty()) {
-                finalSystemPrompt += "\n\n<!-- COMPLETED SUBAGENT TASKS -->"
-                finalSystemPrompt += "\nThe following subAgent tasks have completed. Their results are available for reference:\n"
-                completedTasks.forEach { task ->
-                    val summaryPreview = task.summary?.take(500) ?: task.result?.take(300) ?: "(no result)"
-                    finalSystemPrompt += "- [${task.agentType}] ${task.taskDescription.take(80)}... (taskId: ${task.taskId})\n"
-                    finalSystemPrompt += "  Summary: $summaryPreview\n\n"
-                }
-            }
-        }
-
-        // 注入 subAgent 委派行为规则
-        finalSystemPrompt += "\n\n<!-- SUBAGENT DELEGATION RULES -->"
-        finalSystemPrompt += "\nIMPORTANT RULES for delegate_task:"
-        finalSystemPrompt += "\n1. After calling delegate_task, do NOT immediately call check_task_status. The task runs asynchronously and won't be complete yet."
-        finalSystemPrompt += "\n2. Before creating any timer, ALWAYS call get_current_time first to confirm the current time."
-        finalSystemPrompt += "\n3. Use create_timer(minutes=1, task_id=\"<taskId>\") to set a reminder."
-        finalSystemPrompt += "\n4. Continue with other work or tell the user the task has been delegated."
-        finalSystemPrompt += "\n5. When the timer fires, check status with check_task_status. If still running, create another timer."
-        finalSystemPrompt += "\n6. NEVER attempt to do the subAgent's work yourself. Wait for the result."
-        finalSystemPrompt += "\n7. The subAgent result will also appear automatically in the session when complete — the timer is just for proactive checking."
-
         // 5. Check for pending time reminders
         val pendingReminders = memoryEngine.checkPendingReminders()
         if (pendingReminders.isNotEmpty()) {
@@ -539,13 +454,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             finalSystemPrompt += "\n\n$remindersText"
         }
 
-        // Inject SubAgent approval prompt if pending
-        val approvalPrompt = _pendingApprovalPrompt.value
-        return if (approvalPrompt != null) {
-            "$finalSystemPrompt\n\n$approvalPrompt"
-        } else {
-            finalSystemPrompt
-        }
+        return finalSystemPrompt
     }
 
     /**
@@ -745,7 +654,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0) {
         val messageHistory = repository.getMessagesBySession(sessionId)
-            .filter { it.role != com.omnichat.agent.AgentExecutor.ROLE_AGENT_RESULT }
         val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
         val sessionThinkingEffort = repository.getSessionById(sessionId)?.thinkingEffort
 
@@ -933,16 +841,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Tool not found", toolCallId = callId))
                     hasNewResults = true
-                }
-            }
-
-            // Clear approval prompt only if MainAgent actually handled the approval
-            if (_pendingApprovalPrompt.value != null) {
-                val handledApproval = accumulatedToolCalls.values.any { toolCall ->
-                    toolCall.optJSONObject("function")?.optString("name") == "approve_agent_request"
-                }
-                if (handledApproval) {
-                    _pendingApprovalPrompt.value = null
                 }
             }
 

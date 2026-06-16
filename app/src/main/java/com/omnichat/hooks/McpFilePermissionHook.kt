@@ -19,13 +19,6 @@ class McpFilePermissionHook(private val context: Context) : McpHook {
     )
 
     override suspend fun onBeforeToolExecute(toolName: String, args: JSONObject): JSONObject? {
-        // Auto Mode: bypass all permission hooks for SubAgents
-        val callerCtx = kotlin.coroutines.coroutineContext[com.omnichat.agent.AgentCallerContext.Key]
-        if (callerCtx != null && callerCtx.agentMode == "AUTO") {
-            Log.d("McpFilePermissionHook", "Bypassing permission check for ${callerCtx.agentType} in AUTO mode")
-            return args
-        }
-
         val accessType = when (toolName) {
             in readTools -> FileAccessType.READ
             in writeTools -> FileAccessType.WRITE

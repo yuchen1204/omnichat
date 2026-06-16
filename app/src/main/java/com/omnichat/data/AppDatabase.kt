@@ -24,14 +24,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemoryAssociation::class,
         // 记忆审计日志
         MemoryAuditEntry::class,
-        // subAgent 模型配置
-        AgentConfig::class,
         // 云端备份记录
         CloudBackupRecord::class,
-        // subAgent 任务状态持久化
-        AgentTaskEntity::class,
     ],
-    version = 50,
+    version = 51,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,12 +47,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memoryAssociationDao(): MemoryAssociationDao
     // 记忆审计日志 DAO
     abstract fun memoryAuditDao(): MemoryAuditDao
-    // subAgent 模型配置 DAO
-    abstract fun agentConfigDao(): AgentConfigDao
     // 云端备份记录 DAO
     abstract fun cloudBackupDao(): CloudBackupDao
-    // subAgent 任务状态 DAO
-    abstract fun agentTaskDao(): AgentTaskDao
 
     companion object {
         @Volatile
@@ -779,6 +771,106 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v50→v51: 移除 SubAgent 相关 — 删除 agent_configs/agent_tasks 表，移除 agentMode/hideAgentModeWarning/maxToolCalls 列 */
+        private val MIGRATION_50_51 = object : Migration(50, 51) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 删除 agent 相关表
+                db.execSQL("DROP TABLE IF EXISTS agent_configs")
+                db.execSQL("DROP TABLE IF EXISTS agent_tasks")
+
+                // 重建 sessions 表：移除 agentMode 列
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sessions_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        thinkingEffort TEXT NOT NULL DEFAULT 'low'
+                    )
+                """.trimIndent())
+                db.execSQL("INSERT INTO sessions_new (id, title, createdAt, thinkingEffort) SELECT id, title, createdAt, thinkingEffort FROM sessions")
+                db.execSQL("DROP TABLE sessions")
+                db.execSQL("ALTER TABLE sessions_new RENAME TO sessions")
+
+                // 重建 ui_settings 表：移除 hideAgentModeWarning 和 maxToolCalls 列
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS ui_settings_new (
+                        id INTEGER PRIMARY KEY NOT NULL,
+                        primaryColor TEXT NOT NULL,
+                        onPrimaryColor TEXT NOT NULL,
+                        primaryContainerColor TEXT NOT NULL,
+                        onPrimaryContainerColor TEXT NOT NULL,
+                        secondaryColor TEXT NOT NULL,
+                        onSecondaryColor TEXT NOT NULL,
+                        secondaryContainerColor TEXT NOT NULL,
+                        onSecondaryContainerColor TEXT NOT NULL,
+                        tertiaryColor TEXT NOT NULL,
+                        onTertiaryColor TEXT NOT NULL,
+                        backgroundColor TEXT NOT NULL,
+                        onBackgroundColor TEXT NOT NULL,
+                        surfaceColor TEXT NOT NULL,
+                        onSurfaceColor TEXT NOT NULL,
+                        surfaceVariantColor TEXT NOT NULL,
+                        onSurfaceVariantColor TEXT NOT NULL,
+                        outlineColor TEXT NOT NULL,
+                        outlineVariantColor TEXT NOT NULL,
+                        errorColor TEXT NOT NULL,
+                        onErrorColor TEXT NOT NULL,
+                        errorContainerColor TEXT NOT NULL,
+                        onErrorContainerColor TEXT NOT NULL,
+                        successColor TEXT NOT NULL,
+                        warningColor TEXT NOT NULL,
+                        infoColor TEXT NOT NULL,
+                        accentColor TEXT NOT NULL,
+                        sidebarBackgroundColor TEXT NOT NULL,
+                        sidebarOnBackgroundColor TEXT NOT NULL,
+                        sidebarActiveColor TEXT NOT NULL,
+                        sidebarOnActiveColor TEXT NOT NULL,
+                        cornerRadiusDp INTEGER NOT NULL,
+                        spacingMultiplier REAL NOT NULL,
+                        fontSizeScale REAL NOT NULL,
+                        chatFontSizeScale REAL NOT NULL,
+                        fontFamily TEXT NOT NULL,
+                        enabledMcpGroups TEXT NOT NULL,
+                        silentToolGroups TEXT NOT NULL DEFAULT '',
+                        updatedAt INTEGER NOT NULL,
+                        uiStrings TEXT NOT NULL,
+                        cloudBackupFrequency TEXT NOT NULL DEFAULT 'H6',
+                        cloudBackupSections TEXT NOT NULL DEFAULT '[]'
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO ui_settings_new (
+                        id, primaryColor, onPrimaryColor, primaryContainerColor, onPrimaryContainerColor,
+                        secondaryColor, onSecondaryColor, secondaryContainerColor, onSecondaryContainerColor,
+                        tertiaryColor, onTertiaryColor,
+                        backgroundColor, onBackgroundColor, surfaceColor, onSurfaceColor,
+                        surfaceVariantColor, onSurfaceVariantColor, outlineColor, outlineVariantColor,
+                        errorColor, onErrorColor, errorContainerColor, onErrorContainerColor,
+                        successColor, warningColor, infoColor, accentColor,
+                        sidebarBackgroundColor, sidebarOnBackgroundColor, sidebarActiveColor, sidebarOnActiveColor,
+                        cornerRadiusDp, spacingMultiplier, fontSizeScale, chatFontSizeScale, fontFamily,
+                        enabledMcpGroups, silentToolGroups, updatedAt, uiStrings,
+                        cloudBackupFrequency, cloudBackupSections
+                    )
+                    SELECT
+                        id, primaryColor, onPrimaryColor, primaryContainerColor, onPrimaryContainerColor,
+                        secondaryColor, onSecondaryColor, secondaryContainerColor, onSecondaryContainerColor,
+                        tertiaryColor, onTertiaryColor,
+                        backgroundColor, onBackgroundColor, surfaceColor, onSurfaceColor,
+                        surfaceVariantColor, onSurfaceVariantColor, outlineColor, outlineVariantColor,
+                        errorColor, onErrorColor, errorContainerColor, onErrorContainerColor,
+                        successColor, warningColor, infoColor, accentColor,
+                        sidebarBackgroundColor, sidebarOnBackgroundColor, sidebarActiveColor, sidebarOnActiveColor,
+                        cornerRadiusDp, spacingMultiplier, fontSizeScale, chatFontSizeScale, fontFamily,
+                        enabledMcpGroups, silentToolGroups, updatedAt, uiStrings,
+                        cloudBackupFrequency, cloudBackupSections
+                    FROM ui_settings
+                """.trimIndent())
+                db.execSQL("DROP TABLE ui_settings")
+                db.execSQL("ALTER TABLE ui_settings_new RENAME TO ui_settings")
+            }
+        }
+
         /** v47→v48: add thinkingEffort column to sessions */
         private val MIGRATION_47_48 = object : Migration(47, 48) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -842,7 +934,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_46_47,
                         MIGRATION_47_48,
                         MIGRATION_48_49,
-                        MIGRATION_49_50
+                        MIGRATION_49_50,
+                        MIGRATION_50_51
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。
