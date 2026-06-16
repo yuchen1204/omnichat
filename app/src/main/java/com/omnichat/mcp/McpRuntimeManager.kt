@@ -349,6 +349,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
             "list_agent_tasks" to "core",
             "set_tool_display_mode" to "efficiency",
             "approve_agent_request" to "core",
+            "send_message" to "core",
+            "read_inbox" to "core",
+            "manage_task_board" to "core",
         )
 
         fun getInstance(context: Context): McpRuntimeManager {
@@ -823,16 +826,18 @@ class McpRuntimeManager private constructor(private val context: Context) {
 可用代理类型：
 - general: 通用任务，适合不确定分类的工作
 - researcher: 信息搜索、资料整理、网络检索
-- coder: 代码编写、文件创建/修改
-- reviewer: 代码审查、质量检查、问题发现
-- tester: 测试用例编写、验证逻辑
+- coder: 代码编写、文件创建/修改（遵循 TDD）
+- reviewer: 代码审查、质量检查、问题发现（两阶段审查）
+- tester: 测试用例编写、验证逻辑（TDD 对齐）
+- planner: 编写详细的实现计划
+- orchestrator: 协调多 agent 工作流
 
 任务将在后台执行，完成后结果会插入当前会话。返回一个 taskId 用于追踪。
 
 IMPORTANT: After delegating, do NOT immediately call check_task_status — the task runs asynchronously and won't be done yet. Use create_timer(minutes=1, task_id="<taskId>") to set a reminder, then continue with other work. When the timer fires, check status. The result will also appear automatically when complete.""",
             inputSchema = schema {
                 prop("agent_type", "string", "代理类型") {
-                    enum("general", "researcher", "coder", "reviewer", "tester")
+                    enum("general", "researcher", "coder", "reviewer", "tester", "planner", "orchestrator")
                 }
                 prop("task", "string", "任务描述。清晰说明目标、约束、期望输出格式。")
                 prop("context", "string", "可选。附加上下文：相关文件路径、代码片段、背景信息。")
@@ -895,7 +900,7 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
                 prop("task_id", "string", "任务 ID (操作为 create, claim, complete 时必填)")
                 prop("description", "string", "任务描述 (操作为 create 时必填)")
                 prop("assignee", "string", "认领者的 Agent 名称 (操作为 claim 时必填)")
-                required("action")
+                required("action", "task_id")
             }
         ),
         McpTool(
