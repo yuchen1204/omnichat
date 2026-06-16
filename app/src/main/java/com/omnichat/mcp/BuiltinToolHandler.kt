@@ -63,6 +63,7 @@ object BuiltinToolHandler {
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
+            "set_max_tool_calls" -> handleSetMaxToolCalls(context, arguments)
             "delegate_task" -> handleDelegateTask(context, arguments, sessionId)
             "check_task_status" -> handleCheckTaskStatus(context, arguments, sessionId)
             "list_agent_tasks" -> handleListAgentTasks(context, arguments, sessionId)
@@ -603,6 +604,17 @@ object BuiltinToolHandler {
         } else {
             successResponse(str(context, R.string.tool_display_silent_off))
         }
+    }
+
+    private suspend fun handleSetMaxToolCalls(context: Context, arguments: JSONObject): JSONObject {
+        val maxCalls = arguments.optInt("max_calls", -1)
+        if (maxCalls !in 1..50) {
+            return errorResponse("max_calls must be between 1 and 50, got: $maxCalls")
+        }
+        val repository = getRepository(context)
+        val current = repository.getUISettings() ?: UISettings()
+        repository.upsertUISettings(current.copy(maxToolCalls = maxCalls, updatedAt = System.currentTimeMillis()))
+        return successResponse("Max tool calls per SubAgent task set to $maxCalls")
     }
 
     // ── 文件系统工具 ────────────────────────────────────────────────────────
@@ -2021,9 +2033,10 @@ object BuiltinToolHandler {
         if (agentName.isNullOrBlank()) {
             return errorResponse("Missing 'agent_name' and no agent context available")
         }
-        val messages = com.omnichat.agent.AgentTeamManager.readInbox(agentName)
-        if (clear) {
-            com.omnichat.agent.AgentTeamManager.clearInbox(agentName)
+        val messages = if (clear) {
+            com.omnichat.agent.AgentTeamManager.readAndClearInbox(agentName)
+        } else {
+            com.omnichat.agent.AgentTeamManager.readInbox(agentName)
         }
         val jsonArray = JSONArray()
         messages.forEach { msg ->

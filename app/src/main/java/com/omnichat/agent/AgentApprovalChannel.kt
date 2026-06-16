@@ -79,5 +79,6 @@ object AgentApprovalChannel {
         deferreds.forEach { (id, deferred) ->
             deferred.complete(AgentApprovalDecision("approve", "Mode switched to General"))
         }
+        _pendingRequests.value = emptyList()
     }
 }

@@ -420,6 +420,12 @@ data class UISettings(
      */
     val hideAgentModeWarning: Boolean = false,
 
+    /**
+     * SubAgent 工具调用最大迭代次数（每次 delegate_task 内部 agentic loop 的上限）。
+     * 范围 1–50，默认 10。AI 通过 set_max_tool_calls 工具调整。
+     */
+    val maxToolCalls: Int = 10,
+
     @ColumnInfo(name = "cloudBackupFrequency")
     val cloudBackupFrequency: String = "H6",
 

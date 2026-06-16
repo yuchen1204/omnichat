@@ -45,6 +45,18 @@ object AgentTeamManager {
         synchronized(messages) { return messages.toList() }
     }
 
+    /**
+     * 原子地读取并清空收件箱，避免 read-then-clear 竞态导致消息丢失。
+     */
+    fun readAndClearInbox(agent: String): List<AgentMessage> {
+        val messages = inboxes[agent] ?: return emptyList()
+        synchronized(messages) {
+            val snapshot = messages.toList()
+            messages.clear()
+            return snapshot
+        }
+    }
+
     fun clearInbox(agent: String) {
         val messages = inboxes[agent] ?: return
         synchronized(messages) { messages.clear() }
@@ -55,10 +67,16 @@ object AgentTeamManager {
     }
 
     fun claimTask(id: String, assignee: String): Boolean {
-        val task = taskBoard[id] ?: return false
-        if (task.assignee != null) return false
-        taskBoard[id] = task.copy(assignee = assignee, status = "in_progress")
-        return true
+        var claimed = false
+        taskBoard.compute(id) { _, existing ->
+            if (existing != null && existing.assignee == null) {
+                claimed = true
+                existing.copy(assignee = assignee, status = "in_progress")
+            } else {
+                existing
+            }
+        }
+        return claimed
     }
 
     fun completeTask(id: String): Boolean {

@@ -180,16 +180,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             com.omnichat.agent.AgentApprovalChannel.pendingRequests.collect { requests ->
                 if (requests.isNotEmpty()) {
-                    val request = requests.last()
                     val approvalPrompt = buildString {
-                        appendLine("[SubAgent Request for Approval]")
-                        appendLine("Request ID: ${request.requestId}")
-                        appendLine("Agent Type: ${request.agentType}")
-                        appendLine("Task: ${request.taskContext.take(200)}")
-                        appendLine("Action: ${request.toolName}")
-                        appendLine("Arguments: ${request.args.toString(2).take(500)}")
+                        appendLine("[SubAgent Requests for Approval]")
+                        requests.forEach { request ->
+                            appendLine("---")
+                            appendLine("Request ID: ${request.requestId}")
+                            appendLine("Agent Type: ${request.agentType}")
+                            appendLine("Task: ${request.taskContext.take(200)}")
+                            appendLine("Action: ${request.toolName}")
+                            appendLine("Arguments: ${request.args.toString(2).take(500)}")
+                        }
                         appendLine("---")
-                        appendLine("Please review this request. Call approve_agent_request with request_id='${request.requestId}' and your decision.")
+                        appendLine("Review each request above. Call approve_agent_request for each with the request_id and your decision (approve/reject).")
                     }
                     _pendingApprovalPrompt.value = approvalPrompt
                 } else {
@@ -265,6 +267,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.updateAgentMode(sessionId, mode)
             if (mode == "GENERAL") {
+                _pendingApprovalPrompt.value = null
                 com.omnichat.agent.AgentApprovalChannel.approveAllPending()
             }
         }

@@ -348,6 +348,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             "check_task_status" to "core",
             "list_agent_tasks" to "core",
             "set_tool_display_mode" to "efficiency",
+            "set_max_tool_calls" to "efficiency",
             "approve_agent_request" to "core",
             "send_message" to "core",
             "read_inbox" to "core",
@@ -806,6 +807,16 @@ class McpRuntimeManager private constructor(private val context: Context) {
             inputSchema = schema {
                 prop("groups", "string", "Comma-separated group names to silence. Empty string = show all (default). '*' = silence all built-in tools. Available groups: core, memory, ui_appearance, ui_text, files, documents, efficiency. External MCP tools are never affected.")
                 required("groups")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "set_max_tool_calls",
+            description = "Adjust the maximum number of tool-call iterations per SubAgent task (delegate_task). Each iteration allows the LLM to call one or more tools and receive results before the next round. Increase for complex multi-step tasks; decrease to cap resource usage. Current default is 10.",
+            inputSchema = schema {
+                prop("max_calls", "integer", "Maximum tool-call iterations per SubAgent task. Range: 1–50. Default: 10.")
+                required("max_calls")
             }
         ),
         // ── 运行时工具组管理 ──────────────────────────────────────────────

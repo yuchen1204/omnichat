@@ -31,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // subAgent 任务状态持久化
         AgentTaskEntity::class,
     ],
-    version = 49,
+    version = 50,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -772,6 +772,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v49→v50: add maxToolCalls column to ui_settings */
+        private val MIGRATION_49_50 = object : Migration(49, 50) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN maxToolCalls INTEGER NOT NULL DEFAULT 10")
+            }
+        }
+
         /** v47→v48: add thinkingEffort column to sessions */
         private val MIGRATION_47_48 = object : Migration(47, 48) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -834,7 +841,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_45_46,
                         MIGRATION_46_47,
                         MIGRATION_47_48,
-                        MIGRATION_48_49
+                        MIGRATION_48_49,
+                        MIGRATION_49_50
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

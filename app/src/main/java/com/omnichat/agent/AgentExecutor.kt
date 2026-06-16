@@ -265,10 +265,16 @@ class AgentExecutor(
                 }
 
                 // 自动清理超过 30 分钟的旧任务，防止内存无限增长
-                cleanupOldTasks()
-
                 // 插入结果消息到主会话
-                insertResultMessage(sessionId, taskId, agentType, result)
+                // 后置操作失败不应将已完成的任务降级为 FAILED
+                try {
+                    cleanupOldTasks()
+                    insertResultMessage(sessionId, taskId, agentType, result)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Post-completion cleanup/insert failed for task $taskId: ${e.message}")
+                }
             } catch (e: CancellationException) {
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.CANCELLED,
@@ -343,7 +349,7 @@ class AgentExecutor(
 
             var finalResult = ""
             var iteration = 0
-            val maxIterations = 10
+            val maxIterations = repository.getUISettings()?.maxToolCalls?.coerceIn(1, 50) ?: 10
 
             while (iteration < maxIterations) {
                 iteration++
