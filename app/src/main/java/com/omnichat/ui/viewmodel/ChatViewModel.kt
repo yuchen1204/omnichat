@@ -276,19 +276,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private val _hideYoloWarning = MutableStateFlow(false)
-    val hideYoloWarning: StateFlow<Boolean> = _hideYoloWarning.asStateFlow()
+    private val _hideAgentModeWarning = MutableStateFlow(false)
+    val hideAgentModeWarning: StateFlow<Boolean> = _hideAgentModeWarning.asStateFlow()
 
     init {
         viewModelScope.launch {
-            _hideYoloWarning.value = repository.getHideYoloWarning()
+            _hideAgentModeWarning.value = repository.getHideAgentModeWarning()
         }
     }
 
-    fun setHideYoloWarning(hide: Boolean) {
+    fun setHideAgentModeWarning(hide: Boolean) {
         viewModelScope.launch {
-            repository.updateHideYoloWarning(hide)
-            _hideYoloWarning.value = hide
+            repository.updateHideAgentModeWarning(hide)
+            _hideAgentModeWarning.value = hide
         }
     }
 

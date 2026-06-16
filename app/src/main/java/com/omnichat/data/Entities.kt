@@ -416,9 +416,9 @@ data class UISettings(
     val uiStrings: String = "{}",
 
     /**
-     * 是否隐藏 Yolo Mode 实验性功能警告弹窗。
+     * 是否隐藏 Agent Mode 实验性功能警告弹窗。
      */
-    val hideYoloWarning: Boolean = false,
+    val hideAgentModeWarning: Boolean = false,
 
     @ColumnInfo(name = "cloudBackupFrequency")
     val cloudBackupFrequency: String = "H6",

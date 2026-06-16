@@ -57,13 +57,13 @@ class AppRepository(private val db: AppDatabase) {
 
     suspend fun updateSessionThinkingEffort(id: Long, effort: String) = sessionDao.updateThinkingEffort(id, effort)
 
-    suspend fun updateHideYoloWarning(hide: Boolean) {
+    suspend fun updateHideAgentModeWarning(hide: Boolean) {
         val current = uiSettingsDao.getSettings() ?: UISettings()
-        uiSettingsDao.upsertSettings(current.copy(hideYoloWarning = hide))
+        uiSettingsDao.upsertSettings(current.copy(hideAgentModeWarning = hide))
     }
 
-    suspend fun getHideYoloWarning(): Boolean {
-        return uiSettingsDao.getSettings()?.hideYoloWarning ?: false
+    suspend fun getHideAgentModeWarning(): Boolean {
+        return uiSettingsDao.getSettings()?.hideAgentModeWarning ?: false
     }
 
     suspend fun getSessionById(id: Long): Session? {

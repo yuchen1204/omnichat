@@ -106,9 +106,9 @@ fun ChatView(viewModel: ChatViewModel) {
     var showToolbar by remember { mutableStateOf(false) }
     // 模型选择器弹窗
     var showModelPicker by remember { mutableStateOf(false) }
-    // Yolo Mode 警告弹窗
-    var showYoloWarning by remember { mutableStateOf(false) }
-    val hideYoloWarning by viewModel.hideYoloWarning.collectAsStateWithLifecycle()
+    // Agent Mode 警告弹窗
+    var showAgentModeWarning by remember { mutableStateOf(false) }
+    val hideAgentModeWarning by viewModel.hideAgentModeWarning.collectAsStateWithLifecycle()
 
     // 图片选择相关状态（支持多图）
     var selectedImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -637,10 +637,10 @@ fun ChatView(viewModel: ChatViewModel) {
                                         if (activeSessionId == null) return@clickable
                                         if (currentSession?.agentMode == "AUTO") {
                                             viewModel.setAgentMode(activeSessionId!!, "GENERAL")
-                                        } else if (hideYoloWarning) {
+                                        } else if (hideAgentModeWarning) {
                                             viewModel.setAgentMode(activeSessionId!!, "AUTO")
                                         } else {
-                                            showYoloWarning = true
+                                            showAgentModeWarning = true
                                         }
                                     },
                                 shape = toolBtnShape,
@@ -1054,12 +1054,12 @@ fun ChatView(viewModel: ChatViewModel) {
         )
     }
 
-    // Yolo Mode 实验性功能警告弹窗
-    if (showYoloWarning) {
+    // Agent Mode 实验性功能警告弹窗
+    if (showAgentModeWarning) {
         val uiSettingsForDialog = LocalUISettings.current
         var dontRemind by remember { mutableStateOf(false) }
         AlertDialog(
-            onDismissRequest = { showYoloWarning = false },
+            onDismissRequest = { showAgentModeWarning = false },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(uiSettingsForDialog.cornerRadiusDp.dp),
             icon = {
@@ -1098,15 +1098,15 @@ fun ChatView(viewModel: ChatViewModel) {
                         viewModel.setAgentMode(activeSessionId!!, "AUTO")
                     }
                     if (dontRemind) {
-                        viewModel.setHideYoloWarning(true)
+                        viewModel.setHideAgentModeWarning(true)
                     }
-                    showYoloWarning = false
+                    showAgentModeWarning = false
                 }) {
                     Text(text = stringResource(R.string.yolo_warning_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showYoloWarning = false }) {
+                TextButton(onClick = { showAgentModeWarning = false }) {
                     Text(text = stringResource(R.string.yolo_warning_cancel))
                 }
             }

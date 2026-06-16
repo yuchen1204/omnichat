@@ -27,7 +27,7 @@
     <string name="chat_select_image">Select Image</string>
     <string name="chat_take_photo">Take Photo</string>
     <string name="chat_general_mode">General</string>
-    <string name="chat_yolo_mode">Yolo</string>
+    <string name="chat_yolo_mode">Agent Mode</string>
     <string name="thinking_effort_label">Thinking</string>
     <string name="thinking_effort_low">Low</string>
     <string name="thinking_effort_medium">Med</string>
@@ -36,7 +36,7 @@
     <string name="thinking_effort_faster">Faster</string>
     <string name="thinking_effort_smarter">Smarter</string>
     <string name="yolo_warning_title">⚠️ Experimental Feature</string>
-    <string name="yolo_warning_message">Yolo Mode bypasses all file permission checks and lets MainAgent auto-approve SubAgent actions. This is an experimental feature — use at your own risk.</string>
+    <string name="yolo_warning_message">Agent Mode bypasses all file permission checks and lets MainAgent auto-approve SubAgent actions. This is an experimental feature — use at your own risk.</string>
     <string name="yolo_warning_cancel">Cancel</string>
     <string name="yolo_warning_confirm">OK</string>
     <string name="yolo_warning_dont_remind">Don\'t remind again</string>
