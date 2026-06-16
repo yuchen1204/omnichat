@@ -31,7 +31,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // subAgent 任务状态持久化
         AgentTaskEntity::class,
     ],
-    version = 47,
+    version = 48,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -765,6 +765,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v47→v48: add thinkingEffort column to sessions */
+        private val MIGRATION_47_48 = object : Migration(47, 48) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN thinkingEffort TEXT NOT NULL DEFAULT 'none'")
+            }
+        }
+
         /**
          * 清除单例实例（用于数据库恢复后重新初始化）。
          */
@@ -818,7 +825,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_43_44,
                         MIGRATION_44_45,
                         MIGRATION_45_46,
-                        MIGRATION_46_47
+                        MIGRATION_46_47,
+                        MIGRATION_47_48
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

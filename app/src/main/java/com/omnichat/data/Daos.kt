@@ -38,6 +38,14 @@ interface ModelConfigDao {
             updateConfig(c.copy(isDefaultProvider = true))
         }
     }
+
+    /** 原子操作：清除旧默认 → 设置新默认 → 更新 selectedModelId */
+    @Transaction
+    suspend fun setDefaultProviderWithModel(id: Long, selectedModelId: String) {
+        clearDefaultProvider()
+        val c = getConfigById(id) ?: return
+        updateConfig(c.copy(isDefaultProvider = true, selectedModelId = selectedModelId))
+    }
 }
 
 @Dao
@@ -56,6 +64,9 @@ interface SessionDao {
 
     @Query("UPDATE sessions SET agentMode = :mode WHERE id = :id")
     suspend fun updateAgentMode(id: Long, mode: String)
+
+    @Query("UPDATE sessions SET thinkingEffort = :effort WHERE id = :id")
+    suspend fun updateThinkingEffort(id: Long, effort: String)
 }
 
 @Dao

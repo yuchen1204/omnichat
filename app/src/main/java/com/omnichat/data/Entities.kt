@@ -21,8 +21,8 @@ data class ModelConfig(
     val memoryModelId: String,
     val memoryProviderId: Long = 0L, // 0 = 与主 Provider 相同
     val isDefaultProvider: Boolean = false,
-    val enableThinking: Boolean = true,
-    val thinkingEffort: String = "medium",
+    val enableThinking: Boolean = false,
+    val thinkingEffort: String = "none",
     /** 自定义 HTTP 请求头，JSON 对象字符串，例如 '{"X-Custom-Header": "value"}' */
     val customHeaders: String = "{}",
     /** 嵌入模型 ID，用于记忆语义搜索（如 "text-embedding-3-small"） */
@@ -37,7 +37,8 @@ data class Session(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val agentMode: String = "GENERAL"
+    val agentMode: String = "GENERAL",
+    val thinkingEffort: String = "none"
 )
 
 @Entity(
