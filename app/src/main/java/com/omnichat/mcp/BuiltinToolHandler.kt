@@ -1807,12 +1807,9 @@ object BuiltinToolHandler {
 
         val taskId = executor.execute(sessionId, agentType, task, enrichedContext, files, currentDepth + 1)
 
-        // 检查任务是否因信号量耗尽等原因立即失败
-        // execute() 是异步的，短暂等待让协程有机会启动并检查信号量
-        kotlinx.coroutines.delay(100)
-        val taskState = executor.getStatus(taskId)
-        if (taskState != null && taskState.status == com.omnichat.agent.AgentTaskStatus.FAILED) {
-            return errorResponse(str(context, R.string.tool_agent_delegation_failed, agentType, taskState.error ?: "Unknown error"))
+        // execute() 返回 null 表示并发限制导致立即拒绝（信号量已同步检查）
+        if (taskId == null) {
+            return errorResponse(str(context, R.string.tool_agent_delegation_failed, agentType, "Concurrency limit reached"))
         }
 
         return successResponse(str(context, R.string.tool_agent_delegated, agentType, taskId, taskId))

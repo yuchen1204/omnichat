@@ -9,14 +9,13 @@ import org.json.JSONObject
 class McpFilePermissionHook(private val context: Context) : McpHook {
     /** 只读操作：查看/读取 */
     private val readTools = setOf(
-        "read_file", "list_directory", "get_file_info", "search_files",
-        "search_content", "get_working_directory"
+        "file_read", "file_list", "file_info", "file_search"
     )
 
     /** 写操作：修改/删除/创建 */
     private val writeTools = setOf(
-        "write_file", "append_file", "delete_file", "move_file",
-        "copy_file", "create_directory"
+        "file_write", "file_append", "file_delete", "file_move",
+        "file_copy", "file_mkdir"
     )
 
     override suspend fun onBeforeToolExecute(toolName: String, args: JSONObject): JSONObject? {
@@ -34,7 +33,7 @@ class McpFilePermissionHook(private val context: Context) : McpHook {
         }
 
         val pathsToCheck = mutableListOf<String>()
-        for (key in listOf("path", "source", "destination", "sourcePath", "destinationPath", "directory")) {
+        for (key in listOf("path", "sourcePath", "destinationPath", "directory")) {
             if (args.has(key)) {
                 val v = args.optString(key)
                 if (v.isNotEmpty()) pathsToCheck.add(v)

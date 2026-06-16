@@ -44,10 +44,6 @@ object AgentApprovalChannel {
 
     private val deferreds = ConcurrentHashMap<String, CompletableDeferred<AgentApprovalDecision>>()
 
-    @Volatile
-    var lastRejectionAlternative: String? = null
-        private set
-
     /**
      * Called by McpRuntimeManager.callTool() for SubAgents in AUTO mode.
      * Suspends until MainAgent responds or timeout.
@@ -73,9 +69,6 @@ object AgentApprovalChannel {
      * Called by BuiltinToolHandler.handleApproveAgentRequest().
      */
     fun respond(requestId: String, decision: AgentApprovalDecision) {
-        if (decision.decision == "reject") {
-            lastRejectionAlternative = decision.alternative
-        }
         deferreds[requestId]?.complete(decision)
     }
 
@@ -86,6 +79,5 @@ object AgentApprovalChannel {
         deferreds.forEach { (id, deferred) ->
             deferred.complete(AgentApprovalDecision("approve", "Mode switched to General"))
         }
-        lastRejectionAlternative = null
     }
 }

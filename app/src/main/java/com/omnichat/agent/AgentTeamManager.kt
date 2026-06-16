@@ -16,9 +16,22 @@ data class TeamTask(
     val status: String // pending, in_progress, completed
 )
 
+/**
+ * In-memory agent team manager for inter-agent messaging and task board.
+ *
+ * **Limitation**: All data is stored in memory and lost on process death.
+ * This is acceptable for short-lived multi-agent coordination tasks.
+ * Long-running workflows should use persistent storage (Room) for critical state.
+ */
 object AgentTeamManager {
     val inboxes = ConcurrentHashMap<String, MutableList<AgentMessage>>()
     val taskBoard = ConcurrentHashMap<String, TeamTask>()
+
+    /** Clear all in-memory state (e.g., on app restart). */
+    fun clearAll() {
+        inboxes.clear()
+        taskBoard.clear()
+    }
 
     fun sendMessage(from: String, to: String, content: String) {
         val messages = inboxes.getOrPut(to) { mutableListOf() }

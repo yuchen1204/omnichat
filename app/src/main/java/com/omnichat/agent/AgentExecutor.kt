@@ -147,7 +147,7 @@ class AgentExecutor(
         contextStr: String?,
         files: List<String>?,
         depth: Int = 0
-    ): String {
+    ): String? {
         val taskId = UUID.randomUUID().toString()
 
         // 检查递归深度
@@ -164,6 +164,36 @@ class AgentExecutor(
             return taskId
         }
 
+        // 同步获取并发许可，在启动协程前检测并发限制
+        val typeSemaphore = try {
+            runBlocking { getOrCreateTypeSemaphore(agentType) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get type semaphore for $agentType", e)
+            // 回退到默认信号量
+            typeSemaphores.getOrPut(agentType) { defaultTypeSemaphore }
+        }
+        if (!globalSemaphore.tryAcquire()) {
+            val failState = AgentTaskState(
+                taskId = taskId, sessionId = sessionId, agentType = agentType,
+                status = AgentTaskStatus.FAILED, taskDescription = task,
+                error = "Global concurrency limit reached ($MAX_GLOBAL_PARALLELISM). Please wait for other tasks to complete.",
+                completedAt = System.currentTimeMillis()
+            )
+            updateState(taskId, failState)
+            return null
+        }
+        if (!typeSemaphore.tryAcquire()) {
+            globalSemaphore.release()
+            val failState = AgentTaskState(
+                taskId = taskId, sessionId = sessionId, agentType = agentType,
+                status = AgentTaskStatus.FAILED, taskDescription = task,
+                error = "Agent type '$agentType' already has a running task. Please wait for it to complete.",
+                completedAt = System.currentTimeMillis()
+            )
+            updateState(taskId, failState)
+            return null
+        }
+
         // 创建初始状态
         val initialState = AgentTaskState(
             taskId = taskId,
@@ -174,31 +204,11 @@ class AgentExecutor(
         )
         updateState(taskId, initialState)
 
-        // 启动执行协程
+        // 启动执行协程（并发许可已同步获取）
         val job = scope.launch {
             // 追踪 startedAt，确保状态转换不会丢失
             var taskStartedAt: Long? = null
             try {
-                // 获取并发许可（按需从 DB 配置动态创建信号量）
-                val typeSemaphore = getOrCreateTypeSemaphore(agentType)
-                if (!globalSemaphore.tryAcquire()) {
-                    updateState(taskId, initialState.copy(
-                        status = AgentTaskStatus.FAILED,
-                        error = "Global concurrency limit reached ($MAX_GLOBAL_PARALLELISM). Please wait for other tasks to complete.",
-                        completedAt = System.currentTimeMillis()
-                    ))
-                    return@launch
-                }
-                if (!typeSemaphore.tryAcquire()) {
-                    globalSemaphore.release()
-                    updateState(taskId, initialState.copy(
-                        status = AgentTaskStatus.FAILED,
-                        error = "Agent type '$agentType' already has a running task. Please wait for it to complete.",
-                        completedAt = System.currentTimeMillis()
-                    ))
-                    return@launch
-                }
-
                 // 执行任务（声明在 try 外面，finally 之后仍可访问）
                 var executionResult: TaskExecutionResult? = null
                 try {
@@ -518,25 +528,28 @@ class AgentExecutor(
     }
 
     /**
-     * 获取指定会话的所有任务。优先读内存，回退到 DB。
+     * 获取指定会话的所有任务。以 DB 为基准，合并内存缓存中的最新状态。
      */
     suspend fun getTasksForSession(sessionId: Long): List<AgentTaskState> {
+        val dbTasks = repository.getAgentTasksBySession(sessionId).map { it.toTaskState() }.associateBy { it.taskId }
         val memoryTasks = _taskStates.value.values.filter { it.sessionId == sessionId }
-        if (memoryTasks.isNotEmpty()) return memoryTasks
-        // 回退到 DB
-        return repository.getAgentTasksBySession(sessionId).map { it.toTaskState() }
+        // 以 DB 为基准，用内存中的最新状态覆盖（处理尚未持久化的中间状态）
+        val merged = dbTasks.toMutableMap()
+        memoryTasks.forEach { mem -> merged[mem.taskId] = mem }
+        return merged.values.toList()
     }
 
     /**
-     * 获取指定会话已完成的任务（用于注入系统提示）。
+     * 获取指定会话已完成的任务（用于注入系统提示）。以 DB 为基准，合并内存缓存。
      */
     suspend fun getCompletedTasksForSession(sessionId: Long): List<AgentTaskState> {
+        val dbTasks = repository.getCompletedAgentTasksBySession(sessionId).map { it.toTaskState() }.associateBy { it.taskId }
         val memoryTasks = _taskStates.value.values.filter {
             it.sessionId == sessionId && it.status == AgentTaskStatus.COMPLETED
         }
-        if (memoryTasks.isNotEmpty()) return memoryTasks
-        // 回退到 DB
-        return repository.getCompletedAgentTasksBySession(sessionId).map { it.toTaskState() }
+        val merged = dbTasks.toMutableMap()
+        memoryTasks.forEach { mem -> merged[mem.taskId] = mem }
+        return merged.values.toList()
     }
 
     /**
