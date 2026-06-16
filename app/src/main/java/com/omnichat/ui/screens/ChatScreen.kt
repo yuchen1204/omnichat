@@ -112,6 +112,8 @@ fun ChatView(viewModel: ChatViewModel) {
     // 当前模型是否支持视觉
     val currentModelHasVision = viewModel.currentModelHasVision
 
+
+
     // 图片选择器 (Photo Picker - 多选)
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 9)
@@ -661,6 +663,66 @@ fun ChatView(viewModel: ChatViewModel) {
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // ── Thinking Effort Segmented Control ──
+                        if (activeSessionId != null) {
+                            val efforts = listOf("low", "medium", "high", "max")
+                            val effortLabels = listOf(
+                                uiText("thinking_effort_low", R.string.thinking_effort_low),
+                                uiText("thinking_effort_medium", R.string.thinking_effort_medium),
+                                uiText("thinking_effort_high", R.string.thinking_effort_high),
+                                uiText("thinking_effort_max", R.string.thinking_effort_max)
+                            )
+                            val currentEffort = currentSession?.thinkingEffort ?: "none"
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(toolBtnShape)
+                                    .border(toolBtnBorder)
+                            ) {
+                                efforts.forEachIndexed { index, effort ->
+                                    val isSelected = currentEffort == effort
+
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable(enabled = activeSessionId != null) {
+                                                viewModel.setThinkingEffort(activeSessionId!!, effort)
+                                            }
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                                else Color.Transparent
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Psychology,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = effortLabels[index],
+                                                fontSize = (11 * fs).sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
                         // Agent Mode Toggle (Yolo Mode)
                         OutlinedCard(
                             modifier = Modifier.clickable {
@@ -859,6 +921,8 @@ fun ChatView(viewModel: ChatViewModel) {
                     )
 
                     Spacer(modifier = Modifier.width(10.dp))
+
+
 
                     // Material filled icon button
                     val canSend = (textInput.isNotBlank() || selectedImagePaths.isNotEmpty()) && !isStreaming
