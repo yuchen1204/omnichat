@@ -274,7 +274,8 @@ object ApiClient {
         config: ModelConfig,
         systemPrompt: String,
         userPrompt: String,
-        tools: JSONArray? = null
+        tools: JSONArray? = null,
+        thinkingEffortOverride: String? = null
     ): String? = withContext(Dispatchers.IO) {
         val endpoint = config.endpoint.trim().removeSuffix("/")
         val apiKey = config.apiKey.trim()
@@ -282,27 +283,11 @@ object ApiClient {
 
         val body = JSONObject().apply {
             put("model", model)
-            
-            // Inject thinking configuration parameters
-            if (config.enableThinking) {
-                val effort = config.thinkingEffort
-                put("reasoning_effort", if (effort == "xhigh") "high" else effort)
-                
-                put("thinking", JSONObject().apply {
-                    put("type", "enabled")
-                    put("budget_tokens", when(effort) {
-                        "low" -> 1024
-                        "medium" -> 2048
-                        "high" -> 4096
-                        "xhigh" -> 8192
-                        else -> 2048
-                    })
-                })
-            } else {
-                put("exclude_thinking", true)
-                put("thinking", JSONObject().apply {
-                    put("type", "disabled")
-                })
+
+            // Inject thinking configuration: session override takes precedence over provider config
+            val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
+            if (effort != null) {
+                put("reasoning_effort", if (effort == "max" || effort == "xhigh") "high" else effort)
             }
 
             if (tools != null && tools.length() > 0) {
@@ -337,7 +322,7 @@ object ApiClient {
         try {
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                
+
                 if (!response.isSuccessful) {
                     checkHtmlResponse(bodyStr)
                     println("API Completion Code: ${response.code} error message: $bodyStr")
@@ -367,7 +352,8 @@ object ApiClient {
         config: ModelConfig,
         systemPrompt: String,
         messages: JSONArray,
-        tools: JSONArray? = null
+        tools: JSONArray? = null,
+        thinkingEffortOverride: String? = null
     ): JSONObject? = withContext(Dispatchers.IO) {
         val endpoint = config.endpoint.trim().removeSuffix("/")
         val apiKey = config.apiKey.trim()
@@ -375,27 +361,11 @@ object ApiClient {
 
         val body = JSONObject().apply {
             put("model", model)
-            
-            // Inject thinking configuration parameters
-            if (config.enableThinking) {
-                val effort = config.thinkingEffort
-                put("reasoning_effort", if (effort == "xhigh") "high" else effort)
-                
-                put("thinking", JSONObject().apply {
-                    put("type", "enabled")
-                    put("budget_tokens", when(effort) {
-                        "low" -> 1024
-                        "medium" -> 2048
-                        "high" -> 4096
-                        "xhigh" -> 8192
-                        else -> 2048
-                    })
-                })
-            } else {
-                put("exclude_thinking", true)
-                put("thinking", JSONObject().apply {
-                    put("type", "disabled")
-                })
+
+            // Inject thinking configuration: session override takes precedence over provider config
+            val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
+            if (effort != null) {
+                put("reasoning_effort", if (effort == "max" || effort == "xhigh") "high" else effort)
             }
 
             if (tools != null && tools.length() > 0) {
@@ -428,7 +398,7 @@ object ApiClient {
         try {
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                
+
                 if (!response.isSuccessful) {
                     checkHtmlResponse(bodyStr)
                     println("API Completion Code: ${response.code} error message: $bodyStr")
@@ -524,7 +494,8 @@ object ApiClient {
         systemPrompt: String,
         history: List<com.omnichat.data.Message>,
         tools: JSONArray? = null,
-        context: Context? = null
+        context: Context? = null,
+        thinkingEffortOverride: String? = null
     ): Flow<String> = flow {
         val endpoint = config.endpoint.trim().removeSuffix("/")
         val apiKey = config.apiKey.trim()
@@ -533,27 +504,11 @@ object ApiClient {
         val body = JSONObject().apply {
             put("model", model)
             put("stream", true)
-            
-            // Inject thinking configuration parameters
-            if (config.enableThinking) {
-                val effort = config.thinkingEffort
-                put("reasoning_effort", if (effort == "xhigh") "high" else effort)
-                
-                put("thinking", JSONObject().apply {
-                    put("type", "enabled")
-                    put("budget_tokens", when(effort) {
-                        "low" -> 1024
-                        "medium" -> 2048
-                        "high" -> 4096
-                        "xhigh" -> 8192
-                        else -> 2048
-                    })
-                })
-            } else {
-                put("exclude_thinking", true)
-                put("thinking", JSONObject().apply {
-                    put("type", "disabled")
-                })
+
+            // Inject thinking configuration: session override takes precedence over provider config
+            val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
+            if (effort != null) {
+                put("reasoning_effort", if (effort == "max" || effort == "xhigh") "high" else effort)
             }
 
             if (tools != null && tools.length() > 0) {
@@ -647,8 +602,14 @@ object ApiClient {
                                 if (!content.isNullOrEmpty() && content != "null") {
                                     emit(content)
                                 }
-                                
-                                // 2. Handle tool_calls
+
+                                // 2. Handle reasoning_content (thinking tokens)
+                                val reasoningContent = delta?.optString("reasoning_content")
+                                if (!reasoningContent.isNullOrEmpty() && reasoningContent != "null") {
+                                    emit("REASONING:$reasoningContent")
+                                }
+
+                                // 3. Handle tool_calls
                                 val toolCalls = delta?.optJSONArray("tool_calls")
                                 if (toolCalls != null && toolCalls.length() > 0) {
                                     // We prefix tool calls with a special marker for the ViewModel to catch
