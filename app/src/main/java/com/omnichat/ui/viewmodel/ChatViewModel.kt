@@ -90,6 +90,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isThinkingFinished by mutableStateOf(true)
         private set
 
+
+
     var isMemorySyncing by mutableStateOf(false)
         private set
 
@@ -127,9 +129,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     /** 切换当前使用的 Provider 和模型，持久化到数据库，重启后生效 */
     fun setSessionOverrideModel(provider: ModelConfig, modelId: String) {
         viewModelScope.launch {
-            // 直接在一次 updateConfig 中同时设置 selectedModelId 和 isDefaultProvider，
-            // 避免调用 setDefaultProvider（toggle 语义）导致已是 default 的 provider 被取消。
-            repository.updateConfig(provider.copy(selectedModelId = modelId, isDefaultProvider = true))
+            // 原子操作：清除旧默认 → 设置新默认 + 更新 selectedModelId，一步到位
+            repository.setDefaultProviderWithModel(provider.id, modelId)
             refreshCurrentModelVision()
         }
     }
@@ -150,6 +151,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 加载已有模型数据并刷新视觉能力状态
             fetchedModels = repository.getAllFetchedModels()
             refreshCurrentModelVision()
+
+
         }
 
         // 监听定时器自动检查事件：linkedTaskId 的定时器触发时，唤醒 MainAgent 检查 subAgent 进度
@@ -173,12 +176,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     val request = requests.last()
                     val approvalPrompt = buildString {
                         appendLine("[SubAgent Request for Approval]")
+                        appendLine("Request ID: ${request.requestId}")
                         appendLine("Agent Type: ${request.agentType}")
                         appendLine("Task: ${request.taskContext.take(200)}")
                         appendLine("Action: ${request.toolName}")
                         appendLine("Arguments: ${request.args.toString(2).take(500)}")
                         appendLine("---")
-                        appendLine("Please review this request. Call approve_agent_request with your decision.")
+                        appendLine("Please review this request. Call approve_agent_request with request_id='${request.requestId}' and your decision.")
                     }
                     _pendingApprovalPrompt.value = approvalPrompt
                 } else {
@@ -256,6 +260,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             if (mode == "GENERAL") {
                 com.omnichat.agent.AgentApprovalChannel.approveAllPending()
             }
+        }
+    }
+
+    fun setThinkingEffort(sessionId: Long, effort: String) {
+        viewModelScope.launch {
+            repository.updateSessionThinkingEffort(sessionId, effort)
         }
     }
 
@@ -619,6 +629,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val messageHistory = repository.getMessagesBySession(sessionId)
             .filter { it.role != com.omnichat.agent.AgentExecutor.ROLE_AGENT_RESULT }
         val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
+        val sessionThinkingEffort = repository.getSessionById(sessionId)?.thinkingEffort
 
         isStreaming = true
         currentStreamingThinking = ""
@@ -634,6 +645,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // BUG-015: 使用 try/finally 确保 isStreaming 在所有路径（包括异常）上都被重置
         try {
         var accumulatedText = ""
+        var accumulatedReasoningContent = ""
         var lastUiUpdateTime = 0L
         val accumulatedToolCalls = mutableMapOf<Int, org.json.JSONObject>()
         var errorReceived = false
@@ -664,7 +676,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools, getApplication())
+        ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools, getApplication(), thinkingEffortOverride = sessionThinkingEffort)
             .collect { chunk ->
                 if (errorReceived) return@collect
                 if (chunk.startsWith("ERROR:")) {
@@ -676,6 +688,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     updateStreamingStates(accumulatedText)
                 } else if (chunk == "RETRY_RESET:") {
                     accumulatedText = ""
+                    accumulatedReasoningContent = ""
                     accumulatedToolCalls.clear()
                     updateStreamingStates("")
                 } else if (chunk.startsWith("TOOL_CALL_DELTA:")) {
@@ -703,6 +716,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     } catch (e: Exception) { e.printStackTrace() }
+                } else if (chunk.startsWith("REASONING:")) {
+                    accumulatedReasoningContent += chunk.substringAfter("REASONING:")
+                    currentStreamingThinking = accumulatedReasoningContent
+                    isThinkingFinished = false
                 } else {
                     if (chunk != "null") {
                         accumulatedText += chunk
@@ -716,10 +733,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-        // 最后一次同步更新
-        updateStreamingStates(accumulatedText)
+        // 最后一次同步更新（将 reasoning_content 合并为 <think> 标签，确保持久化后 parseMessageContent 可正确解析）
+        val finalAccumulatedText = if (accumulatedReasoningContent.isNotEmpty()) {
+            "<think>${accumulatedReasoningContent}</think>$accumulatedText"
+        } else {
+            accumulatedText
+        }
+        updateStreamingStates(finalAccumulatedText)
 
-        val finalContent = if (accumulatedText.trim() == "null") "" else accumulatedText
+        val finalContent = if (finalAccumulatedText.trim() == "null") "" else finalAccumulatedText
 
         // Apply hook to assistant response
         val processedContent = if (finalContent.isNotEmpty()) {
@@ -792,10 +814,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     hasNewResults = true
                 }
             }
-            
-            // Clear approval prompt after MainAgent processes it
+
+            // Clear approval prompt only if MainAgent actually handled the approval
             if (_pendingApprovalPrompt.value != null) {
-                _pendingApprovalPrompt.value = null
+                val handledApproval = accumulatedToolCalls.values.any { toolCall ->
+                    toolCall.optJSONObject("function")?.optString("name") == "approve_agent_request"
+                }
+                if (handledApproval) {
+                    _pendingApprovalPrompt.value = null
+                }
             }
 
             if (hasNewResults) {

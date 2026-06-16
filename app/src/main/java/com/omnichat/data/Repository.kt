@@ -41,6 +41,7 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun updateConfig(config: ModelConfig) = modelConfigDao.updateConfig(config)
     suspend fun deleteConfig(config: ModelConfig) = modelConfigDao.deleteConfig(config)
     suspend fun setDefaultProvider(id: Long) = modelConfigDao.setDefaultProvider(id)
+    suspend fun setDefaultProviderWithModel(id: Long, selectedModelId: String) = modelConfigDao.setDefaultProviderWithModel(id, selectedModelId)
 
     // Sessions
     val allSessions: Flow<List<Session>> = sessionDao.getAllSessionsFlow()
@@ -53,6 +54,8 @@ class AppRepository(private val db: AppDatabase) {
     }
 
     suspend fun updateAgentMode(id: Long, mode: String) = sessionDao.updateAgentMode(id, mode)
+
+    suspend fun updateSessionThinkingEffort(id: Long, effort: String) = sessionDao.updateThinkingEffort(id, effort)
 
     suspend fun updateHideYoloWarning(hide: Boolean) {
         val current = uiSettingsDao.getSettings() ?: UISettings()
