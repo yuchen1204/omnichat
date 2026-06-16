@@ -10,7 +10,9 @@ import androidx.lifecycle.viewModelScope
 import com.omnichat.data.*
 import com.omnichat.network.ApiClient
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,7 +92,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isThinkingFinished by mutableStateOf(true)
         private set
 
+    // Streaming job reference — used to cancel streaming when user taps stop
+    private var streamingJob: Job? = null
 
+    // Edit message state — holds the message ID being edited (null = not editing)
+    var editingMessageId by mutableStateOf<Long?>(null)
+        private set
 
     var isMemorySyncing by mutableStateOf(false)
         private set
@@ -355,8 +362,56 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, processedText)
 
-            startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+            // Launch streaming in a separate coroutine so we can cancel it via stopStreaming()
+            streamingJob = viewModelScope.launch(Dispatchers.Default) {
+                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+            }
         }
+    }
+
+    /**
+     * 终止当前流式输出（用户点击终止按钮时调用）。
+     * 取消 streamingJob，保存已累积的部分回复到数据库。
+     */
+    fun stopStreaming() {
+        val job = streamingJob ?: return
+        streamingJob = null
+
+        // 读取当前已累积的部分回复（在 cancel 生效前读取）
+        val partialThinking = currentStreamingThinking
+        val partialBody = currentStreamingBody
+
+        job.cancel()
+
+        // 保存部分回复到数据库（如果有内容）
+        val sessionId = _selectedSessionId.value
+        if (sessionId != null && (partialBody.isNotBlank() || partialThinking.isNotBlank())) {
+            val content = if (partialThinking.isNotBlank()) {
+                "<think>${partialThinking}</think>$partialBody"
+            } else {
+                partialBody
+            }
+            if (content.isNotBlank()) {
+                viewModelScope.launch {
+                    repository.insertMessage(
+                        Message(
+                            sessionId = sessionId,
+                            role = "assistant",
+                            content = content
+                        )
+                    )
+                }
+            }
+        }
+
+        // 重置流式状态
+        isStreaming = false
+        currentStreamingThinking = ""
+        currentStreamingBody = ""
+        isThinkingFinished = true
+
+        // 停止前台服务
+        StreamingForegroundService.complete(getApplication())
     }
 
     /**
@@ -515,12 +570,71 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 进入编辑消息模式：记录正在编辑的消息 ID，调用方需将消息内容填入输入框。
+     */
+    fun editMessage(message: Message) {
+        if (isStreaming) return
+        editingMessageId = message.id
+    }
+
+    /**
+     * 取消编辑消息模式。
+     */
+    fun cancelEdit() {
+        editingMessageId = null
+    }
+
+    /**
+     * 提交编辑后的消息：更新原消息内容，删除后续消息，重新生成 AI 回复。
+     */
+    fun submitEdit(newContent: String) {
+        val sessionId = _selectedSessionId.value ?: return
+        val msgId = editingMessageId ?: return
+        if (newContent.isBlank()) return
+        if (isStreaming) return
+
+        editingMessageId = null
+
+        viewModelScope.launch {
+            // 1. 更新原消息内容
+            repository.updateMessageContent(msgId, newContent)
+
+            // 2. 删除该消息之后的所有消息（基于 ID，避免时间戳比较问题）
+            repository.deleteMessagesByIdAfter(sessionId, msgId)
+
+            // 3. 重新生成 AI 回复
+            val providerConfig = run {
+                val defaultProvider = repository.getDefaultProvider()
+                if (defaultProvider != null) {
+                    val effectiveModelId = defaultProvider.selectedModelId.takeIf { it.isNotBlank() }
+                        ?: repository.getModelsByProvider(defaultProvider.id).firstOrNull()?.modelId
+                        ?: ""
+                    defaultProvider.copy(selectedModelId = effectiveModelId)
+                } else {
+                    null
+                }
+            } ?: return@launch
+
+            val activeTemplate = repository.getActiveTemplate()
+            val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+
+            runtimeManager.waitForStartingServersToFinish()
+
+            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, newContent)
+
+            streamingJob = viewModelScope.launch(Dispatchers.Default) {
+                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+            }
+        }
+    }
+
     fun retryMessage(message: Message) {
         if (isStreaming) return
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             // 1. Delete all messages from this one onwards
             repository.deleteMessagesFrom(message.sessionId, message.timestamp)
-            
+
             // 2. Prepare configurations (similar to sendMessage)
             val providerConfig = run {
                 val defaultProvider = repository.getDefaultProvider()
@@ -545,6 +659,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 3. Re-trigger assistant response
             startAssistantResponse(message.sessionId, providerConfig, finalSystemPrompt)
         }
+        streamingJob = job
     }
 
     /**
@@ -768,6 +883,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
+        // 消息已入库，立即停止流式气泡渲染，防止与 BubbleMessage 同时显示导致重复
+        isStreaming = false
+
         // 首次回复后生成会话标题（结合用户第一条消息和 AI 第一条回复）
         android.util.Log.d("TitleGen", "After assistant response: toolCallDepth=$toolCallDepth, sessionId=$sessionId")
         if (toolCallDepth == 0) {
@@ -775,7 +893,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         val wasOnlyToolCalls = processedContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
-        // 清理流式状态，但保持 isStreaming=true 直到工具调用处理完毕
+        // 清理流式状态
         currentStreamingThinking = ""
         currentStreamingBody = ""
         isThinkingFinished = true
@@ -840,6 +958,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {
             triggerMemorySync()
         }
+        } catch (e: CancellationException) {
+            // 用户通过 stopStreaming() 主动终止 — 部分回复已在 stopStreaming() 中保存，
+            // 此处不再重复保存，仅重新抛出以保持协程取消语义
+            throw e
         } finally {
             // BUG-015: 确保 isStreaming 在所有路径上都被重置，防止 UI 永久卡在加载状态
             isStreaming = false

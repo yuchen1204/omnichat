@@ -83,6 +83,18 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE sessionId = :sessionId AND timestamp >= :timestamp")
     suspend fun deleteMessagesFrom(sessionId: Long, timestamp: Long)
 
+    @Query("DELETE FROM messages WHERE sessionId = :sessionId AND timestamp > :timestamp")
+    suspend fun deleteMessagesAfter(sessionId: Long, timestamp: Long)
+
+    @Query("DELETE FROM messages WHERE id > :afterId AND sessionId = :sessionId")
+    suspend fun deleteMessagesByIdAfter(sessionId: Long, afterId: Long)
+
+    @Query("SELECT * FROM messages WHERE id = :id")
+    suspend fun getMessageById(id: Long): Message?
+
+    @Query("UPDATE messages SET content = :content WHERE id = :id")
+    suspend fun updateMessageContent(id: Long, content: String)
+
     @Query("DELETE FROM messages WHERE sessionId = :sessionId")
     suspend fun deleteMessagesBySession(sessionId: Long)
 }

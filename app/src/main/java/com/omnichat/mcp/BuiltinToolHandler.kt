@@ -2090,6 +2090,11 @@ object BuiltinToolHandler {
      * Resolves a pending approval request from a SubAgent.
      */
     private fun handleApproveAgentRequest(arguments: JSONObject): JSONObject {
+        val requestId = arguments.optString("request_id", "")
+        if (requestId.isBlank()) {
+            return errorResponse("Missing required field: request_id")
+        }
+
         val decision = arguments.optString("decision", "")
         val reason = arguments.optString("reason", "")
         if (decision !in listOf("approve", "reject")) {
@@ -2101,9 +2106,10 @@ object BuiltinToolHandler {
 
         val alternative = arguments.optString("alternative", "").ifBlank { null }
 
-        // Find the first pending request
-        val pending = com.omnichat.agent.AgentApprovalChannel.pendingRequests.value.firstOrNull()
-            ?: return errorResponse("No pending approval requests.")
+        // Find the pending request by ID
+        val pending = com.omnichat.agent.AgentApprovalChannel.pendingRequests.value
+            .firstOrNull { it.requestId == requestId }
+            ?: return errorResponse("No pending approval request with id '$requestId'.")
 
         val approvalDecision = com.omnichat.agent.AgentApprovalDecision(
             decision = decision,

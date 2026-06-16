@@ -38,7 +38,7 @@ data class Session(
     val title: String,
     val createdAt: Long = System.currentTimeMillis(),
     val agentMode: String = "GENERAL",
-    val thinkingEffort: String = "none"
+    val thinkingEffort: String = "low"
 )
 
 @Entity(

@@ -75,6 +75,10 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun getMessagesBySession(sessionId: Long): List<Message> = messageDao.getMessagesBySession(sessionId)
     suspend fun insertMessage(message: Message): Long = messageDao.insertMessage(message)
     suspend fun deleteMessagesFrom(sessionId: Long, timestamp: Long) = messageDao.deleteMessagesFrom(sessionId, timestamp)
+    suspend fun deleteMessagesAfter(sessionId: Long, timestamp: Long) = messageDao.deleteMessagesAfter(sessionId, timestamp)
+    suspend fun deleteMessagesByIdAfter(sessionId: Long, afterId: Long) = messageDao.deleteMessagesByIdAfter(sessionId, afterId)
+    suspend fun getMessageById(id: Long): Message? = messageDao.getMessageById(id)
+    suspend fun updateMessageContent(id: Long, content: String) = messageDao.updateMessageContent(id, content)
     suspend fun deleteMessagesBySession(sessionId: Long) = messageDao.deleteMessagesBySession(sessionId)
 
     // Memories

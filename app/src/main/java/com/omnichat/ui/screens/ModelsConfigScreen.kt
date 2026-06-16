@@ -809,7 +809,7 @@ fun ModelConfigDialog(
                                     memoryProviderId = config?.memoryProviderId ?: 0L,
                                     isDefaultProvider = config?.isDefaultProvider ?: false,
                                     enableThinking = config?.enableThinking ?: false,
-                                    thinkingEffort = config?.thinkingEffort ?: "medium",
+                                    thinkingEffort = config?.thinkingEffort ?: "none",
                                     customHeaders = headersJson
                                 ),
                                 dialogModels

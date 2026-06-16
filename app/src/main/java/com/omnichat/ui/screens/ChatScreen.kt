@@ -1,6 +1,7 @@
 package com.omnichat.ui.screens
 
 import android.Manifest
+import kotlin.math.roundToInt
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -47,6 +48,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -108,6 +112,20 @@ fun ChatView(viewModel: ChatViewModel) {
 
     // 图片选择相关状态（支持多图）
     var selectedImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // 编辑消息模式
+    val editingMessageId = viewModel.editingMessageId
+    val isEditing = editingMessageId != null
+
+    // 进入编辑模式时，将消息内容填入输入框
+    LaunchedEffect(editingMessageId) {
+        if (editingMessageId != null) {
+            val msg = messages.find { it.id == editingMessageId }
+            if (msg != null) {
+                textInput = msg.content
+            }
+        }
+    }
 
     // 当前模型是否支持视觉
     val currentModelHasVision = viewModel.currentModelHasVision
@@ -426,7 +444,8 @@ fun ChatView(viewModel: ChatViewModel) {
                             } else {
                                 BubbleMessage(
                                     message = item,
-                                    onRetry = { viewModel.retryMessage(it) }
+                                    onRetry = { viewModel.retryMessage(it) },
+                                    onEdit = { viewModel.editMessage(it) }
                                 )
                             }
                         }
@@ -499,39 +518,11 @@ fun ChatView(viewModel: ChatViewModel) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(topStart = uiSettings.cornerRadiusDp.dp, topEnd = uiSettings.cornerRadiusDp.dp))
                             .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
-                        // 当前模型状态行
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(com.omnichat.ui.theme.LocalCustomColors.current.success)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = uiText("chat.current.model", R.string.chat_current_model).format(activeModelId, activeProviderName),
-                                fontSize = (11 * fs).sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.weight(1f),
-                                maxLines = 2
-                            )
-                        }
-
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            thickness = 0.5.dp,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-
-                        // 工具按钮行
+                        // 工具按钮行：选择图片、拍照、模式切换 并排
                         val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
                         val toolBtnBorder = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
                         val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
@@ -540,38 +531,10 @@ fun ChatView(viewModel: ChatViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-
-                            // 切换模型按钮
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .clickable { showModelPicker = true },
-                                shape = toolBtnShape,
-                                border = toolBtnBorder,
-                                colors = toolBtnColors
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Build,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = uiText("chat.57841df8", R.string.chat_switch_model),
-                                        fontSize = (12 * fs).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-
                             // 图片选择按钮（仅视觉模型可用）
                             OutlinedCard(
                                 modifier = Modifier
+                                    .weight(1f)
                                     .clickable(enabled = currentModelHasVision) {
                                         photoPickerLauncher.launch(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -586,7 +549,10 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.Center,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
@@ -610,9 +576,9 @@ fun ChatView(viewModel: ChatViewModel) {
                             // 拍照按钮（仅视觉模型可用）
                             OutlinedCard(
                                 modifier = Modifier
+                                    .weight(1f)
                                     .clickable(enabled = currentModelHasVision) {
                                         if (cameraPermissionState.value) {
-                                            // 创建临时文件并获取 content:// URI
                                             val imagesDir = java.io.File(context.cacheDir, "images")
                                             imagesDir.mkdirs()
                                             val tempFile = java.io.File(
@@ -639,7 +605,10 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.Center,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
@@ -659,11 +628,58 @@ fun ChatView(viewModel: ChatViewModel) {
                                     )
                                 }
                             }
+
+                            // 模式切换按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        if (activeSessionId == null) return@clickable
+                                        if (currentSession?.agentMode == "AUTO") {
+                                            viewModel.setAgentMode(activeSessionId!!, "GENERAL")
+                                        } else if (hideYoloWarning) {
+                                            viewModel.setAgentMode(activeSessionId!!, "AUTO")
+                                        } else {
+                                            showYoloWarning = true
+                                        }
+                                    },
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = if (currentSession?.agentMode == "AUTO")
+                                    CardDefaults.outlinedCardColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                else toolBtnColors
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (currentSession?.agentMode == "AUTO")
+                                            Icons.Default.FlashOn else Icons.Default.Shield,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (currentSession?.agentMode == "AUTO")
+                                            uiText("chat.yolo_mode", R.string.chat_yolo_mode)
+                                        else uiText("chat.general_mode", R.string.chat_general_mode),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // ── Thinking Effort Segmented Control ──
+                        // ── Thinking Effort Slider ──
                         if (activeSessionId != null) {
                             val efforts = listOf("low", "medium", "high", "max")
                             val effortLabels = listOf(
@@ -672,96 +688,96 @@ fun ChatView(viewModel: ChatViewModel) {
                                 uiText("thinking_effort_high", R.string.thinking_effort_high),
                                 uiText("thinking_effort_max", R.string.thinking_effort_max)
                             )
-                            val currentEffort = currentSession?.thinkingEffort ?: "none"
+                            // Use local state to avoid "none" fallback issue
+                            val dbEffort = currentSession?.thinkingEffort ?: "none"
+                            val initialIndex = efforts.indexOf(dbEffort).coerceAtLeast(0)
+                            var sliderIndex by remember(activeSessionId) { mutableIntStateOf(initialIndex) }
+                            val currentEffort = efforts[sliderIndex]
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(toolBtnShape)
-                                    .border(toolBtnBorder)
-                            ) {
-                                efforts.forEachIndexed { index, effort ->
-                                    val isSelected = currentEffort == effort
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                // "Faster" — "Smarter" labels
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = uiText("thinking_effort_faster", R.string.thinking_effort_faster),
+                                        fontSize = (10 * fs).sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                    Text(
+                                        text = uiText("thinking_effort_smarter", R.string.thinking_effort_smarter),
+                                        fontSize = (10 * fs).sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable(enabled = activeSessionId != null) {
-                                                viewModel.setThinkingEffort(activeSessionId!!, effort)
-                                            }
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                                else Color.Transparent
-                                            )
-                                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Psychology,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(14.dp),
-                                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                // Slider
+                                Slider(
+                                    value = sliderIndex.toFloat(),
+                                    onValueChange = { newValue ->
+                                        val idx = newValue.roundToInt().coerceIn(0, efforts.lastIndex)
+                                        sliderIndex = idx
+                                        if (activeSessionId != null) {
+                                            viewModel.setThinkingEffort(activeSessionId!!, efforts[idx])
+                                        }
+                                    },
+                                    valueRange = 0f..efforts.lastIndex.toFloat(),
+                                    steps = efforts.size - 2,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        activeTickColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+
+                                // Level labels row
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    effortLabels.forEachIndexed { index, label ->
+                                        val isActive = efforts[index] == currentEffort
+                                        val isMax = efforts[index] == "max"
+                                        if (isMax) {
                                             Text(
-                                                text = effortLabels[index],
-                                                fontSize = (11 * fs).sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                text = label,
+                                                fontSize = (10 * fs).sp,
+                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                                style = TextStyle(
+                                                    brush = Brush.linearGradient(
+                                                        colors = listOf(
+                                                            Color(0xFFFF0000),
+                                                            Color(0xFFFF8C00),
+                                                            Color(0xFFFFFF00),
+                                                            Color(0xFF00CC00),
+                                                            Color(0xFF0066FF),
+                                                            Color(0xFF9933FF)
+                                                        ),
+                                                        start = Offset(0f, Float.POSITIVE_INFINITY),
+                                                        end = Offset(Float.POSITIVE_INFINITY, 0f)
+                                                    )
+                                                )
+                                            )
+                                        } else {
+                                            Text(
+                                                text = label,
+                                                fontSize = (10 * fs).sp,
+                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isActive) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                             )
                                         }
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        // Agent Mode Toggle (Yolo Mode)
-                        OutlinedCard(
-                            modifier = Modifier.clickable {
-                                if (activeSessionId == null) return@clickable
-                                if (currentSession?.agentMode == "AUTO") {
-                                    // 关闭 Yolo Mode 直接切换
-                                    viewModel.setAgentMode(activeSessionId!!, "GENERAL")
-                                } else if (hideYoloWarning) {
-                                    // 已选不再提醒，直接开启
-                                    viewModel.setAgentMode(activeSessionId!!, "AUTO")
-                                } else {
-                                    // 显示警告弹窗
-                                    showYoloWarning = true
-                                }
-                            },
-                            shape = toolBtnShape,
-                            border = toolBtnBorder,
-                            colors = if (currentSession?.agentMode == "AUTO")
-                                CardDefaults.outlinedCardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            else toolBtnColors
-                        ) {
-                            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                Icon(
-                                    imageVector = if (currentSession?.agentMode == "AUTO")
-                                        Icons.Default.FlashOn else Icons.Default.Shield,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (currentSession?.agentMode == "AUTO")
-                                        uiText("chat.yolo_mode", R.string.chat_yolo_mode)
-                                    else uiText("chat.general_mode", R.string.chat_general_mode),
-                                    fontSize = 12.sp
-                                )
-                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
                     }
                 }
@@ -849,6 +865,39 @@ fun ChatView(viewModel: ChatViewModel) {
                     }
                 }
 
+                // ── 编辑模式指示器 ──────────────────────────────────────
+                if (isEditing) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = uiText("chat.editing_message", R.string.chat_editing_message),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            IconButton(
+                                onClick = { viewModel.cancelEdit(); textInput = "" },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = uiText("chat.cancel_edit", R.string.chat_cancel_edit),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // ── 输入行 ────────────────────────────────────────────
                 Row(
                     modifier = Modifier
@@ -901,7 +950,11 @@ fun ChatView(viewModel: ChatViewModel) {
                             val toSend = textInput.trim()
                             val hasImage = selectedImagePaths.isNotEmpty()
                             if ((toSend.isNotBlank() || hasImage) && !isStreaming) {
-                                viewModel.sendMessageWithImage(toSend, selectedImagePaths)
+                                if (isEditing) {
+                                    viewModel.submitEdit(toSend)
+                                } else {
+                                    viewModel.sendMessageWithImage(toSend, selectedImagePaths)
+                                }
                                 textInput = ""
                                 selectedImagePaths = emptyList()
                                 showToolbar = false
@@ -924,36 +977,61 @@ fun ChatView(viewModel: ChatViewModel) {
 
 
 
-                    // Material filled icon button
-                    val canSend = (textInput.isNotBlank() || selectedImagePaths.isNotEmpty()) && !isStreaming
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(
-                                if (canSend) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
+                    // Send button / Stop button
+                    if (isStreaming) {
+                        // Stop button — visible only while streaming
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(MaterialTheme.colorScheme.error)
+                                .clickable { viewModel.stopStreaming() }
+                                .testTag("chat_stop_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = uiText("chat.stop.contentDescription", R.string.chat_stop_contentDescription),
+                                tint = MaterialTheme.colorScheme.onError,
+                                modifier = Modifier.size(20.dp)
                             )
-                            .clickable(enabled = canSend) {
-                                val toSend = textInput.trim()
-                                val hasImage = selectedImagePaths.isNotEmpty()
-                                if ((toSend.isNotBlank() || hasImage) && !isStreaming) {
-                                    viewModel.sendMessageWithImage(toSend, selectedImagePaths)
-                                    textInput = ""
-                                    selectedImagePaths = emptyList()
-                                    showToolbar = false
+                        }
+                    } else {
+                        // Send button
+                        val canSend = textInput.isNotBlank() || selectedImagePaths.isNotEmpty()
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(
+                                    if (canSend) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .clickable(enabled = canSend) {
+                                    val toSend = textInput.trim()
+                                    val hasImage = selectedImagePaths.isNotEmpty()
+                                    if (toSend.isNotBlank() || hasImage) {
+                                        if (isEditing) {
+                                            viewModel.submitEdit(toSend)
+                                        } else {
+                                            viewModel.sendMessageWithImage(toSend, selectedImagePaths)
+                                        }
+                                        textInput = ""
+                                        selectedImagePaths = emptyList()
+                                        showToolbar = false
+                                    }
                                 }
-                            }
-                            .testTag("chat_send_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = uiText("chat.send.contentDescription", R.string.chat_send_contentDescription),
-                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
+                                .testTag("chat_send_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = uiText("chat.send.contentDescription", R.string.chat_send_contentDescription),
+                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1265,7 +1343,8 @@ fun ThinkingProcessPanel(
 @Composable
 fun BubbleMessage(
     message: com.omnichat.data.Message,
-    onRetry: (com.omnichat.data.Message) -> Unit = {}
+    onRetry: (com.omnichat.data.Message) -> Unit = {},
+    onEdit: (com.omnichat.data.Message) -> Unit = {}
 ) {
     val isUser = message.role == "user"
     var showMenu by remember { mutableStateOf(false) }
@@ -1400,6 +1479,14 @@ fun BubbleMessage(
                         containerColor = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(8, 16).dp),
                     ) {
+                        DropdownMenuItem(
+                            text = { Text(uiText("chat.edit_message", R.string.chat_edit_message)) },
+                            onClick = {
+                                showMenu = false
+                                onEdit(message)
+                            },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                        )
                         DropdownMenuItem(
                             text = { Text(uiText("chat.403a6bf8", R.string.chat_copy_content)) },
                             onClick = {

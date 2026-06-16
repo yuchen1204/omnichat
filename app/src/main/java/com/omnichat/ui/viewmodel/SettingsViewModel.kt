@@ -238,8 +238,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                                 memoryModelId = obj.optString("memoryModelId", ""),
                                 memoryProviderId = obj.optLong("memoryProviderId", 0L),
                                 isDefaultProvider = obj.optBoolean("isDefaultProvider", false),
-                                enableThinking = obj.optBoolean("enableThinking", true),
-                                thinkingEffort = obj.optString("thinkingEffort", "medium"),
+                                enableThinking = obj.optBoolean("enableThinking", false),
+                                thinkingEffort = obj.optString("thinkingEffort", "none"),
                                 customHeaders = obj.optString("customHeaders", "{}")
                             )
                         )

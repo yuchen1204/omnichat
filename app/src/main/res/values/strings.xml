@@ -33,6 +33,8 @@
     <string name="thinking_effort_medium">Med</string>
     <string name="thinking_effort_high">High</string>
     <string name="thinking_effort_max">Max</string>
+    <string name="thinking_effort_faster">Faster</string>
+    <string name="thinking_effort_smarter">Smarter</string>
     <string name="yolo_warning_title">⚠️ Experimental Feature</string>
     <string name="yolo_warning_message">Yolo Mode bypasses all file permission checks and lets MainAgent auto-approve SubAgent actions. This is an experimental feature — use at your own risk.</string>
     <string name="yolo_warning_cancel">Cancel</string>
@@ -47,6 +49,10 @@
     <string name="chat_input_hint_with_image">Add description…</string>
     <string name="chat_input_hint">Type a message…</string>
     <string name="chat_send_contentDescription">Send</string>
+    <string name="chat_stop_contentDescription">Stop</string>
+    <string name="chat_edit_message">Edit</string>
+    <string name="chat_editing_message">Editing message…</string>
+    <string name="chat_cancel_edit">Cancel edit</string>
     <string name="chat_ai_ready">AI Ready</string>
     <string name="chat_welcome_title">Welcome to AI Assistant</string>
     <string name="chat_welcome_desc">Dual-model architecture: one for conversation, another distills facts in the background after each reply — memories persist across sessions!</string>

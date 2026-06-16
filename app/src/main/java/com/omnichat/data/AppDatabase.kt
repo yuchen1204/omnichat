@@ -768,7 +768,7 @@ abstract class AppDatabase : RoomDatabase() {
         /** v47→v48: add thinkingEffort column to sessions */
         private val MIGRATION_47_48 = object : Migration(47, 48) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE sessions ADD COLUMN thinkingEffort TEXT NOT NULL DEFAULT 'none'")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN thinkingEffort TEXT NOT NULL DEFAULT 'low'")
             }
         }
 

@@ -33,6 +33,8 @@
     <string name="thinking_effort_medium">中</string>
     <string name="thinking_effort_high">高</string>
     <string name="thinking_effort_max">极高</string>
+    <string name="thinking_effort_faster">更快</string>
+    <string name="thinking_effort_smarter">更聪明</string>
     <string name="yolo_warning_title">⚠️ 实验性功能</string>
     <string name="yolo_warning_message">YOLO 模式将跳过所有文件权限检查，并允许 MainAgent 自动审批 SubAgent 的操作。此为实验性功能，使用风险自负。</string>
     <string name="yolo_warning_cancel">取消</string>
@@ -47,6 +49,10 @@
     <string name="chat_input_hint_with_image">添加描述（可选）...</string>
     <string name="chat_input_hint">输入消息...</string>
     <string name="chat_send_contentDescription">发送</string>
+    <string name="chat_stop_contentDescription">终止</string>
+    <string name="chat_edit_message">编辑</string>
+    <string name="chat_editing_message">正在编辑消息…</string>
+    <string name="chat_cancel_edit">取消编辑</string>
     <string name="chat_ai_ready">AI 准备就绪</string>
     <string name="chat_welcome_title">欢迎使用长效记忆 AI 助手</string>
     <string name="chat_welcome_desc">本应用特别支持双模型架构！一个主模型专门负责对话聊天，而一个副模型专门在每次回答后在后台分析提炼对话事实信息，跨越不同对话会话、重启不丢失！</string>

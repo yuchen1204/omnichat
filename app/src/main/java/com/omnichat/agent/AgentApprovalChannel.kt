@@ -5,6 +5,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.util.UUID
@@ -54,7 +55,7 @@ object AgentApprovalChannel {
     suspend fun requestApproval(request: AgentApprovalRequest): AgentApprovalDecision {
         val deferred = CompletableDeferred<AgentApprovalDecision>()
         deferreds[request.requestId] = deferred
-        _pendingRequests.value = _pendingRequests.value + request
+        _pendingRequests.update { it + request }
 
         return try {
             withTimeout(APPROVAL_TIMEOUT_MS) {
@@ -64,7 +65,7 @@ object AgentApprovalChannel {
             AgentApprovalDecision("reject", "Approval timed out")
         } finally {
             deferreds.remove(request.requestId)
-            _pendingRequests.value = _pendingRequests.value.filter { it.requestId != request.requestId }
+            _pendingRequests.update { list -> list.filter { it.requestId != request.requestId } }
         }
     }
 

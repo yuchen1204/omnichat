@@ -72,6 +72,7 @@ fun SessionSidebarPanel(
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
     var renameTargetSession by remember { mutableStateOf<Session?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var showModelPicker by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -178,6 +179,7 @@ fun SessionSidebarPanel(
             sidebarColors = sidebarColors,
             cornerRadius = cornerRadius,
             onSettingsClick = onSettingsClick,
+            onModelPickerClick = { showModelPicker = true },
             context = context
         )
     }
@@ -243,6 +245,22 @@ fun SessionSidebarPanel(
                     shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
                 ) { Text(uiText("sidebar.335fc2b7", R.string.sidebar_cancel), fontFamily = resolvedFontFamily) }
             }
+        )
+    }
+
+    // ── 模型选择器弹窗 ─────────────────────────────────────────────────
+    if (showModelPicker) {
+        val defaultProvider = modelConfigs.find { it.isDefaultProvider }
+        ProviderModelPicker(
+            allConfigs = modelConfigs,
+            allModelsFlow = { viewModel.getModelsByProviderFlow(it) },
+            currentProviderId = defaultProvider?.id ?: 0L,
+            currentModelId = defaultProvider?.selectedModelId ?: "",
+            onConfirm = { provider, modelId ->
+                viewModel.setSessionOverrideModel(provider, modelId)
+                showModelPicker = false
+            },
+            onDismiss = { showModelPicker = false }
         )
     }
 }
@@ -631,6 +649,7 @@ private fun SidebarFooter(
     sidebarColors: com.omnichat.ui.theme.SidebarColors,
     cornerRadius: androidx.compose.ui.unit.Dp,
     onSettingsClick: () -> Unit,
+    onModelPickerClick: () -> Unit,
     context: android.content.Context
 ) {
     val customColors = LocalCustomColors.current
@@ -648,11 +667,12 @@ private fun SidebarFooter(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // 模型状态卡片
+        // 模型状态卡片（点击切换模型）
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp))),
+                .clip(RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)))
+                .clickable { onModelPickerClick() },
             color = sidebarColors.activeBackground.copy(alpha = 0.12f),
             shape = RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp))
         ) {

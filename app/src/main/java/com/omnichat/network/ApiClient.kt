@@ -287,7 +287,9 @@ object ApiClient {
             // Inject thinking configuration: session override takes precedence over provider config
             val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
             if (effort != null) {
-                put("reasoning_effort", if (effort == "max" || effort == "xhigh") "high" else effort)
+                val apiEffort = if (effort == "max" || effort == "xhigh") "high" else effort
+                android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort (override=$thinkingEffortOverride, provider=${config.thinkingEffort}, enableThinking=${config.enableThinking})")
+                put("reasoning_effort", apiEffort)
             }
 
             if (tools != null && tools.length() > 0) {
@@ -365,7 +367,9 @@ object ApiClient {
             // Inject thinking configuration: session override takes precedence over provider config
             val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
             if (effort != null) {
-                put("reasoning_effort", if (effort == "max" || effort == "xhigh") "high" else effort)
+                val apiEffort = if (effort == "max" || effort == "xhigh") "high" else effort
+                android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort (override=$thinkingEffortOverride, provider=${config.thinkingEffort}, enableThinking=${config.enableThinking})")
+                put("reasoning_effort", apiEffort)
             }
 
             if (tools != null && tools.length() > 0) {
@@ -508,7 +512,9 @@ object ApiClient {
             // Inject thinking configuration: session override takes precedence over provider config
             val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
             if (effort != null) {
-                put("reasoning_effort", if (effort == "max" || effort == "xhigh") "high" else effort)
+                val apiEffort = if (effort == "max" || effort == "xhigh") "high" else effort
+                android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort (override=$thinkingEffortOverride, provider=${config.thinkingEffort}, enableThinking=${config.enableThinking})")
+                put("reasoning_effort", apiEffort)
             }
 
             if (tools != null && tools.length() > 0) {

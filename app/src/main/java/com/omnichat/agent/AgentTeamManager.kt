@@ -28,11 +28,13 @@ object AgentTeamManager {
     }
 
     fun readInbox(agent: String): List<AgentMessage> {
-        return inboxes[agent]?.toList() ?: emptyList()
+        val messages = inboxes[agent] ?: return emptyList()
+        synchronized(messages) { return messages.toList() }
     }
 
     fun clearInbox(agent: String) {
-        inboxes[agent]?.clear()
+        val messages = inboxes[agent] ?: return
+        synchronized(messages) { messages.clear() }
     }
 
     fun createTask(id: String, description: String) {

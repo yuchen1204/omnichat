@@ -924,12 +924,13 @@ IMPORTANT: After delegating, do NOT immediately call check_task_status — the t
             name = "approve_agent_request",
             description = "Review and approve or reject a SubAgent's file operation request. You will see the SubAgent's task context and the specific file operation it wants to perform. Approve if the operation is safe and appropriate. Reject with an alternative instruction if it's not.",
             inputSchema = schema {
+                prop("request_id", "string", "The ID of the pending approval request to respond to (from the approval prompt)")
                 prop("decision", "string", "Whether to allow the SubAgent to proceed") {
                     enum("approve", "reject")
                 }
                 prop("reason", "string", "Explanation of your decision")
                 prop("alternative", "string", "If rejecting: an alternative instruction for the SubAgent to follow instead")
-                required("decision", "reason")
+                required("request_id", "decision", "reason")
             }
         ),
     )

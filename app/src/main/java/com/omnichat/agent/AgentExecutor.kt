@@ -176,13 +176,16 @@ class AgentExecutor(
 
         // 启动执行协程
         val job = scope.launch {
+            // 追踪 startedAt，确保状态转换不会丢失
+            var taskStartedAt: Long? = null
             try {
                 // 获取并发许可（按需从 DB 配置动态创建信号量）
                 val typeSemaphore = getOrCreateTypeSemaphore(agentType)
                 if (!globalSemaphore.tryAcquire()) {
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.FAILED,
-                        error = "Global concurrency limit reached ($MAX_GLOBAL_PARALLELISM). Please wait for other tasks to complete."
+                        error = "Global concurrency limit reached ($MAX_GLOBAL_PARALLELISM). Please wait for other tasks to complete.",
+                        completedAt = System.currentTimeMillis()
                     ))
                     return@launch
                 }
@@ -190,7 +193,8 @@ class AgentExecutor(
                     globalSemaphore.release()
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.FAILED,
-                        error = "Agent type '$agentType' already has a running task. Please wait for it to complete."
+                        error = "Agent type '$agentType' already has a running task. Please wait for it to complete.",
+                        completedAt = System.currentTimeMillis()
                     ))
                     return@launch
                 }
@@ -199,9 +203,10 @@ class AgentExecutor(
                 var executionResult: TaskExecutionResult? = null
                 try {
                     // 更新状态为 RUNNING
+                    taskStartedAt = System.currentTimeMillis()
                     updateState(taskId, initialState.copy(
                         status = AgentTaskStatus.RUNNING,
-                        startedAt = System.currentTimeMillis()
+                        startedAt = taskStartedAt
                     ))
 
                     // 执行任务（also returns the config used, avoiding duplicate lookup）
@@ -223,6 +228,7 @@ class AgentExecutor(
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.COMPLETED,
                     result = result,
+                    startedAt = taskStartedAt,
                     completedAt = System.currentTimeMillis()
                 ))
 
@@ -243,6 +249,7 @@ class AgentExecutor(
                         status = AgentTaskStatus.COMPLETED,
                         result = result,
                         summary = summary,
+                        startedAt = taskStartedAt,
                         completedAt = System.currentTimeMillis()
                     ))
                 }
@@ -255,14 +262,18 @@ class AgentExecutor(
             } catch (e: CancellationException) {
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.CANCELLED,
-                    error = "Task was cancelled"
+                    error = "Task was cancelled",
+                    startedAt = taskStartedAt,
+                    completedAt = System.currentTimeMillis()
                 ))
                 throw e  // Rethrow to preserve structured concurrency
             } catch (e: Exception) {
                 Log.e(TAG, "Task execution failed: $taskId", e)
                 updateState(taskId, initialState.copy(
                     status = AgentTaskStatus.FAILED,
-                    error = e.localizedMessage ?: "Execution failed"
+                    error = e.localizedMessage ?: "Execution failed",
+                    startedAt = taskStartedAt,
+                    completedAt = System.currentTimeMillis()
                 ))
             } finally {
                 runningJobs.remove(taskId)
