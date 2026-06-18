@@ -402,6 +402,8 @@ data class UISettings(
      */
     val silentToolGroups: String = "",
 
+    val agentMode: Boolean = false,
+
     val updatedAt: Long = System.currentTimeMillis(),
 
     /**

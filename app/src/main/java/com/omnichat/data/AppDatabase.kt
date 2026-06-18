@@ -27,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 云端备份记录
         CloudBackupRecord::class,
     ],
-    version = 51,
+    version = 52,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -878,6 +878,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v51→v52：ui_settings 增加 agentMode 字段（智能体模式开关） */
+        private val MIGRATION_51_52 = object : Migration(51, 52) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN agentMode INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /**
          * 清除单例实例（用于数据库恢复后重新初始化）。
          */
@@ -935,7 +942,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_47_48,
                         MIGRATION_48_49,
                         MIGRATION_49_50,
-                        MIGRATION_50_51
+                        MIGRATION_50_51,
+                        MIGRATION_51_52
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

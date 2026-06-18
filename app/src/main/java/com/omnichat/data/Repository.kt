@@ -123,6 +123,22 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteAssociationsForMemory(memoryId: Long) = memoryAssociationDao.deleteAllForMemory(memoryId)
     suspend fun getUnassociatedMemories(limit: Int): List<MemoryItem> = memoryAssociationDao.getUnassociatedMemories(limit)
 
+    suspend fun getOutgoingAssociations(memoryId: Long): List<MemoryAssociation> {
+        return memoryAssociationDao.getOutgoing(memoryId)
+    }
+
+    suspend fun getIncomingAssociations(memoryId: Long): List<MemoryAssociation> {
+        return memoryAssociationDao.getIncoming(memoryId)
+    }
+
+    suspend fun getAssociationCount(memoryId: Long): Int {
+        return memoryAssociationDao.getAllForMemory(memoryId).size
+    }
+
+    suspend fun getTemplateById(id: Long): PromptTemplate? {
+        return promptTemplateDao.getTemplateById(id)
+    }
+
     // Memory Audit Log
     suspend fun getAuditHistoryForMemory(memoryId: Long): List<MemoryAuditEntry> = memoryAuditDao.getHistoryForMemory(memoryId)
     suspend fun getRecentAuditActivity(limit: Int = 100): List<MemoryAuditEntry> = memoryAuditDao.getRecentActivity(limit)
