@@ -49,8 +49,7 @@ object TimerManager {
         val label: String,
         val fireAtMs: Long,
         val createdAtMs: Long = System.currentTimeMillis(),
-        val repeatIntervalMs: Long = 0L,  // 0 = 单次，>0 = 重复间隔（毫秒）
-        val linkedTaskId: String? = null
+        val repeatIntervalMs: Long = 0L  // 0 = 单次，>0 = 重复间隔（毫秒）
     ) {
         val isRepeating: Boolean get() = repeatIntervalMs > 0
     }
@@ -64,7 +63,6 @@ object TimerManager {
      * @param message           提醒内容
      * @param label             通知标题（可选）
      * @param repeatIntervalSec 重复间隔秒数（0 = 单次，>0 = 重复）
-     * @param linkedTaskId      关联的 subAgent taskId（可选，用于任务完成时自动取消）
      * @return 新建的 timerId
      */
     fun createTimer(
@@ -73,8 +71,7 @@ object TimerManager {
         delaySeconds: Long,
         message: String,
         label: String = "AI 定时提醒",
-        repeatIntervalSec: Long = 0L,
-        linkedTaskId: String? = null
+        repeatIntervalSec: Long = 0L
     ): String {
         val timerId = UUID.randomUUID().toString().take(8)
         val fireAtMs = System.currentTimeMillis() + delaySeconds * 1000L
@@ -85,8 +82,7 @@ object TimerManager {
             message = message,
             label = label,
             fireAtMs = fireAtMs,
-            repeatIntervalMs = repeatIntervalSec * 1000L,
-            linkedTaskId = linkedTaskId
+            repeatIntervalMs = repeatIntervalSec * 1000L
         )
 
         // 写入内存缓存
@@ -120,27 +116,6 @@ object TimerManager {
 
         Log.i(TAG, "[cancelTimer] id=$timerId 已取消")
         return true
-    }
-
-    /**
-     * 根据关联的 subAgent taskId 取消定时器。
-     * 用于 subAgent 任务完成时自动清理等待 timer。
-     */
-    fun cancelByTaskId(context: Context, taskId: String): Boolean {
-        val meta = timerMeta.values.find { it.linkedTaskId == taskId }
-            ?: return false
-        return cancelTimer(context, meta.timerId)
-    }
-
-    /**
-     * 取消关联了指定 SubAgent 任务的定时器。
-     *
-     * SubAgent 任务完成时调用：直接取消轮询定时器。
-     */
-    fun fireFinalCheckAndCancel(context: Context, taskId: String) {
-        val meta = timerMeta.values.find { it.linkedTaskId == taskId } ?: return
-        // 取消定时器
-        cancelTimer(context, meta.timerId)
     }
 
     /**

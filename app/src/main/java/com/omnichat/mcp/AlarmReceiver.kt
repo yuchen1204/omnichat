@@ -54,7 +54,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun handleFire(context: Context, meta: TimerManager.TimerMeta) {
-        Log.i(TAG, "[handleFire] id=${meta.timerId}, session=${meta.sessionId}, repeat=${meta.repeatIntervalMs}ms, linkedTask=${meta.linkedTaskId}")
+        Log.i(TAG, "[handleFire] id=${meta.timerId}, session=${meta.sessionId}, repeat=${meta.repeatIntervalMs}ms")
 
         // 1. 发送系统通知
         sendNotification(context, meta)

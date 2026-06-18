@@ -10,6 +10,8 @@ import com.omnichat.data.AppDatabase
 import com.omnichat.data.AppRepository
 import com.omnichat.data.FileAccessType
 import com.omnichat.data.UISettings
+import com.omnichat.agent.SubAgent
+import com.omnichat.agent.MessageBus
 import com.omnichat.data.ColorSchemePreset
 import com.omnichat.data.ColorSchemePreset.Companion.toUISettings
 import com.omnichat.ui.theme.UiStrings
@@ -63,6 +65,10 @@ object BuiltinToolHandler {
             "list_mcp_tool_groups" -> handleListMcpToolGroups(context)
             "configure_mcp_tool_groups" -> handleConfigureMcpToolGroups(context, arguments)
             "set_tool_display_mode" -> handleSetToolDisplayMode(context, arguments)
+            "delegate_task" -> handleDelegateTask(context, arguments, sessionId)
+            "check_task_status" -> handleCheckTaskStatus(context, arguments)
+            "send_agent_message" -> handleSendAgentMessage(context, arguments)
+            "read_agent_inbox" -> handleReadAgentInbox(context)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
     }
@@ -1021,7 +1027,6 @@ object BuiltinToolHandler {
         val message = arguments.optString("message").trim()
         val label = arguments.optString("label", str(context, R.string.tool_timer_label)).trim()
             .take(30).ifEmpty { str(context, R.string.tool_timer_label) }
-        val linkedTaskId = arguments.optString("task_id").takeIf { it.isNotBlank() }
 
         if (delaySeconds < 1) {
             return errorResponse(str(context, R.string.tool_timer_delay_min))
@@ -1045,8 +1050,7 @@ object BuiltinToolHandler {
             delaySeconds = delaySeconds,
             message = message,
             label = label,
-            repeatIntervalSec = repeatIntervalSec,
-            linkedTaskId = linkedTaskId
+            repeatIntervalSec = repeatIntervalSec
         )
 
         val humanDelay = formatDuration(context, delaySeconds)
@@ -1799,6 +1803,90 @@ object BuiltinToolHandler {
                 })
             })
         }
+    }
+
+    // ── SubAgent tools ─────────────────────────────────────────────────
+
+    private fun handleDelegateTask(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        val agentType = arguments.optString("agentType", "")
+        val task = arguments.optString("task", "")
+
+        if (agentType.isBlank() || task.isBlank()) {
+            return errorResponse("agentType and task are required")
+        }
+        if (agentType !in com.omnichat.agent.AgentPrompts.ALL_TYPES) {
+            return errorResponse("Invalid agentType: $agentType. Valid types: ${com.omnichat.agent.AgentPrompts.ALL_TYPES.joinToString()}")
+        }
+        if (sessionId == null) {
+            return errorResponse("sessionId is required for delegate_task")
+        }
+
+        return try {
+            val taskId = SubAgent.execute(
+                context = context,
+                agentType = agentType,
+                taskDescription = task,
+                sessionId = sessionId
+            )
+            successResponse("Task delegated successfully. taskId: $taskId\nUse check_task_status to monitor progress.")
+        } catch (e: Exception) {
+            errorResponse("Failed to delegate task: ${e.message}")
+        }
+    }
+
+    private fun handleCheckTaskStatus(context: Context, arguments: JSONObject): JSONObject {
+        val taskId = arguments.optString("taskId", "")
+        if (taskId.isBlank()) {
+            return errorResponse("taskId is required")
+        }
+
+        val task = SubAgent.getTask(taskId)
+            ?: return errorResponse("Task not found: $taskId")
+
+        val result = buildString {
+            appendLine("Task ID: ${task.taskId}")
+            appendLine("Agent Type: ${task.agentType}")
+            appendLine("Status: ${task.status}")
+            appendLine("Created: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(task.createdAt))}")
+            task.startedAt?.let {
+                appendLine("Started: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it))}")
+            }
+            task.completedAt?.let {
+                appendLine("Completed: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it))}")
+            }
+            task.result?.let { appendLine("Result:\n$it") }
+            task.error?.let { appendLine("Error: $it") }
+        }
+        return successResponse(result)
+    }
+
+    private fun handleSendAgentMessage(context: Context, arguments: JSONObject): JSONObject {
+        val to = arguments.optString("to", "")
+        val content = arguments.optString("content", "")
+
+        if (to.isBlank() || content.isBlank()) {
+            return errorResponse("to and content are required")
+        }
+
+        MessageBus.send(from = "main", to = to, content = content)
+        return successResponse("Message sent to $to")
+    }
+
+    private fun handleReadAgentInbox(context: Context): JSONObject {
+        val messages = MessageBus.readAndClearInbox("main")
+        if (messages.isEmpty()) {
+            return successResponse("No pending messages.")
+        }
+
+        val text = buildString {
+            appendLine("${messages.size} message(s) in inbox:")
+            messages.forEachIndexed { index, msg ->
+                appendLine("\n--- Message ${index + 1} ---")
+                appendLine("From: ${msg.from}")
+                appendLine("Content: ${msg.content}")
+            }
+        }
+        return successResponse(text)
     }
 
     private fun successResponse(text: String): JSONObject = JSONObject().apply {
