@@ -91,6 +91,7 @@ fun ChatView(viewModel: ChatViewModel) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val currentSession = sessions.find { it.id == activeSessionId }
+    val activeTasks = viewModel.activeTasks  // SnapshotStateMap — already Compose-observable
 
     // 字体设置
     val uiSettings = LocalUISettings.current
@@ -360,18 +361,31 @@ fun ChatView(viewModel: ChatViewModel) {
                         } catch (_: Exception) {}
                     }
                 }
-                // 按组过滤 tool 消息
+                // 按组过滤 tool 消息，并聚合连续的非静默 tool 消息
                 val wildcard = silentGroups.contains("*")
+                var currentToolGroup = mutableListOf<com.omnichat.data.Message>()
+                fun flushToolGroup() {
+                    if (currentToolGroup.isNotEmpty()) {
+                        list.add(currentToolGroup.toList())
+                        currentToolGroup.clear()
+                    }
+                }
                 messages.forEach { msg ->
                     if (msg.role == "tool") {
                         val toolName = msg.toolCallId?.let { toolNameLookup[it] }
                         val group = toolName?.let { McpRuntimeManager.builtinToolGroups[it] }
                         val shouldSilence = wildcard || (group != null && group in silentGroups)
-                        if (!shouldSilence) list.add(msg)
+                        if (!shouldSilence) {
+                            currentToolGroup.add(msg)
+                        } else {
+                            flushToolGroup() // 遇到静默的 tool，先刷出之前的非静默组
+                        }
                     } else {
+                        flushToolGroup()
                         list.add(msg)
                     }
                 }
+                flushToolGroup()
             } else {
                 // 正常模式：聚合连续的 tool 消息为一组
                 var currentToolGroup = mutableListOf<com.omnichat.data.Message>()
@@ -426,6 +440,15 @@ fun ChatView(viewModel: ChatViewModel) {
                         )
                     }
                 }
+
+                // Active SubAgent task cards
+                activeTasks.values
+                    .filter { it.sessionId == activeSessionId }
+                    .forEach { task ->
+                        item(key = "subagent_${task.taskId}") {
+                            SubAgentTaskCard(task = task)
+                        }
+                    }
 
                 items(processedMessages, key = {
                     when(it) {
@@ -618,6 +641,46 @@ fun ChatView(viewModel: ChatViewModel) {
                                         fontWeight = FontWeight.Medium,
                                         color = if (currentModelHasVision) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                    )
+                                }
+                            }
+
+                            // AgentMode 开关按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { viewModel.toggleAgentMode() },
+                                shape = toolBtnShape,
+                                border = BorderStroke(
+                                    0.5.dp,
+                                    if (uiSettings.agentMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                ),
+                                colors = if (uiSettings.agentMode) CardDefaults.outlinedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                ) else toolBtnColors
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SmartToy,
+                                        contentDescription = null,
+                                        tint = if (uiSettings.agentMode) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiText("agent_mode.toggle", R.string.agent_mode_toggle),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (uiSettings.agentMode) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                                     )
                                 }
                             }
