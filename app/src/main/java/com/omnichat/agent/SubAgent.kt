@@ -141,6 +141,11 @@ object SubAgent {
                 } finally {
                     globalSemaphore.release()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Task was cancelled — update status but don't push error to chat
+                updateTask(taskId, status = SubAgentTaskStatus.CANCELLED,
+                    completedAt = System.currentTimeMillis())
+                throw e // re-throw to properly cancel the coroutine
             } catch (e: Exception) {
                 updateTask(taskId, status = SubAgentTaskStatus.FAILED, error = e.message,
                     completedAt = System.currentTimeMillis())
@@ -224,6 +229,10 @@ object SubAgent {
             } finally {
                 globalSemaphore.release()
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            updateTask(taskId, status = SubAgentTaskStatus.CANCELLED,
+                completedAt = System.currentTimeMillis())
+            throw e
         } catch (e: Exception) {
             updateTask(taskId, status = SubAgentTaskStatus.FAILED, error = e.message,
                 completedAt = System.currentTimeMillis())
