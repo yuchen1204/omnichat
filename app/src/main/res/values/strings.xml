@@ -64,6 +64,10 @@
     <string name="chat_thinking_start">Waking up reasoning model…</string>
     <string name="chat_thinking_reply_plan">Composing reply…</string>
     <string name="chat_assistant_typing">Assistant is typing…</string>
+    <string name="role_system">[System]</string>
+    <string name="role_user">[User]</string>
+    <string name="role_assistant">[Assistant]</string>
+    <string name="role_tool_result">[Tool Result]</string>
 
     <!-- ── ui_text_keys.json: Export / Import ── -->
     <string name="export_section_export">Export Configuration</string>
