@@ -345,6 +345,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
             "list_mcp_tool_groups" to "core",
             "configure_mcp_tool_groups" to "core",
             "set_tool_display_mode" to "efficiency",
+            "delegate_task" to "subagent",
+            "check_task_status" to "subagent",
+            "send_agent_message" to "subagent",
+            "read_agent_inbox" to "subagent",
         )
 
         fun getInstance(context: Context): McpRuntimeManager {
@@ -770,7 +774,6 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 prop("repeat_minutes", "integer", "Repeat interval: minutes component (default 0). E.g. for \"every 30 minutes\", set repeat_minutes=30.")
                 prop("repeat_seconds", "integer", "Repeat interval: seconds component (default 0). E.g. for \"every 90 seconds\", set repeat_seconds=90.")
                 prop("repeat_interval_seconds", "integer", "Legacy parameter. Prefer repeat_hours/repeat_minutes/repeat_seconds. Repeat interval in seconds. The new params take precedence if provided.")
-                prop("task_id", "string", "Optional. Associate this timer with a task ID. When the task completes, this timer is auto-cancelled.")
                 required("message")
             }
         ),
@@ -818,15 +821,62 @@ class McpRuntimeManager private constructor(private val context: Context) {
             inputSchema = schema {
                 prop("enable", "array", "List of group names to enable. Valid: ui_text, ui_appearance, files, documents, efficiency, memory. Note: 'core' cannot be disabled.") {
                     items {
-                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory")
+                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory", "subagent")
                     }
                 }
                 prop("disable", "array", "List of group names to disable. Note: 'core' cannot be disabled.") {
                     items {
-                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory")
+                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory", "subagent")
                     }
                 }
             }
+        ),
+        // ── SubAgent tools ───────────────────────────────────────────────
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "delegate_task",
+            description = """Delegate a task to a sub-agent for background execution. The sub-agent runs independently with its own LLM context and tool access. Returns a taskId.
+
+WORKFLOW:
+1. The sub-agent starts immediately and runs in the background.
+2. Reply briefly to the user that the task is being worked on.
+3. The result will appear automatically in the chat when the sub-agent completes.
+4. You can optionally call check_task_status(taskId) to check progress at any time.
+
+The sub-agent's result is delivered directly as a chat message — no polling needed.""",
+            inputSchema = schema {
+                prop("agentType", "string", "The type of sub-agent: general, researcher, coder, reviewer, tester, planner, orchestrator.") {
+                    enum("general", "researcher", "coder", "reviewer", "tester", "planner", "orchestrator")
+                }
+                prop("task", "string", "The task description for the sub-agent to perform.")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "check_task_status",
+            description = "Check the status and result of a previously delegated sub-agent task.",
+            inputSchema = schema {
+                prop("taskId", "string", "The taskId returned by delegate_task.")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "send_agent_message",
+            description = "Send a message to another agent's inbox. Used for inter-agent communication during collaborative workflows.",
+            inputSchema = schema {
+                prop("to", "string", "The target agent ID (e.g. 'main', 'subagent:coder:task-id').")
+                prop("content", "string", "The message content.")
+            }
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "read_agent_inbox",
+            description = "Read messages from the current agent's inbox. Returns pending messages from other agents.",
+            inputSchema = schema {}
         ),
     )
 
@@ -860,7 +910,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     private val enabledBuiltinTools: StateFlow<List<McpTool>> = AppDatabase.getDatabase(context).uiSettingsDao().getSettingsFlow()
         .map { settings ->
-            val enabledGroups = settings?.enabledMcpGroups?.split(",")?.toSet() ?: setOf("core", "ui_appearance", "efficiency", "memory")
+            val enabledGroups = settings?.enabledMcpGroups?.split(",")?.toSet() ?: setOf("core", "ui_appearance", "efficiency", "memory", "subagent")
             builtinTools.filter { tool ->
                 val group = builtinToolGroups[tool.name] ?: "core"
                 group == "core" || group in enabledGroups
