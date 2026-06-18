@@ -1807,7 +1807,7 @@ object BuiltinToolHandler {
 
     // ── SubAgent tools ─────────────────────────────────────────────────
 
-    private fun handleDelegateTask(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+    private suspend fun handleDelegateTask(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         val agentType = arguments.optString("agentType", "")
         val task = arguments.optString("task", "")
 
@@ -1822,13 +1822,13 @@ object BuiltinToolHandler {
         }
 
         return try {
-            val taskId = SubAgent.execute(
+            val result = SubAgent.executeSync(
                 context = context,
                 agentType = agentType,
                 taskDescription = task,
                 sessionId = sessionId
             )
-            successResponse("Task delegated successfully. taskId: $taskId\nUse check_task_status to monitor progress.")
+            successResponse(result)
         } catch (e: Exception) {
             errorResponse("Failed to delegate task: ${e.message}")
         }

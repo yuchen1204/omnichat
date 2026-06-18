@@ -113,6 +113,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     /** Active SubAgent tasks for current session — drives in-chat status cards */
     val activeTasks = mutableStateMapOf<String, SubAgentTaskUiState>()
 
+    /** SubAgent 执行期间锁定用户输入，仅允许终止操作 */
+    var subAgentActive by mutableStateOf(false)
+        private set
+
     // BUG-016: 使用 Mutex 替代非原子的 boolean 检查，防止并发 triggerMemorySync
     private val memorySyncMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -282,7 +286,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun sendMessageWithImage(text: String, imagePaths: List<String> = emptyList()) {
         val sessionId = _selectedSessionId.value ?: return
-        if ((text.isBlank() && imagePaths.isEmpty()) || isStreaming) return
+        if ((text.isBlank() && imagePaths.isEmpty()) || isStreaming || subAgentActive) return
 
         viewModelScope.launch {
             // Apply hook to user message
@@ -497,6 +501,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         when (event) {
             is SubAgentEvent.TaskStarted -> {
                 if (event.sessionId == _selectedSessionId.value) {
+                    subAgentActive = true
                     activeTasks[event.taskId] = SubAgentTaskUiState(
                         taskId = event.taskId,
                         sessionId = event.sessionId,
@@ -521,6 +526,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         result = event.result
                     )
                 }
+                subAgentActive = false
                 // Auto-remove card after 3 seconds
                 viewModelScope.launch {
                     delay(3000)
@@ -534,6 +540,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         result = event.error
                     )
                 }
+                subAgentActive = false
                 // Auto-remove card after 5 seconds
                 viewModelScope.launch {
                     delay(5000)
@@ -629,7 +636,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * 进入编辑消息模式：记录正在编辑的消息 ID，调用方需将消息内容填入输入框。
      */
     fun editMessage(message: Message) {
-        if (isStreaming) return
+        if (isStreaming || subAgentActive) return
         editingMessageId = message.id
     }
 
@@ -647,7 +654,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val sessionId = _selectedSessionId.value ?: return
         val msgId = editingMessageId ?: return
         if (newContent.isBlank()) return
-        if (isStreaming) return
+        if (isStreaming || subAgentActive) return
 
         editingMessageId = null
 
@@ -685,7 +692,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retryMessage(message: Message) {
-        if (isStreaming) return
+        if (isStreaming || subAgentActive) return
         val job = viewModelScope.launch {
             // 1. Delete all messages from this one onwards
             repository.deleteMessagesFrom(message.sessionId, message.timestamp)
@@ -937,15 +944,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        // 消息已入库，立即停止流式气泡渲染，防止与 BubbleMessage 同时显示导致重复
-        isStreaming = false
-
         // 首次回复后生成会话标题（结合用户第一条消息和 AI 第一条回复）
         android.util.Log.d("TitleGen", "After assistant response: toolCallDepth=$toolCallDepth, sessionId=$sessionId")
         if (toolCallDepth == 0) {
             generateSessionTitle(sessionId, processedContent)
         }
-        
+
         val wasOnlyToolCalls = processedContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
         // 清理流式状态
         currentStreamingThinking = ""
@@ -953,6 +957,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         isThinkingFinished = true
 
         // 2. Process Tool Calls if any
+        var followUpTriggered = false
         if (accumulatedToolCalls.isNotEmpty()) {
             var hasNewResults = false
             for (toolCall in accumulatedToolCalls.values) {
@@ -990,6 +995,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             if (hasNewResults) {
                 // Trigger the follow-up turn with depth limit to prevent infinite loops
                 if (toolCallDepth < MAX_TOOL_CALL_DEPTH) {
+                    followUpTriggered = true
                     startAssistantResponse(sessionId, config, systemPrompt, toolCallDepth + 1)
                 } else {
                     repository.insertMessage(
@@ -997,6 +1003,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+        }
+
+        // 消息已入库且无后续 LLM 轮次时才停止流式状态，避免工具执行期间用户可输入
+        if (!followUpTriggered) {
+            isStreaming = false
         }
 
         if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {

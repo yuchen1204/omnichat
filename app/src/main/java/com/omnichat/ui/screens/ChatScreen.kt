@@ -80,6 +80,7 @@ fun ChatView(viewModel: ChatViewModel) {
     val messages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val isStreaming = viewModel.isStreaming
+    val subAgentActive = viewModel.subAgentActive
     val streamingThinking = viewModel.currentStreamingThinking
     val streamingBody = viewModel.currentStreamingBody
     val isThinkingFinished = viewModel.isThinkingFinished
@@ -941,6 +942,7 @@ fun ChatView(viewModel: ChatViewModel) {
                     OutlinedTextField(
                         value = textInput,
                         onValueChange = { textInput = it },
+                        enabled = !isStreaming && !subAgentActive,
                         placeholder = {
                             val hint = if (selectedImagePaths.isNotEmpty()) {
                                 uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
@@ -958,7 +960,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         keyboardActions = KeyboardActions(onSend = {
                             val toSend = textInput.trim()
                             val hasImage = selectedImagePaths.isNotEmpty()
-                            if ((toSend.isNotBlank() || hasImage) && !isStreaming) {
+                            if ((toSend.isNotBlank() || hasImage) && !isStreaming && !subAgentActive) {
                                 if (isEditing) {
                                     viewModel.submitEdit(toSend)
                                 } else {
@@ -987,7 +989,7 @@ fun ChatView(viewModel: ChatViewModel) {
 
 
                     // Send button / Stop button
-                    if (isStreaming) {
+                    if (isStreaming || subAgentActive) {
                         // Stop button — visible only while streaming
                         Box(
                             modifier = Modifier

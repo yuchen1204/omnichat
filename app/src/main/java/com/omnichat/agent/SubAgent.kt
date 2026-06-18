@@ -3,7 +3,6 @@ package com.omnichat.agent
 import android.content.Context
 import com.omnichat.data.AppDatabase
 import com.omnichat.data.AppRepository
-import com.omnichat.data.Message
 import com.omnichat.mcp.McpRuntimeManager
 import com.omnichat.network.ApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -125,26 +124,18 @@ object SubAgent {
                         sessionId = sessionId,
                         result = result
                     ))
-
-                    // Push result directly into chat as assistant message
-                    try {
-                        val db = AppDatabase.getDatabase(context)
-                        val repo = AppRepository(db)
-                        repo.insertMessage(Message(
-                            sessionId = sessionId,
-                            role = "assistant",
-                            content = "📋 **SubAgent Result** ($agentType)\n\n$result"
-                        ))
-                    } catch (e: Exception) {
-                        android.util.Log.e("SubAgent", "Failed to push result to chat", e)
-                    }
                 } finally {
                     globalSemaphore.release()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // Task was cancelled — update status but don't push error to chat
+                // Task was cancelled — update status and emit event for UI cleanup
                 updateTask(taskId, status = SubAgentTaskStatus.CANCELLED,
                     completedAt = System.currentTimeMillis())
+                SubAgentEventBus.emit(SubAgentEvent.TaskFailed(
+                    taskId = taskId,
+                    sessionId = sessionId,
+                    error = "Cancelled"
+                ))
                 throw e // re-throw to properly cancel the coroutine
             } catch (e: Exception) {
                 updateTask(taskId, status = SubAgentTaskStatus.FAILED, error = e.message,
@@ -155,19 +146,6 @@ object SubAgent {
                     sessionId = sessionId,
                     error = e.message ?: "Unknown error"
                 ))
-
-                // Push error into chat as assistant message
-                try {
-                    val db = AppDatabase.getDatabase(context)
-                    val repo = AppRepository(db)
-                    repo.insertMessage(Message(
-                        sessionId = sessionId,
-                        role = "assistant",
-                        content = "❌ **SubAgent Failed** ($agentType)\n\nError: ${e.message}"
-                    ))
-                } catch (ex: Exception) {
-                    android.util.Log.e("SubAgent", "Failed to push error to chat", ex)
-                }
             } finally {
                 activeJobs.remove(taskId)
                 cleanupOldTasks()
@@ -232,6 +210,11 @@ object SubAgent {
         } catch (e: kotlinx.coroutines.CancellationException) {
             updateTask(taskId, status = SubAgentTaskStatus.CANCELLED,
                 completedAt = System.currentTimeMillis())
+            SubAgentEventBus.emit(SubAgentEvent.TaskFailed(
+                taskId = taskId,
+                sessionId = sessionId,
+                error = "Cancelled"
+            ))
             throw e
         } catch (e: Exception) {
             updateTask(taskId, status = SubAgentTaskStatus.FAILED, error = e.message,
