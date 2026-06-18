@@ -151,6 +151,7 @@
     <string name="mcp_group_ui_text">界面文案</string>
     <string name="mcp_group_files">文件管理</string>
     <string name="mcp_group_documents">文档创作</string>
+    <string name="mcp_group_subagent">子代理</string>
     <string name="mcp_builtin_groups_title">内置工具组权限控制</string>
     <string name="mcp_builtin_groups_desc">AI 可以主动开启或关闭这些功能。 core 组始终开启。</string>
     <string name="mcp_builtin_desc">%d 个工具 · 始终可用</string>
@@ -591,7 +592,9 @@
     <!-- ── AlarmReceiver ── -->
     <string name="alarm_notification_description">AI 助手创建的定时提醒</string>
     <string name="alarm_timer_reminder">⏰ **定时提醒**\n\n%s</string>
-    <string name="timer_auto_check_prompt">⏰ 定时器已触发。请立即调用 check_task_status 检查任务 %s 的执行状态，并将结果告知用户。</string>
+    <string name="agent_mode_permission_review">🔒 AgentMode 权限审核\n\n子代理请求使用工具：\n- 工具：%1$s\n- 路径：%2$s\n- 操作类型：%3$s\n%4$s\n\n请审核此请求。考虑：\n1. 路径是否正确且与子代理的任务相关？\n2. 此操作是否是完成任务所必需的？\n3. 是否存在安全风险？\n\n请回复以下之一：\n- APPROVE：操作安全且必要\n- DENY：操作可疑、不必要或有潜在风险</string>
+    <string name="agent_mode_toggle">AgentMode</string>
+    <string name="agent_mode_description">SubAgent 破坏性操作由 MainAgent 审核</string>
     <string name="tool_search_match_lines">  (匹配行: %s)</string>
 
     <!-- ── StreamingForegroundService ── -->

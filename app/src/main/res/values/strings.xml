@@ -151,6 +151,7 @@
     <string name="mcp_group_ui_text">UI Text</string>
     <string name="mcp_group_files">File Management</string>
     <string name="mcp_group_documents">Document Creation</string>
+    <string name="mcp_group_subagent">Sub-Agent</string>
     <string name="mcp_builtin_groups_title">Built-in Tool Groups</string>
     <string name="mcp_builtin_groups_desc">AI can enable/disable these. Core group is always on.</string>
     <string name="mcp_builtin_desc">%d tools · Always available</string>
@@ -586,7 +587,9 @@
     <!-- ── AlarmReceiver ── -->
     <string name="alarm_notification_description">Scheduled reminder created by AI assistant</string>
     <string name="alarm_timer_reminder">⏰ **Reminder**\n\n%s</string>
-    <string name="timer_auto_check_prompt">⏰ Timer fired. Please call check_task_status immediately to check the status of task %s, then report the result to the user.</string>
+    <string name="agent_mode_permission_review">🔒 AgentMode Permission Review\n\nA SubAgent is requesting permission to use a tool:\n- Tool: %1$s\n- Path: %2$s\n- Access type: %3$s\n%4$s\n\nPlease review this request. Consider:\n1. Is the path correct and relevant to the SubAgent\'s task?\n2. Is this operation necessary for completing the assigned task?\n3. Are there any security concerns?\n\nRespond with exactly one of:\n- APPROVE: if the operation is safe and necessary\n- DENY: if the operation is suspicious, unnecessary, or potentially harmful</string>
+    <string name="agent_mode_toggle">AgentMode</string>
+    <string name="agent_mode_description">SubAgent 破坏性操作由 MainAgent 审核</string>
     <string name="tool_search_match_lines">  (matched lines: %s)</string>
 
     <!-- ── StreamingForegroundService ── -->

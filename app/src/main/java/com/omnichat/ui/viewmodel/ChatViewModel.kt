@@ -170,13 +170,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         }
 
-        // 监听定时器自动检查事件：linkedTaskId 的定时器触发时，唤醒 MainAgent 检查 subAgent 进度
-        viewModelScope.launch {
-            com.omnichat.mcp.TimerAutoCheckManager.events.collect { event ->
-                handleTimerAutoCheck(event)
-            }
-        }
-
         // 监听 AgentMode 权限审核请求：SubAgent 的破坏性操作由 MainAgent 审核
         viewModelScope.launch {
             com.omnichat.mcp.PermissionReviewManager.pendingReviews.collect { request ->
@@ -394,48 +387,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // 停止前台服务
         StreamingForegroundService.complete(getApplication())
-    }
-
-    /**
-     * 处理定时器自动检查事件：插入提示消息并触发 LLM 检查 subAgent 任务状态。
-     */
-    private suspend fun handleTimerAutoCheck(event: com.omnichat.mcp.TimerAutoCheckManager.AutoCheckEvent) {
-        val sessionId = event.sessionId
-
-        // 如果当前不在该 session，跳过（消息已插入，用户打开时会看到）
-        if (_selectedSessionId.value != sessionId) {
-            android.util.Log.d("ChatViewModel", "[handleTimerAutoCheck] session $sessionId 不是当前 session，跳过自动检查")
-            return
-        }
-
-        // 如果正在流式输出，跳过（消息已插入，下次交互时 LLM 会看到）
-        if (isStreaming) {
-            android.util.Log.d("ChatViewModel", "[handleTimerAutoCheck] 正在流式输出，跳过自动检查")
-            return
-        }
-
-        android.util.Log.i("ChatViewModel", "[handleTimerAutoCheck] 触发自动检查 task=${event.taskId}")
-
-        // 插入提示消息，让 LLM 看到后自动调用 check_task_status
-        val promptMessage = Message(
-            sessionId = sessionId,
-            role = "user",
-            content = getApplication<Application>().getString(
-                R.string.timer_auto_check_prompt, event.taskId
-            )
-        )
-        repository.insertMessage(promptMessage)
-
-        // 获取模型配置
-        val providerConfig = repository.getDefaultProvider() ?: return
-
-        // 构建系统提示并触发 LLM
-        val activeTemplate = repository.getActiveTemplate()
-        val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
-        runtimeManager.waitForStartingServersToFinish()
-        val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, promptMessage.content)
-
-        startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
     }
 
     /**

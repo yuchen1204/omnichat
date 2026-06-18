@@ -133,6 +133,17 @@ object TimerManager {
     }
 
     /**
+     * 取消关联了指定 SubAgent 任务的定时器。
+     *
+     * SubAgent 任务完成时调用：直接取消轮询定时器。
+     */
+    fun fireFinalCheckAndCancel(context: Context, taskId: String) {
+        val meta = timerMeta.values.find { it.linkedTaskId == taskId } ?: return
+        // 取消定时器
+        cancelTimer(context, meta.timerId)
+    }
+
+    /**
      * 返回当前所有待触发的定时任务列表。
      * 同时包含内存和磁盘中的数据。
      */
