@@ -67,7 +67,7 @@
 
     <!-- ── ui_text_keys.json: Export / Import ── -->
     <string name="export_section_export">导出配置</string>
-    <string name="export_desc">选择要导出的内容，保存为 .omniconfig 文件，可用于备份或迁移到其他设备。</string>
+    <string name="export_desc">选择要导出的内容，保存为 .omnifile 文件，可用于备份或迁移到其他设备。</string>
     <string name="export_option_providers">供应商配置</string>
     <string name="export_option_providers_desc">API 提供商、Endpoint、API Key、模型列表</string>
     <string name="export_option_mcp">MCP 配置</string>
@@ -76,18 +76,18 @@
     <string name="export_option_memory_desc">跨会话记忆条目、系统 Prompt 模板</string>
     <string name="export_option_colors">配色方案</string>
     <string name="export_option_colors_desc">当前 UI 设置、配色方案预设（最多 5 个）</string>
-    <string name="export_btn">选择保存位置并导出</string>
-    <string name="import_section_import">导入配置</string>
-    <string name="import_desc">从之前导出的 .omniconfig 文件中恢复配置。选择要导入的内容类型。</string>
+    <string name="export_btn">导出 .omnifile</string>
+    <string name="import_section_import">导入数据</string>
+    <string name="import_desc">支持导入 .omnifile、.omnidb、.omniconfig 文件，格式自动识别。</string>
     <string name="import_option_providers_desc">导入 API 提供商配置</string>
     <string name="import_option_mcp_desc">导入 MCP 服务器配置和文件权限</string>
     <string name="import_option_memory_desc">导入记忆条目和 Prompt 模板</string>
     <string name="import_option_colors_desc">导入 UI 设置和配色预设</string>
     <string name="import_replace_title">覆盖现有数据</string>
     <string name="import_replace_desc">开启后将清空对应类型的现有数据再导入；关闭则追加</string>
-    <string name="import_btn">选择 .omniconfig 文件并导入</string>
-    <string name="export_note">导出文件为 .omniconfig 格式（基于 JSON），包含所选配置的完整数据。API Key 会以明文保存在文件中，请妥善保管导出文件。导入时建议先备份现有配置。</string>
-    <string name="import_invalid_file">请选择 .omniconfig 文件</string>
+    <string name="import_btn">选择文件并导入</string>
+    <string name="export_note">导出格式：.omnifile（二进制）。导入支持 .omnifile、.omnidb、.omniconfig。API Key 以明文保存，请妥善保管。</string>
+    <string name="import_invalid_file">请选择支持的文件格式（.omnifile、.omnidb、.omniconfig）</string>
     <string name="import_confirm_title">确认导入</string>
     <string name="import_confirm_body">即将导入以下内容：</string>
     <string name="import_confirm_replace_warning">覆盖模式已开启，现有对应数据将被清空后替换，此操作不可撤销。</string>
@@ -332,20 +332,8 @@
     <string name="imported_scheme_name">导入方案</string>
 
     <!-- ── ExportImportScreen: Database Backup ── -->
-    <string name="db_backup_section">数据库备份</string>
-    <string name="db_backup_desc">导出/导入完整数据库文件（包含所有表，含聊天记录）。使用 .omnidb 文件格式。</string>
-    <string name="db_backup_export_btn">导出数据库</string>
-    <string name="db_backup_import_btn">导入数据库</string>
-    <string name="db_backup_export_success">数据库导出成功</string>
-    <string name="db_backup_export_failed">导出失败: %s</string>
     <string name="db_backup_import_success">数据库导入成功，应用将重启</string>
     <string name="db_backup_import_failed">导入失败: %s</string>
-    <string name="db_backup_import_confirm_title">确认数据库导入</string>
-    <string name="db_backup_import_confirm_body">此操作将用备份文件完全替换当前数据库。所有当前数据（聊天记录、设置、记忆）都将丢失。\n\n导入后应用将自动重启。</string>
-    <string name="db_backup_import_confirm_ok">确认导入</string>
-    <string name="db_backup_import_confirm_cancel">取消</string>
-    <string name="db_backup_import_invalid_file">请选择 .omnidb 文件</string>
-    <string name="db_backup_includes">包含：所有表、聊天记录、设置、记忆</string>
 
     <!-- ── Extra: Compose hardcoded ── -->
     <string name="sidebar_no_model_selected">未选择模型</string>
@@ -631,9 +619,7 @@
     <string name="cloud_select_backup">选择要恢复的备份</string>
     <string name="cloud_no_backups">暂无备份</string>
     <string name="cloud_close">关闭</string>
-    <string name="cloud_type_database">数据库</string>
-    <string name="cloud_type_config">配置</string>
-    <string name="cloud_type_unknown">未知</string>
+    <string name="cloud_type_omnifile">Omnifile</string>
     <string name="cloud_delete">删除</string>
     <string name="cloud_time_just_now">刚刚</string>
     <string name="cloud_time_minutes_ago">%d分钟前</string>

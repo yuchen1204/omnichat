@@ -1,7 +1,9 @@
 // src/index.js
 import { generateTOTP, verifyTOTP } from './totp.js';
-import { createUser, getUser, findUserByTOTPSecret, listAllUsers, saveBackupMeta, listBackups, getBackupMeta, deleteBackupMeta, uploadToR2, downloadFromR2, deleteFromR2, enforceBackupQuota } from './storage.js';
+import { createUser, findUserByTOTPSecret, listAllUsers, saveBackupMeta, listBackups, getBackupMeta, deleteBackupMeta, uploadToR2, downloadFromR2, deleteFromR2, enforceBackupQuota } from './storage.js';
 import { createSession, validateSession } from './auth.js';
+
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export default {
   async fetch(request, env) {
@@ -46,7 +48,7 @@ export default {
           });
         }
 
-        // Find or create user
+        // Find or create user via reverse index
         let userId = await findUserByTOTPSecret(env.WORKERS_KV, totpSecret);
         if (!userId) {
           userId = crypto.randomUUID();
@@ -123,32 +125,25 @@ export default {
 
       // POST /api/upload - Upload backup
       if (path === '/api/upload' && request.method === 'POST') {
-        const { type, data, filename, groupId } = await request.json();
+        const { data, filename } = await request.json();
 
-        if (!['omnidb', 'omniconfig', 'omnifile'].includes(type)) {
-          return Response.json({ error: 'Invalid backup type' }, {
-            status: 400,
+        const dataBytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+
+        if (dataBytes.length > MAX_UPLOAD_BYTES) {
+          return Response.json({ error: 'File too large (max 50 MB)' }, {
+            status: 413,
             headers: corsHeaders,
           });
         }
 
         const backupId = crypto.randomUUID();
-        const dataBytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
 
-        await uploadToR2(
-          env.BACKUP_R2,
-          userId,
-          backupId,
-          type,
-          new Blob([dataBytes]).stream(),
-          dataBytes.length
-        );
+        await uploadToR2(env.BACKUP_R2, userId, backupId, new Blob([dataBytes]).stream());
 
         await saveBackupMeta(env.WORKERS_KV, userId, backupId, {
-          type,
+          type: 'omnifile',
           size: dataBytes.length,
           filename,
-          groupId: groupId || null,
         });
 
         await enforceBackupQuota(env.WORKERS_KV, env.BACKUP_R2, userId);
@@ -176,7 +171,7 @@ export default {
           });
         }
 
-        const file = await downloadFromR2(env.BACKUP_R2, userId, backupId, backup.type);
+        const file = await downloadFromR2(env.BACKUP_R2, userId, backupId);
         if (!file) {
           return Response.json({ error: 'File not found' }, {
             status: 404,
@@ -205,8 +200,10 @@ export default {
           });
         }
 
-        await deleteFromR2(env.BACKUP_R2, userId, backupId, backup.type);
-        await deleteBackupMeta(env.WORKERS_KV, userId, backupId);
+        await Promise.all([
+          deleteFromR2(env.BACKUP_R2, userId, backupId),
+          deleteBackupMeta(env.WORKERS_KV, userId, backupId),
+        ]);
 
         return Response.json({ success: true }, { headers: corsHeaders });
       }

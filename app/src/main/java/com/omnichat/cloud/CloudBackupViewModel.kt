@@ -297,10 +297,8 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _uiState.update { it.copy(isRestoring = true, error = null) }
             val result = when (backup.type) {
-                "omnidb" -> manager.restoreDatabaseBackup(backup.id)
-                "omniconfig" -> manager.restoreConfigBackup(backup.id)
                 "omnifile" -> manager.restoreOmnifileBackup(backup.id)
-                else -> Result.failure(Exception("Unknown backup type"))
+                else -> Result.failure(Exception("仅支持 omnifile 格式的恢复"))
             }
             result.fold(
                 onSuccess = {

@@ -167,10 +167,8 @@ class CloudBackupRepository(private val context: Context) {
     // --- Backup Operations ---
 
     suspend fun uploadBackup(
-        type: String,
         data: ByteArray,
-        filename: String,
-        groupId: String? = null
+        filename: String
     ): Result<UploadResponse> = withContext(Dispatchers.IO) {
         try {
             val token = sessionToken ?: return@withContext Result.failure(Exception("Not bound"))
@@ -178,7 +176,7 @@ class CloudBackupRepository(private val context: Context) {
 
             val response = getApi().upload(
                 token = "Bearer $token",
-                request = UploadRequest(type, base64Data, filename, groupId)
+                request = UploadRequest(base64Data, filename)
             )
 
             if (response.isSuccessful) {
@@ -189,7 +187,7 @@ class CloudBackupRepository(private val context: Context) {
                 cloudBackupDao.insertBackup(
                     CloudBackupRecord(
                         backupId = body.backupId,
-                        type = type,
+                        type = "omnifile",
                         filename = filename,
                         createdAt = body.createdAt,
                         userId = userId

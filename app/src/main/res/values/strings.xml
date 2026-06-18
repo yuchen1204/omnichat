@@ -67,7 +67,7 @@
 
     <!-- ── ui_text_keys.json: Export / Import ── -->
     <string name="export_section_export">Export Configuration</string>
-    <string name="export_desc">Select content to export as .omniconfig file for backup or migration.</string>
+    <string name="export_desc">Select content to export as .omnifile for backup or migration.</string>
     <string name="export_option_providers">Provider Configuration</string>
     <string name="export_option_providers_desc">API providers, endpoints, keys, models</string>
     <string name="export_option_mcp">MCP Configuration</string>
@@ -76,18 +76,18 @@
     <string name="export_option_memory_desc">Memory entries, system prompt templates</string>
     <string name="export_option_colors">Color Scheme</string>
     <string name="export_option_colors_desc">UI settings, color presets (up to 5)</string>
-    <string name="export_btn">Export .omniconfig</string>
-    <string name="import_section_import">Import Configuration</string>
-    <string name="import_desc">Restore configuration from a .omniconfig file. Select content types to import.</string>
+    <string name="export_btn">Export .omnifile</string>
+    <string name="import_section_import">Import Data</string>
+    <string name="import_desc">Import from .omnifile, .omnidb, or .omniconfig file. Format is auto-detected.</string>
     <string name="import_option_providers_desc">Import API provider configuration</string>
     <string name="import_option_mcp_desc">MCP server config and permissions</string>
     <string name="import_option_memory_desc">Memory entries and prompt templates</string>
     <string name="import_option_colors_desc">UI settings and color presets</string>
     <string name="import_replace_title">Overwrite Existing Data</string>
     <string name="import_replace_desc">When enabled, existing data will be cleared before import; when disabled, data will be appended</string>
-    <string name="import_btn">Import .omniconfig</string>
-    <string name="export_note">Exported .omniconfig (JSON) contains complete data. API keys are stored in plaintext — keep the file safe. Back up existing config before importing.</string>
-    <string name="import_invalid_file">Please select an .omniconfig file</string>
+    <string name="import_btn">Import File</string>
+    <string name="export_note">Export format: .omnifile (binary). Import supports .omnifile, .omnidb, .omniconfig. API keys are stored in plaintext — keep the file safe.</string>
+    <string name="import_invalid_file">Please select a supported file (.omnifile, .omnidb, .omniconfig)</string>
     <string name="import_confirm_title">Confirm Import</string>
     <string name="import_confirm_body">About to import the following content:</string>
     <string name="import_confirm_replace_warning">Overwrite mode enabled. Existing data will be replaced. This cannot be undone.</string>
@@ -557,20 +557,8 @@
     <string name="tool_call_expand_result">View result</string>
 
     <!-- ── ExportImportScreen: Database Backup ── -->
-    <string name="db_backup_section">Database Backup</string>
-    <string name="db_backup_desc">Export/import the entire database (all tables including chat history). Use .omnidb file format.</string>
-    <string name="db_backup_export_btn">Export Database</string>
-    <string name="db_backup_import_btn">Import Database</string>
-    <string name="db_backup_export_success">Database exported successfully</string>
-    <string name="db_backup_export_failed">Export failed: %s</string>
     <string name="db_backup_import_success">Database imported. Please restart the app.</string>
     <string name="db_backup_import_failed">Import failed: %s</string>
-    <string name="db_backup_import_confirm_title">Confirm Database Import</string>
-    <string name="db_backup_import_confirm_body">This will REPLACE the entire database with the backup file. All current data (chat history, settings, memories) will be lost.\n\nThe app will restart after import.</string>
-    <string name="db_backup_import_confirm_ok">Confirm Import</string>
-    <string name="db_backup_import_confirm_cancel">Cancel</string>
-    <string name="db_backup_import_invalid_file">Please select an .omnidb file</string>
-    <string name="db_backup_includes">Includes: All tables, chat history, settings, memories</string>
 
     <!-- ── ExportImportScreen ── -->
     <string name="processing">Processing…</string>
@@ -626,9 +614,7 @@
     <string name="cloud_select_backup">Select backup to restore</string>
     <string name="cloud_no_backups">No backups yet</string>
     <string name="cloud_close">Close</string>
-    <string name="cloud_type_database">Database</string>
-    <string name="cloud_type_config">Config</string>
-    <string name="cloud_type_unknown">Unknown</string>
+    <string name="cloud_type_omnifile">Omnifile</string>
     <string name="cloud_delete">Delete</string>
     <string name="cloud_time_just_now">Just now</string>
     <string name="cloud_time_minutes_ago">%d min ago</string>

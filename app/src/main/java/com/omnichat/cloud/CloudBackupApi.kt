@@ -23,10 +23,8 @@ data class VerifyResponse(
 )
 
 data class UploadRequest(
-    val type: String,        // "omnidb" | "omniconfig"
     val data: String,        // base64 encoded
-    val filename: String,
-    val groupId: String? = null
+    val filename: String
 )
 
 data class UploadResponse(

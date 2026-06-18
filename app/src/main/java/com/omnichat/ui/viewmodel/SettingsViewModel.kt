@@ -358,54 +358,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // ── 数据库备份/恢复 ─────────────────────────────────────────────────
 
     /**
-     * 导出完整数据库文件（.omnidb）
-     * 包含主数据库文件和 WAL/SHM 文件
-     */
-    fun exportDatabaseBackup(context: Context, uri: Uri) {
-        exportImportStatus = ExportImportStatus.Loading
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val db = AppDatabase.getDatabase(context)
-                // 先执行 WAL checkpoint，确保数据写入主文件
-                db.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
-
-                val dbPath = context.getDatabasePath("ai_chat_memory_db")
-
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    // 写入文件头标记
-                    val header = "OMNIDB_V1\n".toByteArray()
-                    output.write(header)
-
-                    // 写入主数据库文件
-                    dbPath.inputStream().use { input ->
-                        input.copyTo(output)
-                    }
-                }
-
-                // 同时备份 WAL 和 SHM 文件（如果存在）
-                val walFile = java.io.File(dbPath.path + "-wal")
-                val shmFile = java.io.File(dbPath.path + "-shm")
-
-                if (walFile.exists() && shmFile.exists()) {
-                    // WAL 和 SHM 已通过 checkpoint 合并到主文件，不需要额外备份
-                }
-
-                withContext(Dispatchers.Main) {
-                    exportImportStatus = ExportImportStatus.Success(
-                        getApplication<Application>().getString(R.string.db_backup_export_success)
-                    )
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    exportImportStatus = ExportImportStatus.Error(
-                        getApplication<Application>().getString(R.string.db_backup_export_failed, e.message ?: "")
-                    )
-                }
-            }
-        }
-    }
-
-    /**
      * Export data as omnifile format.
      * @param sections Sections to include. Empty = full export (all sections).
      */
