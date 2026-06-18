@@ -24,6 +24,12 @@ import com.omnichat.mcp.AskUserManager
 import com.omnichat.StreamingForegroundService
 import com.omnichat.BuildConfig
 import com.omnichat.update.UpdateChecker
+import com.omnichat.agent.SubAgentEvent
+import com.omnichat.agent.SubAgentEventBus
+import com.omnichat.ui.screens.SubAgentTaskUiState
+import com.omnichat.ui.screens.TaskStatus
+import androidx.compose.runtime.mutableStateMapOf
+import kotlinx.coroutines.delay
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
@@ -67,6 +73,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val memories: StateFlow<List<MemoryItem>> = repository.allMemories
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Memory audit history
+    private val _auditHistory = MutableStateFlow<List<MemoryAuditEntry>>(emptyList())
+    val auditHistory: StateFlow<List<MemoryAuditEntry>> = _auditHistory.asStateFlow()
+
     // System prompt templates flow
     val promptTemplates: StateFlow<List<PromptTemplate>> = repository.allTemplates
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -99,6 +109,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     var isBackfillingTags by mutableStateOf(false)
         private set
+
+    /** Active SubAgent tasks for current session — drives in-chat status cards */
+    val activeTasks = mutableStateMapOf<String, SubAgentTaskUiState>()
 
     // BUG-016: 使用 Mutex 替代非原子的 boolean 检查，防止并发 triggerMemorySync
     private val memorySyncMutex = kotlinx.coroutines.sync.Mutex()
@@ -161,6 +174,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             com.omnichat.mcp.TimerAutoCheckManager.events.collect { event ->
                 handleTimerAutoCheck(event)
+            }
+        }
+
+        // 监听 AgentMode 权限审核请求：SubAgent 的破坏性操作由 MainAgent 审核
+        viewModelScope.launch {
+            com.omnichat.mcp.PermissionReviewManager.pendingReviews.collect { request ->
+                handlePermissionReview(request)
+            }
+        }
+
+        // 监听 SubAgent 生命周期事件：推送式结果交付，替代 timer 轮询
+        viewModelScope.launch {
+            SubAgentEventBus.events.collect { event ->
+                handleSubAgentEvent(event)
             }
         }
 
@@ -233,6 +260,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun setThinkingEffort(sessionId: Long, effort: String) {
         viewModelScope.launch {
             repository.updateSessionThinkingEffort(sessionId, effort)
+        }
+    }
+
+    fun toggleAgentMode() {
+        viewModelScope.launch {
+            val db = com.omnichat.data.AppDatabase.getDatabase(getApplication())
+            val current = db.uiSettingsDao().getSettings() ?: com.omnichat.data.UISettings()
+            db.uiSettingsDao().upsertSettings(current.copy(
+                agentMode = !current.agentMode,
+                updatedAt = System.currentTimeMillis()
+            ))
         }
     }
 
@@ -398,6 +436,160 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, promptMessage.content)
 
         startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+    }
+
+    /**
+     * 处理 AgentMode 权限审核请求：插入提示消息让 LLM 审核 SubAgent 的操作是否合理。
+     */
+    private suspend fun handlePermissionReview(request: com.omnichat.mcp.PermissionReviewManager.ReviewRequest) {
+        val sessionId = _selectedSessionId.value ?: run {
+            // 没有选中的 session，无法审核，默认拒绝
+            com.omnichat.mcp.PermissionReviewManager.resolveReview(request.requestId, false)
+            return
+        }
+
+        if (isStreaming) {
+            // 正在流式输出，跳过审核，默认拒绝
+            com.omnichat.mcp.PermissionReviewManager.resolveReview(request.requestId, false)
+            return
+        }
+
+        android.util.Log.i("ChatViewModel", "[handlePermissionReview] 审核请求 id=${request.requestId}, tool=${request.toolName}, path=${request.path}")
+
+        // 注册活跃请求供 resolveReview 查找
+        com.omnichat.mcp.PermissionReviewManager.registerActiveRequest(request)
+
+        // 构建审核提示
+        val accessTypeStr = if (request.accessType == com.omnichat.data.FileAccessType.READ) "读取" else "写入/修改"
+        val taskContextInfo = if (!request.taskContext.isNullOrBlank()) {
+            "\n\nSubAgent 正在执行的任务：${request.toolName} -> ${request.path}\n任务描述：${request.taskContext}"
+        } else {
+            "\n\nSubAgent 请求操作：${request.toolName} -> ${request.path}"
+        }
+
+        val reviewPrompt = getApplication<Application>().getString(
+            R.string.agent_mode_permission_review,
+            request.toolName, request.path, accessTypeStr, taskContextInfo
+        )
+
+        // 插入审核提示消息
+        val promptMessage = Message(
+            sessionId = sessionId,
+            role = "user",
+            content = reviewPrompt
+        )
+        repository.insertMessage(promptMessage)
+
+        // 获取模型配置
+        val providerConfig = repository.getDefaultProvider() ?: run {
+            com.omnichat.mcp.PermissionReviewManager.resolveReview(request.requestId, false)
+            return
+        }
+
+        // 构建系统提示并触发 LLM
+        val activeTemplate = repository.getActiveTemplate()
+        val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+        runtimeManager.waitForStartingServersToFinish()
+        val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, reviewPrompt)
+
+        // 触发 LLM 回复
+        startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+
+        // 等待 LLM 回复完成后，解析最后一条 assistant 消息获取决策
+        // 通过监听 activeMessages 等待新的 assistant 消息出现
+        val decision = waitForLLMDecision(sessionId, request.requestId)
+        com.omnichat.mcp.PermissionReviewManager.resolveReview(request.requestId, decision)
+    }
+
+    /**
+     * 等待 LLM 对权限审核的决策。
+     * 监听 session 消息流，等待出现包含 APPROVE 或 DENY 的 assistant 消息。
+     */
+    private suspend fun waitForLLMDecision(sessionId: Long, requestId: String): Boolean {
+        val startTime = System.currentTimeMillis()
+        val timeoutMs = 30_000L // 30 秒超时
+
+        // 获取当前消息数量作为基准
+        val baselineCount = try {
+            repository.getMessagesBySession(sessionId).size
+        } catch (_: Exception) { 0 }
+
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            kotlinx.coroutines.delay(500)
+
+            // 检查最新的 assistant 消息
+            try {
+                val messages = repository.getMessagesBySession(sessionId)
+                // 取最后一条 assistant 消息
+                val lastAssistant = messages.lastOrNull { it.role == "assistant" }
+                if (lastAssistant != null && lastAssistant.timestamp > startTime) {
+                    val content = lastAssistant.content.uppercase()
+                    val decision = when {
+                        content.contains("APPROVE") || content.contains("批准") || content.contains("允许") -> true
+                        content.contains("DENY") || content.contains("拒绝") || content.contains("禁止") -> false
+                        else -> null // 没有明确决策，继续等待
+                    }
+                    if (decision != null) return decision
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 超时默认拒绝
+        android.util.Log.w("ChatViewModel", "[waitForLLMDecision] 审核超时, requestId=$requestId")
+        return false
+    }
+
+    /**
+     * 处理 SubAgent 生命周期事件：管理 in-chat 状态卡片。
+     */
+    private fun handleSubAgentEvent(event: SubAgentEvent) {
+        when (event) {
+            is SubAgentEvent.TaskStarted -> {
+                if (event.sessionId == _selectedSessionId.value) {
+                    activeTasks[event.taskId] = SubAgentTaskUiState(
+                        taskId = event.taskId,
+                        sessionId = event.sessionId,
+                        taskType = event.taskType,
+                        description = event.description,
+                        status = TaskStatus.RUNNING,
+                        progressMessage = null,
+                        result = null,
+                        startedAtMs = System.currentTimeMillis()
+                    )
+                }
+            }
+            is SubAgentEvent.TaskProgress -> {
+                activeTasks[event.taskId]?.let { task ->
+                    activeTasks[event.taskId] = task.copy(progressMessage = event.message)
+                }
+            }
+            is SubAgentEvent.TaskCompleted -> {
+                activeTasks[event.taskId]?.let { task ->
+                    activeTasks[event.taskId] = task.copy(
+                        status = TaskStatus.COMPLETED,
+                        result = event.result
+                    )
+                }
+                // Auto-remove card after 3 seconds
+                viewModelScope.launch {
+                    delay(3000)
+                    activeTasks.remove(event.taskId)
+                }
+            }
+            is SubAgentEvent.TaskFailed -> {
+                activeTasks[event.taskId]?.let { task ->
+                    activeTasks[event.taskId] = task.copy(
+                        status = TaskStatus.FAILED,
+                        result = event.error
+                    )
+                }
+                // Auto-remove card after 5 seconds
+                viewModelScope.launch {
+                    delay(5000)
+                    activeTasks.remove(event.taskId)
+                }
+            }
+        }
     }
 
     private suspend fun generateSystemPrompt(customSystemPrompt: String, userMessage: String = ""): String {
@@ -1307,6 +1499,36 @@ Only output the JSON array, nothing else."""
         viewModelScope.launch {
             repository.deleteTemplate(template)
         }
+    }
+
+    // ── 审计历史 ────────────────────────────────────────────────────────
+    fun loadAuditHistory(limit: Int = 100) {
+        viewModelScope.launch {
+            try {
+                val history = repository.getRecentAuditActivity(limit)
+                _auditHistory.value = history
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "加载审计历史失败", e)
+            }
+        }
+    }
+
+    // ── 记忆关联查询 ──────────────────────────────────────────────────
+    suspend fun getOutgoingAssociations(memoryId: Long): List<com.omnichat.data.MemoryAssociation> {
+        return repository.getOutgoingAssociations(memoryId)
+    }
+
+    suspend fun getIncomingAssociations(memoryId: Long): List<com.omnichat.data.MemoryAssociation> {
+        return repository.getIncomingAssociations(memoryId)
+    }
+
+    suspend fun getAssociationCount(memoryId: Long): Int {
+        return repository.getAssociationCount(memoryId)
+    }
+
+    // ── 提示词模板查询 ────────────────────────────────────────────────
+    suspend fun getTemplateById(id: Long): com.omnichat.data.PromptTemplate? {
+        return repository.getTemplateById(id)
     }
 
     private suspend fun seedDatabaseIfNeeded() = withContext(Dispatchers.IO) {
