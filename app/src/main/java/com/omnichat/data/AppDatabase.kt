@@ -957,6 +957,8 @@ abstract class AppDatabase : RoomDatabase() {
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。
                     // v4+ 均有显式迁移脚本（含中间版本的破坏性迁移 MIGRATION_19_22/23_25/30_32）。
                     .fallbackToDestructiveMigrationFrom(dropAllTables = true, *(1..3).toList().toIntArray())
+                    // 全局兜底：恢复备份等场景下数据库版本可能不匹配，允许 destructive migration
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
