@@ -437,6 +437,20 @@ class CloudBackupManager(private val context: Context) {
             File(dbPath.path + "-wal").delete()
             File(dbPath.path + "-shm").delete()
 
+            // Verify the restored database can be opened; if not, delete and let Room recreate
+            try {
+                val testDb = AppDatabase.getDatabase(context)
+                testDb.openHelper.readableDatabase
+                testDb.close()
+                AppDatabase.clearInstance()
+            } catch (e: Exception) {
+                // Restored DB schema is incompatible — delete and recreate fresh
+                AppDatabase.clearInstance()
+                dbPath.delete()
+                File(dbPath.path + "-wal").delete()
+                File(dbPath.path + "-shm").delete()
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
