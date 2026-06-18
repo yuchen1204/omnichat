@@ -299,6 +299,7 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
             val result = when (backup.type) {
                 "omnidb" -> manager.restoreDatabaseBackup(backup.id)
                 "omniconfig" -> manager.restoreConfigBackup(backup.id)
+                "omnifile" -> manager.restoreOmnifileBackup(backup.id)
                 else -> Result.failure(Exception("Unknown backup type"))
             }
             result.fold(

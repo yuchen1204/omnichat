@@ -402,6 +402,47 @@ class CloudBackupManager(private val context: Context) {
         }
     }
 
+    suspend fun restoreOmnifileBackup(backupId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val data = repository.downloadBackup(backupId).getOrThrow()
+
+            // Validate header
+            val headerStr = String(data, 0, minOf(10, data.size), Charsets.UTF_8)
+            if (!headerStr.startsWith("OMNIFILE1")) {
+                return@withContext Result.failure(Exception("Invalid omnifile header"))
+            }
+
+            // Parse omnifile: skip 10-byte header, read metadata length, metadata, then database payload
+            val headerSize = "OMNIFILE1\n".toByteArray().size
+            val metadataLength = java.nio.ByteBuffer.wrap(data, headerSize, 4)
+                .order(java.nio.ByteOrder.BIG_ENDIAN).int
+            val metadataStart = headerSize + 4
+            val databaseStart = metadataStart + metadataLength
+
+            if (databaseStart >= data.size) {
+                return@withContext Result.failure(Exception("Omnifile contains no database payload"))
+            }
+
+            val dbData = data.copyOfRange(databaseStart, data.size)
+
+            // Close database, replace file, restart app
+            val db = AppDatabase.getDatabase(context)
+            db.close()
+            AppDatabase.clearInstance()
+
+            val dbPath = context.getDatabasePath("ai_chat_memory_db")
+            dbPath.writeBytes(dbData)
+
+            // Delete WAL/SHM
+            File(dbPath.path + "-wal").delete()
+            File(dbPath.path + "-shm").delete()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     // --- Settings ---
 
     fun setWorkersUrl(url: String) {
