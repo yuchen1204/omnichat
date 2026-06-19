@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.omnichat.R
 import com.omnichat.data.McpFilePermission
 import com.omnichat.ui.theme.LocalCustomColors
@@ -190,122 +192,185 @@ fun PermissionManagerScreen(
 
     // 单条删除确认对话框
     if (pendingDeleteId != null) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { pendingDeleteId = null },
-            title = {
-                Text(
-                    uiText("permission_delete_confirm_title", R.string.permission_delete_confirm_title),
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            text = {
-                Text(
-                    uiText("permission_delete_confirm_message", R.string.permission_delete_confirm_message),
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDeleteId?.let { onDeletePermission(it) }
-                        pendingDeleteId = null
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                shape = RoundedCornerShape(cornerRadius),
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = uiText("permission_delete_confirm_title", R.string.permission_delete_confirm_title),
+                        fontSize = (16 * fs).sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = uiText("permission_delete_confirm_message", R.string.permission_delete_confirm_message),
+                        fontSize = (14 * fs).sp,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { pendingDeleteId = null }) {
+                            Text(
+                                stringResource(R.string.action_cancel),
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                pendingDeleteId?.let { onDeletePermission(it) }
+                                pendingDeleteId = null
+                            }
+                        ) {
+                            Text(
+                                stringResource(R.string.action_confirm),
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
-                ) {
-                    Text(
-                        stringResource(R.string.action_confirm),
-                        fontFamily = resolvedFontFamily
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeleteId = null }) {
-                    Text(
-                        stringResource(R.string.action_cancel),
-                        fontFamily = resolvedFontFamily
-                    )
                 }
             }
-        )
+        }
     }
 
     // 清空所有确认对话框
     if (showDeleteAllDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showDeleteAllDialog = false },
-            title = {
-                Text(
-                    uiText("permission_delete_all_confirm_title", R.string.permission_delete_all_confirm_title),
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            text = {
-                Text(
-                    uiText("permission_delete_all_confirm_message", R.string.permission_delete_all_confirm_message),
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteAll()
-                        showDeleteAllDialog = false
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                shape = RoundedCornerShape(cornerRadius),
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = uiText("permission_delete_all_confirm_title", R.string.permission_delete_all_confirm_title),
+                        fontSize = (16 * fs).sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = uiText("permission_delete_all_confirm_message", R.string.permission_delete_all_confirm_message),
+                        fontSize = (14 * fs).sp,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { showDeleteAllDialog = false }) {
+                            Text(
+                                stringResource(R.string.action_cancel),
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                onDeleteAll()
+                                showDeleteAllDialog = false
+                            }
+                        ) {
+                            Text(
+                                stringResource(R.string.action_confirm),
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
-                ) {
-                    Text(
-                        stringResource(R.string.action_confirm),
-                        fontFamily = resolvedFontFamily
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteAllDialog = false }) {
-                    Text(
-                        stringResource(R.string.action_cancel),
-                        fontFamily = resolvedFontFamily
-                    )
                 }
             }
-        )
+        }
     }
 
     // 仅清空已允许确认对话框
     if (showDeleteAllowedDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showDeleteAllowedDialog = false },
-            title = {
-                Text(
-                    uiText("permission_delete_allowed_confirm_title", R.string.permission_delete_allowed_confirm_title),
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            text = {
-                Text(
-                    uiText("permission_delete_allowed_confirm_message", R.string.permission_delete_allowed_confirm_message),
-                    fontFamily = resolvedFontFamily
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteAllowed()
-                        showDeleteAllowedDialog = false
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                shape = RoundedCornerShape(cornerRadius),
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = uiText("permission_delete_allowed_confirm_title", R.string.permission_delete_allowed_confirm_title),
+                        fontSize = (16 * fs).sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = uiText("permission_delete_allowed_confirm_message", R.string.permission_delete_allowed_confirm_message),
+                        fontSize = (14 * fs).sp,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { showDeleteAllowedDialog = false }) {
+                            Text(
+                                stringResource(R.string.action_cancel),
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                onDeleteAllowed()
+                                showDeleteAllowedDialog = false
+                            }
+                        ) {
+                            Text(
+                                stringResource(R.string.action_confirm),
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
-                ) {
-                    Text(
-                        stringResource(R.string.action_confirm),
-                        fontFamily = resolvedFontFamily
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteAllowedDialog = false }) {
-                    Text(
-                        stringResource(R.string.action_cancel),
-                        fontFamily = resolvedFontFamily
-                    )
                 }
             }
-        )
+        }
     }
 }
 
