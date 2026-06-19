@@ -2061,27 +2061,66 @@ object BuiltinToolHandler {
         return steps
     }
 
-    private fun formatWorkflowResult(results: List<StepResult>, durationSeconds: Long): String {
-        return buildString {
-            appendLine("Workflow completed in ${durationSeconds}s")
-            appendLine()
-            results.forEachIndexed { index, result ->
-                val statusIcon = when (result.status) {
-                    WorkflowStepStatus.COMPLETED -> "✓"
-                    WorkflowStepStatus.FAILED -> "✗"
-                    WorkflowStepStatus.SKIPPED -> "⊘"
-                    WorkflowStepStatus.PENDING -> "○"
-                    WorkflowStepStatus.RUNNING -> "◌"
-                }
-                appendLine("$statusIcon Step ${result.stepId}: ${result.status}")
-                if (result.result != null) {
-                    appendLine("  Result: ${result.result.take(200)}${if (result.result.length > 200) "..." else ""}")
-                }
-                if (result.error != null) {
-                    appendLine("  Error: ${result.error}")
-                }
+    private fun formatWorkflowResult(
+        results: List<StepResult>,
+        durationSeconds: Long
+    ): String {
+        val successCount = results.count { it.status == WorkflowStepStatus.COMPLETED }
+        val failedCount = results.count { it.status == WorkflowStepStatus.FAILED }
+        val skippedCount = results.count { it.status == WorkflowStepStatus.SKIPPED }
+
+        val overallStatus = when {
+            failedCount > 0 -> "completed with failures"
+            skippedCount > 0 -> "completed with skipped steps"
+            else -> "completed successfully"
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("Workflow $overallStatus ($successCount succeeded, $failedCount failed, $skippedCount skipped in ${durationSeconds}s)")
+        sb.appendLine()
+        sb.appendLine("Step Summary:")
+
+        for (result in results) {
+            val icon = when (result.status) {
+                WorkflowStepStatus.COMPLETED -> "✅"
+                WorkflowStepStatus.FAILED -> "❌"
+                WorkflowStepStatus.SKIPPED -> "⏭️"
+                WorkflowStepStatus.RUNNING -> "🔄"
+                WorkflowStepStatus.PENDING -> "⏳"
+            }
+            val summary = when (result.status) {
+                WorkflowStepStatus.COMPLETED -> summarizeResult(result.result)
+                WorkflowStepStatus.FAILED -> result.error ?: "Unknown error"
+                WorkflowStepStatus.SKIPPED -> result.error ?: "Skipped"
+                else -> "In progress"
+            }
+            sb.appendLine("$icon ${result.stepId}: $summary")
+        }
+
+        val lastSuccess = results.lastOrNull { it.status == WorkflowStepStatus.COMPLETED }
+        if (lastSuccess != null && lastSuccess.result != null) {
+            sb.appendLine()
+            sb.appendLine("Final Output (${lastSuccess.stepId}):")
+            sb.appendLine(lastSuccess.result)
+        }
+
+        val failures = results.filter { it.status == WorkflowStepStatus.FAILED }
+        if (failures.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("Failure Details:")
+            for (f in failures) {
+                sb.appendLine("- ${f.stepId}: ${f.error}")
             }
         }
+
+        return sb.toString()
+    }
+
+    private fun summarizeResult(result: String?): String {
+        if (result.isNullOrBlank()) return "No output"
+        val lines = result.lines().filter { it.isNotBlank() }
+        val firstLine = lines.firstOrNull()?.take(80) ?: "No output"
+        return if (firstLine.length < lines.firstOrNull()?.length ?: 0) "$firstLine..." else firstLine
     }
 
     private fun successResponse(text: String): JSONObject = JSONObject().apply {
