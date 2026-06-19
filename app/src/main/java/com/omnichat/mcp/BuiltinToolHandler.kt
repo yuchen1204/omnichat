@@ -1937,6 +1937,68 @@ object BuiltinToolHandler {
         }
     }
 
+    private suspend fun handlePipelineWorkflow(
+        context: Context,
+        arguments: JSONObject,
+        sessionId: Long
+    ): JSONObject {
+        val stepsArray = arguments.optJSONArray("steps")
+        if (stepsArray == null || stepsArray.length() == 0) {
+            return errorResponse("steps array is required for pipeline mode")
+        }
+
+        val steps = try {
+            parseWorkflowSteps(stepsArray)
+        } catch (e: IllegalArgumentException) {
+            return errorResponse(e.message ?: "Invalid steps format")
+        }
+
+        val startTime = System.currentTimeMillis()
+
+        return try {
+            val results = WorkflowEngine.executePipeline(
+                context = context,
+                sessionId = sessionId,
+                steps = steps
+            )
+            val duration = (System.currentTimeMillis() - startTime) / 1000
+            successResponse(formatWorkflowResult(results, duration))
+        } catch (e: Exception) {
+            errorResponse("Pipeline workflow failed: ${e.message}")
+        }
+    }
+
+    private suspend fun handleDagWorkflow(
+        context: Context,
+        arguments: JSONObject,
+        sessionId: Long
+    ): JSONObject {
+        val stepsArray = arguments.optJSONArray("steps")
+        if (stepsArray == null || stepsArray.length() == 0) {
+            return errorResponse("steps array is required for dag mode")
+        }
+
+        val steps = try {
+            parseWorkflowSteps(stepsArray)
+        } catch (e: IllegalArgumentException) {
+            return errorResponse(e.message ?: "Invalid steps format")
+        }
+
+        val startTime = System.currentTimeMillis()
+
+        return try {
+            val results = WorkflowEngine.executeDAG(
+                context = context,
+                sessionId = sessionId,
+                steps = steps
+            )
+            val duration = (System.currentTimeMillis() - startTime) / 1000
+            successResponse(formatWorkflowResult(results, duration))
+        } catch (e: Exception) {
+            errorResponse("DAG workflow failed: ${e.message}")
+        }
+    }
+
     private fun successResponse(text: String): JSONObject = JSONObject().apply {
         put("content", org.json.JSONArray().apply {
             put(JSONObject().apply {
