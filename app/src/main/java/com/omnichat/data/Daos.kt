@@ -336,6 +336,15 @@ interface McpFilePermissionDao {
 
     @Query("DELETE FROM mcp_file_permissions")
     suspend fun deleteAllPermissions()
+
+    @Query("SELECT * FROM mcp_file_permissions ORDER BY createdAt DESC")
+    fun getAllPermissionsFlow(): Flow<List<McpFilePermission>>
+
+    @Query("DELETE FROM mcp_file_permissions WHERE id = :id")
+    suspend fun deletePermissionById(id: Long)
+
+    @Query("DELETE FROM mcp_file_permissions WHERE isAllowed = 1")
+    suspend fun deleteAllowedPermissions()
 }
 
 @Dao
