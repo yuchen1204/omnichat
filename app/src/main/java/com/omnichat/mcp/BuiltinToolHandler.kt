@@ -1914,6 +1914,29 @@ object BuiltinToolHandler {
         return successResponse(text)
     }
 
+    // ── Workflow 工具 ────────────────────────────────────────────────────────
+
+    private suspend fun handleRunWorkflow(
+        context: Context,
+        arguments: JSONObject,
+        sessionId: Long?
+    ): JSONObject {
+        val mode = arguments.optString("mode", "")
+        if (mode.isBlank()) {
+            return errorResponse("mode is required")
+        }
+        if (sessionId == null) {
+            return errorResponse("sessionId is required for run_workflow")
+        }
+
+        return when (mode) {
+            "pipeline" -> handlePipelineWorkflow(context, arguments, sessionId)
+            "dag" -> handleDagWorkflow(context, arguments, sessionId)
+            "conversational" -> handleConversationalWorkflow(context, arguments, sessionId)
+            else -> errorResponse("Invalid mode: $mode. Valid modes: pipeline, dag, conversational")
+        }
+    }
+
     private fun successResponse(text: String): JSONObject = JSONObject().apply {
         put("content", org.json.JSONArray().apply {
             put(JSONObject().apply {
