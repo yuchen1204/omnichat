@@ -22,8 +22,10 @@ import com.omnichat.data.OmnifileFormat
 import java.io.BufferedInputStream
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -34,6 +36,15 @@ import org.json.JSONObject
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = AppRepository(database)
+
+    init {
+        // 加载权限列表
+        viewModelScope.launch {
+            repository.getAllMcpFilePermissionsFlow().collect { permissions ->
+                _filePermissions.value = permissions
+            }
+        }
+    }
 
     // 解决启动时主题闪烁：同步加载初始设置作为 StateFlow 的初始值
     private val initialSettings = runBlocking {
@@ -46,6 +57,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = initialSettings
         )
+
+    // ── MCP 文件权限管理 ─────────────────────────────────────────────────────
+    private val _filePermissions = MutableStateFlow<List<McpFilePermission>>(emptyList())
+    val filePermissions: StateFlow<List<McpFilePermission>> = _filePermissions.asStateFlow()
 
     fun updateUISettings(settings: UISettings) {
         viewModelScope.launch {
@@ -717,7 +732,27 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             spacingMultiplier = obj.optDouble("spacingMultiplier", defaults.spacingMultiplier.toDouble()).toFloat()
         )
     }
-}
+
+    // ── MCP 文件权限操作 ─────────────────────────────────────────────────────
+    fun deletePermission(id: Long) {
+        viewModelScope.launch {
+            repository.deleteMcpFilePermissionById(id)
+        }
+    }
+
+    fun deleteAllPermissions() {
+        viewModelScope.launch {
+            repository.deleteAllMcpFilePermissions()
+        }
+    }
+
+    fun deleteAllowedPermissions() {
+        viewModelScope.launch {
+            repository.deleteAllowedMcpFilePermissions()
+        }
+    }
+
+} // end of SettingsViewModel class
 
 sealed class ExportImportStatus {
     object Idle : ExportImportStatus()
