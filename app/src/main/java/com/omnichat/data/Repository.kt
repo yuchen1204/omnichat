@@ -207,6 +207,11 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun insertMcpFilePermission(perm: McpFilePermission): Long = mcpFilePermissionDao.insertPermission(perm)
     suspend fun deleteAllMcpFilePermissions() = mcpFilePermissionDao.deleteAllPermissions()
 
+    // MCP File Permissions - Reactive & Delete Methods
+    fun getAllMcpFilePermissionsFlow(): Flow<List<McpFilePermission>> = mcpFilePermissionDao.getAllPermissionsFlow()
+    suspend fun deleteMcpFilePermissionById(id: Long) = mcpFilePermissionDao.deletePermissionById(id)
+    suspend fun deleteAllowedMcpFilePermissions() = mcpFilePermissionDao.deleteAllowedPermissions()
+
     // Cloud Backups
     suspend fun getCloudBackups(userId: String): List<CloudBackupRecord> =
         cloudBackupDao.getBackupsByUser(userId)
