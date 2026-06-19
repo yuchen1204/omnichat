@@ -302,7 +302,8 @@ fun SettingsView(
         uiText("tab.settings.models", R.string.tab_settings_models),
         uiText("tab.settings.mcp", R.string.tab_settings_mcp),
         uiText("tab.settings.memory", R.string.tab_settings_memory),
-        uiText("tab.settings.data", R.string.tab_settings_data)
+        uiText("tab.settings.data", R.string.tab_settings_data),
+        uiText("tab.settings.permissions", R.string.tab_settings_permissions)
     )
     val settingsViewModel: SettingsViewModel = viewModel()
 
@@ -341,6 +342,15 @@ fun SettingsView(
                 1 -> McpConfigScreen(mcpViewModel = mcpViewModel)
                 2 -> MemoryAndPromptView(viewModel)
                 3 -> ExportImportView(settingsViewModel = settingsViewModel)
+                4 -> {
+                    val permissions by settingsViewModel.filePermissions.collectAsStateWithLifecycle()
+                    PermissionManagerScreen(
+                        permissions = permissions,
+                        onDeletePermission = { settingsViewModel.deletePermission(it) },
+                        onDeleteAll = { settingsViewModel.deleteAllPermissions() },
+                        onDeleteAllowed = { settingsViewModel.deleteAllowedPermissions() }
+                    )
+                }
             }
         }
     }
