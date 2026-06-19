@@ -11,6 +11,10 @@ import com.omnichat.data.AppRepository
 import com.omnichat.data.FileAccessType
 import com.omnichat.data.UISettings
 import com.omnichat.agent.SubAgent
+import com.omnichat.agent.WorkflowEngine
+import com.omnichat.agent.WorkflowStep
+import com.omnichat.agent.StepResult
+import com.omnichat.agent.WorkflowStepStatus
 import com.omnichat.agent.MessageBus
 import com.omnichat.data.ColorSchemePreset
 import com.omnichat.data.ColorSchemePreset.Companion.toUISettings
@@ -69,6 +73,7 @@ object BuiltinToolHandler {
             "check_task_status" -> handleCheckTaskStatus(context, arguments)
             "send_agent_message" -> handleSendAgentMessage(context, arguments)
             "read_agent_inbox" -> handleReadAgentInbox(context)
+            "run_workflow" -> handleRunWorkflow(context, arguments, sessionId)
             else -> errorResponse(str(context, R.string.tool_unknown_builtin, toolName))
         }
     }
@@ -1822,13 +1827,33 @@ object BuiltinToolHandler {
         }
 
         return try {
-            val result = SubAgent.executeSync(
+            val rawResult = SubAgent.executeSync(
                 context = context,
                 agentType = agentType,
                 taskDescription = task,
                 sessionId = sessionId
             )
-            successResponse(result)
+            // Parse structured JSON result for cleaner tool response
+            val response = try {
+                val json = JSONObject(rawResult)
+                val status = json.optString("status", "DONE")
+                val content = json.optString("result", rawResult)
+                val confidence = json.optString("confidence", "")
+                val notes = json.optString("notes", "")
+                buildString {
+                    appendLine("Status: $status")
+                    if (confidence.isNotBlank()) appendLine("Confidence: $confidence")
+                    appendLine()
+                    appendLine(content)
+                    if (notes.isNotBlank()) {
+                        appendLine()
+                        appendLine("Notes: $notes")
+                    }
+                }
+            } catch (_: Exception) {
+                rawResult // fallback: raw text
+            }
+            successResponse(response)
         } catch (e: Exception) {
             errorResponse("Failed to delegate task: ${e.message}")
         }
