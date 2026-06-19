@@ -349,6 +349,7 @@ class McpRuntimeManager private constructor(private val context: Context) {
             "check_task_status" to "subagent",
             "send_agent_message" to "subagent",
             "read_agent_inbox" to "subagent",
+            "run_workflow" to "subagent",
         )
 
         fun getInstance(context: Context): McpRuntimeManager {
@@ -704,7 +705,82 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "create_document",
-            description = "Create an exquisite, formatted document (PDF, Excel, Word, or PowerPoint) with rich sections and styling. Use this for reports, presentations, or data analysis.\n\n**Sections support:**\n- `heading`: Title/Header text with hierarchy (1-3).\n- `text`: Paragraph text, supports **bold**, *italic*, and lists if `markdown` is true.\n- `table`: Data grid with headers and rows.\n- `image`: Insert image from local path (OmniChat/files/path.jpg).\n- `page_break`: Force a new page or slide.\n\n**Style options:**\n- `themeColor`: Hex color code (e.g., \"#1A73E8\").\n- `preset`: \"business\", \"modern\", or \"classic\".",
+            description = """Create a professionally formatted document (PDF, Word, Excel, or PowerPoint) with structured sections and styling.
+
+## When to Use
+- Reports, analysis, or documentation that needs professional formatting
+- Presentations with slides
+- Data tables that need structure
+- Multi-page documents with headers and sections
+
+## Format-Specific Notes
+
+**PDF**: Best for reports that need fixed layout.
+- Title appears on a colored cover banner
+- Headings have color hierarchy (H1 = theme color, H2/H3 = black bold)
+- Tables have alternating row colors with theme-colored headers
+- Pages include footer with page number
+
+**Word (.docx)**: Best for editable documents.
+- Title is centered, large, themed
+- Tables stretch full width with themed headers
+
+**Excel (.xlsx)**: Best for data-heavy documents.
+- Title spans merged cells at top
+- Tables are native spreadsheet rows/columns
+- Auto-sized columns
+
+**PowerPoint (.pptx)**: Best for presentations.
+- First slide is title slide
+- Each `page_break` creates a new slide
+- Use heading for slide title, text for bullet points
+
+## Section Types
+
+| Type | Purpose | Key Parameters |
+|------|---------|----------------|
+| `heading` | Section titles | `content` (text), `level` (1-3) |
+| `text` | Body paragraphs | `content` (plain text only) |
+| `table` | Data grids | `table.headers`, `table.rows` |
+| `image` | Insert image | `content` (file path) |
+| `page_break` | New page/slide | none |
+
+## Important Limitations
+
+1. **NO Markdown rendering**: Do NOT use `**bold**` or `*italic*` - it will appear as literal asterisks. Use ALL CAPS for emphasis sparingly.
+2. **Plain text only in `text` sections**: Write normal sentences.
+3. **Structure with headings**: Break long content into multiple `text` sections separated by `heading` sections.
+4. **Short paragraphs**: Each `text` section should be 1-3 sentences. Split long paragraphs.
+
+## Best Practices
+
+1. Start with a heading (level 1) for each major section
+2. Use heading hierarchy: H1 for main sections, H2 for subsections, H3 for details
+3. Add a heading before each table explaining what it shows
+4. Use page_break only for major section transitions
+
+## Example
+
+```json
+{
+  "path": "reports/q3-analysis.pdf",
+  "format": "pdf",
+  "title": "Q3 Performance Analysis",
+  "style": {"themeColor": "#1A73E8", "preset": "business"},
+  "sections": [
+    {"type": "heading", "content": "Executive Summary", "level": 1},
+    {"type": "text", "content": "Revenue grew 15% quarter-over-quarter."},
+    {"type": "heading", "content": "Revenue Breakdown", "level": 2},
+    {"type": "table", "table": {
+      "headers": ["Product", "Q2", "Q3", "Growth"],
+      "rows": [["Enterprise", ".1M", ".5M", "+19%"]]
+    }},
+    {"type": "page_break"},
+    {"type": "heading", "content": "Detailed Analysis", "level": 1},
+    {"type": "text", "content": "Enterprise growth is attributed to..."}
+  ]
+}
+```""",
             inputSchema = schema {
                 prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"reports/analysis.pdf\".")
                 prop("format", "string", "Document format.") {
@@ -836,13 +912,35 @@ class McpRuntimeManager private constructor(private val context: Context) {
             serverId = BUILTIN_SERVER_ID,
             serverName = BUILTIN_SERVER_NAME,
             name = "delegate_task",
-            description = """Delegate a task to a sub-agent for background execution. The sub-agent runs independently with its own LLM context and tool access. Returns a taskId.
+            description = """Delegate a task to a sub-agent for independent execution. The sub-agent runs with its own LLM context and tool access. Returns a taskId.
 
-WORKFLOW:
-1. The sub-agent starts immediately and runs in the background.
-2. Reply briefly to the user that the task is being worked on.
-3. The result will appear automatically in the chat when the sub-agent completes.
-4. You can optionally call check_task_status(taskId) to check progress at any time.
+WHEN TO DELEGATE:
+- Research tasks (web search, memory lookup, information gathering)
+- Multi-step operations that would block the conversation
+- Tasks requiring focused execution without conversation context
+- Parallel investigations of independent problems
+
+WHEN NOT TO DELEGATE:
+- Simple questions you can answer directly
+- Tasks requiring full conversation history context
+- Single-step tool calls (just call the tool directly)
+- Tasks requiring user interaction/clarification
+
+AGENT TYPE SELECTION:
+- general: Default. Simple focused tasks.
+- researcher: Information gathering, fact-checking, web search.
+- coder: Code analysis, generation, refactoring.
+- reviewer: Code review, quality assessment, spec compliance.
+- tester: Test creation, verification, bug reproduction.
+- planner: Implementation planning, architecture design.
+- orchestrator: Multi-step coordination (rarely needed — prefer direct delegation).
+
+TASK DESCRIPTION BEST PRACTICES:
+1. State the objective clearly (WHAT to achieve)
+2. Provide necessary context (WHY, where it fits)
+3. List acceptance criteria (how to know it's done)
+4. Include constraints (what NOT to do)
+5. Specify expected output format
 
 The sub-agent's result is delivered directly as a chat message — no polling needed.""",
             inputSchema = schema {
@@ -877,6 +975,62 @@ The sub-agent's result is delivered directly as a chat message — no polling ne
             name = "read_agent_inbox",
             description = "Read messages from the current agent's inbox. Returns pending messages from other agents.",
             inputSchema = schema {}
+        ),
+        McpTool(
+            serverId = BUILTIN_SERVER_ID,
+            serverName = BUILTIN_SERVER_NAME,
+            name = "run_workflow",
+            description = """Execute a multi-agent workflow with coordinated execution.
+
+MODES:
+- pipeline: Sequential execution. Each step receives prior results as context.
+- dag: Dependency-based execution. Independent steps run in parallel.
+- conversational: Two agents exchange messages until convergence.
+
+WHEN TO USE EACH MODE:
+- pipeline: Steps have strict order dependency (A must finish before B starts).
+  Example: "Research → Code → Review" → pipeline
+- dag: Steps have partial dependencies, some can run in parallel.
+  Example: "Analyze modules A, B, C independently, then integrate" → dag
+- conversational: Need multi-perspective discussion or debate between two agents.
+  Example: "Design debate between coder and reviewer" → conversational
+
+AGENT TYPES AVAILABLE:
+general, researcher, coder, reviewer, tester, planner, orchestrator
+
+FAILURE HANDLING:
+- pipeline: Stops immediately on first failure.
+- dag: Failed step blocks its dependents; independent steps continue.
+- conversational: Stops immediately on any agent failure.
+
+CONVERGENCE (conversational mode):
+Agents must output [CONVERGED] marker when discussion is complete.
+If no marker, runs until maxRounds (default: 5).
+
+OUTPUT FORMAT:
+Returns step summary + final result. Failed steps show error message.
+""",
+            inputSchema = schema {
+                prop("mode", "string", "Execution mode") {
+                    enum("pipeline", "dag", "conversational")
+                }
+                prop("steps", "array", "Workflow steps (required for pipeline/dag mode)") {
+                    items {
+                        prop("id", "string", "Step identifier (e.g. 'step1', 'research')")
+                        prop("agentType", "string", "Agent type for this step")
+                        prop("task", "string", "Task description for this agent")
+                        prop("dependsOn", "array", "Step IDs this depends on (dag mode only)") {
+                            items { type("string") }
+                        }
+                        prop("resultVariable", "string", "Optional: name to reference this result in downstream steps")
+                    }
+                }
+                prop("agentA", "string", "First agent type (conversational mode)")
+                prop("agentB", "string", "Second agent type (conversational mode)")
+                prop("topic", "string", "Discussion topic (conversational mode)")
+                prop("maxRounds", "integer", "Max conversation rounds (default: 5, conversational mode)")
+                required("mode")
+            }
         ),
     )
 
