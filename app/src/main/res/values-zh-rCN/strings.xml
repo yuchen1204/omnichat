@@ -657,4 +657,22 @@
     <string name="sidebar_update_available">发现新版本</string>
     <string name="sidebar_update_version">当前: %1$s → 最新: %2$s</string>
     <string name="sidebar_update_dismiss">关闭</string>
+
+    <!-- ── Permission Manager ── -->
+    <string name="tab_settings_permissions">权限管理</string>
+    <string name="permission_title">文件访问权限</string>
+    <string name="permission_allowed_group">已允许</string>
+    <string name="permission_denied_group">已禁止</string>
+    <string name="permission_read">只读</string>
+    <string name="permission_write">读写</string>
+    <string name="permission_delete">撤回</string>
+    <string name="permission_delete_all">清空所有</string>
+    <string name="permission_delete_allowed">仅清空已允许</string>
+    <string name="permission_empty">暂无权限记录。当 AI 需要访问外部文件时，您的授权选择将记录在此。</string>
+    <string name="permission_delete_confirm_title">撤回权限</string>
+    <string name="permission_delete_confirm_message">确定要撤回该路径的访问权限吗？</string>
+    <string name="permission_delete_all_confirm_title">清空所有权限</string>
+    <string name="permission_delete_all_confirm_message">这将删除所有权限记录。当 AI 再次访问这些路径时，会重新询问您。</string>
+    <string name="permission_delete_allowed_confirm_title">清空已允许权限</string>
+    <string name="permission_delete_allowed_confirm_message">这将删除所有已允许的权限记录。当 AI 再次访问这些路径时，会重新询问您。</string>
 </resources>

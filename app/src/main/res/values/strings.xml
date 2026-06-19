@@ -656,4 +656,22 @@
     <string name="sidebar_update_available">New version available</string>
     <string name="sidebar_update_version">Current: %1$s → Latest: %2$s</string>
     <string name="sidebar_update_dismiss">Dismiss</string>
+    <!-- ── Permission Manager ── -->
+    <string name="tab_settings_permissions">Permissions</string>
+    <string name="permission_title">File Access Permissions</string>
+    <string name="permission_allowed_group">Allowed</string>
+    <string name="permission_denied_group">Blocked</string>
+    <string name="permission_read">Read</string>
+    <string name="permission_write">Read/Write</string>
+    <string name="permission_delete">Revoke</string>
+    <string name="permission_delete_all">Clear All</string>
+    <string name="permission_delete_allowed">Clear Allowed</string>
+    <string name="permission_empty">No permission records. When AI needs to access external files, your authorization choices will be recorded here.</string>
+    <string name="permission_delete_confirm_title">Revoke Permission</string>
+    <string name="permission_delete_confirm_message">Revoke permission for this path?</string>
+    <string name="permission_delete_all_confirm_title">Clear All Permissions</string>
+    <string name="permission_delete_all_confirm_message">This will remove all permission records. You will be asked again when AI accesses these paths.</string>
+    <string name="permission_delete_allowed_confirm_title">Clear Allowed Permissions</string>
+    <string name="permission_delete_allowed_confirm_message">This will remove all allowed permissions. You will be asked again when AI accesses these paths.</string>
+
 </resources>
