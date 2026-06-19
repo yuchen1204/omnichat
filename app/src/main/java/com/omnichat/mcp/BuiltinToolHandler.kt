@@ -1999,6 +1999,91 @@ object BuiltinToolHandler {
         }
     }
 
+    private suspend fun handleConversationalWorkflow(
+        context: Context,
+        arguments: JSONObject,
+        sessionId: Long
+    ): JSONObject {
+        val agentA = arguments.optString("agentA", "")
+        val agentB = arguments.optString("agentB", "")
+        val topic = arguments.optString("topic", "")
+        val maxRounds = arguments.optInt("maxRounds", 5)
+
+        if (agentA.isBlank() || agentB.isBlank()) {
+            return errorResponse("agentA and agentB are required for conversational mode")
+        }
+        if (topic.isBlank()) {
+            return errorResponse("topic is required for conversational mode")
+        }
+        if (maxRounds <= 0) {
+            return errorResponse("maxRounds must be > 0")
+        }
+
+        val startTime = System.currentTimeMillis()
+
+        return try {
+            val results = WorkflowEngine.executeConversational(
+                context = context,
+                sessionId = sessionId,
+                agentA = agentA,
+                agentB = agentB,
+                topic = topic,
+                maxRounds = maxRounds
+            )
+            val duration = (System.currentTimeMillis() - startTime) / 1000
+            successResponse(formatWorkflowResult(results, duration))
+        } catch (e: Exception) {
+            errorResponse("Conversational workflow failed: ${e.message}")
+        }
+    }
+
+    private fun parseWorkflowSteps(stepsArray: JSONArray): List<WorkflowStep> {
+        val steps = mutableListOf<WorkflowStep>()
+        for (i in 0 until stepsArray.length()) {
+            val obj = stepsArray.optJSONObject(i) ?: continue
+            val id = obj.optString("id", "")
+            val agentType = obj.optString("agentType", "")
+            val task = obj.optString("task", "")
+            val dependsOnArray = obj.optJSONArray("dependsOn")
+            val dependsOn = if (dependsOnArray != null) {
+                (0 until dependsOnArray.length()).map { dependsOnArray.optString(it) }
+            } else {
+                emptyList()
+            }
+            val resultVariable = obj.optString("resultVariable", "").takeIf { it.isNotBlank() }
+
+            if (id.isBlank() || agentType.isBlank() || task.isBlank()) {
+                throw IllegalArgumentException("Step $i: id, agentType, and task are required")
+            }
+
+            steps.add(WorkflowStep(id, agentType, task, dependsOn, resultVariable))
+        }
+        return steps
+    }
+
+    private fun formatWorkflowResult(results: List<StepResult>, durationSeconds: Long): String {
+        return buildString {
+            appendLine("Workflow completed in ${durationSeconds}s")
+            appendLine()
+            results.forEachIndexed { index, result ->
+                val statusIcon = when (result.status) {
+                    WorkflowStepStatus.COMPLETED -> "✓"
+                    WorkflowStepStatus.FAILED -> "✗"
+                    WorkflowStepStatus.SKIPPED -> "⊘"
+                    WorkflowStepStatus.PENDING -> "○"
+                    WorkflowStepStatus.RUNNING -> "◌"
+                }
+                appendLine("$statusIcon Step ${result.stepId}: ${result.status}")
+                if (result.result != null) {
+                    appendLine("  Result: ${result.result.take(200)}${if (result.result.length > 200) "..." else ""}")
+                }
+                if (result.error != null) {
+                    appendLine("  Error: ${result.error}")
+                }
+            }
+        }
+    }
+
     private fun successResponse(text: String): JSONObject = JSONObject().apply {
         put("content", org.json.JSONArray().apply {
             put(JSONObject().apply {

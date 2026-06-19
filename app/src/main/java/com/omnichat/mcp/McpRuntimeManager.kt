@@ -1020,7 +1020,7 @@ Returns step summary + final result. Failed steps show error message.
                         prop("agentType", "string", "Agent type for this step")
                         prop("task", "string", "Task description for this agent")
                         prop("dependsOn", "array", "Step IDs this depends on (dag mode only)") {
-                            items { type("string") }
+                            items { }
                         }
                         prop("resultVariable", "string", "Optional: name to reference this result in downstream steps")
                     }
