@@ -8,6 +8,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -52,6 +53,38 @@ data class StepResult(
     val revisionCount: Int = 0,        // how many times this step was recalled for revision
     val idleTimeMs: Long = 0,          // cumulative time spent in IDLE status
     val lastMessageFrom: String? = null // source of the last received message
+)
+
+/**
+ * Internal state for interactive pipeline execution.
+ */
+internal data class InteractivePipelineState(
+    val workflowId: String,
+    val sessionId: Long,
+    val steps: List<WorkflowStep>,
+    val agentStates: MutableMap<String, AgentState>,  // stepId -> AgentState
+    val contextVariables: MutableMap<String, String>,
+    val messageQueue: MutableList<PendingMessage>,
+    var status: WorkflowStatus
+)
+
+internal data class AgentState(
+    val stepId: String,
+    val handle: IdleAgentHandle?,
+    val status: WorkflowStepStatus,
+    val idleSince: Long?,
+    val runningSince: Long?,
+    val conversationHistory: MutableList<JSONObject>,
+    val idleTimeoutWarningSent: Boolean = false,
+    val revisionCount: Int = 0,
+    val lastMessageFrom: String? = null
+)
+
+internal data class PendingMessage(
+    val from: String,
+    val to: String,
+    val content: String,
+    val timestamp: Long
 )
 
 /**
