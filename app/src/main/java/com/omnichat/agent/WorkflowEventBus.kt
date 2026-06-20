@@ -24,7 +24,33 @@ data class WorkflowStepUiState(
     val status: WorkflowStepStatus,
     val result: String? = null,
     val error: String? = null,
-    val dependsOn: List<String> = emptyList()
+    val dependsOn: List<String> = emptyList(),
+    val idleSince: Long? = null,
+    val runningSince: Long? = null,
+    val revisionCount: Int = 0,
+    val lastMessageFrom: String? = null,
+    val lastMessagePreview: String? = null
+)
+
+/**
+ * IDLE 超时警告信息。
+ */
+data class IdleWarningInfo(
+    val stepId: String,
+    val idleDurationMs: Long,
+    val message: String,
+    val timestamp: Long
+)
+
+/**
+ * 消息路由错误信息。
+ */
+data class MessageErrorInfo(
+    val from: String,
+    val to: String,
+    val error: String,
+    val availableTargets: List<String>,
+    val timestamp: Long
 )
 
 /**
@@ -44,7 +70,9 @@ data class WorkflowUiState(
     val maxRounds: Int = 5,          // Conversational 模式的最大轮次
     val startedAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
-    val error: String? = null
+    val error: String? = null,
+    val idleWarnings: List<IdleWarningInfo> = emptyList(),
+    val messageErrors: List<MessageErrorInfo> = emptyList()
 )
 
 /**
