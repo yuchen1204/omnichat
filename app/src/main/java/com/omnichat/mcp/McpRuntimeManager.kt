@@ -914,6 +914,8 @@ class McpRuntimeManager private constructor(private val context: Context) {
             name = "delegate_task",
             description = """Delegate a task to a sub-agent for independent execution. The sub-agent runs with its own LLM context and tool access. Returns a taskId.
 
+⚠️ BLOCKING CALL: This tool is ASYNC but the result arrives as a chat message. You MUST NOT duplicate the delegated task yourself. DO NOT start the same work in parallel. Wait for the result message to appear before proceeding with related work.
+
 WHEN TO DELEGATE:
 - Research tasks (web search, memory lookup, information gathering)
 - Multi-step operations that would block the conversation
@@ -981,6 +983,8 @@ The sub-agent's result is delivered directly as a chat message — no polling ne
             serverName = BUILTIN_SERVER_NAME,
             name = "run_workflow",
             description = """Execute a multi-agent workflow with coordinated execution.
+
+⚠️ BLOCKING CALL: This tool is SYNCHRONOUS. You MUST wait for it to complete before taking any other action. DO NOT start parallel work while the workflow is running. DO NOT attempt the same task yourself while waiting. You will receive the complete results when the tool returns.
 
 MODES:
 - pipeline: Sequential execution. Each step receives prior results as context.

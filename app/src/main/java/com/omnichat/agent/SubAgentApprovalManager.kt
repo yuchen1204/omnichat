@@ -149,12 +149,8 @@ $correctedPathsText
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse approval response: $content", e)
-            // 如果无法解析，检查是否包含 approve 关键词
-            if (content.contains("approve", ignoreCase = true)) {
-                ApprovalResult.Approved()
-            } else {
-                ApprovalResult.Rejected("Failed to parse MainAgent response")
-            }
+            // 解析失败时默认拒绝，避免误批准危险操作
+            ApprovalResult.Rejected("Failed to parse MainAgent response")
         }
     }
 

@@ -17,8 +17,9 @@ class McpViewModel(application: Application) : AndroidViewModel(application) {
     val runtimeManager = McpRuntimeManager.getInstance(application)
 
     // 所有已配置的 MCP server（来自数据库）
+    // 使用 Eagerly 策略确保 Flow 始终保持活跃，避免数据更新延迟
     val mcpServers: StateFlow<List<McpServer>> = repository.allMcpServers
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // 各 server 的运行状态
     val serverStates: StateFlow<Map<Long, McpServerState>> = runtimeManager.serverStates

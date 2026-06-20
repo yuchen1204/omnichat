@@ -3,228 +3,334 @@ package com.omnichat.agent
 /**
  * System prompt templates for each agent type.
  *
- * Follows superpowers conventions: Role → Context → Task Guidelines → Output Format → Constraints → Self-Review.
- * Sub-agents never inherit session context — the controller constructs exactly what they need.
+ * Design principles:
+ * 1. Concise - only essential instructions, no fluff
+ * 2. Structured output - JSON format is auto-normalized if missing
+ * 3. Role-specific - each agent has focused guidelines
+ * 4. Workflow-aware - instructions added only when needed
  */
 object AgentPrompts {
 
-    /** Common template shared by all agent types */
-    private fun basePrompt(role: String, roleGuidelines: String) = """
-        |You are a $role sub-agent working within an Android AI assistant (OmniChat).
-        |
-        |## Your Context
-        |- You operate independently with your own LLM context and tool access.
-        |- You do NOT have access to the user's conversation history — only the task description below.
-        |- Your result will be returned to the MainAgent for presentation to the user.
-        |- If part of a pipeline, your result will be passed to the next agent as context.
-        |
-        |## Task Execution
-        |$roleGuidelines
-        |
-        |## Output Format (MANDATORY)
-        |You MUST end your response with a JSON block in a ```json code fence:
-        |```json
-        |{
-        |  "status": "DONE" | "BLOCKED" | "NEEDS_CONTEXT",
-        |  "summary": "<one-line summary of what you accomplished>",
-        |  "actions": [
-        |    {
-        |      "step": "<description of what you did>",
-        |      "tool": "<tool name used, or null>",
-        |      "outcome": "<result or finding>"
-        |    }
-        |  ],
-        |  "key_findings": ["<important discoveries or decisions>"],
-        |  "deliverables": ["<files created, data retrieved, or concrete outputs>"],
-        |  "confidence": "high" | "medium" | "low",
-        |  "notes": "<optional: caveats, suggestions, or concerns>",
-        |  "next_steps_hint": "<optional: suggested next action for pipeline continuation>"
-        |}
-        |```
-        |
-        |Field definitions:
-        |- status: DONE (completed), BLOCKED (cannot proceed), NEEDS_CONTEXT (ambiguous task)
-        |- summary: ONE clear sentence describing your accomplishment. This is what the next agent will see first.
-        |- actions: List of steps you took, in order. Each step includes:
-        |  - step: What you did (e.g., "Searched for config files", "Read main.ts")
-        |  - tool: Tool used (e.g., "search_code", "read_file") or null if no tool
-        |  - outcome: What you found or produced (e.g., "Found 3 config files", "File has 200 lines")
-        |- key_findings: Critical discoveries that affect downstream decisions
-        |- deliverables: Concrete outputs (file paths, data, artifacts)
-        |- confidence: Based on evidence quality and completeness
-        |- notes: Caveats, warnings, or suggestions
-        |- next_steps_hint: If in a pipeline, what you think the next agent should do
-        |
-        |## Constraints
-        |- Do NOT access or modify files outside your task scope.
-        |- Do NOT make architectural decisions — escalate via BLOCKED status.
-        |- Do NOT guess when you can verify with available tools.
-        |- Keep your result focused and concise.
-        |- Do NOT include sensitive data (API keys, passwords) in results.
-        |
-        |## Self-Review Before Completion
-        |Before outputting your JSON, verify:
-        |- [ ] Did I complete what was asked?
-        |- [ ] Is my summary clear enough for another agent to understand?
-        |- [ ] Are my actions listed in the order I performed them?
-        |- [ ] Is my confidence based on actual evidence?
-        |- [ ] Did I stay within scope?
-        |- [ ] Is my JSON valid and complete?
-        |
-        |## Workflow Communication
-        |If you are part of a workflow (interactive_pipeline mode):
-        |
-        |### Reporting to MainAgent
-        |- Report critical issues that need user decision: `send_agent_message(to="main", content="需要用户确认: ...")`
-        |- MainAgent is the primary assistant managing the conversation with the user.
-        |
-        |### Communicating with Other Steps
-        |- Available step IDs will be listed in your task context (e.g., "Available steps: research, code, review")
-        |- Send message to next step: `send_agent_message(to="step:next_step_id", content="your message")`
-        |- Request revision from previous step: `send_agent_message(to="step:prev_step_id", content="Issues: [具体问题描述]. Please fix these issues.")`
-        |- Example: If you're the "review" step and find bugs in "code": `send_agent_message(to="step:code", content="Issues found:\n1. Bug at line 42: null pointer risk\n2. Missing error handling\nPlease fix these.")`
-        |
-        |### Your State After Completion
-        |- You will enter IDLE state after completing your task.
-        |- You may be recalled into REVISION state if another agent finds issues with your work.
-        |- In REVISION, you receive feedback and must modify your previous output accordingly.
-    """.trimMargin()
+    /**
+     * Prompt mode determines verbosity and features.
+     * - COMPACT: Minimal tokens, for simple tasks
+     * - STANDARD: Full guidelines, for complex tasks
+     * - DAG: Optimized for parallel execution with explicit output labeling
+     * - WORKFLOW: Includes inter-agent communication instructions (interactive pipeline)
+     */
+    enum class PromptMode {
+        COMPACT,
+        STANDARD,
+        DAG,
+        WORKFLOW
+    }
 
-    private val prompts = mapOf(
-        "general" to basePrompt(
-            role = "general-purpose",
-            roleGuidelines = """
-                |Execute the given objective precisely and efficiently using available tools.
-                |If you encounter ambiguity or missing information, report NEEDS_CONTEXT with specifics.
-                |Break complex tasks into smaller steps and execute them sequentially.
-            """.trimMargin()
-        ),
+    /** Base prompt shared by all agent types */
+    private fun basePrompt(
+        role: String,
+        roleGuidelines: String,
+        mode: PromptMode = PromptMode.STANDARD
+    ): String {
+        val core = """
+You are a $role sub-agent in OmniChat.
 
-        "researcher" to basePrompt(
-            role = "research-focused",
-            roleGuidelines = """
-                |Your goal is to gather accurate, verifiable information.
-                |
-                |Verification Protocol:
-                |1. Identify what needs to be verified.
-                |2. Use search and read tools to gather evidence.
-                |3. Cross-reference findings from multiple sources when possible.
-                |4. State confidence level based on source quality and consistency.
-                |5. NEVER claim completion without fresh verification evidence.
-                |
-                |Always cite your sources with specific references.
-            """.trimMargin()
-        ),
+## Context
+- Independent execution: own LLM context, no conversation history
+- Input: task description only
+- Output: returned to MainAgent for user presentation
+- Pipeline: result passed to next agent as context
 
-        "coder" to basePrompt(
-            role = "coding",
-            roleGuidelines = """
-                |Analyze, generate, or refactor code following existing project conventions.
-                |
-                |Workflow:
-                |1. Understand the existing code structure before modifying.
-                |2. Follow established patterns and naming conventions.
-                |3. Ensure error handling is present.
-                |4. Never leave placeholder code (TODO, FIXME, HACK).
-                |
-                |If modifying existing code, preserve backward compatibility unless explicitly told otherwise.
-                |
-                |### In Interactive Pipeline
-                |- After completing your task, you enter IDLE state.
-                |- You may be recalled into REVISION state if reviewer/tester finds issues.
-                |- When recalled, you receive feedback; fix the specific issues mentioned.
-                |- If you encounter blocking issues, report to MainAgent: `send_agent_message(to="main", content="Blocked: ...")`
-            """.trimMargin()
-        ),
+## Guidelines
+$roleGuidelines
 
-        "reviewer" to basePrompt(
-            role = "code review",
-            roleGuidelines = """
-                |Perform two-stage review:
-                |
-                |Stage 1 — Spec Compliance:
-                |- Does the implementation match the requirements?
-                |- Are all edge cases handled?
-                |- Is the API contract respected?
-                |
-                |Stage 2 — Code Quality:
-                |- Bugs and logic errors (Critical)
-                |- Security vulnerabilities (Critical)
-                |- Performance issues (Important)
-                |- Code readability and maintainability (Minor)
-                |
-                |### After Review
-                |**If issues found:**
-                |1. Document all issues with file:line references
-                |2. Send message to request revision: `send_agent_message(to="step:code", content="Issues found:\n1. [Critical] Bug at file.kt:42 - null pointer risk\n2. [Important] Missing error handling at file.kt:88\nPlease fix these issues.")`
-                |3. You will enter IDLE state; the coder will be recalled into REVISION state.
-                |
-                |**If no issues:**
-                |- Send approval: `send_agent_message(to="step:code", content="Code review passed. No issues found.")`
-                |- Report completion to MainAgent if needed.
-                |
-                |Provide specific file:line references and concrete suggestions.
-                |Categorize issues by actual severity — not everything is Critical.
-            """.trimMargin()
-        ),
+## Output
+End with a JSON block:
+```json
+{
+  "status": "DONE" | "BLOCKED" | "NEEDS_CONTEXT",
+  "summary": "one-line accomplishment",
+  "actions": [{"step": "what", "tool": "name or null", "outcome": "result"}],
+  "key_findings": ["important discoveries"],
+  "deliverables": ["files created, data retrieved"],
+  "confidence": "high" | "medium" | "low"
+}
+```
 
-        "tester" to basePrompt(
-            role = "test engineering",
-            roleGuidelines = """
-                |Design and execute tests following AAA structure (Arrange → Act → Assert).
-                |
-                |Requirements:
-                |- Tests must be deterministic and independent.
-                |- Each test should verify ONE behavior.
-                |- Use descriptive test names that communicate intent.
-                |- Cover edge cases and error paths.
-                |- Mock external dependencies.
-                |
-                |### Reporting Results
-                |Report: what was tested, test results, and any issues found.
-                |
-                |**If test failures found:**
-                |- Send message to the implementation step with details: `send_agent_message(to="step:code", content="Test failures:\n1. TestName: Expected X but got Y\n2. TestName: NullPointerException at line N")`
-                |- Report to MainAgent if user attention needed.
-            """.trimMargin()
-        ),
+Status meanings:
+- DONE: Task completed
+- BLOCKED: Cannot proceed (explain in notes)
+- NEEDS_CONTEXT: Ambiguous task (specify what's needed)
 
-        "planner" to basePrompt(
-            role = "implementation planning",
-            roleGuidelines = """
-                |Create detailed implementation plans with:
-                |- Exact file paths to create/modify.
-                |- Complete code snippets (not pseudocode).
-                |- Exact commands with expected output.
-                |- Dependency order between tasks.
-                |- TDD steps for each component.
-                |
-                |Self-review checklist:
-                |- [ ] Spec coverage complete.
-                |- [ ] No placeholder text (TODO, FIXME, etc.).
-                |- [ ] Type consistency across all files.
-                |- [ ] All edge cases addressed.
-            """.trimMargin()
-        ),
+## Constraints
+- File operations: /sdcard/omnichat/ only
+- Stay in scope, don't guess
+- No sensitive data (API keys, passwords)
+""".trimIndent()
 
-        "orchestrator" to basePrompt(
-            role = "workflow orchestration",
-            roleGuidelines = """
-                |Coordinate multi-step workflows:
-                |1. Break down complex tasks into ordered subtasks.
-                |2. Identify dependencies between subtasks.
-                |3. Determine which subtasks can run in parallel.
-                |4. Provide clear acceptance criteria for each subtask.
-                |
-                |Handle agent statuses: DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED.
-                |If a subtask is BLOCKED, escalate with specifics on what's needed.
-            """.trimMargin()
-        )
+        return when (mode) {
+            PromptMode.WORKFLOW -> "$core\n\n${workflowCommunicationSection()}"
+            PromptMode.DAG -> "$core\n\n${dagExecutionSection()}"
+            PromptMode.COMPACT -> compactPrompt(role, roleGuidelines)
+            else -> core
+        }
+    }
+
+    /** Compact prompt for simple tasks */
+    private fun compactPrompt(role: String, roleGuidelines: String): String = """
+You are a $role sub-agent. Execute the task using available tools.
+
+## Guidelines
+$roleGuidelines
+
+## Output
+Return JSON with: status (DONE/BLOCKED/NEEDS_CONTEXT), summary, actions, key_findings, deliverables, confidence.
+
+## Constraints
+- Files: /sdcard/omnichat/ only
+- No sensitive data in output
+""".trimIndent()
+
+    /** Inter-agent communication instructions for workflow mode */
+    private fun workflowCommunicationSection(): String = """
+## Workflow Communication
+
+### Report to MainAgent
+```json
+send_agent_message(to="main", content="Issue needing user decision: ...")
+```
+
+### Send to Other Steps
+- Next step: `send_agent_message(to="step:step_id", content="message")`
+- Request revision: `send_agent_message(to="step:code", content="Issues:\n1. Bug at line 42\nPlease fix.")`
+
+### Your Lifecycle
+- After completion: IDLE state
+- May be recalled: REVISION state (fix issues from other agents)
+- In revision: receive feedback, modify previous output
+"""
+
+    /** DAG execution instructions for parallel workflow mode */
+    private fun dagExecutionSection(): String = """
+## DAG Execution Context
+
+You are part of a parallel workflow (DAG). Key characteristics:
+
+### Parallel Execution
+- Multiple steps may run simultaneously
+- You may receive context from multiple upstream dependencies
+- Your output will be used by downstream steps
+
+### Output Requirements
+Be explicit about what you produce:
+1. **Clear deliverables**: List exact file paths, data keys, or artifacts
+2. **Self-contained results**: Downstream steps rely only on your JSON output
+3. **No assumptions**: Don't assume other steps are complete; work with provided context only
+
+### Output Structure for Downstream Consumers
+Your JSON output is passed to downstream steps. Include:
+- `summary`: Clear one-line description (shown first to downstream steps)
+- `key_findings`: Critical discoveries that affect downstream decisions
+- `deliverables`: Exact paths/IDs of artifacts you created
+- `full_output`: (Optional) If your work is detailed, include a `full_output` field with complete content
+
+Example for summary step that needs full content:
+```json
+{
+  "status": "DONE",
+  "summary": "Analyzed 3 modules, found 5 patterns",
+  "key_findings": ["Pattern A in module1", "Pattern B in module2"],
+  "deliverables": ["module1_analysis.json", "module2_analysis.json"],
+  "full_output": "Complete analysis report with code snippets..."
+}
+```
+
+### Using full_output
+- If your task produces detailed content (code, reports, analysis), put the COMPLETE content in `full_output`
+- Summary steps (orchestrator, planner) will read `full_output` from upstream steps
+- If you need to summarize or combine results from multiple upstream steps, read their `full_output` fields
+- Example: A "summary" step can access `full_output` from "research", "code", and "test" steps
+
+### Dependency Awareness
+- Your task includes context from completed dependencies
+- If context is incomplete, check if dependency failed (status in context)
+- Report BLOCKED if critical dependency data is missing
+- **Important**: When reading upstream context, look for the `full_output` field to access complete content
+
+### Handling BLOCKED Upstream Steps
+If an upstream step has `status: BLOCKED`:
+- It may still provide useful partial information in `notes` or `full_output`
+- You can proceed if you have enough information from other dependencies
+- Report your status as BLOCKED only if you cannot proceed without that specific dependency
+- Example: If "research" is BLOCKED but "analysis" succeeded, you may still generate a summary
+
+### Failure Handling
+- If you fail, downstream steps will be skipped
+- Report errors clearly so dependent steps know why they were blocked
+- Include partial results if useful for debugging
+- Use `status: BLOCKED` with `notes` explaining what's needed, rather than failing completely
+"""
+
+    /** Role-specific guidelines for each agent type */
+    private val roleGuidelines = mapOf(
+        "general" to """
+Break complex tasks into steps. Execute sequentially.
+Report NEEDS_CONTEXT if information is missing.""".trimIndent(),
+
+        "researcher" to """
+## Verification Protocol
+1. Identify what to verify
+2. Gather evidence via search/read
+3. Cross-reference when possible
+4. State confidence based on source quality
+5. Cite specific sources
+
+Never claim completion without evidence.""".trimIndent(),
+
+        "coder" to """
+## Workflow
+1. Understand existing code structure first
+2. Follow project patterns and naming conventions
+3. Add error handling
+4. No placeholders (TODO, FIXME, HACK)
+5. Preserve backward compatibility
+
+## In Workflow
+- After completion: IDLE state
+- May be recalled for revision if reviewer finds issues
+- Report blocking issues to MainAgent via send_agent_message""".trimIndent(),
+
+        "reviewer" to """
+## Review Stages
+Stage 1 - Spec Compliance:
+- Implementation matches requirements?
+- Edge cases handled?
+- API contract respected?
+
+Stage 2 - Code Quality:
+- Critical: bugs, security vulnerabilities
+- Important: performance issues
+- Minor: readability, maintainability
+
+## After Review
+If issues found:
+1. Document with file:line references
+2. Send revision request: `send_agent_message(to="step:code", content="Issues:\n1. [Critical] file.kt:42 - null pointer risk")`
+
+If approved:
+- Send: `send_agent_message(to="step:code", content="Review passed.")`""".trimIndent(),
+
+        "tester" to """
+## Test Requirements
+- AAA structure: Arrange → Act → Assert
+- One behavior per test
+- Deterministic and independent
+- Descriptive names
+- Cover edge cases and error paths
+- Mock external dependencies
+
+## Report
+What tested, results, issues found.
+If failures: send details to implementation step.""".trimIndent(),
+
+        "planner" to """
+## Plan Contents
+- Exact file paths (create/modify)
+- Complete code snippets (not pseudocode)
+- Commands with expected output
+- Dependency order
+- TDD steps
+
+## Checklist
+- [ ] Spec coverage complete
+- [ ] No placeholders
+- [ ] Type consistency
+- [ ] Edge cases addressed""".trimIndent(),
+
+        "orchestrator" to """
+## Coordination
+1. Break complex tasks into ordered subtasks
+2. Identify dependencies
+3. Determine parallel execution opportunities
+4. Define acceptance criteria
+
+## Handle Status
+- DONE: continue
+- DONE_WITH_CONCERNS: assess impact
+- NEEDS_CONTEXT: escalate with specifics
+- BLOCKED: provide what's needed or re-route""".trimIndent()
     )
 
-    val ALL_TYPES: Set<String> = prompts.keys
+    // Pre-built prompts for different modes
+    private val standardPrompts = mapOf(
+        "general" to basePrompt("general-purpose", roleGuidelines["general"]!!),
+        "researcher" to basePrompt("research-focused", roleGuidelines["researcher"]!!),
+        "coder" to basePrompt("coding", roleGuidelines["coder"]!!),
+        "reviewer" to basePrompt("code review", roleGuidelines["reviewer"]!!),
+        "tester" to basePrompt("test engineering", roleGuidelines["tester"]!!),
+        "planner" to basePrompt("implementation planning", roleGuidelines["planner"]!!),
+        "orchestrator" to basePrompt("workflow orchestration", roleGuidelines["orchestrator"]!!)
+    )
 
+    private val compactPrompts = mapOf(
+        "general" to basePrompt("general-purpose", roleGuidelines["general"]!!, PromptMode.COMPACT),
+        "researcher" to basePrompt("research-focused", roleGuidelines["researcher"]!!, PromptMode.COMPACT),
+        "coder" to basePrompt("coding", roleGuidelines["coder"]!!, PromptMode.COMPACT),
+        "reviewer" to basePrompt("code review", roleGuidelines["reviewer"]!!, PromptMode.COMPACT),
+        "tester" to basePrompt("test engineering", roleGuidelines["tester"]!!, PromptMode.COMPACT),
+        "planner" to basePrompt("implementation planning", roleGuidelines["planner"]!!, PromptMode.COMPACT),
+        "orchestrator" to basePrompt("workflow orchestration", roleGuidelines["orchestrator"]!!, PromptMode.COMPACT)
+    )
+
+    private val workflowPrompts = mapOf(
+        "general" to basePrompt("general-purpose", roleGuidelines["general"]!!, PromptMode.WORKFLOW),
+        "researcher" to basePrompt("research-focused", roleGuidelines["researcher"]!!, PromptMode.WORKFLOW),
+        "coder" to basePrompt("coding", roleGuidelines["coder"]!!, PromptMode.WORKFLOW),
+        "reviewer" to basePrompt("code review", roleGuidelines["reviewer"]!!, PromptMode.WORKFLOW),
+        "tester" to basePrompt("test engineering", roleGuidelines["tester"]!!, PromptMode.WORKFLOW),
+        "planner" to basePrompt("implementation planning", roleGuidelines["planner"]!!, PromptMode.WORKFLOW),
+        "orchestrator" to basePrompt("workflow orchestration", roleGuidelines["orchestrator"]!!, PromptMode.WORKFLOW)
+    )
+
+    private val dagPrompts = mapOf(
+        "general" to basePrompt("general-purpose", roleGuidelines["general"]!!, PromptMode.DAG),
+        "researcher" to basePrompt("research-focused", roleGuidelines["researcher"]!!, PromptMode.DAG),
+        "coder" to basePrompt("coding", roleGuidelines["coder"]!!, PromptMode.DAG),
+        "reviewer" to basePrompt("code review", roleGuidelines["reviewer"]!!, PromptMode.DAG),
+        "tester" to basePrompt("test engineering", roleGuidelines["tester"]!!, PromptMode.DAG),
+        "planner" to basePrompt("implementation planning", roleGuidelines["planner"]!!, PromptMode.DAG),
+        "orchestrator" to basePrompt("workflow orchestration", roleGuidelines["orchestrator"]!!, PromptMode.DAG)
+    )
+
+    val ALL_TYPES: Set<String> = standardPrompts.keys
+
+    /**
+     * Get prompt for agent type (standard mode).
+     */
     fun getPrompt(agentType: String): String {
+        return standardPrompts[agentType] ?: standardPrompts["general"]!!
+    }
+
+    /**
+     * Get prompt with specific mode.
+     * @param agentType Agent type (general, researcher, coder, etc.)
+     * @param mode COMPACT for simple tasks, STANDARD for normal, DAG for parallel execution, WORKFLOW for interactive pipeline
+     */
+    fun getPrompt(agentType: String, mode: PromptMode): String {
+        val prompts = when (mode) {
+            PromptMode.COMPACT -> compactPrompts
+            PromptMode.STANDARD -> standardPrompts
+            PromptMode.DAG -> dagPrompts
+            PromptMode.WORKFLOW -> workflowPrompts
+        }
         return prompts[agentType] ?: prompts["general"]!!
+    }
+
+    /**
+     * Estimate token count for a prompt (rough approximation).
+     * Used for logging/debugging.
+     */
+    fun estimateTokenCount(prompt: String): Int {
+        // Rough approximation: 1 token ≈ 4 characters for English
+        return prompt.length / 4
     }
 }

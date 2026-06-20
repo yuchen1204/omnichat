@@ -21,6 +21,22 @@ import java.net.SocketTimeoutException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
+import kotlin.coroutines.CoroutineContext
+
+/**
+ * Coroutine context element for tracking SubAgent execution context.
+ * This is used by hooks to detect when they are being called from a SubAgent.
+ */
+data class SubAgentContext(
+    val taskDescription: String,
+    val agentType: String,
+    val taskId: String
+) : CoroutineContext.Element {
+    override val key: CoroutineContext.Key<*>
+        get() = Key
+
+    companion object Key : CoroutineContext.Key<SubAgentContext>
+}
 
 /**
  * Caller context for tracking SubAgent delegation depth.
@@ -108,8 +124,14 @@ internal data class AgentStateInfo(
  */
 object SubAgent {
 
-    /** 当前正在执行的 SubAgent 任务描述，供 Hook 获取上下文做权限审核 */
-    val currentTaskContext = ThreadLocal<String>()
+    /**
+     * Get the current SubAgent context from coroutine context.
+     * Used by hooks to detect if they are being called from a SubAgent.
+     * Note: This must be called from within a suspend function that has SubAgentContext.
+     */
+    suspend fun getCurrentContext(): SubAgentContext? {
+        return kotlin.coroutines.coroutineContext[SubAgentContext]
+    }
 
     private const val MAX_DELEGATION_DEPTH = 3
     private const val MAX_GLOBAL_PARALLELISM = 3
@@ -122,6 +144,9 @@ object SubAgent {
     private const val MAX_API_RETRIES = 3
     private const val INITIAL_RETRY_DELAY_MS = 1000L
     private const val MAX_RETRY_DELAY_MS = 10000L
+
+    // Fallback configuration for empty responses
+    private const val FALLBACK_RESPONSE_ENABLED = true
 
     private val globalSemaphore = Semaphore(MAX_GLOBAL_PARALLELISM)
     private val tasks = ConcurrentHashMap<String, SubAgentTask>()
@@ -182,7 +207,8 @@ object SubAgent {
         handle: IdleAgentHandle,
         task: String,
         contextVariables: Map<String, String> = emptyMap(),
-        conversationHistory: List<JSONObject>? = null
+        conversationHistory: List<JSONObject>? = null,
+        promptMode: AgentPrompts.PromptMode = AgentPrompts.PromptMode.WORKFLOW
     ): String {
         val stateInfo = suspendedAgents[handle.agentId]
             ?: throw IllegalStateException("Agent ${handle.agentId} not found in suspended state")
@@ -203,16 +229,18 @@ object SubAgent {
         return try {
             globalSemaphore.acquire()
             try {
-                currentTaskContext.set(task)
-                val result = executeTask(
-                    context = handle.context,
-                    agentType = handle.agentType,
-                    taskDescription = task,
-                    sessionId = handle.sessionId,
-                    depth = 1,
-                    taskId = handle.agentId
-                )
-                currentTaskContext.remove()
+                // Add SubAgent context to coroutine context for hooks to detect
+                val taskResult = withContext(SubAgentContext(task, handle.agentType, handle.agentId)) {
+                    executeTask(
+                        context = handle.context,
+                        agentType = handle.agentType,
+                        taskDescription = task,
+                        sessionId = handle.sessionId,
+                        depth = 1,
+                        taskId = handle.agentId,
+                        promptMode = promptMode
+                    )
+                }
 
                 // Update conversation history
                 suspendedAgents[handle.agentId]?.let { state ->
@@ -222,12 +250,12 @@ object SubAgent {
                     })
                     state.conversationHistory.add(JSONObject().apply {
                         put("role", "assistant")
-                        put("content", result)
+                        put("content", taskResult)
                     })
                 }
 
                 Log.d("SubAgent", "[wakeUp] Agent ${handle.agentId} completed task")
-                result
+                taskResult
             } finally {
                 globalSemaphore.release()
             }
@@ -316,7 +344,8 @@ object SubAgent {
         agentType: String,
         taskDescription: String,
         sessionId: Long,
-        callerContext: AgentCallerContext? = null
+        callerContext: AgentCallerContext? = null,
+        promptMode: AgentPrompts.PromptMode = AgentPrompts.PromptMode.STANDARD
     ): String {
         val depth = (callerContext?.depth ?: 0) + 1
         if (depth > MAX_DELEGATION_DEPTH) {
@@ -336,6 +365,9 @@ object SubAgent {
             try {
                 globalSemaphore.acquire()
                 try {
+                    // Add SubAgent context to coroutine context for hooks to detect
+                    val subAgentContext = SubAgentContext(taskDescription, agentType, taskId)
+
                     SubAgentEventBus.emit(SubAgentEvent.TaskStarted(
                         taskId = taskId,
                         sessionId = sessionId,
@@ -343,11 +375,9 @@ object SubAgent {
                         description = taskDescription
                     ))
                     updateTask(taskId, status = SubAgentTaskStatus.RUNNING, startedAt = System.currentTimeMillis())
-                    currentTaskContext.set(taskDescription)
-                    val result = try {
-                        executeTask(context, agentType, taskDescription, sessionId, depth, taskId)
-                    } finally {
-                        currentTaskContext.remove()
+
+                    val result = withContext(subAgentContext) {
+                        executeTask(context, agentType, taskDescription, sessionId, depth, taskId, promptMode)
                     }
                     updateTask(taskId, status = SubAgentTaskStatus.COMPLETED, result = result,
                         completedAt = System.currentTimeMillis())
@@ -402,7 +432,8 @@ object SubAgent {
         taskDescription: String,
         sessionId: Long,
         callerContext: AgentCallerContext? = null,
-        executionContext: SubAgentExecutionContext = SubAgentExecutionContext.WORKFLOW_STEP
+        executionContext: SubAgentExecutionContext = SubAgentExecutionContext.WORKFLOW_STEP,
+        promptMode: AgentPrompts.PromptMode = AgentPrompts.PromptMode.STANDARD
     ): String = withContext(Dispatchers.Default) {
         val depth = (callerContext?.depth ?: 0) + 1
         if (depth > MAX_DELEGATION_DEPTH) {
@@ -435,11 +466,10 @@ object SubAgent {
                     ))
                 }
 
-                currentTaskContext.set(taskDescription)
-                val result = try {
-                    executeTask(context, agentType, taskDescription, sessionId, depth, taskId)
-                } finally {
-                    currentTaskContext.remove()
+                // Add SubAgent context to coroutine context for hooks to detect
+                val subAgentContext = SubAgentContext(taskDescription, agentType, taskId)
+                val result = withContext(subAgentContext) {
+                    executeTask(context, agentType, taskDescription, sessionId, depth, taskId, promptMode)
                 }
                 updateTask(taskId, status = SubAgentTaskStatus.COMPLETED, result = result,
                     completedAt = System.currentTimeMillis())
@@ -492,7 +522,8 @@ object SubAgent {
         taskDescription: String,
         sessionId: Long,
         depth: Int,
-        taskId: String
+        taskId: String,
+        promptMode: AgentPrompts.PromptMode = AgentPrompts.PromptMode.STANDARD
     ): String {
         val repository = AppRepository(AppDatabase.getDatabase(context))
         val runtimeManager = McpRuntimeManager.getInstance(context)
@@ -502,7 +533,7 @@ object SubAgent {
             ?: throw IllegalStateException("No default model provider configured")
 
         // Build system prompt
-        val systemPrompt = AgentPrompts.getPrompt(agentType)
+        val systemPrompt = AgentPrompts.getPrompt(agentType, promptMode)
 
         // Get available tools
         val toolsArray = runtimeManager.getAllToolsAsOpenAiFormat()
@@ -604,7 +635,8 @@ object SubAgent {
      *   "deliverables": [],
      *   "confidence": "high" | "medium" | "low",
      *   "notes": "",
-     *   "next_steps_hint": ""
+     *   "next_steps_hint": "",
+     *   "full_output": "<complete output content for downstream steps>"
      * }
      */
     private fun normalizeOutputToJson(rawOutput: String): String {
@@ -644,10 +676,45 @@ object SubAgent {
                 json.put("notes", "")
             }
 
+            // IMPORTANT: For DAG/summary steps, preserve full output
+            // If the LLM didn't provide full_output, extract it from raw response
+            if (!json.has("full_output")) {
+                // Check if there's substantial content beyond the JSON structure
+                // This helps downstream steps access complete information
+                val contentField = json.optString("content", "")
+                val resultField = json.optString("result", "")
+
+                // Use the most complete field available
+                val fullContent = when {
+                    contentField.isNotBlank() && contentField.length > 200 -> contentField
+                    resultField.isNotBlank() && resultField.length > 200 -> resultField
+                    // If JSON has other significant text fields, combine them
+                    else -> {
+                        val textFields = mutableListOf<String>()
+                        json.keys().forEach { key ->
+                            val value = json.opt(key)
+                            if (value is String && value.length > 100 && key != "summary") {
+                                textFields.add("$key: $value")
+                            }
+                        }
+                        if (textFields.isNotEmpty()) {
+                            textFields.joinToString("\n\n")
+                        } else {
+                            ""
+                        }
+                    }
+                }
+
+                if (fullContent.isNotBlank()) {
+                    json.put("full_output", fullContent)
+                }
+            }
+
             json.toString()
 
         } catch (_: Exception) {
             // Not valid JSON — wrap it in the new format
+            // IMPORTANT: Include the FULL raw output in full_output field
             JSONObject().apply {
                 put("status", "DONE")
                 put("summary", rawOutput.take(100))
@@ -663,6 +730,8 @@ object SubAgent {
                 put("confidence", "medium")
                 put("notes", "Output was not in expected JSON format; wrapped automatically.")
                 put("next_steps_hint", "")
+                // Preserve full output for downstream consumption
+                put("full_output", rawOutput)
             }.toString()
         }
     }
@@ -737,6 +806,7 @@ object SubAgent {
      * Retries on:
      * - SocketTimeoutException (network timeout)
      * - IOException (general network error)
+     * - Empty API response (null response)
      *
      * Does NOT retry on:
      * - HTTP 4xx errors (client errors)
@@ -751,6 +821,7 @@ object SubAgent {
     ): JSONObject? {
         var delayMs = INITIAL_RETRY_DELAY_MS
         var lastException: Exception? = null
+        var emptyResponseCount = 0
 
         for (attempt in 0 until MAX_API_RETRIES) {
             try {
@@ -763,8 +834,10 @@ object SubAgent {
                 if (response != null) {
                     return response
                 }
-                // null response might be transient too
-                lastException = RuntimeException("Empty API response")
+                // null response - count as empty response
+                emptyResponseCount++
+                lastException = RuntimeException("Empty API response (attempt $emptyResponseCount)")
+
             } catch (e: Exception) {
                 lastException = e
                 // Only retry on transient network errors
@@ -789,7 +862,57 @@ object SubAgent {
         }
 
         Log.e("SubAgent", "[$taskId] All $MAX_API_RETRIES retries exhausted. Last error: ${lastException?.message}")
+
+        // FALLBACK: Return a structured error response instead of null
+        // This allows DAG downstream steps to receive partial information
+        if (FALLBACK_RESPONSE_ENABLED && emptyResponseCount > 0) {
+            Log.w("SubAgent", "[$taskId] Using fallback response due to empty API responses")
+            return JSONObject().apply {
+                put("role", "assistant")
+                put("content", buildFallbackContent(lastException?.message ?: "Empty API response"))
+            }
+        }
+
         return null
+    }
+
+    /**
+     * Build a fallback response content when API fails repeatedly.
+     * This ensures downstream DAG steps receive structured information.
+     */
+    private fun buildFallbackContent(errorMessage: String): String {
+        return JSONObject().apply {
+            put("status", "BLOCKED")
+            put("summary", "API temporarily unavailable - $errorMessage")
+            put("actions", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("step", "API call failed after retries")
+                    put("tool", null)
+                    put("outcome", errorMessage)
+                })
+            })
+            put("key_findings", JSONArray().apply {
+                put("API service may be experiencing issues")
+                put("Consider retrying or using alternative approach")
+            })
+            put("deliverables", JSONArray())
+            put("confidence", "low")
+            put("notes", "This is a fallback response due to API unavailability. Downstream steps should handle this gracefully.")
+            put("full_output", """
+# API Unavailable
+
+The API service did not respond after $MAX_API_RETRIES attempts.
+
+**Error**: $errorMessage
+
+**Recommendations**:
+1. Wait a few minutes and retry
+2. Check API service status
+3. Consider alternative approaches for this task
+
+**Downstream Steps**: Please note this step was blocked by API issues.
+""".trimIndent())
+        }.toString()
     }
 
     /**

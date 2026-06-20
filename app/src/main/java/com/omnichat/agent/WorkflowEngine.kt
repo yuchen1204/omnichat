@@ -274,7 +274,8 @@ object WorkflowEngine {
                 sessionId = sessionId,
                 step = step,
                 fullTask = fullTask,
-                callerContext = callerContext
+                callerContext = callerContext,
+                promptMode = AgentPrompts.PromptMode.STANDARD  // Pipeline uses STANDARD mode
             )
 
             // ── Emit StepCompleted event ──
@@ -484,7 +485,8 @@ object WorkflowEngine {
                 handle = handle,
                 task = fullTask,
                 contextVariables = state.contextVariables,
-                conversationHistory = agentState.conversationHistory
+                conversationHistory = agentState.conversationHistory,
+                promptMode = AgentPrompts.PromptMode.WORKFLOW
             )
 
             // Store result
@@ -945,7 +947,8 @@ object WorkflowEngine {
         sessionId: Long,
         step: WorkflowStep,
         fullTask: String,
-        callerContext: AgentCallerContext?
+        callerContext: AgentCallerContext?,
+        promptMode: AgentPrompts.PromptMode = AgentPrompts.PromptMode.STANDARD
     ): StepResult {
         var lastError: String? = null
         var retryCount = 0
@@ -959,7 +962,8 @@ object WorkflowEngine {
                         agentType = step.agentType,
                         taskDescription = fullTask,
                         sessionId = sessionId,
-                        callerContext = callerContext
+                        callerContext = callerContext,
+                        promptMode = promptMode
                     )
                 }
             } else {
@@ -970,7 +974,8 @@ object WorkflowEngine {
                         agentType = step.agentType,
                         taskDescription = fullTask,
                         sessionId = sessionId,
-                        callerContext = callerContext
+                        callerContext = callerContext,
+                        promptMode = promptMode
                     )
                 } catch (e: Exception) {
                     null // Will be caught below
@@ -1117,7 +1122,13 @@ object WorkflowEngine {
                         }
                     }
 
-                    val fullTask = buildTaskWithContext(step.task, step.dependsOn, contextVariables)
+                    val fullTask = buildTaskWithContext(
+                        task = step.task,
+                        dependsOn = step.dependsOn,
+                        contextVariables = contextVariables,
+                        steps = steps,
+                        includeFullOutput = true  // Include full_output for DAG summary steps
+                    )
 
                     try {
                         val output = SubAgent.executeSync(
@@ -1125,7 +1136,8 @@ object WorkflowEngine {
                             agentType = step.agentType,
                             taskDescription = fullTask,
                             sessionId = sessionId,
-                            callerContext = callerContext
+                            callerContext = callerContext,
+                            promptMode = AgentPrompts.PromptMode.DAG  // DAG uses DAG mode for parallel awareness
                         )
                         StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
                     } catch (e: Exception) {
@@ -1306,15 +1318,80 @@ object WorkflowEngine {
         appendLine("If you believe the discussion is complete and a final answer has been reached, start your response with [CONVERGED].")
     }
 
+    /**
+     * Check if a response indicates convergence.
+     * Handles both plain text responses and JSON-wrapped responses.
+     */
     private fun looksConverged(response: String): Boolean {
-        return response.trimStart().startsWith("[CONVERGED]")
+        val trimmed = response.trimStart()
+
+        // Direct check for plain text response
+        if (trimmed.startsWith("[CONVERGED]")) {
+            return true
+        }
+
+        // Check if response is JSON and contains [CONVERGED] in fields
+        try {
+            val json = org.json.JSONObject(trimmed)
+
+            // Check common fields where [CONVERGED] might appear
+            val summary = json.optString("summary", "")
+            if (summary.contains("[CONVERGED]")) return true
+
+            val fullOutput = json.optString("full_output", "")
+            if (fullOutput.trimStart().startsWith("[CONVERGED]")) return true
+
+            val content = json.optString("content", "")
+            if (content.trimStart().startsWith("[CONVERGED]")) return true
+
+            val notes = json.optString("notes", "")
+            if (notes.contains("[CONVERGED]")) return true
+
+        } catch (_: Exception) {
+            // Not JSON, already checked plain text above
+        }
+
+        return false
     }
 
     /**
      * Extract the actual answer from a converged response, stripping the [CONVERGED] marker.
+     * Handles both plain text responses and JSON-wrapped responses.
      */
     private fun extractConvergedAnswer(response: String): String {
-        return response.trimStart().removePrefix("[CONVERGED]").trim()
+        val trimmed = response.trimStart()
+
+        // Direct extraction for plain text
+        if (trimmed.startsWith("[CONVERGED]")) {
+            return trimmed.removePrefix("[CONVERGED]").trim()
+        }
+
+        // Extract from JSON fields
+        try {
+            val json = org.json.JSONObject(trimmed)
+
+            // Try to find [CONVERGED] in various fields
+            val fullOutput = json.optString("full_output", "")
+            if (fullOutput.trimStart().startsWith("[CONVERGED]")) {
+                return fullOutput.trimStart().removePrefix("[CONVERGED]").trim()
+            }
+
+            val content = json.optString("content", "")
+            if (content.trimStart().startsWith("[CONVERGED]")) {
+                return content.trimStart().removePrefix("[CONVERGED]").trim()
+            }
+
+            val summary = json.optString("summary", "")
+            if (summary.contains("[CONVERGED]")) {
+                return summary
+            }
+
+            // Return the whole JSON if no specific field has [CONVERGED]
+            return json.optString("summary", trimmed)
+
+        } catch (_: Exception) {
+            return trimmed.removePrefix("[CONVERGED]").trim()
+        }
     }
 
     /**
@@ -1322,12 +1399,19 @@ object WorkflowEngine {
      * Public for use by RunWorkflowTool for event-based execution.
      *
      * Parses structured JSON output from previous steps and formats it for the next agent.
+     *
+     * @param task The task description for the current step
+     * @param dependsOn List of step IDs this step depends on
+     * @param contextVariables Map of step IDs (or resultVariable names) to their JSON outputs
+     * @param steps List of all workflow steps (for looking up resultVariable names)
+     * @param includeFullOutput Whether to include full_output field from dependencies (default: true for DAG/summary steps)
      */
     fun buildTaskWithContext(
         task: String,
         dependsOn: List<String>,
         contextVariables: Map<String, String>,
-        steps: List<WorkflowStep> = emptyList()
+        steps: List<WorkflowStep> = emptyList(),
+        includeFullOutput: Boolean = true
     ): String {
         if (dependsOn.isEmpty() || contextVariables.isEmpty()) return task
 
@@ -1347,7 +1431,7 @@ object WorkflowEngine {
                     appendLine()
 
                     // Try to parse as structured JSON
-                    val formattedContext = formatStructuredContext(rawResult)
+                    val formattedContext = formatStructuredContext(rawResult, includeFullOutput)
                     appendLine(formattedContext)
                     appendLine()
                 }
@@ -1359,8 +1443,14 @@ object WorkflowEngine {
 
     /**
      * Format structured JSON output into human-readable context for the next agent.
+     *
+     * @param jsonString The raw JSON output from a previous step
+     * @param includeFullOutput Whether to include the full_output field if present
      */
-    private fun formatStructuredContext(jsonString: String): String {
+    private fun formatStructuredContext(
+        jsonString: String,
+        includeFullOutput: Boolean = true
+    ): String {
         return try {
             val json = org.json.JSONObject(jsonString)
 
@@ -1424,6 +1514,18 @@ object WorkflowEngine {
                 val notes = json.optString("notes", "")
                 if (notes.isNotBlank()) {
                     appendLine("**Notes:** $notes")
+                }
+
+                // Full output (if present and requested) - this is the key for summary steps
+                if (includeFullOutput) {
+                    val fullOutput = json.optString("full_output", "")
+                    if (fullOutput.isNotBlank()) {
+                        appendLine()
+                        appendLine("**Full Output:**")
+                        appendLine("```")
+                        appendLine(fullOutput)
+                        appendLine("```")
+                    }
                 }
 
                 // Next steps hint

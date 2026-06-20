@@ -930,6 +930,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // Hidden formatting instruction: always respond using Markdown
         finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
 
+        // SubAgent delegation preference
+        finalSystemPrompt += "\n\n<!-- DELEGATION PRIORITY: For complex tasks (research, coding, multi-step operations), prefer delegating to SubAgents via delegate_task or run_workflow tools. SubAgents have focused context and can execute tasks independently. Only handle tasks yourself if: (1) the task is simple and quick, (2) SubAgent failed and you need to recover, or (3) user explicitly wants your direct response. -->"
+
         // Hidden memory search instruction
         val totalMemoryCount = memoryEngine.getTotalMemoryCount()
         if (totalMemoryCount > com.omnichat.memory.MemoryEngine.MEMORY_INJECT_LIMIT) {

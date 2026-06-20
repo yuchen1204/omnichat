@@ -168,12 +168,14 @@ class SubAgentPathRestrictionHook : McpHook {
 
     /**
      * 纠正路径到允许的目录。
+     * 只计算纠正后的路径，不创建目录。
      */
     private fun correctPath(originalPath: String, toolName: String): String {
         val file = File(originalPath)
         val canonicalPath = try {
             file.canonicalPath
         } catch (e: Exception) {
+            Log.w(TAG, "Failed to get canonical path: $originalPath", e)
             originalPath
         }
 
@@ -182,16 +184,8 @@ class SubAgentPathRestrictionHook : McpHook {
             return originalPath
         }
 
-        // 构建纠正后的路径
+        // 构建纠正后的路径（不创建目录，由工具执行时创建）
         val baseDir = File(ALLOWED_BASE_PATH)
-
-        // 确保基础目录存在
-        if (!baseDir.exists()) {
-            baseDir.mkdirs()
-        }
-
-        // 提取文件名或相对路径
-        val fileName = file.name
 
         // 对于绝对路径，尝试保留部分目录结构
         return if (file.isAbsolute) {
@@ -199,9 +193,7 @@ class SubAgentPathRestrictionHook : McpHook {
                 .removePrefix("/sdcard/")
                 .removePrefix("/storage/emulated/0/")
 
-            File(baseDir, relativePart).apply {
-                parentFile?.mkdirs()
-            }.path
+            File(baseDir, relativePart).path
         } else {
             File(baseDir, originalPath).path
         }

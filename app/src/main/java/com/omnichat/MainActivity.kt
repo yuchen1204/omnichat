@@ -77,6 +77,11 @@ class MainActivity : AppCompatActivity() {
             com.omnichat.hooks.McpFilePermissionHook(applicationContext)
         )
 
+        // 注册 SubAgent 文件路径限制 Hook（必须在 McpFilePermissionHook 之后注册）
+        com.omnichat.hooks.HookManager.registerMcpHook(
+            com.omnichat.hooks.SubAgentPathRestrictionHook()
+        )
+
         // 初始化内置工具注册表
         com.omnichat.tool.ToolInitializer.initialize(applicationContext)
 

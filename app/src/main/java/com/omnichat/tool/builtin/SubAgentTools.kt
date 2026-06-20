@@ -2,6 +2,7 @@ package com.omnichat.tool.builtin
 
 import android.content.Context
 import com.omnichat.agent.AgentMessage
+import com.omnichat.agent.AgentPrompts
 import com.omnichat.agent.MessageBus
 import com.omnichat.agent.SubAgent
 import com.omnichat.agent.AgentCallerContext
@@ -33,6 +34,8 @@ object DelegateTaskTool : BuiltinTool(
     name = "delegate_task",
     description = """Delegate a task to a sub-agent for independent execution. The sub-agent runs with its own LLM context and tool access. Returns a taskId.
 
+⚠️ BLOCKING CALL: This tool is ASYNC but the result arrives as a chat message. You MUST NOT duplicate the delegated task yourself. DO NOT start the same work in parallel. Wait for the result message to appear before proceeding with related work.
+
 WHEN TO DELEGATE:
 - Research tasks (web search, memory lookup, information gathering)
 - Multi-step operations that would block the conversation
@@ -58,6 +61,9 @@ The sub-agent's result is delivered as a chat message when complete.""",
             enum("general", "researcher", "coder", "reviewer", "tester", "planner", "orchestrator")
         }
         prop("task", "string", "The task description for the sub-agent to perform.")
+        prop("promptMode", "string", "Prompt verbosity: compact (minimal), standard (normal). Default: standard.") {
+            enum("compact", "standard")
+        }
     }
 
     override fun validateInput(arguments: JSONObject): String? {
@@ -77,13 +83,19 @@ The sub-agent's result is delivered as a chat message when complete.""",
 
         val agentType = arguments.optString("agentType")
         val task = arguments.optString("task")
+        val promptModeStr = arguments.optString("promptMode", "standard")
+        val promptMode = when (promptModeStr) {
+            "compact" -> AgentPrompts.PromptMode.COMPACT
+            else -> AgentPrompts.PromptMode.STANDARD
+        }
 
         try {
             val taskId = SubAgent.execute(
                 context = context,
                 agentType = agentType,
                 taskDescription = task,
-                sessionId = sessionId
+                sessionId = sessionId,
+                promptMode = promptMode
             )
 
             return successResponse("Task delegated to $agentType agent.\nTask ID: $taskId\n\nThe result will appear in chat when the sub-agent completes.")
@@ -221,22 +233,170 @@ object RunWorkflowTool : BuiltinTool(
     name = "run_workflow",
     description = """Execute a multi-agent workflow with coordinated execution.
 
-MODES:
-- pipeline: Sequential execution. Each step receives prior results as context.
-- dag: Dependency-based execution. Independent steps run in parallel.
-- conversational: Two agents exchange messages until convergence.
-- interactive_pipeline: Steps can enter IDLE state, be recalled for revision, and communicate via messages.
+⚠️ BLOCKING CALL: This tool is SYNCHRONOUS. You MUST wait for it to complete before taking any other action. DO NOT start parallel work while the workflow is running. DO NOT attempt the same task yourself while waiting. You will receive the complete results when the tool returns.
 
-WHEN TO USE EACH MODE:
-- pipeline: Steps have strict order dependency (A must finish before B starts).
-- dag: Steps have partial dependencies, some can run in parallel.
-- conversational: Need multi-perspective discussion or debate between two agents.
-- interactive_pipeline: Need step-to-step communication with revision support (e.g., code-review cycles).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-TEMPLATES:
-- research_and_report: Research → Generate report
-- code_and_review: Code → Review
-- full_dev_cycle: Research → Code → Review""",
+## 📋 MODES AND REQUIRED PARAMETERS
+
+### 1. pipeline (Sequential Execution)
+**When to use**: Steps have strict order dependency (A must finish before B starts).
+
+**Required parameters**:
+```json
+{
+  "mode": "pipeline",
+  "steps": [
+    {"id": "step1", "agentType": "researcher", "task": "Research X"},
+    {"id": "step2", "agentType": "coder", "task": "Implement based on step1"}
+  ]
+}
+```
+OR use template:
+```json
+{
+  "mode": "pipeline",
+  "template": "research_and_report",
+  "task": "Your task description"
+}
+```
+
+**Optional parameters**:
+- `steps[].timeoutMs`: Running timeout (default: 600000 = 10min)
+
+**Execution behavior**:
+- Steps run sequentially in order
+- Each step receives prior step results as context
+- Failure in any step stops the pipeline
+
+---
+
+### 2. dag (Dependency-based Parallel Execution)
+**When to use**: Steps have partial dependencies, some can run in parallel.
+
+**Required parameters**:
+```json
+{
+  "mode": "dag",
+  "steps": [
+    {"id": "A", "agentType": "researcher", "task": "Research module A"},
+    {"id": "B", "agentType": "researcher", "task": "Research module B"},
+    {"id": "C", "agentType": "researcher", "task": "Research module C"},
+    {"id": "summary", "agentType": "orchestrator", "task": "Combine results", "dependsOn": ["A", "B", "C"]}
+  ]
+}
+```
+
+**Key points**:
+- `dependsOn`: Array of step IDs this step depends on
+- Steps without dependencies run in parallel
+- Steps with dependencies wait for all dependencies to complete
+- Failed dependency → dependent steps are skipped
+
+**Optional parameters**:
+- `steps[].timeoutMs`: Running timeout (default: 600000 = 10min)
+
+**Execution behavior**:
+- Independent steps run in parallel
+- Dependent steps wait for all dependencies
+- Transitive failure propagation (if A fails, steps depending on A are skipped)
+
+---
+
+### 3. conversational (Multi-round Discussion)
+**When to use**: Need multi-perspective discussion or debate between two agents.
+
+**Required parameters**:
+```json
+{
+  "mode": "conversational",
+  "agentA": "coder",
+  "agentB": "reviewer",
+  "topic": "How to refactor legacy Python code?"
+}
+```
+
+**Optional parameters**:
+- `maxRounds`: Maximum discussion rounds (default: 5)
+
+**Convergence mechanism**:
+- Agent outputs `[CONVERGED]` to indicate discussion is complete
+- Stops when either agent outputs `[CONVERGED]` or maxRounds reached
+- Full conversation history is accumulated and passed to each agent
+
+**Execution behavior**:
+- AgentA speaks first, then AgentB, alternating
+- Each agent sees full conversation history
+- Converged response is extracted and returned
+
+---
+
+### 4. interactive_pipeline (Revision Support)
+**When to use**: Need step-to-step communication with revision support (e.g., code-review cycles).
+
+**Required parameters**:
+```json
+{
+  "mode": "interactive_pipeline",
+  "steps": [
+    {"id": "code", "agentType": "coder", "task": "Implement feature X"},
+    {"id": "review", "agentType": "reviewer", "task": "Review code step"}
+  ]
+}
+```
+
+**Optional parameters**:
+- `steps[].timeoutMs`: Running timeout (default: 600000 = 10min)
+- `steps[].maxIdleMs`: IDLE timeout (default: 1800000 = 30min)
+
+**Execution behavior**:
+- Steps can enter IDLE state after completion
+- Steps can be recalled for REVISION if issues found
+- Agents can communicate via `send_agent_message(to="step:step_id", content="...")`
+- Example: Reviewer sends revision request to coder
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 📦 AVAILABLE TEMPLATES
+
+| Template | Steps | Description |
+|----------|-------|-------------|
+| `research_and_report` | Research → Report | Research a topic and generate report |
+| `code_and_review` | Code → Review | Implement and review code |
+| `full_dev_cycle` | Research → Code → Review | Full development cycle |
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 🤖 AVAILABLE AGENT TYPES
+
+| Type | Best For |
+|------|----------|
+| `general` | Generic tasks, simple operations |
+| `researcher` | Research, verification, information gathering |
+| `coder` | Code analysis, generation, refactoring |
+| `reviewer` | Code review, quality assessment |
+| `tester` | Test design and execution |
+| `planner` | Implementation planning |
+| `orchestrator` | Multi-step coordination, summarization |
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 📤 OUTPUT FORMAT
+
+Each step returns structured JSON:
+```json
+{
+  "status": "DONE" | "BLOCKED" | "NEEDS_CONTEXT",
+  "summary": "One-line description",
+  "actions": [{"step": "...", "tool": "...", "outcome": "..."}],
+  "key_findings": ["..."],
+  "deliverables": ["..."],
+  "confidence": "high" | "medium" | "low",
+  "full_output": "Complete detailed content for downstream steps"
+}
+```
+
+**For DAG summary steps**: Read `full_output` from upstream steps to access complete content.""",
     group = "subagent",
     isReadOnly = false,
     isConcurrencySafe = false,
@@ -608,14 +768,21 @@ TEMPLATES:
                         }
                     }
 
-                    val fullTask = WorkflowEngine.buildTaskWithContext(step.task, step.dependsOn, contextVariables)
+                    val fullTask = WorkflowEngine.buildTaskWithContext(
+                        task = step.task,
+                        dependsOn = step.dependsOn,
+                        contextVariables = contextVariables,
+                        steps = steps,
+                        includeFullOutput = true  // Include full_output for DAG summary steps
+                    )
 
                     try {
                         val output = SubAgent.executeSync(
                             context = context,
                             agentType = step.agentType,
                             taskDescription = fullTask,
-                            sessionId = sessionId
+                            sessionId = sessionId,
+                            promptMode = AgentPrompts.PromptMode.DAG  // DAG mode for parallel execution awareness
                         )
                         StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
                     } catch (e: Exception) {
