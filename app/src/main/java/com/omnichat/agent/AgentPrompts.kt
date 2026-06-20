@@ -72,11 +72,22 @@ object AgentPrompts {
         |- [ ] Is my JSON valid and complete?
         |
         |## Workflow Communication
-        |If you are part of a workflow with multiple agents:
-        |- When complete, send a message to the next agent: `send_agent_message(to="step:next_step_id", content="your message")`
-        |- If you need to recall a previous agent for revision: `send_agent_message(to="step:prev_step_id", content="Issues found: ...")`
-        |- Available step IDs will be provided in your task context.
-        |- After sending a message, you will enter IDLE state waiting for further instructions.
+        |If you are part of a workflow (interactive_pipeline mode):
+        |
+        |### Reporting to MainAgent
+        |- Report critical issues that need user decision: `send_agent_message(to="main", content="需要用户确认: ...")`
+        |- MainAgent is the primary assistant managing the conversation with the user.
+        |
+        |### Communicating with Other Steps
+        |- Available step IDs will be listed in your task context (e.g., "Available steps: research, code, review")
+        |- Send message to next step: `send_agent_message(to="step:next_step_id", content="your message")`
+        |- Request revision from previous step: `send_agent_message(to="step:prev_step_id", content="Issues: [具体问题描述]. Please fix these issues.")`
+        |- Example: If you're the "review" step and find bugs in "code": `send_agent_message(to="step:code", content="Issues found:\n1. Bug at line 42: null pointer risk\n2. Missing error handling\nPlease fix these.")`
+        |
+        |### Your State After Completion
+        |- You will enter IDLE state after completing your task.
+        |- You may be recalled into REVISION state if another agent finds issues with your work.
+        |- In REVISION, you receive feedback and must modify your previous output accordingly.
     """.trimMargin()
 
     private val prompts = mapOf(
@@ -117,6 +128,12 @@ object AgentPrompts {
                 |4. Never leave placeholder code (TODO, FIXME, HACK).
                 |
                 |If modifying existing code, preserve backward compatibility unless explicitly told otherwise.
+                |
+                |### In Interactive Pipeline
+                |- After completing your task, you enter IDLE state.
+                |- You may be recalled into REVISION state if reviewer/tester finds issues.
+                |- When recalled, you receive feedback; fix the specific issues mentioned.
+                |- If you encounter blocking issues, report to MainAgent: `send_agent_message(to="main", content="Blocked: ...")`
             """.trimMargin()
         ),
 
@@ -136,11 +153,15 @@ object AgentPrompts {
                 |- Performance issues (Important)
                 |- Code readability and maintainability (Minor)
                 |
-                |## Workflow Communication
-                |- If issues are found: send message to coder step with specific feedback for revision.
-                |- If no issues: send approval message.
-                |- Use: `send_agent_message(to="step:code", content="Issues: ...")` to request revisions.
-                |- You will enter IDLE after review. If recalled, re-review the modified code.
+                |### After Review
+                |**If issues found:**
+                |1. Document all issues with file:line references
+                |2. Send message to request revision: `send_agent_message(to="step:code", content="Issues found:\n1. [Critical] Bug at file.kt:42 - null pointer risk\n2. [Important] Missing error handling at file.kt:88\nPlease fix these issues.")`
+                |3. You will enter IDLE state; the coder will be recalled into REVISION state.
+                |
+                |**If no issues:**
+                |- Send approval: `send_agent_message(to="step:code", content="Code review passed. No issues found.")`
+                |- Report completion to MainAgent if needed.
                 |
                 |Provide specific file:line references and concrete suggestions.
                 |Categorize issues by actual severity — not everything is Critical.
@@ -159,7 +180,12 @@ object AgentPrompts {
                 |- Cover edge cases and error paths.
                 |- Mock external dependencies.
                 |
+                |### Reporting Results
                 |Report: what was tested, test results, and any issues found.
+                |
+                |**If test failures found:**
+                |- Send message to the implementation step with details: `send_agent_message(to="step:code", content="Test failures:\n1. TestName: Expected X but got Y\n2. TestName: NullPointerException at line N")`
+                |- Report to MainAgent if user attention needed.
             """.trimMargin()
         ),
 
