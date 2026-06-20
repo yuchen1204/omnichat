@@ -72,14 +72,14 @@ class MainActivity : AppCompatActivity() {
         // 注册全局 Hook 示例
         com.omnichat.hooks.LoggingHooks.registerAll()
 
-        // 注册 MCP 文件访问权限 Hook
+        // 注册 SubAgent 文件路径限制 Hook（必须先注册，先执行）
+        val pathRestrictionHook = com.omnichat.hooks.SubAgentPathRestrictionHook()
+        pathRestrictionHook.initialize(applicationContext)
+        com.omnichat.hooks.HookManager.registerMcpHook(pathRestrictionHook)
+
+        // 注册 MCP 文件访问权限 Hook（后注册，后执行；仅针对 MainAgent）
         com.omnichat.hooks.HookManager.registerMcpHook(
             com.omnichat.hooks.McpFilePermissionHook(applicationContext)
-        )
-
-        // 注册 SubAgent 文件路径限制 Hook（必须在 McpFilePermissionHook 之后注册）
-        com.omnichat.hooks.HookManager.registerMcpHook(
-            com.omnichat.hooks.SubAgentPathRestrictionHook()
         )
 
         // 初始化内置工具注册表
