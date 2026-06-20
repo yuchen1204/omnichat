@@ -20,7 +20,7 @@ import org.json.JSONObject
 object SubAgentApprovalManager {
     private const val TAG = "SubAgentApproval"
     private const val TIMEOUT_MS = 60_000L  // 60 秒
-    private const val MAX_RETRIES = 1       // 最多重试一次
+    private const val MAX_ATTEMPTS = 2      // 最多尝试 2 次（初始 + 1 次重试）
 
     /**
      * 请求 MainAgent 审核文件操作。
@@ -36,9 +36,9 @@ object SubAgentApprovalManager {
     ): ApprovalResult = withContext(Dispatchers.Default) {
         var lastResult: ApprovalResult = ApprovalResult.Timeout
 
-        for (attempt in 0..MAX_RETRIES) {
-            if (attempt > 0) {
-                Log.d(TAG, "[${request.requestId}] Retry attempt $attempt")
+        for (attempt in 1..MAX_ATTEMPTS) {
+            if (attempt > 1) {
+                Log.d(TAG, "[${request.requestId}] Retry attempt ${attempt - 1}")
             }
 
             lastResult = try {
@@ -46,7 +46,7 @@ object SubAgentApprovalManager {
                     callMainAgentForApproval(context, request)
                 }
             } catch (e: TimeoutCancellationException) {
-                Log.w(TAG, "[${request.requestId}] Approval timeout on attempt ${attempt + 1}")
+                Log.w(TAG, "[${request.requestId}] Approval timeout on attempt $attempt")
                 ApprovalResult.Timeout
             }
 
@@ -55,8 +55,8 @@ object SubAgentApprovalManager {
             }
         }
 
-        // 两次超时后默认拒绝
-        ApprovalResult.Rejected("Approval timeout after ${MAX_RETRIES + 1} attempts")
+        // 所有尝试超时后默认拒绝
+        ApprovalResult.Rejected("Approval timeout after $MAX_ATTEMPTS attempts")
     }
 
     /**
@@ -75,15 +75,14 @@ object SubAgentApprovalManager {
         val messages = JSONArray().apply {
             put(JSONObject().apply {
                 put("role", "user")
-                put("content", "请审核以下文件操作请求。")
+                put("content", "Please review the following file operation request.")
             })
         }
 
         val response = ApiClient.executeMessageCompletion(
             config = config,
             systemPrompt = systemPrompt,
-            messages = messages,
-            tools = null  // 审核不需要工具
+            messages = messages
         ) ?: return@withContext ApprovalResult.Rejected("Empty response from MainAgent")
 
         parseApprovalResponse(response.optString("content", ""))
@@ -97,10 +96,10 @@ object SubAgentApprovalManager {
             "- ${path.paramKey}: ${path.original}"
         }
 
-        val correctedPathsText = request.correctedPaths?.let { corrected ->
-            "\n\n纠正后路径:\n" + corrected.joinToString("\n") { path ->
-                val corrected = path.corrected ?: path.original
-                "- ${path.paramKey}: $corrected"
+        val correctedPathsText = request.correctedPaths?.let { paths ->
+            "\n\n纠正后路径:\n" + paths.joinToString("\n") { path ->
+                val displayPath = path.corrected ?: path.original
+                "- ${path.paramKey}: $displayPath"
             }
         } ?: ""
 
