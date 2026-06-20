@@ -26,6 +26,13 @@ import com.omnichat.BuildConfig
 import com.omnichat.update.UpdateChecker
 import com.omnichat.agent.SubAgentEvent
 import com.omnichat.agent.SubAgentEventBus
+import com.omnichat.agent.WorkflowEvent
+import com.omnichat.agent.WorkflowEventBus
+import com.omnichat.agent.WorkflowMode
+import com.omnichat.agent.WorkflowStatus
+import com.omnichat.agent.WorkflowStepStatus
+import com.omnichat.agent.WorkflowStepUiState
+import com.omnichat.agent.WorkflowUiState
 import com.omnichat.ui.screens.SubAgentTaskUiState
 import com.omnichat.ui.screens.TaskStatus
 import androidx.compose.runtime.mutableStateMapOf
@@ -113,6 +120,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     /** Active SubAgent tasks for current session — drives in-chat status cards */
     val activeTasks = mutableStateMapOf<String, SubAgentTaskUiState>()
 
+    /** Active Workflows for current session — drives in-chat workflow progress cards */
+    val activeWorkflows = mutableStateMapOf<String, WorkflowUiState>()
+
     /** SubAgent 执行期间锁定用户输入，仅允许终止操作 */
     var subAgentActive by mutableStateOf(false)
         private set
@@ -185,6 +195,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             SubAgentEventBus.events.collect { event ->
                 handleSubAgentEvent(event)
+            }
+        }
+
+        // 监听 Workflow 生命周期事件：管理 in-chat workflow 进度卡片
+        viewModelScope.launch {
+            WorkflowEventBus.events.collect { event ->
+                handleWorkflowEvent(event)
             }
         }
 
@@ -606,6 +623,148 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     delay(5000)
                     activeTasks.remove(event.taskId)
                 }
+            }
+        }
+    }
+
+    /**
+     * 处理 Workflow 生命周期事件：管理 in-chat workflow 进度卡片。
+     */
+    private fun handleWorkflowEvent(event: WorkflowEvent) {
+        when (event) {
+            is WorkflowEvent.WorkflowStarted -> {
+                if (event.sessionId == _selectedSessionId.value) {
+                    subAgentActive = true
+                    val steps = when (event.mode) {
+                        WorkflowMode.CONVERSATIONAL -> {
+                            // Conversational mode: create placeholder steps for rounds
+                            (0 until event.totalSteps).map { i ->
+                                val isAgentA = i % 2 == 0
+                                WorkflowStepUiState(
+                                    stepId = "round-${i / 2}-${if (isAgentA) event.agentA else event.agentB}",
+                                    agentType = if (isAgentA) event.agentA ?: "" else event.agentB ?: "",
+                                    task = event.topic ?: "",
+                                    status = WorkflowStepStatus.PENDING,
+                                    dependsOn = emptyList()
+                                )
+                            }
+                        }
+                        else -> emptyList()
+                    }
+                    activeWorkflows[event.workflowId] = WorkflowUiState(
+                        workflowId = event.workflowId,
+                        sessionId = event.sessionId,
+                        mode = event.mode,
+                        status = WorkflowStatus.RUNNING,
+                        steps = steps,
+                        topic = event.topic,
+                        agentA = event.agentA,
+                        agentB = event.agentB,
+                        maxRounds = event.maxRounds
+                    )
+                }
+            }
+            is WorkflowEvent.StepStarted -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = if (workflow.mode == WorkflowMode.CONVERSATIONAL) {
+                        // For conversational, update the step at the index
+                        workflow.steps.mapIndexed { index, step ->
+                            if (index == event.stepIndex) {
+                                step.copy(
+                                    status = WorkflowStepStatus.RUNNING,
+                                    agentType = event.agentType,
+                                    task = event.task
+                                )
+                            } else step
+                        }
+                    } else {
+                        // For pipeline/dag, add or update the step
+                        val existingIndex = workflow.steps.indexOfFirst { it.stepId == event.stepId }
+                        if (existingIndex >= 0) {
+                            workflow.steps.mapIndexed { index, step ->
+                                if (index == existingIndex) step.copy(
+                                    status = WorkflowStepStatus.RUNNING,
+                                    task = event.task
+                                ) else step
+                            }
+                        } else {
+                            workflow.steps + WorkflowStepUiState(
+                                stepId = event.stepId,
+                                agentType = event.agentType,
+                                task = event.task,
+                                status = WorkflowStepStatus.RUNNING
+                            )
+                        }
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(
+                        steps = updatedSteps,
+                        currentStepIndex = event.stepIndex
+                    )
+                }
+            }
+            is WorkflowEvent.StepCompleted -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = workflow.steps.map { step ->
+                        if (step.stepId == event.stepId) {
+                            step.copy(
+                                status = event.status,
+                                result = event.result
+                            )
+                        } else step
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(steps = updatedSteps)
+                }
+            }
+            is WorkflowEvent.WorkflowProgress -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    // For conversational, update current round
+                    val updatedWorkflow = if (workflow.mode == WorkflowMode.CONVERSATIONAL) {
+                        workflow.copy(currentRound = event.completedSteps / 2 + 1)
+                    } else {
+                        workflow.copy(currentStepIndex = event.currentStepIndex)
+                    }
+                    activeWorkflows[event.workflowId] = updatedWorkflow
+                }
+            }
+            is WorkflowEvent.WorkflowCompleted -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    activeWorkflows[event.workflowId] = workflow.copy(
+                        status = WorkflowStatus.COMPLETED,
+                        completedAt = System.currentTimeMillis()
+                    )
+                }
+                subAgentActive = false
+                // Auto-remove after delay
+                viewModelScope.launch {
+                    delay(5000)
+                    activeWorkflows.remove(event.workflowId)
+                }
+            }
+            is WorkflowEvent.WorkflowFailed -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    activeWorkflows[event.workflowId] = workflow.copy(
+                        status = WorkflowStatus.FAILED,
+                        error = event.error,
+                        completedAt = System.currentTimeMillis()
+                    )
+                }
+                subAgentActive = false
+                // Auto-remove after delay
+                viewModelScope.launch {
+                    delay(8000)
+                    activeWorkflows.remove(event.workflowId)
+                }
+            }
+            // New event types for interactive pipeline - no UI updates needed yet
+            is WorkflowEvent.StepWokeUp,
+            is WorkflowEvent.StepRecalled,
+            is WorkflowEvent.StepEnteredIdle,
+            is WorkflowEvent.IdleTimeoutWarning,
+            is WorkflowEvent.StepTimeout,
+            is WorkflowEvent.MessageRoutingError,
+            is WorkflowEvent.StepRevisionCompleted -> {
+                // These events are logged but don't require UI state changes yet
+                // Will be handled in future implementation
             }
         }
     }
