@@ -19,6 +19,14 @@ class McpFilePermissionHook(private val context: Context) : McpHook {
     )
 
     override suspend fun onBeforeToolExecute(toolName: String, args: JSONObject): JSONObject? {
+        // 检测是否是 SubAgent 上下文
+        val subAgentContext = com.omnichat.agent.SubAgent.getCurrentContext()
+        if (subAgentContext != null) {
+            // SubAgent 的文件操作已由 SubAgentPathRestrictionHook 处理，直接放行
+            return args
+        }
+
+        // MainAgent 的文件操作，继续原有逻辑
         val accessType = when (toolName) {
             in readTools -> FileAccessType.READ
             in writeTools -> FileAccessType.WRITE
