@@ -428,6 +428,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Cancel a running SubAgent task.
+     * Called from UI when user taps stop button on SubAgentTaskCard.
+     */
+    fun cancelSubAgentTask(taskId: String) {
+        com.omnichat.agent.SubAgent.cancelTask(taskId)
+        activeTasks.remove(taskId)
+        Log.d("ChatViewModel", "[cancelSubAgentTask] Task $taskId cancelled by user")
+    }
+
+    /**
      * Export current session log for debugging.
      * Returns the file path if successful, null otherwise.
      */

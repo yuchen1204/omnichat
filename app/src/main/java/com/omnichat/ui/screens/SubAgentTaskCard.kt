@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +45,8 @@ enum class TaskStatus { RUNNING, COMPLETED, FAILED }
 @Composable
 fun SubAgentTaskCard(
     task: SubAgentTaskUiState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCancelClick: (() -> Unit)? = null
 ) {
     val uiSettings = LocalUISettings.current
     val chatFs = LocalChatFontScale.current
@@ -186,6 +188,21 @@ fun SubAgentTaskCard(
                         fontFamily = resolvedFontFamily,
                         color = contentColor.copy(alpha = 0.7f),
                         maxLines = 2
+                    )
+                }
+            }
+
+            // Cancel button (if running and callback provided)
+            if (task.status == TaskStatus.RUNNING && onCancelClick != null) {
+                IconButton(
+                    onClick = onCancelClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Cancel task",
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

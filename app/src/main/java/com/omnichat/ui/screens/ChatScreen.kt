@@ -449,7 +449,10 @@ fun ChatView(viewModel: ChatViewModel) {
                     .filter { it.sessionId == activeSessionId }
                     .forEach { task ->
                         item(key = "subagent_${task.taskId}") {
-                            SubAgentTaskCard(task = task)
+                            SubAgentTaskCard(
+                                task = task,
+                                onCancelClick = { viewModel.cancelSubAgentTask(task.taskId) }
+                            )
                         }
                     }
 
