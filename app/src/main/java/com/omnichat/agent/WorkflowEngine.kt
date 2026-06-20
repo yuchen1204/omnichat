@@ -331,6 +331,167 @@ object WorkflowEngine {
     }
 
     /**
+     * Wake up a specific step and execute its task.
+     */
+    private suspend fun wakeUpStep(
+        state: InteractivePipelineState,
+        stepId: String,
+        task: String,
+        fromAgent: String? = null
+    ) {
+        val agentState = state.agentStates[stepId] ?: return
+        val step = state.steps.find { it.id == stepId } ?: return
+        val handle = agentState.handle ?: return
+
+        // Build task with context
+        val fullTask = if (fromAgent != null) {
+            buildString {
+                appendLine("收到来自 [$fromAgent] 的消息")
+                appendLine(task)
+                appendLine()
+                appendLine("---")
+                appendLine("你的任务：${step.task}")
+            }
+        } else {
+            buildTaskWithContext(step.task, step.dependsOn, state.contextVariables, state.steps)
+        }
+
+        // Update state
+        state.agentStates[stepId] = agentState.copy(
+            status = WorkflowStepStatus.RUNNING,
+            runningSince = System.currentTimeMillis(),
+            idleSince = null,
+            lastMessageFrom = fromAgent
+        )
+
+        // Emit event
+        WorkflowEventBus.emit(WorkflowEvent.StepStarted(
+            workflowId = state.workflowId,
+            sessionId = state.sessionId,
+            stepId = stepId,
+            stepIndex = state.steps.indexOf(step),
+            agentType = step.agentType,
+            task = task.take(100)
+        ))
+
+        if (fromAgent != null) {
+            WorkflowEventBus.emit(WorkflowEvent.StepWokeUp(
+                workflowId = state.workflowId,
+                sessionId = state.sessionId,
+                stepId = stepId,
+                fromAgent = fromAgent,
+                messagePreview = task.take(100)
+            ))
+        }
+
+        // Execute
+        try {
+            val result = SubAgent.wakeUp(
+                handle = handle,
+                task = fullTask,
+                contextVariables = state.contextVariables,
+                conversationHistory = agentState.conversationHistory
+            )
+
+            // Store result
+            state.contextVariables[stepId] = result
+            step.resultVariable?.let { state.contextVariables[it] = result }
+
+            // Return to IDLE (waiting for next step or completion)
+            setStepIdle(state, stepId, result)
+
+        } catch (e: Exception) {
+            handleStepFailure(state, stepId, e.message ?: "Unknown error")
+        }
+    }
+
+    /**
+     * Set a step back to IDLE after completion.
+     */
+    private suspend fun setStepIdle(state: InteractivePipelineState, stepId: String, result: String) {
+        val agentState = state.agentStates[stepId] ?: return
+
+        state.agentStates[stepId] = agentState.copy(
+            status = WorkflowStepStatus.IDLE,
+            idleSince = System.currentTimeMillis(),
+            runningSince = null
+        )
+
+        SubAgent.setAgentIdle(agentState.handle?.agentId ?: return)
+
+        // Emit step completed event
+        val stepIndex = state.steps.indexOfFirst { it.id == stepId }
+        WorkflowEventBus.emit(WorkflowEvent.StepCompleted(
+            workflowId = state.workflowId,
+            sessionId = state.sessionId,
+            stepId = stepId,
+            stepIndex = stepIndex,
+            result = result,
+            status = WorkflowStepStatus.IDLE  // Note: IDLE means completed but waiting
+        ))
+
+        WorkflowEventBus.emit(WorkflowEvent.StepEnteredIdle(
+            workflowId = state.workflowId,
+            sessionId = state.sessionId,
+            stepId = stepId,
+            agentType = state.steps.find { it.id == stepId }?.agentType ?: "",
+            reason = "任务完成，等待后续步骤"
+        ))
+
+        Log.d(TAG, "[InteractivePipeline] Step $stepId returned to IDLE")
+    }
+
+    /**
+     * Handle step failure.
+     */
+    private suspend fun handleStepFailure(state: InteractivePipelineState, stepId: String, error: String) {
+        val agentState = state.agentStates[stepId] ?: return
+        val stepIndex = state.steps.indexOfFirst { it.id == stepId }
+
+        state.agentStates[stepId] = agentState.copy(
+            status = WorkflowStepStatus.FAILED
+        )
+
+        WorkflowEventBus.emit(WorkflowEvent.StepCompleted(
+            workflowId = state.workflowId,
+            sessionId = state.sessionId,
+            stepId = stepId,
+            stepIndex = stepIndex,
+            result = null,
+            status = WorkflowStepStatus.FAILED
+        ))
+
+        Log.e(TAG, "[InteractivePipeline] Step $stepId failed: $error")
+    }
+
+    /**
+     * Start the interactive event loop.
+     * TODO: Implement in Task 11
+     */
+    private suspend fun startInteractiveEventLoop(context: Context, state: InteractivePipelineState) {
+        // Stub - will be implemented in Task 11
+        Log.d(TAG, "[InteractivePipeline] Event loop started for ${state.workflowId}")
+    }
+
+    /**
+     * Collect results from interactive pipeline state.
+     * TODO: Implement in Task 12
+     */
+    private fun collectInteractiveResults(state: InteractivePipelineState): List<StepResult> {
+        // Stub - will be implemented in Task 12
+        Log.d(TAG, "[InteractivePipeline] Collecting results for ${state.workflowId}")
+        return state.agentStates.map { (stepId, agentState) ->
+            StepResult(
+                stepId = stepId,
+                status = agentState.status,
+                result = state.contextVariables[stepId],
+                revisionCount = agentState.revisionCount,
+                lastMessageFrom = agentState.lastMessageFrom
+            )
+        }
+    }
+
+    /**
      * Execute a single step with retry and timeout support.
      */
     private suspend fun executeStepWithRetryAndTimeout(
