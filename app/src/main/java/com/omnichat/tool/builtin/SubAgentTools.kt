@@ -760,3 +760,74 @@ TEMPLATES:
         return successResponse(text)
     }
 }
+
+object ExportSessionLogTool : BuiltinTool(
+    name = "export_session_log",
+    description = """Export current session log for debugging and analysis. Returns the file path of the exported JSON file.
+
+The exported JSON contains:
+- Session metadata (id, title, timestamps)
+- All messages (user, assistant, tool)
+- Active SubAgent tasks
+- Active Workflows with step states
+
+Use this when you need to share the conversation state for debugging or when asked by the user to export logs.""",
+    group = "efficiency",
+    isReadOnly = true,
+    isConcurrencySafe = true,
+    requiresSession = true,
+    searchHint = "export session log for debugging"
+) {
+
+    override val inputSchema = schema {
+        // No parameters required - exports current session
+    }
+
+    override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        if (sessionId == null) {
+            return errorResponse("export_session_log requires a session context")
+        }
+
+        val repository = com.omnichat.data.AppRepository(
+            com.omnichat.data.AppDatabase.getDatabase(context)
+        )
+
+        // Get session info
+        val session = repository.getSessionById(sessionId)
+
+        // Get messages
+        val messages = repository.getMessagesBySession(sessionId)
+
+        // Get active tasks and workflows from ViewModel state
+        // Note: These are passed via the ChatViewModel context
+        val activeTasks = com.omnichat.agent.SubAgent.getActiveTasksForSession(sessionId)
+        val activeWorkflows = com.omnichat.agent.WorkflowEngine.getActiveWorkflowsForSession(sessionId)
+
+        // Export
+        val filePath = com.omnichat.util.SessionLogExporter.exportSessionLog(
+            context = context,
+            session = session,
+            messages = messages,
+            activeTasks = activeTasks,
+            activeWorkflows = activeWorkflows
+        )
+
+        return if (filePath != null) {
+            successResponse(buildString {
+                appendLine("Session log exported successfully.")
+                appendLine()
+                appendLine("File: $filePath")
+                appendLine()
+                appendLine("Contents:")
+                appendLine("- Session: ${session?.title ?: "Unknown"}")
+                appendLine("- Messages: ${messages.size}")
+                appendLine("- Active tasks: ${activeTasks.size}")
+                appendLine("- Active workflows: ${activeWorkflows.size}")
+                appendLine()
+                appendLine("You can share this file for debugging analysis.")
+            })
+        } else {
+            errorResponse("Failed to export session log")
+        }
+    }
+}

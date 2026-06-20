@@ -139,6 +139,55 @@ object WorkflowEngine {
         activeWorkflowJobs[workflowId] = job
     }
 
+    // Store workflow states for export
+    private val workflowStates = ConcurrentHashMap<String, Triple<Long, String, WorkflowStatus>>()
+
+    /**
+     * Register a workflow state for export.
+     * Internal method - called by executeInteractivePipeline.
+     */
+    internal fun registerWorkflowStateInternal(workflowId: String, sessionId: Long, state: InteractivePipelineState) {
+        workflowStates[workflowId] = Triple(sessionId, state.steps.firstOrNull()?.agentType ?: "", state.status)
+    }
+
+    /**
+     * Update workflow status.
+     */
+    fun updateWorkflowStatus(workflowId: String, status: WorkflowStatus) {
+        workflowStates[workflowId]?.let {
+            workflowStates[workflowId] = it.copy(third = status)
+        }
+    }
+
+    /**
+     * Clear workflow state after completion.
+     */
+    fun clearWorkflowState(workflowId: String) {
+        workflowStates.remove(workflowId)
+    }
+
+    /**
+     * Get all active workflows for a specific session.
+     * Used by export_session_log tool.
+     */
+    fun getActiveWorkflowsForSession(sessionId: Long): Map<String, WorkflowUiState> {
+        return workflowStates.entries
+            .filter { it.value.first == sessionId }
+            .associate { (workflowId, triple) ->
+                workflowId to WorkflowUiState(
+                    workflowId = workflowId,
+                    sessionId = sessionId,
+                    mode = WorkflowMode.PIPELINE,
+                    status = triple.third,
+                    steps = emptyList(),
+                    currentStepIndex = 0,
+                    startedAt = System.currentTimeMillis(),
+                    idleWarnings = emptyList(),
+                    messageErrors = emptyList()
+                )
+            }
+    }
+
     /**
      * Execute a pipeline — steps run sequentially, each step receives prior results as context.
      *
@@ -331,6 +380,9 @@ object WorkflowEngine {
             messageQueue = mutableListOf(),
             status = WorkflowStatus.RUNNING
         )
+
+        // Register for export
+        registerWorkflowStateInternal(actualWorkflowId, sessionId, state)
 
         // Phase 1: Create all agents in IDLE state
         for (step in steps) {
@@ -546,6 +598,7 @@ object WorkflowEngine {
 
         // Clear cancellation state
         clearCancellation(state.workflowId)
+        clearWorkflowState(state.workflowId)
 
         Log.d(TAG, "[InteractivePipeline] Event loop ended for ${state.workflowId}")
     }

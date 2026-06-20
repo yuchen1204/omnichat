@@ -669,6 +669,33 @@ object SubAgent {
 
     fun getTask(taskId: String): SubAgentTask? = tasks[taskId]
 
+    /**
+     * Get all active tasks for a specific session.
+     * Used by export_session_log tool.
+     */
+    fun getActiveTasksForSession(sessionId: Long): Map<String, com.omnichat.ui.screens.SubAgentTaskUiState> {
+        return tasks.entries
+            .filter { it.value.sessionId == sessionId }
+            .associate { (taskId, task) ->
+                taskId to com.omnichat.ui.screens.SubAgentTaskUiState(
+                    taskId = taskId,
+                    sessionId = task.sessionId,
+                    taskType = task.agentType,
+                    description = task.taskDescription,
+                    status = when (task.status) {
+                        SubAgentTaskStatus.PENDING -> com.omnichat.ui.screens.TaskStatus.RUNNING
+                        SubAgentTaskStatus.RUNNING -> com.omnichat.ui.screens.TaskStatus.RUNNING
+                        SubAgentTaskStatus.COMPLETED -> com.omnichat.ui.screens.TaskStatus.COMPLETED
+                        SubAgentTaskStatus.FAILED -> com.omnichat.ui.screens.TaskStatus.FAILED
+                        SubAgentTaskStatus.CANCELLED -> com.omnichat.ui.screens.TaskStatus.FAILED
+                    },
+                    progressMessage = null,
+                    result = task.result,
+                    startedAtMs = task.startedAt ?: task.createdAt
+                )
+            }
+    }
+
     fun cancelTask(taskId: String): Boolean {
         val job = activeJobs[taskId] ?: return false
         job.cancel()
