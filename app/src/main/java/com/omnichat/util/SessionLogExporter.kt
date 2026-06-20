@@ -1,6 +1,7 @@
 package com.omnichat.util
 
 import android.content.Context
+import android.os.Environment
 import android.util.Log
 import com.omnichat.agent.WorkflowUiState
 import com.omnichat.agent.WorkflowStepStatus
@@ -25,7 +26,7 @@ object SessionLogExporter {
     private const val TAG = "SessionLogExporter"
 
     /**
-     * Export session data to a JSON file.
+     * Export session data to a JSON file in Downloads directory.
      * Returns the file path if successful, null otherwise.
      */
     fun exportSessionLog(
@@ -37,8 +38,15 @@ object SessionLogExporter {
     ): String? {
         return try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val fileName = "session_log_$timestamp.json"
-            val file = File(context.cacheDir, fileName)
+            val fileName = "omnichat_session_log_$timestamp.json"
+
+            // Export to Downloads directory
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val omnichatDir = File(downloadsDir, "OmniChat")
+            if (!omnichatDir.exists()) {
+                omnichatDir.mkdirs()
+            }
+            val file = File(omnichatDir, fileName)
 
             val json = buildSessionJson(session, messages, activeTasks, activeWorkflows)
             file.writeText(json.toString(2))
