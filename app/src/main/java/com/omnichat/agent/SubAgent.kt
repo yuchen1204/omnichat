@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +40,16 @@ enum class SubAgentTaskStatus {
 }
 
 /**
+ * Execution context for SubAgent - determines event behavior.
+ */
+enum class SubAgentExecutionContext {
+    /** Standalone task - emits full events to SubAgentEventBus, creates UI card */
+    STANDALONE,
+    /** Part of a workflow - only emits to WorkflowEventBus, no standalone UI card */
+    WORKFLOW_STEP
+}
+
+/**
  * Represents a sub-agent task and its current state.
  */
 data class SubAgentTask(
@@ -52,6 +63,41 @@ data class SubAgentTask(
     val createdAt: Long = System.currentTimeMillis(),
     val startedAt: Long? = null,
     val completedAt: Long? = null
+)
+
+/**
+ * Handle for a suspended SubAgent that can be woken up.
+ */
+data class IdleAgentHandle internal constructor(
+    val agentId: String,
+    val agentType: String,
+    val stepId: String,
+    val sessionId: Long,
+    val context: Context,
+    internal val resumeChannel: Channel<WakeUpSignal>
+)
+
+/**
+ * Signal to wake up a suspended SubAgent.
+ */
+internal data class WakeUpSignal(
+    val task: String,
+    val contextVariables: Map<String, String>,
+    val conversationHistory: List<JSONObject>?,
+    val isRevision: Boolean,
+    val revisionPrompt: String?
+)
+
+/**
+ * Internal state for tracking suspended agents.
+ */
+internal data class AgentStateInfo(
+    val handle: IdleAgentHandle,
+    val status: WorkflowStepStatus,
+    val idleSince: Long?,
+    val runningSince: Long?,
+    val conversationHistory: MutableList<JSONObject>,
+    val idleTimeoutWarningSent: Boolean = false
 )
 
 /**
@@ -81,6 +127,9 @@ object SubAgent {
     private val tasks = ConcurrentHashMap<String, SubAgentTask>()
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Map of agentId -> AgentStateInfo for suspended agents
+    private val suspendedAgents = ConcurrentHashMap<String, AgentStateInfo>()
 
     /**
      * Execute a sub-agent task asynchronously.
@@ -167,13 +216,17 @@ object SubAgent {
     /**
      * Synchronous execution — waits for the task to complete and returns the result.
      * Used by WorkflowEngine for pipeline/DAG execution.
+     *
+     * @param executionContext If WORKFLOW_STEP, does NOT emit SubAgentEvents (workflow handles UI via WorkflowEventBus).
+     *                         If STANDALONE, emits full events for standalone UI card.
      */
     suspend fun executeSync(
         context: Context,
         agentType: String,
         taskDescription: String,
         sessionId: Long,
-        callerContext: AgentCallerContext? = null
+        callerContext: AgentCallerContext? = null,
+        executionContext: SubAgentExecutionContext = SubAgentExecutionContext.WORKFLOW_STEP
     ): String = withContext(Dispatchers.Default) {
         val depth = (callerContext?.depth ?: 0) + 1
         if (depth > MAX_DELEGATION_DEPTH) {
@@ -189,16 +242,23 @@ object SubAgent {
         )
         tasks[taskId] = task
 
+        val emitEvents = executionContext == SubAgentExecutionContext.STANDALONE
+
         try {
             globalSemaphore.acquire()
             try {
                 updateTask(taskId, status = SubAgentTaskStatus.RUNNING, startedAt = System.currentTimeMillis())
-                SubAgentEventBus.emit(SubAgentEvent.TaskStarted(
-                    taskId = taskId,
-                    sessionId = sessionId,
-                    taskType = agentType,
-                    description = taskDescription
-                ))
+
+                // Only emit SubAgentEvents for STANDALONE context (not for workflow steps)
+                if (emitEvents) {
+                    SubAgentEventBus.emit(SubAgentEvent.TaskStarted(
+                        taskId = taskId,
+                        sessionId = sessionId,
+                        taskType = agentType,
+                        description = taskDescription
+                    ))
+                }
+
                 currentTaskContext.set(taskDescription)
                 val result = try {
                     executeTask(context, agentType, taskDescription, sessionId, depth, taskId)
@@ -207,11 +267,15 @@ object SubAgent {
                 }
                 updateTask(taskId, status = SubAgentTaskStatus.COMPLETED, result = result,
                     completedAt = System.currentTimeMillis())
-                SubAgentEventBus.emit(SubAgentEvent.TaskCompleted(
-                    taskId = taskId,
-                    sessionId = sessionId,
-                    result = result
-                ))
+
+                if (emitEvents) {
+                    SubAgentEventBus.emit(SubAgentEvent.TaskCompleted(
+                        taskId = taskId,
+                        sessionId = sessionId,
+                        result = result
+                    ))
+                }
+
                 return@withContext result
             } finally {
                 globalSemaphore.release()
@@ -219,20 +283,24 @@ object SubAgent {
         } catch (e: kotlinx.coroutines.CancellationException) {
             updateTask(taskId, status = SubAgentTaskStatus.CANCELLED,
                 completedAt = System.currentTimeMillis())
-            SubAgentEventBus.emit(SubAgentEvent.TaskFailed(
-                taskId = taskId,
-                sessionId = sessionId,
-                error = "Cancelled"
-            ))
+            if (emitEvents) {
+                SubAgentEventBus.emit(SubAgentEvent.TaskFailed(
+                    taskId = taskId,
+                    sessionId = sessionId,
+                    error = "Cancelled"
+                ))
+            }
             throw e
         } catch (e: Exception) {
             updateTask(taskId, status = SubAgentTaskStatus.FAILED, error = e.message,
                 completedAt = System.currentTimeMillis())
-            SubAgentEventBus.emit(SubAgentEvent.TaskFailed(
-                taskId = taskId,
-                sessionId = sessionId,
-                error = e.message ?: "Unknown error"
-            ))
+            if (emitEvents) {
+                SubAgentEventBus.emit(SubAgentEvent.TaskFailed(
+                    taskId = taskId,
+                    sessionId = sessionId,
+                    error = e.message ?: "Unknown error"
+                ))
+            }
             throw e
         } finally {
             cleanupOldTasks()
@@ -348,30 +416,77 @@ object SubAgent {
 
     /**
      * Ensure the output is valid JSON in our standard format.
-     * If the LLM already returned JSON, pass through.
+     * If the LLM already returned JSON, validate and pass through.
      * Otherwise, wrap in our standard format.
+     *
+     * Standard format:
+     * {
+     *   "status": "DONE" | "BLOCKED" | "NEEDS_CONTEXT",
+     *   "summary": "<one-line summary>",
+     *   "actions": [{ "step": "", "tool": "", "outcome": "" }],
+     *   "key_findings": [],
+     *   "deliverables": [],
+     *   "confidence": "high" | "medium" | "low",
+     *   "notes": "",
+     *   "next_steps_hint": ""
+     * }
      */
     private fun normalizeOutputToJson(rawOutput: String): String {
         return try {
             val json = JSONObject(rawOutput)
-            // Verify it has the required "status" field
-            if (json.has("status")) {
-                rawOutput // already valid format
-            } else {
-                JSONObject().apply {
-                    put("status", "DONE")
-                    put("result", rawOutput)
-                    put("confidence", "medium")
-                    put("notes", "Output missing status field; wrapped automatically.")
-                }.toString()
+
+            // Check if it has the required "status" field
+            if (!json.has("status")) {
+                // Add missing status
+                json.put("status", "DONE")
             }
+
+            // Ensure new structured fields exist (for backwards compatibility)
+            if (!json.has("summary")) {
+                // If there's a "result" field, use it as summary
+                val result = json.optString("result", rawOutput.take(200))
+                json.put("summary", result.take(100))
+            }
+
+            if (!json.has("actions")) {
+                json.put("actions", JSONArray())
+            }
+
+            if (!json.has("key_findings")) {
+                json.put("key_findings", JSONArray())
+            }
+
+            if (!json.has("deliverables")) {
+                json.put("deliverables", JSONArray())
+            }
+
+            if (!json.has("confidence")) {
+                json.put("confidence", "medium")
+            }
+
+            if (!json.has("notes")) {
+                json.put("notes", "")
+            }
+
+            json.toString()
+
         } catch (_: Exception) {
-            // Not valid JSON — wrap it
+            // Not valid JSON — wrap it in the new format
             JSONObject().apply {
                 put("status", "DONE")
-                put("result", rawOutput)
+                put("summary", rawOutput.take(100))
+                put("actions", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("step", "Task execution")
+                        put("tool", null)
+                        put("outcome", rawOutput.take(500))
+                    })
+                })
+                put("key_findings", JSONArray())
+                put("deliverables", JSONArray())
                 put("confidence", "medium")
                 put("notes", "Output was not in expected JSON format; wrapped automatically.")
+                put("next_steps_hint", "")
             }.toString()
         }
     }
