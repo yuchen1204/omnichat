@@ -1291,9 +1291,39 @@ Returns step summary + final result. Failed steps show error message.
 
     /**
      * 处理内置工具调用，直接在 JVM 层执行，无需外部进程。
+     * 优先使用新的 ToolRegistry，若工具未注册则回退到 BuiltinToolHandler。
      */
     private suspend fun handleBuiltinTool(toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject {
+        // 尝试从 ToolRegistry 获取工具
+        val tool = com.omnichat.tool.ToolRegistry.get(toolName)
+        if (tool != null) {
+            Log.d(TAG, "[handleBuiltinTool] 使用 ToolRegistry 执行: $toolName")
+            return com.omnichat.tool.ToolExecutor.executeTool(context, tool, arguments, sessionId)
+        }
+
+        // 回退到旧的 BuiltinToolHandler
+        Log.d(TAG, "[handleBuiltinTool] 回退到 BuiltinToolHandler 执行: $toolName")
         return BuiltinToolHandler.handleBuiltinTool(context, toolName, arguments, sessionId)
+    }
+
+    /**
+     * 调用远程 MCP 工具（供 McpRemoteTool 使用）。
+     */
+    suspend fun callRemoteTool(serverId: Long, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject? {
+        return try {
+            val response = sendRequest(
+                serverId = serverId,
+                method = "tools/call",
+                params = JSONObject().apply {
+                    put("name", toolName)
+                    put("arguments", arguments)
+                }
+            )
+            response.optJSONObject("result")
+        } catch (e: Exception) {
+            Log.e(TAG, "调用远程工具 $toolName 失败", e)
+            null
+        }
     }
 
     suspend fun refreshTools(serverId: Long) {

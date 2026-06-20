@@ -71,11 +71,14 @@ class MainActivity : AppCompatActivity() {
         
         // 注册全局 Hook 示例
         com.omnichat.hooks.LoggingHooks.registerAll()
-        
+
         // 注册 MCP 文件访问权限 Hook
         com.omnichat.hooks.HookManager.registerMcpHook(
             com.omnichat.hooks.McpFilePermissionHook(applicationContext)
         )
+
+        // 初始化内置工具注册表
+        com.omnichat.tool.ToolInitializer.initialize(applicationContext)
 
         // Schedule cloud backup based on saved settings
         lifecycleScope.launch {

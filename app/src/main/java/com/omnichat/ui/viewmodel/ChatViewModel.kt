@@ -527,6 +527,36 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 subAgentActive = false
+
+                // Insert tool result message and trigger MainAgent to continue
+                val sessionId = event.sessionId
+                if (sessionId == _selectedSessionId.value && event.result.isNotBlank()) {
+                    viewModelScope.launch {
+                        // Insert tool result as a message
+                        repository.insertMessage(
+                            Message(
+                                sessionId = sessionId,
+                                role = "tool",
+                                content = event.result,
+                                toolCallId = event.taskId
+                            )
+                        )
+
+                        // Trigger MainAgent to process the result
+                        val providerConfig = repository.getDefaultProvider()
+                        if (providerConfig != null) {
+                            val activeTemplate = repository.getActiveTemplate()
+                            val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+                            runtimeManager.waitForStartingServersToFinish()
+                            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, "")
+
+                            streamingJob = viewModelScope.launch(Dispatchers.Default) {
+                                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+                            }
+                        }
+                    }
+                }
+
                 // Auto-remove card after 3 seconds
                 viewModelScope.launch {
                     delay(3000)
@@ -541,6 +571,36 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 subAgentActive = false
+
+                // Insert tool error message and trigger MainAgent to continue
+                val sessionId = event.sessionId
+                if (sessionId == _selectedSessionId.value) {
+                    viewModelScope.launch {
+                        // Insert tool error as a message
+                        repository.insertMessage(
+                            Message(
+                                sessionId = sessionId,
+                                role = "tool",
+                                content = "Error: ${event.error}",
+                                toolCallId = event.taskId
+                            )
+                        )
+
+                        // Trigger MainAgent to process the error
+                        val providerConfig = repository.getDefaultProvider()
+                        if (providerConfig != null) {
+                            val activeTemplate = repository.getActiveTemplate()
+                            val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+                            runtimeManager.waitForStartingServersToFinish()
+                            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, "")
+
+                            streamingJob = viewModelScope.launch(Dispatchers.Default) {
+                                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+                            }
+                        }
+                    }
+                }
+
                 // Auto-remove card after 5 seconds
                 viewModelScope.launch {
                     delay(5000)
@@ -747,7 +807,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // 构造标题生成的用户内容：用户消息 + AI 回复摘要
+        // 构造 JSON 结构化输入，避免副模型误解为需要回答的问题
         val userText = buildString {
             if (firstUserMsg.content.isNotBlank()) {
                 append(firstUserMsg.content.take(200))
@@ -764,15 +824,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
         val assistantText = assistantContent.take(200)
 
-        val titleContent = buildString {
-            if (userText.isNotBlank()) append("User: $userText")
-            if (assistantText.isNotBlank()) {
-                if (isNotEmpty()) append("\n")
-                append("Assistant: $assistantText")
-            }
+        val conversationJson = org.json.JSONObject().apply {
+            put("user_message", userText)
+            put("assistant_response", assistantText)
         }
-        android.util.Log.d("TitleGen", "titleContent=$titleContent")
-        if (titleContent.isBlank()) return
+
+        android.util.Log.d("TitleGen", "conversationJson=$conversationJson")
+        if (conversationJson.toString().isBlank()) return
 
         try {
             val defaultForTitle = repository.getDefaultProvider() ?: run {
@@ -789,12 +847,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 selectedModelId = defaultForTitle.memoryModelId.takeIf { it.isNotBlank() }
                     ?: defaultForTitle.selectedModelId
             )
+
+            // 强化 system prompt：明确这是一个标题生成任务，模型必须输出标题，不得回答问题
+            val titleSystemPrompt = """You are a session title generator. Your ONLY job is to generate a short, descriptive title for the given conversation.
+
+CRITICAL RULES:
+1. You MUST output ONLY the title. Do NOT answer, respond, or continue the conversation.
+2. The title should be max 10 words, in the same language as the conversation.
+3. Do NOT include quotes, markdown headers, prefixes like "Title:", or any other formatting.
+4. If the conversation contains a question, the title should DESCRIBE the topic, not ASK the question.
+
+Example inputs and outputs:
+Input: {"user_message": "How do I fix a NullPointerException in Kotlin?", "assistant_response": "A NullPointerException occurs when..."}
+Output: Kotlin NullPointerException Fix
+
+Input: {"user_message": "帮我写一个 Python 脚本解析 JSON", "assistant_response": "好的，这是一个示例脚本..."}
+Output: Python JSON 解析脚本"""
+
+            val titleUserPrompt = """Generate a title for this conversation:
+
+$conversationJson
+
+Output the title now."""
+
             android.util.Log.d("TitleGen", "Calling executeCompletion with model=${titleConfig.selectedModelId}")
-            val prompt = "Generate a very short (max 10 words) descriptive title for the following conversation. Return ONLY the title without quotes, markdown headers, or other text."
-            val generatedTitle = ApiClient.executeCompletion(titleConfig, prompt, titleContent)
+            val generatedTitle = ApiClient.executeCompletion(titleConfig, titleSystemPrompt, titleUserPrompt)
             android.util.Log.d("TitleGen", "generatedTitle=$generatedTitle")
             val finalTitle = generatedTitle?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
-                ?: if (titleContent.length > 15) titleContent.take(15) + "..." else titleContent
+                ?: if (userText.length > 15) userText.take(15) + "..." else userText
             android.util.Log.d("TitleGen", "finalTitle=$finalTitle")
             repository.updateSessionTitle(sessionId, finalTitle.replace("\n", ""))
         } catch (e: Exception) {

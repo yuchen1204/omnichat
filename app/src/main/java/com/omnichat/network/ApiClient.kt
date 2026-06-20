@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
     internal val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)  // Increased from 60s for slow LLM responses
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
