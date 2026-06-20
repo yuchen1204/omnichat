@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
@@ -465,12 +466,131 @@ object WorkflowEngine {
     }
 
     /**
-     * Start the interactive event loop.
-     * TODO: Implement in Task 11
+     * Main event loop for interactive pipeline.
+     * Monitors messages and timeouts until workflow completes.
      */
     private suspend fun startInteractiveEventLoop(context: Context, state: InteractivePipelineState) {
-        // Stub - will be implemented in Task 11
         Log.d(TAG, "[InteractivePipeline] Event loop started for ${state.workflowId}")
+
+        while (state.status == WorkflowStatus.RUNNING) {
+            // Check for messages
+            processPendingMessages(state)
+
+            // Check timeouts
+            checkTimeouts(state)
+
+            // Check if all steps are completed or failed
+            if (checkWorkflowComplete(state)) {
+                break
+            }
+
+            delay(500)  // Check every 500ms
+        }
+
+        Log.d(TAG, "[InteractivePipeline] Event loop ended for ${state.workflowId}")
+    }
+
+    /**
+     * Process pending messages from MessageBus.
+     */
+    private suspend fun processPendingMessages(state: InteractivePipelineState) {
+        state.agentStates.forEach { (stepId, agentState) ->
+            if (agentState.status == WorkflowStepStatus.IDLE) {
+                val agentId = agentState.handle?.agentId ?: return@forEach
+                val messages = MessageBus.readInbox(agentId)
+
+                for (msg in messages) {
+                    handleIncomingMessage(state, stepId, msg)
+                }
+            }
+        }
+
+        // Also check MainAgent inbox for timeout responses
+        val mainMessages = MessageBus.readInbox("main")
+        for (msg in mainMessages) {
+            handleMainAgentMessage(state, msg)
+        }
+    }
+
+    /**
+     * Handle incoming message for a step.
+     */
+    private suspend fun handleIncomingMessage(
+        state: InteractivePipelineState,
+        targetStepId: String,
+        message: AgentMessage
+    ) {
+        val agentState = state.agentStates[targetStepId]
+
+        if (agentState == null) {
+            // Target not found - send error back
+            val availableTargets = state.agentStates.keys.joinToString(", ")
+            val errorMsg = "目标步骤 '$targetStepId' 不存在。可用目标: $availableTargets"
+            MessageBus.send(from = "workflow", to = message.from, content = errorMsg)
+
+            WorkflowEventBus.emit(WorkflowEvent.MessageRoutingError(
+                workflowId = state.workflowId,
+                sessionId = state.sessionId,
+                from = message.from,
+                to = targetStepId,
+                error = errorMsg,
+                availableTargets = state.agentStates.keys.toList()
+            ))
+            return
+        }
+
+        when (agentState.status) {
+            WorkflowStepStatus.IDLE -> {
+                // Wake up the agent
+                wakeUpStep(state, targetStepId, message.content, message.from)
+            }
+            WorkflowStepStatus.COMPLETED -> {
+                // Recall for revision
+                recallStep(state, targetStepId, message.content, message.from)
+            }
+            WorkflowStepStatus.RUNNING, WorkflowStepStatus.REVISION -> {
+                // Queue message for later
+                state.messageQueue.add(PendingMessage(
+                    from = message.from,
+                    to = targetStepId,
+                    content = message.content,
+                    timestamp = System.currentTimeMillis()
+                ))
+            }
+            else -> {
+                val statusMsg = "步骤 '$targetStepId' 当前状态为 ${agentState.status}，无法接收消息"
+                MessageBus.send(from = "workflow", to = message.from, content = statusMsg)
+            }
+        }
+    }
+
+    /**
+     * Check timeouts for all agents.
+     */
+    private fun checkTimeouts(state: InteractivePipelineState) {
+        // Will be implemented in Task 12
+    }
+
+    /**
+     * Handle message sent to MainAgent.
+     */
+    private fun handleMainAgentMessage(state: InteractivePipelineState, message: AgentMessage) {
+        // Will be implemented in Task 13
+    }
+
+    /**
+     * Recall a completed step for revision.
+     */
+    private suspend fun recallStep(state: InteractivePipelineState, stepId: String, content: String, from: String) {
+        // Will be implemented in Task 13
+    }
+
+    /**
+     * Check if workflow is complete.
+     */
+    private fun checkWorkflowComplete(state: InteractivePipelineState): Boolean {
+        // Will be implemented in Task 13
+        return false
     }
 
     /**
