@@ -132,6 +132,50 @@ object SubAgent {
     private val suspendedAgents = ConcurrentHashMap<String, AgentStateInfo>()
 
     /**
+     * Create a SubAgent in IDLE state, suspended and waiting for wake-up.
+     * Used by Interactive Pipeline to pre-create agents.
+     */
+    suspend fun createIdle(
+        context: Context,
+        agentType: String,
+        sessionId: Long,
+        stepId: String
+    ): IdleAgentHandle = withContext(Dispatchers.Default) {
+        val agentId = "idle-${stepId}-${UUID.randomUUID().toString().take(8)}"
+        val resumeChannel = Channel<WakeUpSignal>(capacity = 1)
+
+        val handle = IdleAgentHandle(
+            agentId = agentId,
+            agentType = agentType,
+            stepId = stepId,
+            sessionId = sessionId,
+            context = context,
+            resumeChannel = resumeChannel
+        )
+
+        // Initialize state
+        suspendedAgents[agentId] = AgentStateInfo(
+            handle = handle,
+            status = WorkflowStepStatus.IDLE,
+            idleSince = System.currentTimeMillis(),
+            runningSince = null,
+            conversationHistory = mutableListOf()
+        )
+
+        // Emit event
+        SubAgentEventBus.emit(SubAgentEvent.TaskStarted(
+            taskId = agentId,
+            sessionId = sessionId,
+            taskType = agentType,
+            description = "[IDLE] Waiting for wake-up signal"
+        ))
+
+        Log.d("SubAgent", "[createIdle] Created idle agent: $agentId for step: $stepId")
+
+        handle
+    }
+
+    /**
      * Execute a sub-agent task asynchronously.
      * Returns the taskId immediately; result is delivered via MessageBus.
      */
