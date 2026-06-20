@@ -113,7 +113,8 @@ object ToolInitializer {
                 CheckTaskStatusTool,
                 SendAgentMessageTool,
                 ReadAgentInboxTool,
-                RunWorkflowTool
+                RunWorkflowTool,
+                ExportSessionLogTool
             )
 
             // ══════════════════════════════════════════════════════════════
