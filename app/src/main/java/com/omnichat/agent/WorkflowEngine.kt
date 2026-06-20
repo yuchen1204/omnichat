@@ -682,43 +682,146 @@ object WorkflowEngine {
     }
 
     /**
-     * Handle message sent to MainAgent.
+     * Handle message sent to MainAgent (timeout responses).
      */
-    private fun handleMainAgentMessage(state: InteractivePipelineState, message: AgentMessage) {
-        // Will be implemented in Task 13
+    private suspend fun handleMainAgentMessage(state: InteractivePipelineState, message: AgentMessage) {
+        val content = message.content.trim()
+
+        when {
+            content.startsWith("continue:") -> {
+                val stepId = content.substringAfter("continue:")
+                state.agentStates[stepId]?.let { agentState ->
+                    // Reset idle timeout warning
+                    state.agentStates[stepId] = agentState.copy(
+                        idleTimeoutWarningSent = false,
+                        idleSince = System.currentTimeMillis()
+                    )
+                    Log.d(TAG, "[InteractivePipeline] Continuing wait for step $stepId")
+                }
+            }
+            content.startsWith("terminate:") -> {
+                val stepId = content.substringAfter("terminate:")
+                handleStepFailure(state, stepId, "用户终止")
+            }
+        }
     }
 
     /**
      * Recall a completed step for revision.
      */
-    private suspend fun recallStep(state: InteractivePipelineState, stepId: String, content: String, from: String) {
-        // Will be implemented in Task 13
+    private suspend fun recallStep(
+        state: InteractivePipelineState,
+        stepId: String,
+        revisionPrompt: String,
+        fromAgent: String
+    ) {
+        val agentState = state.agentStates[stepId] ?: return
+        val handle = agentState.handle ?: return
+
+        Log.d(TAG, "[InteractivePipeline] Recalling step $stepId from $fromAgent")
+
+        // Update state
+        val newRevisionCount = agentState.revisionCount + 1
+        state.agentStates[stepId] = agentState.copy(
+            status = WorkflowStepStatus.REVISION,
+            runningSince = System.currentTimeMillis(),
+            revisionCount = newRevisionCount
+        )
+
+        // Emit event
+        WorkflowEventBus.emit(WorkflowEvent.StepRecalled(
+            workflowId = state.workflowId,
+            sessionId = state.sessionId,
+            stepId = stepId,
+            fromAgent = fromAgent,
+            revisionPrompt = revisionPrompt
+        ))
+
+        // Execute revision
+        try {
+            val result = SubAgent.recall(
+                handle = handle,
+                revisionPrompt = revisionPrompt,
+                fromAgent = fromAgent
+            )
+
+            // Update context
+            state.contextVariables[stepId] = result
+
+            // Emit revision completed
+            WorkflowEventBus.emit(WorkflowEvent.StepRevisionCompleted(
+                workflowId = state.workflowId,
+                sessionId = state.sessionId,
+                stepId = stepId,
+                revisionCount = newRevisionCount,
+                result = result
+            ))
+
+            // Return to IDLE
+            setStepIdle(state, stepId, result)
+
+        } catch (e: Exception) {
+            handleStepFailure(state, stepId, e.message ?: "Revision failed")
+        }
     }
 
     /**
-     * Check if workflow is complete.
+     * Check if all steps are completed or failed.
      */
     private fun checkWorkflowComplete(state: InteractivePipelineState): Boolean {
-        // Will be implemented in Task 13
-        return false
+        val allDone = state.agentStates.values.all {
+            it.status == WorkflowStepStatus.COMPLETED ||
+            it.status == WorkflowStepStatus.FAILED ||
+            it.status == WorkflowStepStatus.SKIPPED
+        }
+
+        if (allDone) {
+            val hasFailures = state.agentStates.values.any { it.status == WorkflowStepStatus.FAILED }
+            state.status = if (hasFailures) WorkflowStatus.FAILED else WorkflowStatus.COMPLETED
+        }
+
+        return allDone
     }
 
     /**
-     * Collect results from interactive pipeline state.
-     * TODO: Implement in Task 12
+     * Collect final results.
      */
-    private fun collectInteractiveResults(state: InteractivePipelineState): List<StepResult> {
-        // Stub - will be implemented in Task 12
-        Log.d(TAG, "[InteractivePipeline] Collecting results for ${state.workflowId}")
-        return state.agentStates.map { (stepId, agentState) ->
-            StepResult(
-                stepId = stepId,
-                status = agentState.status,
-                result = state.contextVariables[stepId],
-                revisionCount = agentState.revisionCount,
-                lastMessageFrom = agentState.lastMessageFrom
-            )
+    private suspend fun collectInteractiveResults(state: InteractivePipelineState): List<StepResult> {
+        val results = mutableListOf<StepResult>()
+
+        state.steps.forEach { step ->
+            val agentState = state.agentStates[step.id]
+            results.add(StepResult(
+                stepId = step.id,
+                status = agentState?.status ?: WorkflowStepStatus.SKIPPED,
+                result = state.contextVariables[step.id],
+                error = if (agentState?.status == WorkflowStepStatus.FAILED) "Failed" else null,
+                revisionCount = agentState?.revisionCount ?: 0,
+                lastMessageFrom = agentState?.lastMessageFrom
+            ))
         }
+
+        // Emit final event
+        if (state.status == WorkflowStatus.COMPLETED) {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
+                workflowId = state.workflowId,
+                sessionId = state.sessionId,
+                results = results
+            ))
+        } else {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = state.workflowId,
+                sessionId = state.sessionId,
+                error = "Workflow failed"
+            ))
+        }
+
+        // Cleanup
+        state.agentStates.values.forEach { agentState ->
+            agentState.handle?.let { SubAgent.completeAgent(it.agentId) }
+        }
+
+        return results
     }
 
     /**
