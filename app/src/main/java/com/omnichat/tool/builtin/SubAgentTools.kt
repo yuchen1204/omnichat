@@ -15,9 +15,11 @@ import com.omnichat.agent.WorkflowEvent
 import com.omnichat.agent.WorkflowEventBus
 import com.omnichat.agent.WorkflowStepUiState
 import com.omnichat.agent.WorkflowUiState
+import com.omnichat.agent.WorkflowTemplates
 import com.omnichat.mcp.ToolSchemaDsl.schema
 import com.omnichat.tool.BuiltinTool
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.UUID
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -223,11 +225,18 @@ MODES:
 - pipeline: Sequential execution. Each step receives prior results as context.
 - dag: Dependency-based execution. Independent steps run in parallel.
 - conversational: Two agents exchange messages until convergence.
+- interactive_pipeline: Steps can enter IDLE state, be recalled for revision, and communicate via messages.
 
 WHEN TO USE EACH MODE:
 - pipeline: Steps have strict order dependency (A must finish before B starts).
 - dag: Steps have partial dependencies, some can run in parallel.
-- conversational: Need multi-perspective discussion or debate between two agents.""",
+- conversational: Need multi-perspective discussion or debate between two agents.
+- interactive_pipeline: Need step-to-step communication with revision support (e.g., code-review cycles).
+
+TEMPLATES:
+- research_and_report: Research → Generate report
+- code_and_review: Code → Review
+- full_dev_cycle: Research → Code → Review""",
     group = "subagent",
     isReadOnly = false,
     isConcurrencySafe = false,
@@ -237,18 +246,24 @@ WHEN TO USE EACH MODE:
 
     override val inputSchema = schema {
         prop("mode", "string", "Execution mode.") {
-            enum("pipeline", "dag", "conversational")
+            enum("pipeline", "dag", "conversational", "interactive_pipeline")
         }
-        prop("steps", "array", "Workflow steps (for pipeline/dag modes).") {
+        prop("steps", "array", "Workflow steps (for pipeline/dag/interactive_pipeline modes).") {
             items {
                 properties {
                     prop("id", "string", "Step identifier.")
                     prop("agentType", "string", "Agent type for this step.")
                     prop("task", "string", "Task description.")
                     prop("dependsOn", "array", "IDs of steps this depends on (dag only).") { items { } }
+                    prop("timeoutMs", "integer", "Running timeout in milliseconds (default 600000 = 10min).")
+                    prop("maxIdleMs", "integer", "IDLE timeout in milliseconds (default 1800000 = 30min, interactive_pipeline only).")
                 }
             }
         }
+        prop("template", "string", "Use predefined template (alternative to steps).") {
+            enum("research_and_report", "code_and_review", "full_dev_cycle")
+        }
+        prop("task", "string", "Task description (required when using template).")
         prop("agentA", "string", "First agent type (conversational only).")
         prop("agentB", "string", "Second agent type (conversational only).")
         prop("topic", "string", "Discussion topic (conversational only).")
@@ -261,9 +276,16 @@ WHEN TO USE EACH MODE:
         if (mode.isEmpty()) return "mode is required"
 
         when (mode) {
-            "pipeline", "dag" -> {
+            "pipeline", "dag", "interactive_pipeline" -> {
+                val template = arguments.optString("template").trim()
                 val steps = arguments.optJSONArray("steps")
-                if (steps == null || steps.length() == 0) return "steps is required for pipeline/dag modes"
+
+                if (template.isEmpty() && (steps == null || steps.length() == 0)) {
+                    return "Either template or steps is required for $mode mode"
+                }
+                if (template.isNotEmpty() && arguments.optString("task").isEmpty()) {
+                    return "task is required when using template"
+                }
             }
             "conversational" -> {
                 if (arguments.optString("agentA").isEmpty()) return "agentA is required for conversational mode"
@@ -283,27 +305,52 @@ WHEN TO USE EACH MODE:
 
         val mode = arguments.optString("mode")
 
+        // Parse steps from template or direct input
+        val steps: List<WorkflowStep>? = when {
+            arguments.optString("template").isNotEmpty() -> {
+                val templateId = arguments.optString("template")
+                val task = arguments.optString("task")
+                WorkflowTemplates.instantiateTemplate(templateId, mapOf("task" to task))
+            }
+            arguments.optJSONArray("steps") != null -> {
+                parseStepsArray(arguments.optJSONArray("steps")!!)
+            }
+            else -> null
+        }
+
+        if (steps == null && mode in listOf("pipeline", "dag", "interactive_pipeline")) {
+            return errorResponse("Failed to parse steps")
+        }
+
         return when (mode) {
-            "pipeline" -> executePipeline(context, arguments, sessionId)
-            "dag" -> executeDag(context, arguments, sessionId)
+            "pipeline" -> executePipeline(context, steps!!, sessionId)
+            "dag" -> executeDag(context, steps!!, sessionId)
+            "interactive_pipeline" -> executeInteractivePipeline(context, steps!!, sessionId)
             "conversational" -> executeConversational(context, arguments, sessionId)
             else -> errorResponse("Invalid mode: $mode")
         }
     }
 
-    private suspend fun executePipeline(context: Context, arguments: JSONObject, sessionId: Long): JSONObject {
-        val stepsArray = arguments.optJSONArray("steps") ?: return errorResponse("No steps provided")
+    private fun parseStepsArray(stepsArray: JSONArray): List<WorkflowStep> {
+        return (0 until stepsArray.length()).map { i ->
+            val stepObj = stepsArray.optJSONObject(i)!!
+            val dependsOnArray = stepObj.optJSONArray("dependsOn")
+            val dependsOn = if (dependsOnArray != null) {
+                (0 until dependsOnArray.length()).map { dependsOnArray.optString(it) }
+            } else emptyList()
 
-        val steps = (0 until stepsArray.length()).map { i ->
-            val stepObj = stepsArray.optJSONObject(i) ?: return errorResponse("Invalid step at index $i")
             WorkflowStep(
                 id = stepObj.optString("id"),
                 agentType = stepObj.optString("agentType"),
                 task = stepObj.optString("task"),
-                dependsOn = emptyList()
+                dependsOn = dependsOn,
+                timeoutMs = stepObj.optLong("timeoutMs").let { if (it > 0) it else null },
+                maxIdleMs = stepObj.optLong("maxIdleMs").let { if (it > 0) it else null }
             )
         }
+    }
 
+    private suspend fun executePipeline(context: Context, steps: List<WorkflowStep>, sessionId: Long): JSONObject {
         // Generate workflow ID and emit start event
         val workflowId = UUID.randomUUID().toString()
         WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
@@ -413,24 +460,7 @@ WHEN TO USE EACH MODE:
         return results
     }
 
-    private suspend fun executeDag(context: Context, arguments: JSONObject, sessionId: Long): JSONObject {
-        val stepsArray = arguments.optJSONArray("steps") ?: return errorResponse("No steps provided")
-
-        val steps = (0 until stepsArray.length()).map { i ->
-            val stepObj = stepsArray.optJSONObject(i) ?: return errorResponse("Invalid step at index $i")
-            val dependsOnArray = stepObj.optJSONArray("dependsOn")
-            val dependsOn = if (dependsOnArray != null) {
-                (0 until dependsOnArray.length()).map { dependsOnArray.optString(it) }
-            } else emptyList()
-
-            WorkflowStep(
-                id = stepObj.optString("id"),
-                agentType = stepObj.optString("agentType"),
-                task = stepObj.optString("task"),
-                dependsOn = dependsOn
-            )
-        }
-
+    private suspend fun executeDag(context: Context, steps: List<WorkflowStep>, sessionId: Long): JSONObject {
         // Generate workflow ID and emit start event
         val workflowId = UUID.randomUUID().toString()
         WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
@@ -627,6 +657,48 @@ WHEN TO USE EACH MODE:
         }
 
         steps.map { results[it.id] ?: StepResult(it.id, WorkflowStepStatus.SKIPPED) }
+    }
+
+    private suspend fun executeInteractivePipeline(
+        context: Context,
+        steps: List<WorkflowStep>,
+        sessionId: Long
+    ): JSONObject {
+        val workflowId = UUID.randomUUID().toString()
+
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
+            workflowId = workflowId,
+            sessionId = sessionId,
+            mode = WorkflowMode.PIPELINE,
+            totalSteps = steps.size
+        ))
+
+        val results = WorkflowEngine.executeInteractivePipeline(
+            context = context,
+            sessionId = sessionId,
+            steps = steps,
+            workflowId = workflowId
+        )
+
+        val text = buildString {
+            appendLine("Interactive pipeline execution completed.")
+            appendLine()
+
+            results.forEachIndexed { i, result ->
+                appendLine("${i + 1}. [${result.stepId}] ${result.status}")
+                if (result.revisionCount > 0) {
+                    appendLine("   Revisions: ${result.revisionCount}")
+                }
+                if (result.result != null) {
+                    appendLine("   Result: ${result.result.take(200)}${if (result.result.length > 200) "..." else ""}")
+                }
+                if (result.error != null) {
+                    appendLine("   Error: ${result.error}")
+                }
+            }
+        }
+
+        return successResponse(text)
     }
 
     private suspend fun executeConversational(context: Context, arguments: JSONObject, sessionId: Long): JSONObject {

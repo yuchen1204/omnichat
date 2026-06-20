@@ -756,15 +756,99 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             // New event types for interactive pipeline - no UI updates needed yet
-            is WorkflowEvent.StepWokeUp,
-            is WorkflowEvent.StepRecalled,
-            is WorkflowEvent.StepEnteredIdle,
-            is WorkflowEvent.IdleTimeoutWarning,
-            is WorkflowEvent.StepTimeout,
-            is WorkflowEvent.MessageRoutingError,
+            is WorkflowEvent.StepWokeUp -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = workflow.steps.map { step ->
+                        if (step.stepId == event.stepId) {
+                            step.copy(
+                                status = WorkflowStepStatus.RUNNING,
+                                lastMessageFrom = event.fromAgent,
+                                lastMessagePreview = event.messagePreview
+                            )
+                        } else step
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(steps = updatedSteps)
+                }
+            }
+            is WorkflowEvent.StepRecalled -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = workflow.steps.map { step ->
+                        if (step.stepId == event.stepId) {
+                            step.copy(
+                                status = WorkflowStepStatus.REVISION,
+                                revisionCount = (step.revisionCount) + 1,
+                                lastMessageFrom = event.fromAgent
+                            )
+                        } else step
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(steps = updatedSteps)
+                }
+            }
+            is WorkflowEvent.StepEnteredIdle -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = workflow.steps.map { step ->
+                        if (step.stepId == event.stepId) {
+                            step.copy(
+                                status = WorkflowStepStatus.IDLE,
+                                idleSince = System.currentTimeMillis()
+                            )
+                        } else step
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(steps = updatedSteps)
+                }
+            }
+            is WorkflowEvent.IdleTimeoutWarning -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val newWarning = com.omnichat.agent.IdleWarningInfo(
+                        stepId = event.stepId,
+                        idleDurationMs = event.idleDurationMs,
+                        message = event.message,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    activeWorkflows[event.workflowId] = workflow.copy(
+                        idleWarnings = workflow.idleWarnings + newWarning
+                    )
+                }
+            }
+            is WorkflowEvent.StepTimeout -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = workflow.steps.map { step ->
+                        if (step.stepId == event.stepId) {
+                            step.copy(
+                                status = WorkflowStepStatus.FAILED,
+                                error = event.error
+                            )
+                        } else step
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(steps = updatedSteps)
+                }
+            }
+            is WorkflowEvent.MessageRoutingError -> {
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val newError = com.omnichat.agent.MessageErrorInfo(
+                        from = event.from,
+                        to = event.to,
+                        error = event.error,
+                        availableTargets = event.availableTargets,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    activeWorkflows[event.workflowId] = workflow.copy(
+                        messageErrors = workflow.messageErrors + newError
+                    )
+                }
+            }
             is WorkflowEvent.StepRevisionCompleted -> {
-                // These events are logged but don't require UI state changes yet
-                // Will be handled in future implementation
+                activeWorkflows[event.workflowId]?.let { workflow ->
+                    val updatedSteps = workflow.steps.map { step ->
+                        if (step.stepId == event.stepId) {
+                            step.copy(
+                                revisionCount = event.revisionCount,
+                                result = event.result
+                            )
+                        } else step
+                    }
+                    activeWorkflows[event.workflowId] = workflow.copy(steps = updatedSteps)
+                }
             }
         }
     }

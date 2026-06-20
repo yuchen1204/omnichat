@@ -70,6 +70,13 @@ object AgentPrompts {
         |- [ ] Is my confidence based on actual evidence?
         |- [ ] Did I stay within scope?
         |- [ ] Is my JSON valid and complete?
+        |
+        |## Workflow Communication
+        |If you are part of a workflow with multiple agents:
+        |- When complete, send a message to the next agent: `send_agent_message(to="step:next_step_id", content="your message")`
+        |- If you need to recall a previous agent for revision: `send_agent_message(to="step:prev_step_id", content="Issues found: ...")`
+        |- Available step IDs will be provided in your task context.
+        |- After sending a message, you will enter IDLE state waiting for further instructions.
     """.trimMargin()
 
     private val prompts = mapOf(
@@ -128,6 +135,12 @@ object AgentPrompts {
                 |- Security vulnerabilities (Critical)
                 |- Performance issues (Important)
                 |- Code readability and maintainability (Minor)
+                |
+                |## Workflow Communication
+                |- If issues are found: send message to coder step with specific feedback for revision.
+                |- If no issues: send approval message.
+                |- Use: `send_agent_message(to="step:code", content="Issues: ...")` to request revisions.
+                |- You will enter IDLE after review. If recalled, re-review the modified code.
                 |
                 |Provide specific file:line references and concrete suggestions.
                 |Categorize issues by actual severity — not everything is Critical.

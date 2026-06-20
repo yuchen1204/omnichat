@@ -195,6 +195,74 @@ fun WorkflowProgressCard(
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
+
+            // IDLE timeout warnings
+            if (workflow.idleWarnings.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                workflow.idleWarnings.forEach { warning ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFFFFF3E0)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Warning",
+                                tint = Color(0xFFE65100),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = warning.message,
+                                fontSize = (11 * chatFs * fs).sp,
+                                fontFamily = resolvedFontFamily,
+                                color = Color(0xFFE65100)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Message routing errors
+            if (workflow.messageErrors.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                workflow.messageErrors.forEach { error ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            Text(
+                                text = "消息发送失败: ${error.from} → ${error.to}",
+                                fontSize = (10 * chatFs * fs).sp,
+                                fontWeight = FontWeight.Medium,
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = error.error,
+                                fontSize = (9 * chatFs * fs).sp,
+                                fontFamily = resolvedFontFamily,
+                                color = contentColor.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "可用目标: ${error.availableTargets.joinToString(", ")}",
+                                fontSize = (9 * chatFs * fs).sp,
+                                fontFamily = resolvedFontFamily,
+                                color = contentColor.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -702,6 +770,31 @@ private fun StepItemWithSummary(
             }
 
             Spacer(modifier = Modifier.weight(1f))
+
+            // Show IDLE duration
+            if (step.status == WorkflowStepStatus.IDLE && step.idleSince != null) {
+                val idleMinutes = remember(step.idleSince) {
+                    (System.currentTimeMillis() - step.idleSince) / 60000
+                }
+                Text(
+                    text = "等待 ${idleMinutes}分钟",
+                    fontSize = (9 * chatFs * fs).sp,
+                    fontFamily = resolvedFontFamily,
+                    color = contentColor.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+
+            // Show revision count
+            if (step.status == WorkflowStepStatus.REVISION && step.revisionCount > 0) {
+                Text(
+                    text = "(第${step.revisionCount}次修改)",
+                    fontSize = (9 * chatFs * fs).sp,
+                    fontFamily = resolvedFontFamily,
+                    color = contentColor.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
 
             // Expand button for completed steps with results
             if (step.status == WorkflowStepStatus.COMPLETED && step.result != null) {
