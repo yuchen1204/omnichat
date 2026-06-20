@@ -1,12 +1,14 @@
 package com.omnichat.agent
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -17,14 +19,25 @@ data class WorkflowStep(
     val agentType: String,
     val task: String,
     val dependsOn: List<String> = emptyList(),
-    val resultVariable: String? = null // if set, result is stored in workflow context
+    val resultVariable: String? = null, // if set, result is stored in workflow context
+    val timeoutMs: Long? = null,        // optional: per-step timeout in milliseconds
+    val maxRetries: Int = 0,            // optional: retry count on failure (default: 0, no retry)
+    val maxIdleMs: Long? = null,       // optional: IDLE timeout in milliseconds (default: 30 minutes)
+    val wakeUpOnMessage: Boolean = true // optional: whether to listen for messages and auto-wake
 )
 
 /**
  * Status of a workflow step.
  */
 enum class WorkflowStepStatus {
-    PENDING, RUNNING, COMPLETED, FAILED, SKIPPED
+    PENDING,           // 等待开始
+    IDLE,              // 等待唤醒（已创建 SubAgent，挂起中）
+    RUNNING,           // 正在执行
+    PENDING_REVIEW,    // 完成等待确认
+    REVISION,          // 被召回修改中
+    COMPLETED,         // 最终完成
+    FAILED,            // 失败
+    SKIPPED            // 跳过
 }
 
 /**
@@ -34,7 +47,11 @@ data class StepResult(
     val stepId: String,
     val status: WorkflowStepStatus,
     val result: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    val retries: Int = 0,              // how many retries were attempted
+    val revisionCount: Int = 0,        // how many times this step was recalled for revision
+    val idleTimeMs: Long = 0,          // cumulative time spent in IDLE status
+    val lastMessageFrom: String? = null // source of the last received message
 )
 
 /**
@@ -45,47 +62,233 @@ data class StepResult(
  */
 object WorkflowEngine {
 
+    private const val TAG = "WorkflowEngine"
+
     /**
      * Execute a pipeline — steps run sequentially, each step receives prior results as context.
+     *
+     * This method emits events to WorkflowEventBus for UI updates:
+     * - WorkflowStarted: when pipeline begins
+     * - StepStarted: when each step begins execution
+     * - StepCompleted: when each step finishes (success or failure)
+     * - WorkflowProgress: after each step completes
+     * - WorkflowCompleted/WorkflowFailed: when pipeline ends
+     *
+     * Fixes applied:
+     * - Event emission for real-time UI updates
+     * - Step timeout support (per-step timeoutMs parameter)
+     * - Retry mechanism with maxRetries count
+     * - In Pipeline mode, dependsOn is validated: a step can only reference prior steps in the list order
+     *   (i.e., dependsOn must contain IDs of steps that appear earlier in the steps list)
      */
     suspend fun executePipeline(
         context: Context,
         sessionId: Long,
         steps: List<WorkflowStep>,
-        callerContext: AgentCallerContext? = null
+        callerContext: AgentCallerContext? = null,
+        workflowId: String? = null  // optional: caller can provide ID for tracking
     ): List<StepResult> = withContext(Dispatchers.Default) {
+        // Generate workflow ID if not provided
+        val actualWorkflowId = workflowId ?: "pipeline-${UUID.randomUUID().toString().take(8)}"
+
+        // ── Emit WorkflowStarted event ──
+        WorkflowEventBus.emit(
+            WorkflowEvent.WorkflowStarted(
+                workflowId = actualWorkflowId,
+                sessionId = sessionId,
+                mode = WorkflowMode.PIPELINE,
+                totalSteps = steps.size
+            )
+        )
+        Log.d(TAG, "[Pipeline] Started: $actualWorkflowId with ${steps.size} steps")
+
         val results = mutableListOf<StepResult>()
         // Key: step.id (for direct lookup) OR resultVariable (for named reference)
         val contextVariables = mutableMapOf<String, String>()
+        // Track which step IDs are available for dependsOn reference (must be prior steps)
+        val availableStepIds = mutableSetOf<String>()
+        var pipelineFailed = false
+        var pipelineError: String? = null
 
-        for (step in steps) {
+        for ((index, step) in steps.withIndex()) {
+            // --- Validate dependsOn: must reference prior steps only ---
+            val invalidDeps = step.dependsOn.filter { it !in availableStepIds }
+            if (invalidDeps.isNotEmpty()) {
+                val error = "Invalid dependsOn: [$invalidDeps] are not prior steps. " +
+                            "In Pipeline mode, dependsOn must reference steps that appear earlier in the list."
+                val result = StepResult(
+                    stepId = step.id,
+                    status = WorkflowStepStatus.FAILED,
+                    error = error
+                )
+                results.add(result)
+                pipelineFailed = true
+                pipelineError = error
+                Log.e(TAG, "[Pipeline] Step $step.id validation failed: $error")
+                break
+            }
+
             // Build task description with prior context
             val fullTask = buildTaskWithContext(step.task, step.dependsOn, contextVariables, steps)
 
-            val result = try {
-                val output = SubAgent.executeSync(
-                    context = context,
-                    agentType = step.agentType,
-                    taskDescription = fullTask,
+            // ── Emit StepStarted event ──
+            WorkflowEventBus.emit(
+                WorkflowEvent.StepStarted(
+                    workflowId = actualWorkflowId,
                     sessionId = sessionId,
-                    callerContext = callerContext
+                    stepId = step.id,
+                    stepIndex = index,
+                    agentType = step.agentType,
+                    task = step.task
                 )
-                // Store result under both step.id and resultVariable (if set)
-                // so downstream steps can reference by either name
-                contextVariables[step.id] = output
-                step.resultVariable?.let { contextVariables[it] = output }
-                StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
-            } catch (e: Exception) {
-                StepResult(step.id, WorkflowStepStatus.FAILED, error = e.message)
+            )
+            Log.d(TAG, "[Pipeline] Step $index started: ${step.id} (${step.agentType})")
+
+            // --- Execute with retry and timeout ---
+            val result = executeStepWithRetryAndTimeout(
+                context = context,
+                sessionId = sessionId,
+                step = step,
+                fullTask = fullTask,
+                callerContext = callerContext
+            )
+
+            // ── Emit StepCompleted event ──
+            WorkflowEventBus.emit(
+                WorkflowEvent.StepCompleted(
+                    workflowId = actualWorkflowId,
+                    sessionId = sessionId,
+                    stepId = step.id,
+                    stepIndex = index,
+                    result = result.result,
+                    status = result.status
+                )
+            )
+            Log.d(TAG, "[Pipeline] Step $index completed: ${step.id} status=${result.status}")
+
+            // Store result under both step.id and resultVariable (if set)
+            if (result.status == WorkflowStepStatus.COMPLETED && result.result != null) {
+                contextVariables[step.id] = result.result
+                step.resultVariable?.let { contextVariables[it] = result.result }
             }
 
             results.add(result)
+            availableStepIds.add(step.id)
+
+            // ── Emit WorkflowProgress event ──
+            WorkflowEventBus.emit(
+                WorkflowEvent.WorkflowProgress(
+                    workflowId = actualWorkflowId,
+                    sessionId = sessionId,
+                    completedSteps = results.size,
+                    totalSteps = steps.size,
+                    currentStepId = step.id,
+                    currentStepIndex = index
+                )
+            )
 
             // Stop pipeline on failure
-            if (result.status == WorkflowStepStatus.FAILED) break
+            if (result.status == WorkflowStepStatus.FAILED) {
+                pipelineFailed = true
+                pipelineError = result.error
+                break
+            }
+        }
+
+        // ── Emit final event: WorkflowCompleted or WorkflowFailed ──
+        if (pipelineFailed) {
+            WorkflowEventBus.emit(
+                WorkflowEvent.WorkflowFailed(
+                    workflowId = actualWorkflowId,
+                    sessionId = sessionId,
+                    error = pipelineError ?: "Pipeline failed"
+                )
+            )
+            Log.e(TAG, "[Pipeline] Failed: $actualWorkflowId - $pipelineError")
+        } else {
+            WorkflowEventBus.emit(
+                WorkflowEvent.WorkflowCompleted(
+                    workflowId = actualWorkflowId,
+                    sessionId = sessionId,
+                    results = results
+                )
+            )
+            Log.d(TAG, "[Pipeline] Completed: $actualWorkflowId with ${results.size} successful steps")
         }
 
         results
+    }
+
+    /**
+     * Execute a single step with retry and timeout support.
+     */
+    private suspend fun executeStepWithRetryAndTimeout(
+        context: Context,
+        sessionId: Long,
+        step: WorkflowStep,
+        fullTask: String,
+        callerContext: AgentCallerContext?
+    ): StepResult {
+        var lastError: String? = null
+        var retryCount = 0
+
+        for (attempt in 0..step.maxRetries) {
+            val output = if (step.timeoutMs != null && step.timeoutMs > 0) {
+                // Execute with timeout
+                withTimeoutOrNull(step.timeoutMs) {
+                    SubAgent.executeSync(
+                        context = context,
+                        agentType = step.agentType,
+                        taskDescription = fullTask,
+                        sessionId = sessionId,
+                        callerContext = callerContext
+                    )
+                }
+            } else {
+                // Execute without timeout (may still throw)
+                try {
+                    SubAgent.executeSync(
+                        context = context,
+                        agentType = step.agentType,
+                        taskDescription = fullTask,
+                        sessionId = sessionId,
+                        callerContext = callerContext
+                    )
+                } catch (e: Exception) {
+                    null // Will be caught below
+                }
+            }
+
+            if (output != null) {
+                return StepResult(
+                    stepId = step.id,
+                    status = WorkflowStepStatus.COMPLETED,
+                    result = output,
+                    retries = retryCount
+                )
+            }
+
+            // Capture error for this attempt
+            lastError = if (step.timeoutMs != null && step.timeoutMs > 0) {
+                "Timeout after ${step.timeoutMs}ms"
+            } else {
+                "Execution failed"
+            }
+            retryCount++
+
+            // If not the last retry, continue to next attempt
+            if (attempt < step.maxRetries) {
+                // Optional: brief delay before retry (could be configurable)
+                // kotlinx.coroutines.delay(1000)
+            }
+        }
+
+        return StepResult(
+            stepId = step.id,
+            status = WorkflowStepStatus.FAILED,
+            error = "$lastError (after ${retryCount} attempts)",
+            retries = retryCount
+        )
     }
 
     /**
@@ -385,11 +588,6 @@ object WorkflowEngine {
         appendLine("If you believe the discussion is complete and a final answer has been reached, start your response with [CONVERGED].")
     }
 
-    /**
-     * Check if a response indicates convergence.
-     * Uses startsWith for the primary check — the [CONVERGED] marker must be at the
-     * very beginning of the response to avoid false positives from quoted text.
-     */
     private fun looksConverged(response: String): Boolean {
         return response.trimStart().startsWith("[CONVERGED]")
     }
@@ -401,7 +599,13 @@ object WorkflowEngine {
         return response.trimStart().removePrefix("[CONVERGED]").trim()
     }
 
-    private fun buildTaskWithContext(
+    /**
+     * Build task description with context from previous steps.
+     * Public for use by RunWorkflowTool for event-based execution.
+     *
+     * Parses structured JSON output from previous steps and formats it for the next agent.
+     */
+    fun buildTaskWithContext(
         task: String,
         dependsOn: List<String>,
         contextVariables: Map<String, String>,
@@ -410,19 +614,109 @@ object WorkflowEngine {
         if (dependsOn.isEmpty() || contextVariables.isEmpty()) return task
 
         val contextBlock = buildString {
-            appendLine("Context from previous steps:")
-            dependsOn.forEach { depId ->
+            appendLine("## Context from Previous Steps")
+            appendLine()
+            appendLine("The following steps have been completed. Use this information to continue your work:")
+            appendLine()
+
+            dependsOn.forEachIndexed { index, depId ->
                 // Look up by step.id first; if not found, try resultVariable of the dep step
-                val value = contextVariables[depId]
+                val rawResult = contextVariables[depId]
                     ?: steps.find { it.id == depId }?.resultVariable?.let { contextVariables[it] }
-                value?.let { result ->
-                    appendLine("--- Step $depId result ---")
-                    appendLine(result)
-                    appendLine("--- End ---")
+
+                if (rawResult != null) {
+                    appendLine("### Step ${index + 1}: $depId")
+                    appendLine()
+
+                    // Try to parse as structured JSON
+                    val formattedContext = formatStructuredContext(rawResult)
+                    appendLine(formattedContext)
+                    appendLine()
                 }
             }
         }
 
-        return "$contextBlock\n\nTask: $task"
+        return "$contextBlock\n---\n\n## Your Task\n\n$task"
+    }
+
+    /**
+     * Format structured JSON output into human-readable context for the next agent.
+     */
+    private fun formatStructuredContext(jsonString: String): String {
+        return try {
+            val json = org.json.JSONObject(jsonString)
+
+            buildString {
+                // Status
+                val status = json.optString("status", "UNKNOWN")
+                appendLine("**Status:** $status")
+                appendLine()
+
+                // Summary (most important - show first)
+                val summary = json.optString("summary", "")
+                if (summary.isNotBlank()) {
+                    appendLine("**Summary:** $summary")
+                    appendLine()
+                }
+
+                // Key findings
+                val findings = json.optJSONArray("key_findings")
+                if (findings != null && findings.length() > 0) {
+                    appendLine("**Key Findings:**")
+                    for (i in 0 until findings.length()) {
+                        appendLine("- ${findings.getString(i)}")
+                    }
+                    appendLine()
+                }
+
+                // Actions taken
+                val actions = json.optJSONArray("actions")
+                if (actions != null && actions.length() > 0) {
+                    appendLine("**Actions Taken:**")
+                    for (i in 0 until actions.length()) {
+                        val action = actions.getJSONObject(i)
+                        val step = action.optString("step", "")
+                        val tool = action.optString("tool", "")
+                        val outcome = action.optString("outcome", "")
+                        appendLine("- $step${if (tool.isNotBlank() && tool != "null") " (using $tool)" else ""}")
+                        if (outcome.isNotBlank()) {
+                            appendLine("  → $outcome")
+                        }
+                    }
+                    appendLine()
+                }
+
+                // Deliverables
+                val deliverables = json.optJSONArray("deliverables")
+                if (deliverables != null && deliverables.length() > 0) {
+                    appendLine("**Deliverables:**")
+                    for (i in 0 until deliverables.length()) {
+                        appendLine("- ${deliverables.getString(i)}")
+                    }
+                    appendLine()
+                }
+
+                // Confidence
+                val confidence = json.optString("confidence", "")
+                if (confidence.isNotBlank()) {
+                    appendLine("**Confidence:** $confidence")
+                }
+
+                // Notes
+                val notes = json.optString("notes", "")
+                if (notes.isNotBlank()) {
+                    appendLine("**Notes:** $notes")
+                }
+
+                // Next steps hint
+                val nextSteps = json.optString("next_steps_hint", "")
+                if (nextSteps.isNotBlank()) {
+                    appendLine("**Suggested Next Steps:** $nextSteps")
+                }
+            }
+        } catch (_: Exception) {
+            // Not valid JSON — return as-is with formatting
+            "**Output:**\n```\n${jsonString.take(2000)}\n```"
+        }
     }
 }

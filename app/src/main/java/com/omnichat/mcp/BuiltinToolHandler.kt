@@ -1497,6 +1497,9 @@ object BuiltinToolHandler {
                 WorkflowStepStatus.SKIPPED -> "⏭️"
                 WorkflowStepStatus.RUNNING -> "🔄"
                 WorkflowStepStatus.PENDING -> "⏳"
+                WorkflowStepStatus.IDLE -> "💤"
+                WorkflowStepStatus.PENDING_REVIEW -> "👀"
+                WorkflowStepStatus.REVISION -> "✏️"
             }
             val summary = when (result.status) {
                 WorkflowStepStatus.COMPLETED -> summarizeResult(result.result)
