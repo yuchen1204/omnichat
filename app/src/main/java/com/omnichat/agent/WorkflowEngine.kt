@@ -567,8 +567,118 @@ object WorkflowEngine {
     /**
      * Check timeouts for all agents.
      */
-    private fun checkTimeouts(state: InteractivePipelineState) {
-        // Will be implemented in Task 12
+    private suspend fun checkTimeouts(state: InteractivePipelineState) {
+        val now = System.currentTimeMillis()
+
+        state.agentStates.forEach { (stepId, agentState) ->
+            when (agentState.status) {
+                WorkflowStepStatus.IDLE -> {
+                    val idleDuration = now - (agentState.idleSince ?: now)
+                    val step = state.steps.find { it.id == stepId }
+                    val maxIdleMs = step?.maxIdleMs ?: 30 * 60 * 1000L  // Default 30 min
+
+                    if (idleDuration >= maxIdleMs && !agentState.idleTimeoutWarningSent) {
+                        // Send warning to MainAgent
+                        val minutes = idleDuration / 60000
+                        WorkflowEventBus.emit(WorkflowEvent.IdleTimeoutWarning(
+                            workflowId = state.workflowId,
+                            sessionId = state.sessionId,
+                            stepId = stepId,
+                            idleDurationMs = idleDuration,
+                            message = "步骤 '$stepId' 已等待 $minutes 分钟"
+                        ))
+
+                        MessageBus.send(
+                            from = "workflow",
+                            to = "main",
+                            content = "[IDLE超时] 步骤 '$stepId' (${agentState.handle?.agentType}) 已等待 $minutes 分钟。\n" +
+                                      "回复 'continue:$stepId' 继续等待，或 'terminate:$stepId' 终止。"
+                        )
+
+                        state.agentStates[stepId] = agentState.copy(idleTimeoutWarningSent = true)
+                        Log.w(TAG, "[InteractivePipeline] IDLE timeout warning for $stepId after ${minutes}min")
+                    }
+                }
+
+                WorkflowStepStatus.RUNNING, WorkflowStepStatus.REVISION -> {
+                    val runningDuration = now - (agentState.runningSince ?: now)
+                    val step = state.steps.find { it.id == stepId }
+                    val timeoutMs = step?.timeoutMs ?: 10 * 60 * 1000L  // Default 10 min
+
+                    if (runningDuration >= timeoutMs) {
+                        handleRunningTimeout(state, stepId, runningDuration)
+                    }
+                }
+
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * Handle RUNNING timeout.
+     */
+    private suspend fun handleRunningTimeout(
+        state: InteractivePipelineState,
+        stepId: String,
+        duration: Long
+    ) {
+        val agentState = state.agentStates[stepId] ?: return
+        val minutes = duration / 60000
+
+        Log.e(TAG, "[InteractivePipeline] RUNNING timeout for $stepId after ${minutes}min")
+
+        // Update state
+        state.agentStates[stepId] = agentState.copy(
+            status = WorkflowStepStatus.FAILED
+        )
+
+        // Emit event
+        WorkflowEventBus.emit(WorkflowEvent.StepTimeout(
+            workflowId = state.workflowId,
+            sessionId = state.sessionId,
+            stepId = stepId,
+            durationMs = duration,
+            error = "执行超时 (${minutes}分钟)"
+        ))
+
+        // Notify dependent steps
+        notifyDependentStepsOfFailure(state, stepId)
+
+        // Check if workflow should fail
+        if (checkAllStepsFailed(state)) {
+            state.status = WorkflowStatus.FAILED
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = state.workflowId,
+                sessionId = state.sessionId,
+                error = "步骤 $stepId 超时失败"
+            ))
+        }
+    }
+
+    /**
+     * Notify dependent steps of a failure.
+     */
+    private fun notifyDependentStepsOfFailure(state: InteractivePipelineState, failedStepId: String) {
+        state.steps.forEach { step ->
+            if (failedStepId in step.dependsOn) {
+                val agentState = state.agentStates[step.id]
+                if (agentState?.status == WorkflowStepStatus.IDLE) {
+                    MessageBus.send(
+                        from = "workflow",
+                        to = agentState.handle?.agentId ?: return@forEach,
+                        content = "上游步骤 '$failedStepId' 已失败，无法继续执行。"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if all steps have failed.
+     */
+    private fun checkAllStepsFailed(state: InteractivePipelineState): Boolean {
+        return state.agentStates.values.all { it.status == WorkflowStepStatus.FAILED }
     }
 
     /**
