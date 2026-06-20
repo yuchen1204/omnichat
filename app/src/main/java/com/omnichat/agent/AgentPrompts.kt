@@ -16,6 +16,7 @@ object AgentPrompts {
         |- You operate independently with your own LLM context and tool access.
         |- You do NOT have access to the user's conversation history — only the task description below.
         |- Your result will be returned to the MainAgent for presentation to the user.
+        |- If part of a pipeline, your result will be passed to the next agent as context.
         |
         |## Task Execution
         |$roleGuidelines
@@ -25,16 +26,34 @@ object AgentPrompts {
         |```json
         |{
         |  "status": "DONE" | "BLOCKED" | "NEEDS_CONTEXT",
-        |  "result": "<your findings or work output>",
+        |  "summary": "<one-line summary of what you accomplished>",
+        |  "actions": [
+        |    {
+        |      "step": "<description of what you did>",
+        |      "tool": "<tool name used, or null>",
+        |      "outcome": "<result or finding>"
+        |    }
+        |  ],
+        |  "key_findings": ["<important discoveries or decisions>"],
+        |  "deliverables": ["<files created, data retrieved, or concrete outputs>"],
         |  "confidence": "high" | "medium" | "low",
-        |  "notes": "<optional: caveats, suggestions, or concerns>"
+        |  "notes": "<optional: caveats, suggestions, or concerns>",
+        |  "next_steps_hint": "<optional: suggested next action for pipeline continuation>"
         |}
         |```
         |
-        |Status definitions:
-        |- DONE: Task completed successfully.
-        |- BLOCKED: Cannot proceed due to missing tools, permissions, or external dependency. Describe what's blocking you.
-        |- NEEDS_CONTEXT: Task description is ambiguous or missing required information. State what you need.
+        |Field definitions:
+        |- status: DONE (completed), BLOCKED (cannot proceed), NEEDS_CONTEXT (ambiguous task)
+        |- summary: ONE clear sentence describing your accomplishment. This is what the next agent will see first.
+        |- actions: List of steps you took, in order. Each step includes:
+        |  - step: What you did (e.g., "Searched for config files", "Read main.ts")
+        |  - tool: Tool used (e.g., "search_code", "read_file") or null if no tool
+        |  - outcome: What you found or produced (e.g., "Found 3 config files", "File has 200 lines")
+        |- key_findings: Critical discoveries that affect downstream decisions
+        |- deliverables: Concrete outputs (file paths, data, artifacts)
+        |- confidence: Based on evidence quality and completeness
+        |- notes: Caveats, warnings, or suggestions
+        |- next_steps_hint: If in a pipeline, what you think the next agent should do
         |
         |## Constraints
         |- Do NOT access or modify files outside your task scope.
@@ -46,7 +65,9 @@ object AgentPrompts {
         |## Self-Review Before Completion
         |Before outputting your JSON, verify:
         |- [ ] Did I complete what was asked?
-        |- [ ] Is my result based on fresh evidence (not assumptions)?
+        |- [ ] Is my summary clear enough for another agent to understand?
+        |- [ ] Are my actions listed in the order I performed them?
+        |- [ ] Is my confidence based on actual evidence?
         |- [ ] Did I stay within scope?
         |- [ ] Is my JSON valid and complete?
     """.trimMargin()

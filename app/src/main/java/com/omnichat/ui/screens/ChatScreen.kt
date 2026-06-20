@@ -73,6 +73,7 @@ import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.mcp.McpRuntimeManager
 import org.json.JSONArray
 import kotlinx.coroutines.launch
+import com.omnichat.agent.WorkflowUiState
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -93,6 +94,7 @@ fun ChatView(viewModel: ChatViewModel) {
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val currentSession = sessions.find { it.id == activeSessionId }
     val activeTasks = viewModel.activeTasks  // SnapshotStateMap — already Compose-observable
+    val activeWorkflows = viewModel.activeWorkflows  // SnapshotStateMap for Workflow progress
 
     // 字体设置
     val uiSettings = LocalUISettings.current
@@ -448,6 +450,15 @@ fun ChatView(viewModel: ChatViewModel) {
                     .forEach { task ->
                         item(key = "subagent_${task.taskId}") {
                             SubAgentTaskCard(task = task)
+                        }
+                    }
+
+                // Active Workflow progress cards
+                activeWorkflows.values
+                    .filter { it.sessionId == activeSessionId }
+                    .forEach { workflow ->
+                        item(key = "workflow_${workflow.workflowId}") {
+                            WorkflowProgressCard(workflow = workflow)
                         }
                     }
 

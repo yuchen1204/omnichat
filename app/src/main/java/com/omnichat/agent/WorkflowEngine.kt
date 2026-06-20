@@ -253,6 +253,84 @@ object WorkflowEngine {
     }
 
     /**
+     * Execute an interactive pipeline with IDLE/REVISION support.
+     *
+     * - Creates all SubAgents in IDLE state upfront
+     * - Wakes up first agent to start
+     * - Routes messages between agents
+     * - Handles timeout and revision workflows
+     */
+    suspend fun executeInteractivePipeline(
+        context: Context,
+        sessionId: Long,
+        steps: List<WorkflowStep>,
+        callerContext: AgentCallerContext? = null,
+        workflowId: String? = null
+    ): List<StepResult> = coroutineScope {
+        val actualWorkflowId = workflowId ?: "interactive-${UUID.randomUUID().toString().take(8)}"
+
+        Log.d(TAG, "[InteractivePipeline] Starting: $actualWorkflowId with ${steps.size} steps")
+
+        // Emit started event
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
+            workflowId = actualWorkflowId,
+            sessionId = sessionId,
+            mode = WorkflowMode.PIPELINE,
+            totalSteps = steps.size
+        ))
+
+        // Initialize state
+        val state = InteractivePipelineState(
+            workflowId = actualWorkflowId,
+            sessionId = sessionId,
+            steps = steps,
+            agentStates = mutableMapOf(),
+            contextVariables = mutableMapOf(),
+            messageQueue = mutableListOf(),
+            status = WorkflowStatus.RUNNING
+        )
+
+        // Phase 1: Create all agents in IDLE state
+        for (step in steps) {
+            val handle = SubAgent.createIdle(
+                context = context,
+                agentType = step.agentType,
+                sessionId = sessionId,
+                stepId = step.id
+            )
+
+            state.agentStates[step.id] = AgentState(
+                stepId = step.id,
+                handle = handle,
+                status = WorkflowStepStatus.IDLE,
+                idleSince = System.currentTimeMillis(),
+                runningSince = null,
+                conversationHistory = mutableListOf()
+            )
+
+            WorkflowEventBus.emit(WorkflowEvent.StepEnteredIdle(
+                workflowId = actualWorkflowId,
+                sessionId = sessionId,
+                stepId = step.id,
+                agentType = step.agentType,
+                reason = "等待工作流启动"
+            ))
+        }
+
+        // Phase 2: Start first agent
+        if (steps.isNotEmpty()) {
+            val firstStep = steps[0]
+            wakeUpStep(state, firstStep.id, firstStep.task)
+        }
+
+        // Phase 3: Run event loop
+        startInteractiveEventLoop(context, state)
+
+        // Phase 4: Collect results
+        collectInteractiveResults(state)
+    }
+
+    /**
      * Execute a single step with retry and timeout support.
      */
     private suspend fun executeStepWithRetryAndTimeout(

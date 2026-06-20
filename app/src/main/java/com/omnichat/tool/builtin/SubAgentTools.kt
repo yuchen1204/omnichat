@@ -8,9 +8,20 @@ import com.omnichat.agent.AgentCallerContext
 import com.omnichat.agent.WorkflowEngine
 import com.omnichat.agent.WorkflowStep
 import com.omnichat.agent.StepResult
+import com.omnichat.agent.WorkflowStepStatus
+import com.omnichat.agent.WorkflowMode
+import com.omnichat.agent.WorkflowStatus
+import com.omnichat.agent.WorkflowEvent
+import com.omnichat.agent.WorkflowEventBus
+import com.omnichat.agent.WorkflowStepUiState
+import com.omnichat.agent.WorkflowUiState
 import com.omnichat.mcp.ToolSchemaDsl.schema
 import com.omnichat.tool.BuiltinTool
 import org.json.JSONObject
+import java.util.UUID
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * SubAgent 相关工具。
@@ -293,11 +304,24 @@ WHEN TO USE EACH MODE:
             )
         }
 
-        val results = WorkflowEngine.executePipeline(
-            context = context,
+        // Generate workflow ID and emit start event
+        val workflowId = UUID.randomUUID().toString()
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
+            workflowId = workflowId,
             sessionId = sessionId,
-            steps = steps
-        )
+            mode = WorkflowMode.PIPELINE,
+            totalSteps = steps.size
+        ))
+
+        // Execute with progress tracking
+        val results = executePipelineWithEvents(context, sessionId, steps, workflowId)
+
+        // Emit completion event
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
+            workflowId = workflowId,
+            sessionId = sessionId,
+            results = results
+        ))
 
         val text = buildString {
             appendLine("Pipeline execution completed.")
@@ -315,6 +339,78 @@ WHEN TO USE EACH MODE:
         }
 
         return successResponse(text)
+    }
+
+    private suspend fun executePipelineWithEvents(
+        context: Context,
+        sessionId: Long,
+        steps: List<WorkflowStep>,
+        workflowId: String
+    ): List<StepResult> {
+        val results = mutableListOf<StepResult>()
+        val contextVariables = mutableMapOf<String, String>()
+
+        steps.forEachIndexed { index, step ->
+            // Emit step started event
+            WorkflowEventBus.emit(WorkflowEvent.StepStarted(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                stepId = step.id,
+                stepIndex = index,
+                agentType = step.agentType,
+                task = step.task
+            ))
+
+            val fullTask = WorkflowEngine.buildTaskWithContext(step.task, step.dependsOn, contextVariables, steps)
+
+            val result = try {
+                val output = SubAgent.executeSync(
+                    context = context,
+                    agentType = step.agentType,
+                    taskDescription = fullTask,
+                    sessionId = sessionId
+                )
+                contextVariables[step.id] = output
+                step.resultVariable?.let { contextVariables[it] = output }
+                StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
+            } catch (e: Exception) {
+                StepResult(step.id, WorkflowStepStatus.FAILED, error = e.message)
+            }
+
+            results.add(result)
+
+            // Emit step completed event
+            WorkflowEventBus.emit(WorkflowEvent.StepCompleted(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                stepId = step.id,
+                stepIndex = index,
+                result = result.result,
+                status = result.status
+            ))
+
+            // Emit progress event
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowProgress(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                completedSteps = index + 1,
+                totalSteps = steps.size,
+                currentStepId = step.id,
+                currentStepIndex = index
+            ))
+
+            // Stop pipeline on failure
+            if (result.status == WorkflowStepStatus.FAILED) {
+                WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                    workflowId = workflowId,
+                    sessionId = sessionId,
+                    error = "Pipeline failed at step ${step.id}: ${result.error}"
+                ))
+                return results
+            }
+        }
+
+        return results
     }
 
     private suspend fun executeDag(context: Context, arguments: JSONObject, sessionId: Long): JSONObject {
@@ -335,11 +431,24 @@ WHEN TO USE EACH MODE:
             )
         }
 
-        val results = WorkflowEngine.executeDAG(
-            context = context,
+        // Generate workflow ID and emit start event
+        val workflowId = UUID.randomUUID().toString()
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
+            workflowId = workflowId,
             sessionId = sessionId,
-            steps = steps
-        )
+            mode = WorkflowMode.DAG,
+            totalSteps = steps.size
+        ))
+
+        // Execute with progress tracking
+        val results = executeDagWithEvents(context, sessionId, steps, workflowId)
+
+        // Emit completion event
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
+            workflowId = workflowId,
+            sessionId = sessionId,
+            results = results
+        ))
 
         val text = buildString {
             appendLine("DAG execution completed.")
@@ -359,11 +468,185 @@ WHEN TO USE EACH MODE:
         return successResponse(text)
     }
 
+    private suspend fun executeDagWithEvents(
+        context: Context,
+        sessionId: Long,
+        steps: List<WorkflowStep>,
+        workflowId: String
+    ): List<StepResult> = coroutineScope {
+        // Cycle detection (same as original)
+        val adjacency = mutableMapOf<String, MutableList<String>>()
+        steps.forEach { step -> adjacency[step.id] = mutableListOf() }
+        steps.forEach { step ->
+            step.dependsOn.forEach { depId ->
+                adjacency[depId]?.add(step.id)
+            }
+        }
+
+        val WHITE = 0; val GRAY = 1; val BLACK = 2
+        val color = steps.associate { it.id to WHITE }.toMutableMap()
+        var hasCycle = false
+        var cyclePath = emptyList<String>()
+
+        fun dfs(nodeId: String, path: MutableList<String>) {
+            if (hasCycle) return
+            color[nodeId] = GRAY
+            path.add(nodeId)
+            for (neighborId in (adjacency[nodeId] ?: emptyList())) {
+                when (color[neighborId]) {
+                    GRAY -> {
+                        hasCycle = true
+                        val cycleStart = path.indexOf(neighborId)
+                        cyclePath = path.subList(cycleStart, path.size).toList() + neighborId
+                        return
+                    }
+                    WHITE -> dfs(neighborId, path)
+                }
+            }
+            path.removeAt(path.lastIndex)
+            color[nodeId] = BLACK
+        }
+
+        for (step in steps) {
+            if (color[step.id] == WHITE) {
+                dfs(step.id, mutableListOf())
+                if (hasCycle) break
+            }
+        }
+
+        if (hasCycle) {
+            val results = steps.map {
+                StepResult(it.id, WorkflowStepStatus.SKIPPED, error = "Cycle detected: ${cyclePath.joinToString(" → ")}")
+            }
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                error = "Cycle detected: ${cyclePath.joinToString(" → ")}"
+            ))
+            return@coroutineScope results
+        }
+
+        // Execute DAG with events
+        val results = java.util.concurrent.ConcurrentHashMap<String, StepResult>()
+        val completedSteps = mutableSetOf<String>()
+        val failedSteps = mutableSetOf<String>()
+        val remaining = steps.toMutableList()
+
+        while (remaining.isNotEmpty()) {
+            val ready = remaining.filter { step ->
+                step.dependsOn.all { it in completedSteps } &&
+                    step.dependsOn.none { it in failedSteps }
+            }
+
+            if (ready.isEmpty()) {
+                remaining.forEach { step ->
+                    val error = if (step.dependsOn.any { it in failedSteps }) {
+                        "Skipped: dependency failed"
+                    } else {
+                        "Dependency not met (possible cycle)"
+                    }
+                    results[step.id] = StepResult(step.id, WorkflowStepStatus.SKIPPED, error = error)
+                }
+                break
+            }
+
+            // Emit events for starting parallel steps
+            ready.forEach { step ->
+                val stepIndex = steps.indexOf(step)
+                WorkflowEventBus.emit(WorkflowEvent.StepStarted(
+                    workflowId = workflowId,
+                    sessionId = sessionId,
+                    stepId = step.id,
+                    stepIndex = stepIndex,
+                    agentType = step.agentType,
+                    task = step.task
+                ))
+            }
+
+            // Execute ready steps in parallel
+            val stepResults = ready.map { step ->
+                async {
+                    val contextVariables = mutableMapOf<String, String>()
+                    step.dependsOn.forEach { depId ->
+                        val depResult = results[depId]
+                        val depStep = steps.find { it.id == depId }
+                        if (depStep?.resultVariable != null && depResult != null) {
+                            contextVariables[depStep.resultVariable] = depResult.result ?: ""
+                        }
+                        if (depResult != null) {
+                            contextVariables[depId] = depResult.result ?: ""
+                        }
+                    }
+
+                    val fullTask = WorkflowEngine.buildTaskWithContext(step.task, step.dependsOn, contextVariables)
+
+                    try {
+                        val output = SubAgent.executeSync(
+                            context = context,
+                            agentType = step.agentType,
+                            taskDescription = fullTask,
+                            sessionId = sessionId
+                        )
+                        StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
+                    } catch (e: Exception) {
+                        StepResult(step.id, WorkflowStepStatus.FAILED, error = e.message)
+                    }
+                }
+            }.awaitAll()
+
+            // Emit completion events and update state
+            stepResults.forEach { result ->
+                results[result.stepId] = result
+                completedSteps.add(result.stepId)
+                if (result.status == WorkflowStepStatus.FAILED) {
+                    failedSteps.add(result.stepId)
+                }
+                remaining.removeAll { it.id == result.stepId }
+
+                // Emit step completed event
+                val stepIndex = steps.indexOfFirst { it.id == result.stepId }
+                WorkflowEventBus.emit(WorkflowEvent.StepCompleted(
+                    workflowId = workflowId,
+                    sessionId = sessionId,
+                    stepId = result.stepId,
+                    stepIndex = stepIndex,
+                    result = result.result,
+                    status = result.status
+                ))
+            }
+
+            // Emit progress event
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowProgress(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                completedSteps = completedSteps.size,
+                totalSteps = steps.size,
+                currentStepId = null,
+                currentStepIndex = completedSteps.size
+            ))
+        }
+
+        steps.map { results[it.id] ?: StepResult(it.id, WorkflowStepStatus.SKIPPED) }
+    }
+
     private suspend fun executeConversational(context: Context, arguments: JSONObject, sessionId: Long): JSONObject {
         val agentA = arguments.optString("agentA")
         val agentB = arguments.optString("agentB")
         val topic = arguments.optString("topic")
         val maxRounds = arguments.optInt("maxRounds", 5)
+
+        // Generate workflow ID and emit start event
+        val workflowId = UUID.randomUUID().toString()
+        WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
+            workflowId = workflowId,
+            sessionId = sessionId,
+            mode = WorkflowMode.CONVERSATIONAL,
+            totalSteps = maxRounds * 2,
+            topic = topic,
+            agentA = agentA,
+            agentB = agentB,
+            maxRounds = maxRounds
+        ))
 
         val results = WorkflowEngine.executeConversational(
             context = context,
@@ -373,6 +656,22 @@ WHEN TO USE EACH MODE:
             topic = topic,
             maxRounds = maxRounds
         )
+
+        // Emit completion event
+        val finalResult = results.lastOrNull()
+        if (finalResult?.status == WorkflowStepStatus.COMPLETED) {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                results = results
+            ))
+        } else {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                error = finalResult?.error ?: "Conversation failed"
+            ))
+        }
 
         val text = buildString {
             appendLine("Conversational workflow completed.")
