@@ -238,6 +238,76 @@ object SubAgent {
     }
 
     /**
+     * Recall a completed SubAgent into REVISION state.
+     * The agent will modify its previous work based on feedback.
+     */
+    suspend fun recall(
+        handle: IdleAgentHandle,
+        revisionPrompt: String,
+        fromAgent: String
+    ): String {
+        val stateInfo = suspendedAgents[handle.agentId]
+            ?: throw IllegalStateException("Agent ${handle.agentId} not found in suspended state")
+
+        Log.d("SubAgent", "[recall] Recalling agent: ${handle.agentId} from: $fromAgent")
+
+        // Build revision task with context
+        val revisionTask = buildString {
+            appendLine("[REVISION REQUEST from $fromAgent]")
+            appendLine()
+            appendLine(revisionPrompt)
+            appendLine()
+            appendLine("---")
+            appendLine("Please modify your previous work to address the issues above.")
+        }
+
+        // Update state to REVISION
+        suspendedAgents[handle.agentId] = stateInfo.copy(
+            status = WorkflowStepStatus.REVISION,
+            runningSince = System.currentTimeMillis()
+        )
+
+        // Execute revision using wakeUp
+        return try {
+            wakeUp(
+                handle = handle,
+                task = revisionTask,
+                contextVariables = emptyMap(),
+                conversationHistory = stateInfo.conversationHistory
+            )
+        } catch (e: Exception) {
+            // Revert to FAILED on error
+            suspendedAgents[handle.agentId] = stateInfo.copy(
+                status = WorkflowStepStatus.FAILED
+            )
+            throw e
+        }
+    }
+
+    /**
+     * Set an agent back to IDLE state after completion.
+     */
+    fun setAgentIdle(agentId: String) {
+        suspendedAgents[agentId]?.let { state ->
+            suspendedAgents[agentId] = state.copy(
+                status = WorkflowStepStatus.IDLE,
+                idleSince = System.currentTimeMillis(),
+                runningSince = null,
+                idleTimeoutWarningSent = false
+            )
+            Log.d("SubAgent", "[setAgentIdle] Agent $agentId returned to IDLE")
+        }
+    }
+
+    /**
+     * Mark an agent as COMPLETED and remove from suspended list.
+     */
+    fun completeAgent(agentId: String) {
+        suspendedAgents.remove(agentId)
+        Log.d("SubAgent", "[completeAgent] Agent $agentId marked COMPLETED and removed")
+    }
+
+    /**
      * Execute a sub-agent task asynchronously.
      * Returns the taskId immediately; result is delivered via MessageBus.
      */
