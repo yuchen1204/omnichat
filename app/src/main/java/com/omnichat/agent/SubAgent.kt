@@ -176,6 +176,68 @@ object SubAgent {
     }
 
     /**
+     * Wake up a suspended SubAgent and execute a task.
+     */
+    suspend fun wakeUp(
+        handle: IdleAgentHandle,
+        task: String,
+        contextVariables: Map<String, String> = emptyMap(),
+        conversationHistory: List<JSONObject>? = null
+    ): String {
+        val stateInfo = suspendedAgents[handle.agentId]
+            ?: throw IllegalStateException("Agent ${handle.agentId} not found in suspended state")
+
+        if (stateInfo.status != WorkflowStepStatus.IDLE) {
+            throw IllegalStateException("Agent ${handle.agentId} is not in IDLE state (current: ${stateInfo.status})")
+        }
+
+        Log.d("SubAgent", "[wakeUp] Waking up agent: ${handle.agentId}")
+
+        // Update state
+        suspendedAgents[handle.agentId] = stateInfo.copy(
+            status = WorkflowStepStatus.RUNNING,
+            runningSince = System.currentTimeMillis()
+        )
+
+        // Execute the task
+        return try {
+            globalSemaphore.acquire()
+            try {
+                currentTaskContext.set(task)
+                val result = executeTask(
+                    context = handle.context,
+                    agentType = handle.agentType,
+                    taskDescription = task,
+                    sessionId = handle.sessionId,
+                    depth = 1,
+                    taskId = handle.agentId
+                )
+                currentTaskContext.remove()
+
+                // Update conversation history
+                suspendedAgents[handle.agentId]?.let { state ->
+                    state.conversationHistory.add(JSONObject().apply {
+                        put("role", "user")
+                        put("content", task)
+                    })
+                    state.conversationHistory.add(JSONObject().apply {
+                        put("role", "assistant")
+                        put("content", result)
+                    })
+                }
+
+                Log.d("SubAgent", "[wakeUp] Agent ${handle.agentId} completed task")
+                result
+            } finally {
+                globalSemaphore.release()
+            }
+        } catch (e: Exception) {
+            Log.e("SubAgent", "[wakeUp] Agent ${handle.agentId} failed: ${e.message}")
+            throw e
+        }
+    }
+
+    /**
      * Execute a sub-agent task asynchronously.
      * Returns the taskId immediately; result is delivered via MessageBus.
      */
