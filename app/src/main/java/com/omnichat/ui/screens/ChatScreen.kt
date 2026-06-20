@@ -458,7 +458,10 @@ fun ChatView(viewModel: ChatViewModel) {
                     .filter { it.sessionId == activeSessionId }
                     .forEach { workflow ->
                         item(key = "workflow_${workflow.workflowId}") {
-                            WorkflowProgressCard(workflow = workflow)
+                            WorkflowProgressCard(
+                                workflow = workflow,
+                                onCancelClick = { viewModel.cancelWorkflow(workflow.workflowId) }
+                            )
                         }
                     }
 

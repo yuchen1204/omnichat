@@ -3,6 +3,7 @@ package com.omnichat.agent
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -97,6 +98,46 @@ internal data class PendingMessage(
 object WorkflowEngine {
 
     private const val TAG = "WorkflowEngine"
+
+    // Active workflow jobs for cancellation
+    private val activeWorkflowJobs = ConcurrentHashMap<String, Job>()
+
+    // Cancellation requests from UI
+    private val cancellationRequests = ConcurrentHashMap<String, Boolean>()
+
+    /**
+     * Request cancellation of a running workflow.
+     * Called from UI when user taps stop button.
+     */
+    fun requestCancellation(workflowId: String) {
+        cancellationRequests[workflowId] = true
+        Log.d(TAG, "[cancelWorkflow] Cancellation requested for: $workflowId")
+
+        // Also cancel the job if tracked
+        activeWorkflowJobs[workflowId]?.cancel()
+    }
+
+    /**
+     * Check if cancellation was requested for a workflow.
+     */
+    fun isCancellationRequested(workflowId: String): Boolean {
+        return cancellationRequests.getOrDefault(workflowId, false)
+    }
+
+    /**
+     * Clear cancellation state after workflow completes.
+     */
+    fun clearCancellation(workflowId: String) {
+        cancellationRequests.remove(workflowId)
+        activeWorkflowJobs.remove(workflowId)
+    }
+
+    /**
+     * Register a workflow job for tracking.
+     */
+    fun registerWorkflowJob(workflowId: String, job: Job) {
+        activeWorkflowJobs[workflowId] = job
+    }
 
     /**
      * Execute a pipeline — steps run sequentially, each step receives prior results as context.
@@ -473,6 +514,22 @@ object WorkflowEngine {
         Log.d(TAG, "[InteractivePipeline] Event loop started for ${state.workflowId}")
 
         while (state.status == WorkflowStatus.RUNNING) {
+            // Check for cancellation
+            if (isCancellationRequested(state.workflowId)) {
+                Log.d(TAG, "[InteractivePipeline] Cancellation requested for ${state.workflowId}")
+                state.status = WorkflowStatus.CANCELLED
+                // Cancel all active agents
+                state.agentStates.values.forEach { agentState ->
+                    agentState.handle?.let { SubAgent.completeAgent(it.agentId) }
+                }
+                WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                    workflowId = state.workflowId,
+                    sessionId = state.sessionId,
+                    error = "用户取消"
+                ))
+                break
+            }
+
             // Check for messages
             processPendingMessages(state)
 
@@ -486,6 +543,9 @@ object WorkflowEngine {
 
             delay(500)  // Check every 500ms
         }
+
+        // Clear cancellation state
+        clearCancellation(state.workflowId)
 
         Log.d(TAG, "[InteractivePipeline] Event loop ended for ${state.workflowId}")
     }

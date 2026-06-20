@@ -26,6 +26,7 @@ import com.omnichat.BuildConfig
 import com.omnichat.update.UpdateChecker
 import com.omnichat.agent.SubAgentEvent
 import com.omnichat.agent.SubAgentEventBus
+import com.omnichat.agent.WorkflowEngine
 import com.omnichat.agent.WorkflowEvent
 import com.omnichat.agent.WorkflowEventBus
 import com.omnichat.agent.WorkflowMode
@@ -408,6 +409,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // 停止前台服务
         StreamingForegroundService.complete(getApplication())
+    }
+
+    /**
+     * Cancel a running workflow.
+     * Called from UI when user taps stop button on WorkflowProgressCard.
+     */
+    fun cancelWorkflow(workflowId: String) {
+        WorkflowEngine.requestCancellation(workflowId)
+        activeWorkflows[workflowId]?.let { workflow ->
+            activeWorkflows[workflowId] = workflow.copy(
+                status = WorkflowStatus.CANCELLED,
+                error = "用户取消"
+            )
+        }
+        subAgentActive = false
+        Log.d("ChatViewModel", "[cancelWorkflow] Workflow $workflowId cancelled by user")
     }
 
     /**

@@ -40,7 +40,8 @@ import org.json.JSONObject
 @Composable
 fun WorkflowProgressCard(
     workflow: WorkflowUiState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCancelClick: (() -> Unit)? = null
 ) {
     val uiSettings = LocalUISettings.current
     val chatFs = LocalChatFontScale.current
@@ -117,6 +118,22 @@ fun WorkflowProgressCard(
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
+
+                // Cancel button (if running and callback provided)
+                if (workflow.status == WorkflowStatus.RUNNING && onCancelClick != null) {
+                    IconButton(
+                        onClick = onCancelClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "Cancel workflow",
+                            tint = contentColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
 
                 // Status indicator
                 if (workflow.status == WorkflowStatus.RUNNING) {
