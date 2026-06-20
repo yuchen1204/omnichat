@@ -46,6 +46,7 @@
     <string name="chat_edit_message">Edit</string>
     <string name="chat_editing_message">Editing message…</string>
     <string name="chat_cancel_edit">Cancel edit</string>
+    <string name="chat_export_log">Export Log</string>
     <string name="chat_ai_ready">AI Ready</string>
     <string name="chat_welcome_title">Welcome to AI Assistant</string>
     <string name="chat_welcome_desc">Dual-model architecture: one for conversation, another distills facts in the background after each reply — memories persist across sessions!</string>

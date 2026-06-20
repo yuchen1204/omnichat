@@ -46,6 +46,7 @@
     <string name="chat_edit_message">编辑</string>
     <string name="chat_editing_message">正在编辑消息…</string>
     <string name="chat_cancel_edit">取消编辑</string>
+    <string name="chat_export_log">导出日志</string>
     <string name="chat_ai_ready">AI 准备就绪</string>
     <string name="chat_welcome_title">欢迎使用长效记忆 AI 助手</string>
     <string name="chat_welcome_desc">本应用特别支持双模型架构！一个主模型专门负责对话聊天，而一个副模型专门在每次回答后在后台分析提炼对话事实信息，跨越不同对话会话、重启不丢失！</string>

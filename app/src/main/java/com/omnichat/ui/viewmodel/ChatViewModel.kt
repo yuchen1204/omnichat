@@ -428,6 +428,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Export current session log for debugging.
+     * Returns the file path if successful, null otherwise.
+     */
+    fun exportSessionLog(): String? {
+        val sessionId = _selectedSessionId.value ?: return null
+        val session = sessions.value.find { it.id == sessionId }
+        val messages = activeMessages.value
+
+        return com.omnichat.util.SessionLogExporter.exportSessionLog(
+            context = getApplication(),
+            session = session,
+            messages = messages,
+            activeTasks = activeTasks.toMap(),
+            activeWorkflows = activeWorkflows.toMap()
+        )
+    }
+
+    /**
      * 处理 AgentMode 权限审核请求：插入提示消息让 LLM 审核 SubAgent 的操作是否合理。
      */
     private suspend fun handlePermissionReview(request: com.omnichat.mcp.PermissionReviewManager.ReviewRequest) {

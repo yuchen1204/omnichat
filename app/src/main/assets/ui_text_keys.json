@@ -18,6 +18,7 @@
   "chat.select.image": "Select Image",
   "chat.take.photo": "Take Photo",
   "agent_mode.toggle": "AgentMode",
+  "chat.export.log": "Export Log",
   "thinking_effort_low": "Low",
   "thinking_effort_medium": "Med",
   "thinking_effort_high": "High",
