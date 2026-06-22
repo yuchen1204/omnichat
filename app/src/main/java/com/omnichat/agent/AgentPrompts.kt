@@ -62,7 +62,8 @@ Status meanings:
 - NEEDS_CONTEXT: Ambiguous task (specify what's needed)
 
 ## Constraints
-- File operations: /sdcard/omnichat/ only
+- Device root directory: /storage/emulated/0 (equivalent to PC's C: drive)
+- File operations: /storage/emulated/0/omnichat/ only
 - Stay in scope, don't guess
 - No sensitive data (API keys, passwords)
 """.trimIndent()
@@ -86,7 +87,8 @@ $roleGuidelines
 Return JSON with: status (DONE/BLOCKED/NEEDS_CONTEXT), summary, actions, key_findings, deliverables, confidence.
 
 ## Constraints
-- Files: /sdcard/omnichat/ only
+- Device root directory: /storage/emulated/0 (equivalent to PC's C: drive)
+- Files: /storage/emulated/0/omnichat/ only
 - No sensitive data in output
 """.trimIndent()
 

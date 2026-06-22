@@ -307,13 +307,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if ((text.isBlank() && imagePaths.isEmpty()) || isStreaming || subAgentActive) return
 
         viewModelScope.launch {
-            // Apply hook to user message
-            val processedText = com.omnichat.hooks.HookManager.dispatchBeforeSendMessage(text)
-            if (processedText == null) {
-                // Hook cancelled the message sending
-                return@launch
-            }
-
             // 1. Insert User Message (with images if provided)
             val pathsJson = if (imagePaths.isNotEmpty()) {
                 org.json.JSONArray(imagePaths).toString()
@@ -322,7 +315,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val userMsg = Message(
                 sessionId = sessionId,
                 role = "user",
-                content = processedText,
+                content = text,
                 imagePaths = pathsJson
             )
             repository.insertMessage(userMsg)
@@ -357,7 +350,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // 等待正在启动的 MCP 服务就绪，确保获取到正确的工具列表
             runtimeManager.waitForStartingServersToFinish()
 
-            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, processedText)
+            val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, text)
 
             // Launch streaming in a separate coroutine so we can cancel it via stopStreaming()
             streamingJob = viewModelScope.launch(Dispatchers.Default) {
@@ -1290,15 +1283,8 @@ Output the title now."""
 
         val finalContent = if (finalAccumulatedText.trim() == "null") "" else finalAccumulatedText
 
-        // Apply hook to assistant response
-        val processedContent = if (finalContent.isNotEmpty()) {
-            com.omnichat.hooks.HookManager.dispatchAfterReceiveResponse(finalContent)
-        } else {
-            finalContent
-        }
-
         // 1. Save assistant text response AND tool calls
-        if (processedContent.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
+        if (finalContent.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
             val toolCallsJson = if (accumulatedToolCalls.isNotEmpty()) {
                 val arr = org.json.JSONArray()
                 accumulatedToolCalls.values.forEach { arr.put(it) }
@@ -1309,7 +1295,7 @@ Output the title now."""
                 Message(
                     sessionId = sessionId,
                     role = "assistant",
-                    content = processedContent,
+                    content = finalContent,
                     toolCallsJson = toolCallsJson
                 )
             )
@@ -1318,10 +1304,10 @@ Output the title now."""
         // 首次回复后生成会话标题（结合用户第一条消息和 AI 第一条回复）
         android.util.Log.d("TitleGen", "After assistant response: toolCallDepth=$toolCallDepth, sessionId=$sessionId")
         if (toolCallDepth == 0) {
-            generateSessionTitle(sessionId, processedContent)
+            generateSessionTitle(sessionId, finalContent)
         }
 
-        val wasOnlyToolCalls = processedContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
+        val wasOnlyToolCalls = finalContent.isEmpty() && accumulatedToolCalls.isNotEmpty()
         // 清理流式状态
         currentStreamingThinking = ""
         currentStreamingBody = ""

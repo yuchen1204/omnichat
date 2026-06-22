@@ -15,8 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 而是通过此管理器发送给 MainAgent（LLM）审核。
  *
  * 流程：
- * 1. McpFilePermissionHook 检测到 AgentMode 开启
- * 2. 调用 [requestReview] 挂起 SubAgent 协程，同时发射审核事件
+ * 1. 调用 [requestReview] 挂起 SubAgent 协程，同时发射审核事件
  * 3. ChatViewModel 观察事件，插入提示消息让 LLM 审核
  * 4. LLM 决定 APPROVE 或 DENY，调用 [resolveReview]
  * 5. SubAgent 协程恢复，收到审核结果

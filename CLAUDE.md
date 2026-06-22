@@ -77,7 +77,6 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (v39)
 | `com.omnichat.data` | Room entities, DAOs, database (`AppDatabase.kt`), repository (`Repository.kt` contains class `AppRepository`) |
 | `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`) |
 | `com.omnichat.mcp` | MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `AskUserManager`, `TimerManager`, `McpViewModel` |
-| `com.omnichat.hooks` | Hook system: `HookManager`, `MessageHook`, `McpHook`, `McpFilePermissionHook`, `LoggingHooks` |
 | `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ExportImportScreen`, `ModelsConfigScreen`, `MemoryAndPromptScreen`, `McpConfigScreen`, `McpDialogs`, `AskUserDialog` |
 | `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
 | `com.omnichat.ui.components` | Reusable Compose components (`ChunkedStreamingText`, `MarkdownChunkParser`) |
@@ -95,7 +94,6 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (v39)
 - **Add MCP server support**: Add remote HTTP server config in `McpRuntimeManager`
 - **Add/modify built-in MCP tools**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`). Tools are grouped (core, memory, ui_appearance, ui_text, files, documents, efficiency); `UISettings.enabledMcpGroups` controls active groups
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `McpRuntimeManager.kt` (`adjust_ui_strings` schema), implement in `BuiltinToolHandler.kt`, use `LocalUiStrings.current` in Compose screens
-- **Add hooks**: Implement `MessageHook` or `McpHook` interface in `com.omnichat.hooks` package, register with `HookManager` (object with register/unregister methods)
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; MCP tools in `BuiltinToolHandler` update it
 

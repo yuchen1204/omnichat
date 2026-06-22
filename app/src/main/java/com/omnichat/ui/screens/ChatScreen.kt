@@ -663,45 +663,7 @@ fun ChatView(viewModel: ChatViewModel) {
                                 }
                             }
 
-                            // AgentMode 开关按钮
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { viewModel.toggleAgentMode() },
-                                shape = toolBtnShape,
-                                border = BorderStroke(
-                                    0.5.dp,
-                                    if (uiSettings.agentMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                                ),
-                                colors = if (uiSettings.agentMode) CardDefaults.outlinedCardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                ) else toolBtnColors
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SmartToy,
-                                        contentDescription = null,
-                                        tint = if (uiSettings.agentMode) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = uiText("agent_mode.toggle", R.string.agent_mode_toggle),
-                                        fontSize = (12 * fs).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (uiSettings.agentMode) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    )
-                                }
-                            }
+
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))

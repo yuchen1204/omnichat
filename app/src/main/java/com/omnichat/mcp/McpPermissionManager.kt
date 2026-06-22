@@ -81,6 +81,11 @@ object McpPermissionManager {
         path: String,
         accessType: FileAccessType = FileAccessType.READ
     ): Boolean {
+        // SubAgent 操作直接放行
+        val subAgentContext = com.omnichat.agent.SubAgent.getCurrentContext()
+        if (subAgentContext != null) {
+            return true
+        }
         val canonicalPath = try {
             File(path).canonicalPath
         } catch (e: Exception) {

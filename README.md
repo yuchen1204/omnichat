@@ -24,7 +24,6 @@
 - **Multimedia Capabilities** -- Multi-image vision support (camera capture + gallery picker), document generation (PDF/Excel/Word/PowerPoint), AlarmManager timers with repeating tasks
 - **Multi-Model Support** -- OpenAI-compatible API; supports Gemini, OpenAI, DeepSeek, local models; per-provider custom HTTP headers, embedding model config, thinking/reasoning mode with budget_tokens
 - **SSE Streaming** -- Real-time streaming with typewriter effect, chunked rendering, foreground service to prevent process death, special chunk prefixes for tool calls and retries
-- **Hook System** -- Extensible hooks for message interception, tool execution control, file permission management, and SubAgent approval
 - **Version Check** -- GitHub tag-based update checking with semantic version comparison
 
 ## App Architecture
@@ -122,12 +121,6 @@ omnichat/
 │   │   ├── ToolSchemaDsl.kt         # JSON Schema DSL for tool definitions
 │   │   ├── UiFieldRegistry.kt       # AI-adjustable UI field metadata
 │   │   └── McpViewModel.kt          # MCP config ViewModel
-│   ├── hooks/                       # Hook system
-│   │   ├── HookManager.kt           # Hook manager
-│   │   ├── HookInterfaces.kt        # Hook interface definitions
-│   │   ├── LoggingHooks.kt          # Logging hooks
-│   │   ├── McpFilePermissionHook.kt # File permission hook
-│   │   └── AgentApprovalHook.kt     # SubAgent approval hook
 │   ├── memory/                      # Memory engine
 │   │   ├── MemoryEngine.kt          # Cross-session memory (associations, embedding, FTS)
 │   │   └── MemoryTokenizer.kt       # CJK bigram + English tokenizer

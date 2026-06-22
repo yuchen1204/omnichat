@@ -1224,24 +1224,9 @@ Returns step summary + final result. Failed steps show error message.
     suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject? {
         Log.d(TAG, "[callTool] serverId=$serverId, tool=$toolName")
 
-        // 1. Dispatch Before Execute Hook
-        val processedArgs = com.omnichat.hooks.HookManager.dispatchBeforeToolExecute(toolName, arguments)
-        if (processedArgs == null) {
-            Log.w(TAG, "[callTool] Hook blocked execution of tool $toolName")
-            return JSONObject().apply {
-                put("content", org.json.JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("type", "text")
-                        put("text", "Error: Execution blocked by Hook")
-                    })
-                })
-                put("isError", true)
-            }
-        }
-
         val rawResult = if (serverId == BUILTIN_SERVER_ID) {
             try {
-                handleBuiltinTool(toolName, processedArgs, sessionId)
+                handleBuiltinTool(toolName, arguments, sessionId)
             } catch (t: Throwable) {
                 Log.e(TAG, "内置工具 $toolName 执行发生严重错误", t)
                 JSONObject().apply {
@@ -1261,7 +1246,7 @@ Returns step summary + final result. Failed steps show error message.
                     method = "tools/call",
                     params = JSONObject().apply {
                         put("name", toolName)
-                        put("arguments", processedArgs)
+                        put("arguments", arguments)
                     }
                 )
                 response.optJSONObject("result")
@@ -1271,23 +1256,9 @@ Returns step summary + final result. Failed steps show error message.
             }
         }
 
-        // 2. Dispatch After Execute Hook
+        // 2. Return result
         if (rawResult != null) {
-            val resultStr = rawResult.toString()
-            val processedResultStr = com.omnichat.hooks.HookManager.dispatchAfterToolExecute(toolName, resultStr)
-            return try {
-                JSONObject(processedResultStr)
-            } catch (e: Exception) {
-                Log.w(TAG, "Hook returned invalid JSON for tool $toolName, falling back to wrapping as text: $processedResultStr", e)
-                JSONObject().apply {
-                    put("content", org.json.JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("type", "text")
-                            put("text", processedResultStr)
-                        })
-                    })
-                }
-            }
+            return rawResult
         }
 
         return null

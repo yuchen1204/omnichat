@@ -24,7 +24,6 @@
 - **多媒体能力** -- 多图视觉理解（相机拍照 + 相册选取）、文档生成（PDF/Excel/Word/PowerPoint）、AlarmManager 定时器（支持重复任务）
 - **多模型支持** -- OpenAI 兼容 API，支持 Gemini、OpenAI、DeepSeek、本地模型；每个提供商可配置自定义 HTTP 头、Embedding 模型、Thinking/Reasoning 模式（含 budget_tokens）
 - **SSE 流式输出** -- 实时流式响应，打字机效果，分块渲染优化，前台服务防止进程被杀，特殊 chunk 前缀处理工具调用和重试
-- **Hook 系统** -- 可扩展的 Hook 机制，支持消息拦截、工具执行控制、文件权限管理、SubAgent 审批
 - **版本检查** -- 基于 GitHub Tag 的更新检查，语义版本号比较
 
 ## 应用架构
@@ -122,12 +121,6 @@ omnichat/
 │   │   ├── ToolSchemaDsl.kt         # JSON Schema DSL 工具定义
 │   │   ├── UiFieldRegistry.kt       # AI 可调整 UI 字段元数据
 │   │   └── McpViewModel.kt          # MCP 配置 ViewModel
-│   ├── hooks/                       # Hook 系统
-│   │   ├── HookManager.kt           # Hook 管理器
-│   │   ├── HookInterfaces.kt        # Hook 接口定义
-│   │   ├── LoggingHooks.kt          # 日志 Hook
-│   │   ├── McpFilePermissionHook.kt # 文件权限 Hook
-│   │   └── AgentApprovalHook.kt     # SubAgent 审批 Hook
 │   ├── memory/                      # 记忆引擎
 │   │   ├── MemoryEngine.kt          # 跨会话记忆（关联图、向量搜索、FTS）
 │   │   └── MemoryTokenizer.kt       # CJK bigram + 英文分词器

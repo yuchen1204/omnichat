@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.asContextElement
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -127,10 +128,21 @@ object SubAgent {
     /**
      * Get the current SubAgent context from coroutine context.
      * Used by hooks to detect if they are being called from a SubAgent.
-     * Note: This must be called from within a suspend function that has SubAgentContext.
+     * Uses coroutine context as primary source, with ThreadLocal as fallback.
      */
     suspend fun getCurrentContext(): SubAgentContext? {
-        return kotlin.coroutines.coroutineContext[SubAgentContext]
+        // Primary: coroutine context (works when context is properly propagated)
+        val fromCoroutine = kotlin.coroutines.coroutineContext[SubAgentContext]
+        if (fromCoroutine != null) return fromCoroutine
+        // Fallback: thread-local (catches cases where coroutine context is lost)
+        return threadLocalContext.get()
+    }
+
+    /**
+     * Non-suspend version for use in non-coroutine contexts.
+     */
+    fun getCurrentContextBlocking(): SubAgentContext? {
+        return threadLocalContext.get()
     }
 
     private const val MAX_DELEGATION_DEPTH = 3
@@ -152,6 +164,10 @@ object SubAgent {
     private val tasks = ConcurrentHashMap<String, SubAgentTask>()
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Thread-local fallback for SubAgent context detection
+    // Used when coroutine context propagation fails (e.g., dispatcher switches)
+    private val threadLocalContext = ThreadLocal<SubAgentContext?>()
 
     // Map of agentId -> AgentStateInfo for suspended agents
     private val suspendedAgents = ConcurrentHashMap<String, AgentStateInfo>()
@@ -230,7 +246,8 @@ object SubAgent {
             globalSemaphore.acquire()
             try {
                 // Add SubAgent context to coroutine context for hooks to detect
-                val taskResult = withContext(SubAgentContext(task, handle.agentType, handle.agentId)) {
+                val subAgentCtx = SubAgentContext(task, handle.agentType, handle.agentId)
+                val taskResult = withContext(subAgentCtx + threadLocalContext.asContextElement(subAgentCtx)) {
                     executeTask(
                         context = handle.context,
                         agentType = handle.agentType,
@@ -376,7 +393,7 @@ object SubAgent {
                     ))
                     updateTask(taskId, status = SubAgentTaskStatus.RUNNING, startedAt = System.currentTimeMillis())
 
-                    val result = withContext(subAgentContext) {
+                    val result = withContext(subAgentContext + threadLocalContext.asContextElement(subAgentContext)) {
                         executeTask(context, agentType, taskDescription, sessionId, depth, taskId, promptMode)
                     }
                     updateTask(taskId, status = SubAgentTaskStatus.COMPLETED, result = result,
@@ -468,7 +485,7 @@ object SubAgent {
 
                 // Add SubAgent context to coroutine context for hooks to detect
                 val subAgentContext = SubAgentContext(taskDescription, agentType, taskId)
-                val result = withContext(subAgentContext) {
+                val result = withContext(subAgentContext + threadLocalContext.asContextElement(subAgentContext)) {
                     executeTask(context, agentType, taskDescription, sessionId, depth, taskId, promptMode)
                 }
                 updateTask(taskId, status = SubAgentTaskStatus.COMPLETED, result = result,
