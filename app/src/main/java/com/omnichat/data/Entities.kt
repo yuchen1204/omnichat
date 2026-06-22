@@ -355,6 +355,7 @@ data class UISettings(
     val warningColor: String = "#FF9500",
     val infoColor: String = "#007AFF",
     val accentColor: String = "#FF9500",
+    val topbarSubtitleColor: String = "#636366",
     val sidebarBackgroundColor: String = "#F5F5F7",
     val sidebarOnBackgroundColor: String = "#1C1C1E",
     val sidebarActiveColor: String = "#E5F2FF",
@@ -403,6 +404,9 @@ data class UISettings(
     val silentToolGroups: String = "",
 
     val agentMode: Boolean = false,
+
+    /** 平板模式下侧边栏是否展开（默认展开） */
+    val sidebarExpanded: Boolean = true,
 
     val updatedAt: Long = System.currentTimeMillis(),
 

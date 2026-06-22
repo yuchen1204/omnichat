@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -61,6 +62,8 @@ import com.omnichat.data.MemoryItem
 import com.omnichat.data.ModelConfig
 import com.omnichat.ui.components.ChunkedStreamingText
 import com.omnichat.ui.components.ToolGroupCard
+import com.omnichat.ui.theme.LocalWindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 
 import com.omnichat.ui.components.toUIModel
 import com.omnichat.ui.theme.LocalChatFontScale
@@ -81,6 +84,7 @@ fun ChatView(viewModel: ChatViewModel) {
     val messages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val isStreaming = viewModel.isStreaming
+    val streamingSessionId = viewModel.streamingSessionId
     val subAgentActive = viewModel.subAgentActive
     val streamingThinking = viewModel.currentStreamingThinking
     val streamingBody = viewModel.currentStreamingBody
@@ -105,6 +109,9 @@ fun ChatView(viewModel: ChatViewModel) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    val windowSizeClass = LocalWindowSizeClass.current
+    val isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
 
     // 工具栏展开状态
     var showToolbar by remember { mutableStateOf(false) }
@@ -261,46 +268,6 @@ fun ChatView(viewModel: ChatViewModel) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Memories alert indicator chip row
-        if (memories.isNotEmpty() || defaultProvider == null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (defaultProvider == null) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = uiText("chat.4c423b81", R.string.chat_reminder),
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = uiText("chat.no.provider.warning", R.string.chat_no_provider_warning),
-                        fontSize = (11 * fs).sp,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = uiText("chat.b489ee1d", R.string.chat_memory),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = uiText("chat.memory.injected", R.string.chat_memory_injected).format(memories.size),
-                        fontSize = (11 * fs).sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
         // --- MCP 启动状态提示条 ---
         val startingServers = mcpServerStates.values.filter {
             it.status == com.omnichat.mcp.McpServerStatus.STARTING
@@ -434,7 +401,7 @@ fun ChatView(viewModel: ChatViewModel) {
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
                 // Streaming assistant response (在 reverseLayout 中 index 0 位于最底部)
-                if (isStreaming) {
+                if (isStreaming && streamingSessionId == activeSessionId) {
                     item(key = "streaming_bubble") {
                         StreamingBubble(
                             thinkingText = streamingThinking,
@@ -532,9 +499,15 @@ fun ChatView(viewModel: ChatViewModel) {
         }
 
         // Send Area (Material design)
+        val sendAreaShape = if (isExpandedScreen) {
+            RoundedCornerShape(uiSettings.cornerRadiusDp.dp)
+        } else {
+            RoundedCornerShape(topStart = uiSettings.cornerRadiusDp.dp, topEnd = uiSettings.cornerRadiusDp.dp)
+        }
         Surface(
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
             tonalElevation = 4.dp,
+            shape = sendAreaShape,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
@@ -734,22 +707,31 @@ fun ChatView(viewModel: ChatViewModel) {
                                         val isActive = efforts[index] == currentEffort
                                         val isMax = efforts[index] == "max"
                                         if (isMax) {
+                                            val infiniteTransition = rememberInfiniteTransition(label = "rainbow")
+                                            val animPhase by infiniteTransition.animateFloat(
+                                                initialValue = 0f,
+                                                targetValue = 360f,
+                                                animationSpec = infiniteRepeatable(
+                                                    animation = tween(2000, easing = LinearEasing),
+                                                    repeatMode = RepeatMode.Restart
+                                                ),
+                                                label = "rainbow_hue"
+                                            )
+                                            val c1 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase % 360f), 1f, 1f)))
+                                            val c2 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 60f) % 360f, 1f, 1f)))
+                                            val c3 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 120f) % 360f, 1f, 1f)))
+                                            val c4 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 180f) % 360f, 1f, 1f)))
+                                            val c5 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 240f) % 360f, 1f, 1f)))
+                                            val c6 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 300f) % 360f, 1f, 1f)))
                                             Text(
                                                 text = label,
                                                 fontSize = (10 * fs).sp,
                                                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                                                 style = TextStyle(
                                                     brush = Brush.linearGradient(
-                                                        colors = listOf(
-                                                            Color(0xFFFF0000),
-                                                            Color(0xFFFF8C00),
-                                                            Color(0xFFFFFF00),
-                                                            Color(0xFF00CC00),
-                                                            Color(0xFF0066FF),
-                                                            Color(0xFF9933FF)
-                                                        ),
-                                                        start = Offset(0f, Float.POSITIVE_INFINITY),
-                                                        end = Offset(Float.POSITIVE_INFINITY, 0f)
+                                                        colors = listOf(c1, c2, c3, c4, c5, c6),
+                                                        start = Offset(0f, 0f),
+                                                        end = Offset(60f, 0f)
                                                     )
                                                 )
                                             )
@@ -960,6 +942,36 @@ fun ChatView(viewModel: ChatViewModel) {
                         shape = RoundedCornerShape(24.dp),
                         modifier = Modifier
                             .weight(1f)
+                            .onPreviewKeyEvent { event ->
+                                // 检测是否有外接键盘
+                                val config = context.resources.configuration
+                                val hasHardwareKeyboard = config.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS
+
+                                if (hasHardwareKeyboard && event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                    if (event.isShiftPressed) {
+                                        // Shift+Enter: 插入换行
+                                        false // 让系统处理，插入换行
+                                    } else {
+                                        // Enter: 发送消息
+                                        val toSend = textInput.trim()
+                                        val hasImage = selectedImagePaths.isNotEmpty()
+                                        if ((toSend.isNotBlank() || hasImage) && !isStreaming && !subAgentActive) {
+                                            if (isEditing) {
+                                                viewModel.submitEdit(toSend)
+                                            } else {
+                                                viewModel.sendMessageWithImage(toSend, selectedImagePaths)
+                                            }
+                                            textInput = ""
+                                            selectedImagePaths = emptyList()
+                                            showToolbar = false
+                                            keyboardController?.hide()
+                                        }
+                                        true // 消费事件，不插入换行
+                                    }
+                                } else {
+                                    false // 其他事件不处理
+                                }
+                            }
                             .testTag("chat_input_field")
                     )
 
@@ -1288,6 +1300,10 @@ fun BubbleMessage(
     val uiSettings = LocalUISettings.current
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
+    // 平板模式检测：AI 回复气泡占满宽度
+    val windowSizeClass = LocalWindowSizeClass.current
+    val isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
+
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -1433,7 +1449,7 @@ fun BubbleMessage(
             } else {
                 val parsed = remember(message.content) { parseMessageContent(message.content) }
                 Column(
-                    modifier = Modifier.widthIn(max = 290.dp),
+                    modifier = if (isExpandedScreen) Modifier.fillMaxWidth() else Modifier.widthIn(max = 290.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (parsed.thinking != null) {
@@ -1526,13 +1542,17 @@ fun StreamingBubble(
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
+    // 平板模式检测：流式气泡占满宽度
+    val windowSizeClass = LocalWindowSizeClass.current
+    val isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp, horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart
     ) {
-        Column(modifier = Modifier.widthIn(max = 290.dp)) {
+        Column(modifier = if (isExpandedScreen) Modifier.fillMaxWidth() else Modifier.widthIn(max = 290.dp)) {
             if (isThinkingFallback) {
                 ThinkingProcessPanel(
                     thinkingText = uiText("chat.thinking.start", R.string.chat_thinking_start),

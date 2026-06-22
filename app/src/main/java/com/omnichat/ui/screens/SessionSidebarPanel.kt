@@ -63,8 +63,6 @@ fun SessionSidebarPanel(
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     val cornerRadius = uiSettings.cornerRadiusDp.dp
 
-    val newSessionDefaultTitle = uiText("sidebar.new.session.default", R.string.sidebar_new_session_default)
-
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -74,23 +72,123 @@ fun SessionSidebarPanel(
     var renameText by remember { mutableStateOf("") }
     var showModelPicker by remember { mutableStateOf(false) }
 
+    // 搜索状态
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredSessions = remember(sessions, searchQuery) {
+        if (searchQuery.isBlank()) sessions
+        else sessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    }
+
+    // 预计算日期标签（避免在 remember 中调用 @Composable 函数）
+    val todayLabel = uiText("sidebar.date.today", R.string.sidebar_date_today)
+    val yesterdayLabel = uiText("sidebar.date.yesterday", R.string.sidebar_date_yesterday)
+    val label2days = uiText("sidebar.date.2days", R.string.sidebar_date_2days)
+    val label3days = uiText("sidebar.date.3days", R.string.sidebar_date_3days)
+
+    // 按日期分组
+    val dateGroups = remember(filteredSessions, todayLabel, yesterdayLabel, label2days, label3days) {
+        val now = System.currentTimeMillis()
+        val today = now - (now % (24 * 60 * 60 * 1000))
+        val dayMs = 24 * 60 * 60 * 1000L
+
+        val groupMap = linkedMapOf<String, MutableList<Session>>()
+
+        filteredSessions.forEach { session ->
+            val daysAgo = ((today - session.createdAt) / dayMs).toInt()
+            val label = when {
+                daysAgo <= 0 -> todayLabel
+                daysAgo == 1 -> yesterdayLabel
+                daysAgo == 2 -> label2days
+                daysAgo == 3 -> label3days
+                else -> {
+                    val cal = java.util.Calendar.getInstance().apply { timeInMillis = session.createdAt }
+                    "${cal.get(java.util.Calendar.YEAR)}-${String.format("%02d", cal.get(java.util.Calendar.MONTH) + 1)}-${String.format("%02d", cal.get(java.util.Calendar.DAY_OF_MONTH))}"
+                }
+            }
+            groupMap.getOrPut(label) { mutableListOf() }.add(session)
+        }
+
+        // 保持顺序：今天在前，按日期降序
+        val order = listOf(todayLabel, yesterdayLabel, label2days, label3days)
+        val ordered = order.mapNotNull { label -> groupMap.remove(label)?.let { label to it } }
+        val remaining = groupMap.toList().sortedByDescending { it.second.maxOfOrNull { s -> s.createdAt } ?: 0 }
+        (ordered + remaining).filter { it.second.isNotEmpty() }
+    }
+
+    // 展开/折叠状态：默认展开今天
+    var expandedGroups by remember(dateGroups) {
+        mutableStateOf(setOf(todayLabel))
+    }
+
     Column(
         modifier = Modifier
             .fillMaxHeight()
             .width(280.dp)
             .background(sidebarColors.background)
     ) {
-        // ── 顶部渐变 Header ───────────────────────────────────────────────
-        SidebarHeader(
-            fs = fs,
-            resolvedFontFamily = resolvedFontFamily,
-            sidebarColors = sidebarColors,
-            cornerRadius = cornerRadius,
-            onNewSession = {
-                viewModel.createNewSession(newSessionDefaultTitle)
-                onSessionSelected()
+        // ── 搜索栏 ───────────────────────────────────────────────
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            color = sidebarColors.activeBackground.copy(alpha = 0.12f),
+            shape = RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = sidebarColors.onBackground.copy(alpha = 0.45f),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                androidx.compose.foundation.text.BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = (13 * fs).sp,
+                        fontFamily = resolvedFontFamily,
+                        color = sidebarColors.onBackground
+                    ),
+                    singleLine = true,
+                    cursorBrush = Brush.verticalGradient(
+                        colors = listOf(sidebarColors.onBackground, sidebarColors.onBackground)
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = uiText("sidebar.search.placeholder", R.string.sidebar_search_placeholder),
+                                    fontSize = (13 * fs).sp,
+                                    fontFamily = resolvedFontFamily,
+                                    color = sidebarColors.onBackground.copy(alpha = 0.35f)
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(
+                        onClick = { searchQuery = "" },
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = null,
+                            tint = sidebarColors.onBackground.copy(alpha = 0.45f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
             }
-        )
+        }
 
         // ── 版本更新提示条 ──────────────────────────────────────────────
         latestVersion?.let { version ->
@@ -112,66 +210,79 @@ fun SessionSidebarPanel(
             verticalArrangement = Arrangement.spacedBy(3.dp),
             contentPadding = PaddingValues(bottom = 8.dp)
         ) {
-            // ── 对话列表分区标题 ────────────────────────────────────────
-            item {
-                SectionHeader(
-                    label = uiText("sidebar.chat.sessions", R.string.sidebar_chat_sessions),
-                    fs = fs,
-                    sidebarColors = sidebarColors,
-                    actionIcon = null,
-                    onAction = {}
-                )
-            }
-
-            if (sessions.isEmpty()) {
+            if (dateGroups.isEmpty()) {
                 item {
                     EmptyHint(
-                        text = uiText("sidebar.no.sessions", R.string.sidebar_no_sessions),
+                        text = if (searchQuery.isNotBlank())
+                            uiText("sidebar.no.results", R.string.sidebar_no_results)
+                        else
+                            uiText("sidebar.no.sessions", R.string.sidebar_no_sessions),
                         fs = fs,
                         sidebarColors = sidebarColors
                     )
                 }
             } else {
-                items(sessions, key = { "session_${it.id}" }) { session ->
-                    val isActive = session.id == activeSessionId
+                dateGroups.forEach { (dateLabel, groupSessions) ->
+                    val isExpanded = dateLabel in expandedGroups
+                    // 分区标题
+                    item(key = "header_$dateLabel") {
+                        DateGroupHeader(
+                            label = dateLabel,
+                            count = groupSessions.size,
+                            isExpanded = isExpanded,
+                            fs = fs,
+                            sidebarColors = sidebarColors,
+                            onClick = {
+                                expandedGroups = if (isExpanded) expandedGroups - dateLabel
+                                else expandedGroups + dateLabel
+                            }
+                        )
+                    }
+                    // 该分组下的会话列表
+                    if (isExpanded) {
+                        items(groupSessions, key = { "session_${it.id}" }) { session ->
+                            val isActive = session.id == activeSessionId
 
-                    SessionListItem(
-                        title = session.title,
-                        subtitle = null,
-                        icon = Icons.Default.ChatBubbleOutline,
-                        isActive = isActive,
-                        statusDot = null,
-                        fs = fs,
-                        resolvedFontFamily = resolvedFontFamily,
-                        sidebarColors = sidebarColors,
-                        cornerRadius = cornerRadius,
-                        testTag = "session_item_${session.id}",
-                        onClick = {
-                            viewModel.selectSession(session.id)
-                            onSessionSelected()
-                        },
-                        onLongClick = {},
-                        trailingContent = {
-                            SessionTrailingMenu(
+                            SessionListItem(
+                                title = session.title,
+                                subtitle = null,
+                                icon = Icons.Default.ChatBubbleOutline,
                                 isActive = isActive,
+                                statusDot = null,
                                 fs = fs,
+                                resolvedFontFamily = resolvedFontFamily,
                                 sidebarColors = sidebarColors,
                                 cornerRadius = cornerRadius,
-                                onRename = {
-                                    renameTargetSession = session
-                                    renameText = session.title
+                                testTag = "session_item_${session.id}",
+                                onClick = {
+                                    viewModel.selectSession(session.id)
+                                    onSessionSelected()
                                 },
-                                onDelete = {
-                                    deleteTargetSession = session
+                                onLongClick = {},
+                                trailingContent = {
+                                    SessionTrailingMenu(
+                                        isActive = isActive,
+                                        fs = fs,
+                                        sidebarColors = sidebarColors,
+                                        cornerRadius = cornerRadius,
+                                        onRename = {
+                                            renameTargetSession = session
+                                            renameText = session.title
+                                        },
+                                        onDelete = {
+                                            deleteTargetSession = session
+                                        }
+                                    )
                                 }
                             )
                         }
-                    )
+                    }
                 }
             }
         }
 
         // ── 底部 Footer ────────────────────────────────────────────────
+        val newSessionDefaultTitle = uiText("sidebar.new.session.default", R.string.sidebar_new_session_default)
         SidebarFooter(
             modelConfigs = modelConfigs,
             fs = fs,
@@ -180,6 +291,10 @@ fun SessionSidebarPanel(
             cornerRadius = cornerRadius,
             onSettingsClick = onSettingsClick,
             onModelPickerClick = { showModelPicker = true },
+            onNewSession = {
+                viewModel.createNewSession(newSessionDefaultTitle)
+                onSessionSelected()
+            },
             context = context
         )
     }
@@ -450,6 +565,46 @@ private fun SectionHeader(
     }
 }
 
+// ── 日期分组标题（可折叠） ──────────────────────────────────────────────────
+
+@Composable
+private fun DateGroupHeader(
+    label: String,
+    count: Int,
+    isExpanded: Boolean,
+    fs: Float,
+    sidebarColors: com.omnichat.ui.theme.SidebarColors,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+            contentDescription = null,
+            tint = sidebarColors.onBackground.copy(alpha = 0.5f),
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = label,
+            fontSize = (11 * fs).sp,
+            fontWeight = FontWeight.SemiBold,
+            color = sidebarColors.onBackground.copy(alpha = 0.6f),
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = count.toString(),
+            fontSize = (10 * fs).sp,
+            color = sidebarColors.onBackground.copy(alpha = 0.35f)
+        )
+    }
+}
+
 // ── 通用列表条目 ─────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -650,6 +805,7 @@ private fun SidebarFooter(
     cornerRadius: androidx.compose.ui.unit.Dp,
     onSettingsClick: () -> Unit,
     onModelPickerClick: () -> Unit,
+    onNewSession: () -> Unit,
     context: android.content.Context
 ) {
     val customColors = LocalCustomColors.current
@@ -750,23 +906,17 @@ private fun SidebarFooter(
                 }
             }
 
-            // 恢复默认 UI 小按钮
-            val settingsViewModel: com.omnichat.ui.viewmodel.SettingsViewModel = viewModel()
+            // 新建会话按钮
             IconButton(
-                onClick = {
-                    coroutineScope.launch {
-                        val db = com.omnichat.data.AppDatabase.getDatabase(context.applicationContext)
-                        com.omnichat.data.AppRepository(db).upsertUISettings(com.omnichat.data.UISettings())
-                    }
-                },
+                onClick = onNewSession,
                 modifier = Modifier
                     .size(38.dp)
                     .clip(RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)))
                     .background(sidebarColors.activeBackground.copy(alpha = 0.15f))
             ) {
                 Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = uiText("sidebar.7f62f6d8", R.string.sidebar_reset_colors),
+                    imageVector = Icons.Default.Add,
+                    contentDescription = uiText("sidebar.aa75d46c", R.string.sidebar_new_session),
                     tint = sidebarColors.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
                 )

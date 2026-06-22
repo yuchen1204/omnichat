@@ -27,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 云端备份记录
         CloudBackupRecord::class,
     ],
-    version = 53,
+    version = 55,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -892,6 +892,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v53→v54: 为 ui_settings 添加 topbarSubtitleColor 字段 */
+        private val MIGRATION_53_54 = object : Migration(53, 54) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN topbarSubtitleColor TEXT NOT NULL DEFAULT '#636366'")
+            }
+        }
+
+        /** v54→v55: 为 ui_settings 添加 sidebarExpanded 字段 */
+        private val MIGRATION_54_55 = object : Migration(54, 55) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ui_settings ADD COLUMN sidebarExpanded INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         /**
          * 清除单例实例（用于数据库恢复后重新初始化）。
          */
@@ -951,7 +965,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_49_50,
                         MIGRATION_50_51,
                         MIGRATION_51_52,
-                        MIGRATION_52_53
+                        MIGRATION_52_53,
+                        MIGRATION_53_54,
+                        MIGRATION_54_55
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。

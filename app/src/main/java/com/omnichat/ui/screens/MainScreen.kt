@@ -3,7 +3,11 @@ package com.omnichat.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.unit.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -14,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,11 +29,13 @@ import com.omnichat.mcp.McpViewModel
 import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.LocalWindowSizeClass
 import com.omnichat.ui.theme.resolveFontFamily
+import com.omnichat.ui.theme.toComposeColor
 import androidx.compose.ui.res.stringResource
 import com.omnichat.R
 import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 import com.omnichat.mcp.AskUserManager
@@ -225,7 +234,12 @@ fun MainScreen(
                 contentAlignment = Alignment.TopCenter
             ) {
                 Box(
-                    modifier = Modifier.widthIn(max = 720.dp).fillMaxHeight()
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .then(
+                            if (currentTab == "chat") Modifier.widthIn(max = 720.dp)
+                            else Modifier.fillMaxWidth()
+                        )
                 ) {
                     when (currentTab) {
                         "chat" -> ChatView(viewModel)
@@ -247,22 +261,37 @@ fun MainScreen(
     }
 
     if (isExpandedScreen) {
-        // 宽屏：PermanentNavigationDrawer，侧边栏常驻左侧
-        PermanentNavigationDrawer(
-            drawerContent = {
-                PermanentDrawerSheet(
-                    drawerContainerColor = sidebarColors.background,
-                    modifier = Modifier.width(280.dp)
+        // 平板模式：Row 布局，侧边栏可收起
+        val uiSettingsForSidebar = LocalUISettings.current
+        var sidebarExpanded by remember { mutableStateOf(uiSettingsForSidebar.sidebarExpanded) }
+        val settingsViewModel: SettingsViewModel = viewModel()
+
+        Row(modifier = modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = sidebarExpanded,
+                enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+                exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier.width(280.dp).fillMaxHeight(),
+                    color = sidebarColors.background
                 ) {
                     SidebarContent(
                         onSessionSelected = { currentTab = "chat" },
                         onSettingsClick = { currentTab = "settings" }
                     )
                 }
-            },
-            modifier = modifier
-        ) {
-            ContentScaffold(onOpenDrawer = { /* 宽屏不需要打开抽屉 */ })
+            }
+            ContentScaffold(onOpenDrawer = {
+                sidebarExpanded = !sidebarExpanded
+                scope.launch {
+                    val db = com.omnichat.data.AppDatabase.getDatabase(viewModel.getApplication())
+                    val current = db.uiSettingsDao().getSettings()
+                    if (current != null) {
+                        db.uiSettingsDao().upsertSettings(current.copy(sidebarExpanded = sidebarExpanded))
+                    }
+                }
+            })
         }
     } else {
         // 窄屏：ModalNavigationDrawer，抽屉滑出
@@ -308,32 +337,50 @@ fun SettingsView(
     val settingsViewModel: SettingsViewModel = viewModel()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        ScrollableTabRow(
-            selectedTabIndex = selectedSubTab,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary,
-            edgePadding = 0.dp,
-            divider = {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    thickness = 0.5.dp
-                )
-            }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
         ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedSubTab == index,
-                    onClick = { selectedSubTab = index },
-                    text = {
-                        val uiSettings = LocalUISettings.current
-                        Text(
-                            text = title,
-                            fontSize = (14 * uiSettings.fontSizeScale).sp,
-                            fontWeight = if (selectedSubTab == index) FontWeight.Bold else FontWeight.Normal
-                        )
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                items(tabs.size) { index ->
+                    val uiSettings = LocalUISettings.current
+                    val isSelected = selectedSubTab == index
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedSubTab = index }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = tabs[index],
+                                fontSize = (14 * uiSettings.fontSizeScale).sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (isSelected) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .width(24.dp)
+                                        .height(2.dp)
+                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
+                                )
+                            }
+                        }
                     }
-                )
+                }
             }
+            HorizontalDivider(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp
+            )
         }
         
         Box(modifier = Modifier.weight(1f)) {
@@ -365,7 +412,6 @@ fun MainTopAppBar(
     isExpandedScreen: Boolean = false
 ) {
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
-    val isSyncing = viewModel.isMemorySyncing
     
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -383,6 +429,9 @@ fun MainTopAppBar(
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
 
+    // 模型选择器弹窗状态
+    var showModelPicker by remember { mutableStateOf(false) }
+
     Column {
         CenterAlignedTopAppBar(
             title = {
@@ -397,65 +446,46 @@ fun MainTopAppBar(
                         maxLines = 2
                     )
                     if (currentTab == "chat" && defaultProvider != null) {
-                        Text(
-                            text = uiText("topbar.provider.prefix", R.string.topbar_provider_prefix) + defaultProvider.name,
-                            fontSize = (11 * fs).sp,
-                            fontFamily = resolvedFontFamily,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 2
-                        )
+                        val subtitleColor = uiSettings.topbarSubtitleColor.toComposeColor()
+                            .let { if (it != androidx.compose.ui.graphics.Color.Unspecified) it else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) }
+                        val modelDisplay = defaultProvider.selectedModelId.ifEmpty { "—" }
+                        val annotated = buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Normal)) { append("Provider: ") }
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(defaultProvider.name) }
+                            append("  ")
+                            withStyle(SpanStyle(fontWeight = FontWeight.Normal)) { append("Model: ") }
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(modelDisplay) }
+                        }
+                        Surface(
+                            onClick = { showModelPicker = true },
+                            shape = RoundedCornerShape(20.dp),
+                            color = subtitleColor.copy(alpha = 0.1f),
+                            modifier = Modifier.offset(y = (-2).dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = annotated,
+                                    fontSize = (11 * fs).sp,
+                                    fontFamily = resolvedFontFamily,
+                                    color = subtitleColor,
+                                    maxLines = 2,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
             },
             navigationIcon = {
-                if (!isExpandedScreen) {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = uiText("topbar.menu.open", R.string.topbar_menu_open),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                IconButton(onClick = onOpenDrawer) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = uiText("topbar.menu.open", R.string.topbar_menu_open),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             },
             actions = {
-                if (isSyncing) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 12.dp)
-                    ) {
-                        val infiniteTransition = rememberInfiniteTransition(label = "blink")
-                        val alpha by infiniteTransition.animateFloat(
-                            initialValue = 0.3f,
-                            targetValue = 1.0f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(800, easing = LinearEasing),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "blink_alpha"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(com.omnichat.ui.theme.LocalCustomColors.current.success.copy(alpha = alpha)) // Apple green
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = uiText("topbar.memory.syncing", R.string.topbar_memory_syncing),
-                            fontSize = (11 * fs).sp,
-                            color = com.omnichat.ui.theme.LocalCustomColors.current.success
-                        )
-                    }
-                } else if (currentTab == "chat" && defaultProvider?.memoryModelId?.isNotBlank() == true) {
-                    IconButton(onClick = { viewModel.triggerMemorySync(force = true) }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = uiText("topbar.memory.sync", R.string.topbar_memory_sync),
-                            tint = MaterialTheme.colorScheme.primary // Material style
-                        )
-                    }
-                }
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
@@ -465,6 +495,21 @@ fun MainTopAppBar(
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             thickness = 0.5.dp
+        )
+    }
+
+    // 模型选择器弹窗
+    if (showModelPicker && currentTab == "chat") {
+        ProviderModelPicker(
+            allConfigs = modelConfigs,
+            allModelsFlow = { viewModel.getModelsByProviderFlow(it) },
+            currentProviderId = defaultProvider?.id ?: 0L,
+            currentModelId = defaultProvider?.selectedModelId ?: "",
+            onConfirm = { provider, modelId ->
+                viewModel.setSessionOverrideModel(provider, modelId)
+                showModelPicker = false
+            },
+            onDismiss = { showModelPicker = false }
         )
     }
 }

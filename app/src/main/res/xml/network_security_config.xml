@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Network Security Config for OmniChat Cloud Backup
+
+        解决 Cloudflare Workers 证书链验证问题：
+        - Cloudflare 使用 Google Trust Services (GTS) 颁发的证书
+        - GTS Root R4 是相对较新的根证书 (2024年)
+        - 部分 Android 设备可能未更新系统证书库
+        - 明确信任 GTS Root R4 证书确保证书链验证通过
+    -->
+
+    <!-- 全局默认配置：信任系统 CA + 用户安装的证书 -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Cloudflare Workers 域名专用配置 -->
+    <domain-config>
+        <domain includeSubdomains="true">workers.dev</domain>
+        <domain includeSubdomains="true">xiaoyuchen031204.workers.dev</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Google Trust Services Root Certificate for Cloudflare -->
+            <certificates src="@raw/gts_root" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

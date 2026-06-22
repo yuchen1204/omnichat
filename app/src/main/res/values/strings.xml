@@ -123,6 +123,7 @@
     <string name="topbar_menu_open">Open menu</string>
     <string name="topbar_memory_syncing">Syncing memory</string>
     <string name="topbar_memory_sync">Sync Memory</string>
+    <string name="topbar_model_select">Select model</string>
 
     <!-- ── ui_text_keys.json: MCP ── -->
     <string name="mcp_stat_servers">Servers</string>
@@ -302,6 +303,12 @@
     <string name="sidebar_new_session_default">New Session</string>
     <string name="sidebar_chat_sessions">Chats</string>
     <string name="sidebar_no_sessions">No chats yet. Tap + to create</string>
+    <string name="sidebar_search_placeholder">Search sessions…</string>
+    <string name="sidebar_no_results">No matching sessions</string>
+    <string name="sidebar_date_today">Today</string>
+    <string name="sidebar_date_yesterday">Yesterday</string>
+    <string name="sidebar_date_2days">2 days ago</string>
+    <string name="sidebar_date_3days">3 days ago</string>
     <string name="sidebar_rename">Rename</string>
     <string name="sidebar_delete">Delete</string>
     <string name="dialog_delete_session_title">Delete Session</string>

@@ -105,6 +105,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isThinkingFinished by mutableStateOf(true)
         private set
 
+    /** 正在进行流式输出的会话 ID，用于判断是否在当前会话显示 StreamingBubble */
+    var streamingSessionId by mutableStateOf<Long?>(null)
+        private set
+
     // Streaming job reference — used to cancel streaming when user taps stop
     private var streamingJob: Job? = null
 
@@ -396,6 +400,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // 重置流式状态
         isStreaming = false
+        streamingSessionId = null
         currentStreamingThinking = ""
         currentStreamingBody = ""
         isThinkingFinished = true
@@ -1172,6 +1177,7 @@ Output the title now."""
         val sessionThinkingEffort = repository.getSessionById(sessionId)?.thinkingEffort
 
         isStreaming = true
+        streamingSessionId = sessionId
         currentStreamingThinking = ""
         currentStreamingBody = ""
         isThinkingFinished = true
@@ -1365,6 +1371,7 @@ Output the title now."""
         // 消息已入库且无后续 LLM 轮次时才停止流式状态，避免工具执行期间用户可输入
         if (!followUpTriggered) {
             isStreaming = false
+            streamingSessionId = null
         }
 
         if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {
@@ -1377,6 +1384,7 @@ Output the title now."""
         } finally {
             // BUG-015: 确保 isStreaming 在所有路径上都被重置，防止 UI 永久卡在加载状态
             isStreaming = false
+            streamingSessionId = null
             // 顶层调用完成 → 通知前台服务：回复已完成（5 秒后自动停止）
             if (isTopLevelStreaming) {
                 StreamingForegroundService.complete(getApplication())

@@ -119,6 +119,7 @@
     <string name="topbar_menu_open">打开菜单</string>
     <string name="topbar_memory_syncing">记忆同步中</string>
     <string name="topbar_memory_sync">同步记忆</string>
+    <string name="topbar_model_select">选择模型</string>
 
     <!-- ── ui_text_keys.json: MCP ── -->
     <string name="mcp_stat_servers">服务</string>
@@ -298,6 +299,12 @@
     <string name="sidebar_new_session_default">新会话</string>
     <string name="sidebar_chat_sessions">对话</string>
     <string name="sidebar_no_sessions">还没有对话，点击右上角新建</string>
+    <string name="sidebar_search_placeholder">搜索会话…</string>
+    <string name="sidebar_no_results">没有匹配的会话</string>
+    <string name="sidebar_date_today">今天</string>
+    <string name="sidebar_date_yesterday">昨天</string>
+    <string name="sidebar_date_2days">2天前</string>
+    <string name="sidebar_date_3days">3天前</string>
     <string name="sidebar_rename">重命名</string>
     <string name="sidebar_delete">删除</string>
     <string name="dialog_delete_session_title">删除会话</string>
