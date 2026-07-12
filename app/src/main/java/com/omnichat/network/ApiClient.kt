@@ -288,8 +288,32 @@ object ApiClient {
             val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
             if (effort != null) {
                 val apiEffort = if (effort == "max" || effort == "xhigh") "high" else effort
-                android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort (override=$thinkingEffortOverride, provider=${config.thinkingEffort}, enableThinking=${config.enableThinking})")
-                put("reasoning_effort", apiEffort)
+                val modelId = model.lowercase()
+                
+                when {
+                    modelId.contains("o1") || modelId.contains("o3") -> {
+                        android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort for OpenAI model")
+                        put("reasoning_effort", apiEffort)
+                    }
+                    modelId.contains("claude") -> {
+                        val budgetTokens = when(apiEffort) {
+                            "low" -> 2048
+                            "medium" -> 4096
+                            "high" -> 16000
+                            else -> 4096
+                        }
+                        android.util.Log.d("ApiClient", "thinking mode for Claude, budget_tokens=$budgetTokens")
+                        put("thinking", JSONObject().apply {
+                            put("type", "enabled")
+                            put("budget_tokens", budgetTokens)
+                        })
+                        // Claude requires max_tokens to be provided and > budget_tokens
+                        put("max_tokens", budgetTokens + 4096)
+                    }
+                    else -> {
+                        android.util.Log.d("ApiClient", "Skipped reasoning_effort for $model (unsupported or uses default)")
+                    }
+                }
             }
 
             if (tools != null && tools.length() > 0) {
@@ -368,8 +392,32 @@ object ApiClient {
             val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
             if (effort != null) {
                 val apiEffort = if (effort == "max" || effort == "xhigh") "high" else effort
-                android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort (override=$thinkingEffortOverride, provider=${config.thinkingEffort}, enableThinking=${config.enableThinking})")
-                put("reasoning_effort", apiEffort)
+                val modelId = model.lowercase()
+                
+                when {
+                    modelId.contains("o1") || modelId.contains("o3") -> {
+                        android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort for OpenAI model")
+                        put("reasoning_effort", apiEffort)
+                    }
+                    modelId.contains("claude") -> {
+                        val budgetTokens = when(apiEffort) {
+                            "low" -> 2048
+                            "medium" -> 4096
+                            "high" -> 16000
+                            else -> 4096
+                        }
+                        android.util.Log.d("ApiClient", "thinking mode for Claude, budget_tokens=$budgetTokens")
+                        put("thinking", JSONObject().apply {
+                            put("type", "enabled")
+                            put("budget_tokens", budgetTokens)
+                        })
+                        // Claude requires max_tokens to be provided and > budget_tokens
+                        put("max_tokens", budgetTokens + 4096)
+                    }
+                    else -> {
+                        android.util.Log.d("ApiClient", "Skipped reasoning_effort for $model (unsupported or uses default)")
+                    }
+                }
             }
 
             if (tools != null && tools.length() > 0) {
@@ -513,8 +561,32 @@ object ApiClient {
             val effort = thinkingEffortOverride?.takeIf { it != "none" } ?: config.thinkingEffort.takeIf { config.enableThinking && it != "none" }
             if (effort != null) {
                 val apiEffort = if (effort == "max" || effort == "xhigh") "high" else effort
-                android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort (override=$thinkingEffortOverride, provider=${config.thinkingEffort}, enableThinking=${config.enableThinking})")
-                put("reasoning_effort", apiEffort)
+                val modelId = model.lowercase()
+                
+                when {
+                    modelId.contains("o1") || modelId.contains("o3") -> {
+                        android.util.Log.d("ApiClient", "reasoning_effort=$apiEffort for OpenAI model")
+                        put("reasoning_effort", apiEffort)
+                    }
+                    modelId.contains("claude") -> {
+                        val budgetTokens = when(apiEffort) {
+                            "low" -> 2048
+                            "medium" -> 4096
+                            "high" -> 16000
+                            else -> 4096
+                        }
+                        android.util.Log.d("ApiClient", "thinking mode for Claude, budget_tokens=$budgetTokens")
+                        put("thinking", JSONObject().apply {
+                            put("type", "enabled")
+                            put("budget_tokens", budgetTokens)
+                        })
+                        // Claude requires max_tokens to be provided and > budget_tokens
+                        put("max_tokens", budgetTokens + 4096)
+                    }
+                    else -> {
+                        android.util.Log.d("ApiClient", "Skipped reasoning_effort for $model (unsupported or uses default)")
+                    }
+                }
             }
 
             if (tools != null && tools.length() > 0) {
