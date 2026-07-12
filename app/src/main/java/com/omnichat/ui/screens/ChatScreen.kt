@@ -76,7 +76,15 @@ import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.mcp.McpRuntimeManager
 import org.json.JSONArray
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.omnichat.agent.WorkflowUiState
+
+data class AttachedFile(
+    val name: String,
+    val text: String,
+    val path: String
+)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -113,6 +121,9 @@ fun ChatView(viewModel: ChatViewModel) {
     val windowSizeClass = LocalWindowSizeClass.current
     val isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
 
+    // 当前模型是否支持视觉
+    val currentModelHasVision = viewModel.currentModelHasVision
+
     // 工具栏展开状态
     var showToolbar by remember { mutableStateOf(false) }
     // 模型选择器弹窗
@@ -120,6 +131,45 @@ fun ChatView(viewModel: ChatViewModel) {
 
     // 图片选择相关状态（支持多图）
     var selectedImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // 文档选择相关状态
+    var selectedAttachedFiles by remember { mutableStateOf<List<AttachedFile>>(emptyList()) }
+    var isParsingFile by remember { mutableStateOf(false) }
+
+    // 文档选择器 launcher
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isParsingFile = true
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val result = com.omnichat.util.DocumentParser.parse(
+                        context = context,
+                        uri = uri,
+                        extractImages = currentModelHasVision
+                    )
+                    val fileName = com.omnichat.util.DocumentParser.getFileName(context, uri)
+                    withContext(Dispatchers.Main) {
+                        selectedAttachedFiles = selectedAttachedFiles + AttachedFile(
+                            name = fileName,
+                            text = result.text,
+                            path = uri.toString()
+                        )
+                        if (result.imagePaths.isNotEmpty()) {
+                            selectedImagePaths = selectedImagePaths + result.imagePaths
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        isParsingFile = false
+                    }
+                }
+            }
+        }
+    }
 
     // 编辑消息模式
     val editingMessageId = viewModel.editingMessageId
@@ -134,10 +184,6 @@ fun ChatView(viewModel: ChatViewModel) {
             }
         }
     }
-
-    // 当前模型是否支持视觉
-    val currentModelHasVision = viewModel.currentModelHasVision
-
 
 
     // 图片选择器 (Photo Picker - 多选)
@@ -636,6 +682,46 @@ fun ChatView(viewModel: ChatViewModel) {
                                 }
                             }
 
+                            // 上传文件按钮
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        documentPickerLauncher.launch(
+                                            arrayOf(
+                                                "text/plain",
+                                                "application/pdf",
+                                                "application/vnd.ms-powerpoint",
+                                                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                                            )
+                                        )
+                                    },
+                                shape = toolBtnShape,
+                                border = toolBtnBorder,
+                                colors = toolBtnColors
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AttachFile,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = uiText("chat.upload.file", "上传文件"),
+                                        fontSize = (12 * fs).sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
 
                         }
 
@@ -749,6 +835,101 @@ fun ChatView(viewModel: ChatViewModel) {
                             }
 
                             Spacer(modifier = Modifier.height(4.dp))
+                        }
+                    }
+                }
+
+                // ── 已选文件预览 ─────────────────────────────────
+                AnimatedVisibility(
+                    visible = selectedAttachedFiles.isNotEmpty() || isParsingFile,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = uiText("chat.files.attached", "已添加文件") + " (${selectedAttachedFiles.size})",
+                                fontSize = (12 * fs).sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            if (selectedAttachedFiles.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { selectedAttachedFiles = emptyList() },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = uiText("chat.remove.files", "移除所有文件"),
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (isParsingFile) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        // 文件网格/列表
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            selectedAttachedFiles.forEachIndexed { index, file ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .border(
+                                            0.5.dp,
+                                            MaterialTheme.colorScheme.outlineVariant,
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Description,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = file.name,
+                                        fontSize = (12 * fs).sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            selectedAttachedFiles = selectedAttachedFiles.toMutableList().apply {
+                                                removeAt(index)
+                                            }
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = stringResource(R.string.remove),
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -905,7 +1086,7 @@ fun ChatView(viewModel: ChatViewModel) {
                         onValueChange = { textInput = it },
                         enabled = !isStreaming && !subAgentActive,
                         placeholder = {
-                            val hint = if (selectedImagePaths.isNotEmpty()) {
+                            val hint = if (selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty()) {
                                 uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
                             } else {
                                 uiText("chat.input.hint", R.string.chat_input_hint)
@@ -921,14 +1102,24 @@ fun ChatView(viewModel: ChatViewModel) {
                         keyboardActions = KeyboardActions(onSend = {
                             val toSend = textInput.trim()
                             val hasImage = selectedImagePaths.isNotEmpty()
-                            if ((toSend.isNotBlank() || hasImage) && !isStreaming && !subAgentActive) {
+                            val hasDocs = selectedAttachedFiles.isNotEmpty()
+                            if ((toSend.isNotBlank() || hasImage || hasDocs) && !isStreaming && !subAgentActive) {
                                 if (isEditing) {
                                     viewModel.submitEdit(toSend)
                                 } else {
-                                    viewModel.sendMessageWithImage(toSend, selectedImagePaths)
+                                    val finalPrompt = buildString {
+                                        selectedAttachedFiles.forEach { file ->
+                                            append("<document_attachment name=\"${file.name}\">\n")
+                                            append(file.text)
+                                            append("\n</document_attachment>\n\n")
+                                        }
+                                        append(toSend)
+                                    }
+                                    viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
                                 }
                                 textInput = ""
                                 selectedImagePaths = emptyList()
+                                selectedAttachedFiles = emptyList()
                                 showToolbar = false
                                 keyboardController?.hide()
                             }
@@ -955,14 +1146,24 @@ fun ChatView(viewModel: ChatViewModel) {
                                         // Enter: 发送消息
                                         val toSend = textInput.trim()
                                         val hasImage = selectedImagePaths.isNotEmpty()
-                                        if ((toSend.isNotBlank() || hasImage) && !isStreaming && !subAgentActive) {
+                                        val hasDocs = selectedAttachedFiles.isNotEmpty()
+                                        if ((toSend.isNotBlank() || hasImage || hasDocs) && !isStreaming && !subAgentActive) {
                                             if (isEditing) {
                                                 viewModel.submitEdit(toSend)
                                             } else {
-                                                viewModel.sendMessageWithImage(toSend, selectedImagePaths)
+                                                val finalPrompt = buildString {
+                                                    selectedAttachedFiles.forEach { file ->
+                                                        append("<document_attachment name=\"${file.name}\">\n")
+                                                        append(file.text)
+                                                        append("\n</document_attachment>\n\n")
+                                                    }
+                                                    append(toSend)
+                                                }
+                                                viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
                                             }
                                             textInput = ""
                                             selectedImagePaths = emptyList()
+                                            selectedAttachedFiles = emptyList()
                                             showToolbar = false
                                             keyboardController?.hide()
                                         }
@@ -973,56 +1174,66 @@ fun ChatView(viewModel: ChatViewModel) {
                                 }
                             }
                             .testTag("chat_input_field")
-                    )
+                     )
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                     Spacer(modifier = Modifier.width(10.dp))
 
 
 
-                    // Send button / Stop button
-                    if (isStreaming || subAgentActive) {
-                        // Stop button — visible only while streaming
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(MaterialTheme.colorScheme.error)
-                                .clickable { viewModel.stopStreaming() }
-                                .testTag("chat_stop_button"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = uiText("chat.stop.contentDescription", R.string.chat_stop_contentDescription),
-                                tint = MaterialTheme.colorScheme.onError,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else {
-                        // Send button
-                        val canSend = textInput.isNotBlank() || selectedImagePaths.isNotEmpty()
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(
-                                    if (canSend) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceVariant
-                                )
-                                .clickable(enabled = canSend) {
-                                    val toSend = textInput.trim()
-                                    val hasImage = selectedImagePaths.isNotEmpty()
-                                    if (toSend.isNotBlank() || hasImage) {
-                                        if (isEditing) {
-                                            viewModel.submitEdit(toSend)
-                                        } else {
-                                            viewModel.sendMessageWithImage(toSend, selectedImagePaths)
-                                        }
-                                        textInput = ""
-                                        selectedImagePaths = emptyList()
-                                        showToolbar = false
-                                    }
-                                }
+                     // Send button / Stop button
+                     if (isStreaming || subAgentActive) {
+                         // Stop button — visible only while streaming
+                         Box(
+                             modifier = Modifier
+                                 .size(44.dp)
+                                 .clip(RoundedCornerShape(22.dp))
+                                 .background(MaterialTheme.colorScheme.error)
+                                 .clickable { viewModel.stopStreaming() }
+                                 .testTag("chat_stop_button"),
+                             contentAlignment = Alignment.Center
+                         ) {
+                             Icon(
+                                 imageVector = Icons.Default.Close,
+                                 contentDescription = uiText("chat.stop.contentDescription", R.string.chat_stop_contentDescription),
+                                 tint = MaterialTheme.colorScheme.onError,
+                                 modifier = Modifier.size(20.dp)
+                             )
+                         }
+                     } else {
+                         // Send button
+                         val canSend = textInput.isNotBlank() || selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty()
+                         Box(
+                             modifier = Modifier
+                                 .size(44.dp)
+                                 .clip(RoundedCornerShape(22.dp))
+                                 .background(
+                                     if (canSend) MaterialTheme.colorScheme.primary
+                                     else MaterialTheme.colorScheme.surfaceVariant
+                                 )
+                                 .clickable(enabled = canSend) {
+                                     val toSend = textInput.trim()
+                                     val hasImage = selectedImagePaths.isNotEmpty()
+                                     val hasDocs = selectedAttachedFiles.isNotEmpty()
+                                     if (toSend.isNotBlank() || hasImage || hasDocs) {
+                                         if (isEditing) {
+                                             viewModel.submitEdit(toSend)
+                                         } else {
+                                             val finalPrompt = buildString {
+                                                 selectedAttachedFiles.forEach { file ->
+                                                     append("<document_attachment name=\"${file.name}\">\n")
+                                                     append(file.text)
+                                                     append("\n</document_attachment>\n\n")
+                                                 }
+                                                 append(toSend)
+                                             }
+                                             viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
+                                         }
+                                         textInput = ""
+                                         selectedImagePaths = emptyList()
+                                         selectedAttachedFiles = emptyList()
+                                         showToolbar = false
+                                     }
+                                 }
                                 .testTag("chat_send_button"),
                             contentAlignment = Alignment.Center
                         ) {
@@ -1282,6 +1493,21 @@ fun ThinkingProcessPanel(
 }
 
 
+data class ParsedUserMessage(
+    val mainText: String,
+    val attachedDocuments: List<String>
+)
+
+fun parseUserMessageWithDocuments(content: String): ParsedUserMessage {
+    val docRegex = "<document_attachment name=\"(.*?)\">.*?</document_attachment>\\n*".toRegex(RegexOption.DOT_MATCHES_ALL)
+    val names = mutableListOf<String>()
+    val mainText = docRegex.replace(content) { matchResult ->
+        names.add(matchResult.groupValues[1])
+        ""
+    }
+    return ParsedUserMessage(mainText = mainText.trim(), attachedDocuments = names)
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BubbleMessage(
@@ -1407,10 +1633,42 @@ fun BubbleMessage(
                                     }
                                 }
                             }
+                            // 显示文档附件
+                            val parsedUserMsg = remember(message.content) { parseUserMessageWithDocuments(message.content) }
+                            if (parsedUserMsg.attachedDocuments.isNotEmpty()) {
+                                parsedUserMsg.attachedDocuments.forEach { docName ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AttachFile,
+                                                contentDescription = null,
+                                                tint = textColor,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = docName,
+                                                color = textColor,
+                                                fontSize = (13 * chatFs).sp,
+                                                fontWeight = FontWeight.Medium,
+                                                fontFamily = resolvedFontFamily
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             // 显示文本（如果有）
-                            if (message.content.isNotBlank()) {
+                            if (parsedUserMsg.mainText.isNotBlank()) {
                                 Text(
-                                    text = message.content,
+                                    text = parsedUserMsg.mainText,
                                     color = textColor,
                                     fontSize = (15 * chatFs).sp,
                                     lineHeight = (22 * chatFs).sp,

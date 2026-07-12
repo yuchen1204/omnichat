@@ -192,6 +192,7 @@ dependencies {
   // Apache POI for document generation
   implementation(libs.poi)
   implementation(libs.poi.ooxml)
+  implementation(libs.pdfbox.android)
   // 图片加载和相机
   implementation(libs.coil.compose)
   implementation(libs.androidx.camera.camera2)
