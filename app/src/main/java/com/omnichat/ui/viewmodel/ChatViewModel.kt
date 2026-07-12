@@ -1248,10 +1248,46 @@ Output the title now."""
                             
                             val id = item.optString("id")
                             if (id.isNotEmpty() && id != "null") existing.put("id", id)
+
+                            // Preserve thought_signature for Gemini thinking models from all potential places.
+                            var thoughtSignatureItem = item.optString("thought_signature")
+                            if (thoughtSignatureItem.isEmpty() || thoughtSignatureItem == "null") {
+                                val ec = item.optJSONObject("extra_content")
+                                val g = ec?.optJSONObject("google")
+                                val extraSig = g?.optString("thought_signature")
+                                if (!extraSig.isNullOrEmpty() && extraSig != "null") {
+                                    thoughtSignatureItem = extraSig
+                                }
+                            }
+                            if (thoughtSignatureItem.isNotEmpty() && thoughtSignatureItem != "null") {
+                                val currentItemSignature = existing.optString("thought_signature", "")
+                                existing.put("thought_signature", currentItemSignature + thoughtSignatureItem)
+                            }
+
+                            // Preserve thought for Gemini thinking models.
+                            val thoughtItem = item.optString("thought")
+                            if (thoughtItem.isNotEmpty() && thoughtItem != "null") {
+                                val currentItemThought = existing.optString("thought", "")
+                                existing.put("thought", currentItemThought + thoughtItem)
+                            }
                             
                             val function = item.optJSONObject("function")
                             if (function != null) {
                                 val existingFunc = existing.optJSONObject("function") ?: org.json.JSONObject().also { existing.put("function", it) }
+                                
+                                // Google's OpenAI compatibility layer might place it inside the function object
+                                val thoughtSignatureFunc = function.optString("thought_signature")
+                                if (thoughtSignatureFunc.isNotEmpty() && thoughtSignatureFunc != "null") {
+                                    val currentFuncSignature = existingFunc.optString("thought_signature", "")
+                                    existingFunc.put("thought_signature", currentFuncSignature + thoughtSignatureFunc)
+                                }
+
+                                val thoughtFunc = function.optString("thought")
+                                if (thoughtFunc.isNotEmpty() && thoughtFunc != "null") {
+                                    val currentFuncThought = existingFunc.optString("thought", "")
+                                    existingFunc.put("thought", currentFuncThought + thoughtFunc)
+                                }
+
                                 val name = function.optString("name")
                                 if (name.isNotEmpty() && name != "null") existingFunc.put("name", name)
                                 val args = function.optString("arguments")
@@ -1262,6 +1298,14 @@ Output the title now."""
                             }
                         }
                     } catch (e: Exception) { e.printStackTrace() }
+                } else if (chunk.startsWith("THOUGHT_SIG:")) {
+                    // Standalone thought_signature chunk from Gemini (arrived without tool_calls).
+                    // Inject into all accumulated tool calls that don't have a signature yet.
+                    val sig = chunk.substringAfter("THOUGHT_SIG:")
+                    for (tc in accumulatedToolCalls.values) {
+                        val currentSig = tc.optString("thought_signature", "")
+                        tc.put("thought_signature", currentSig + sig)
+                    }
                 } else if (chunk.startsWith("REASONING:")) {
                     accumulatedReasoningContent += chunk.substringAfter("REASONING:")
                     currentStreamingThinking = accumulatedReasoningContent

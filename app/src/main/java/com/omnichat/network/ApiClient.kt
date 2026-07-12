@@ -607,7 +607,45 @@ object ApiClient {
                         put("tool_call_id", msg.toolCallId)
                     }
                     if (msg.toolCallsJson != null) {
-                        put("tool_calls", JSONArray(msg.toolCallsJson))
+                        val toolCallsArr = JSONArray(msg.toolCallsJson)
+                        // Gemini thinking models require thought_signature in functionCall parts.
+                        // If missing (e.g. stripped by middleware or not captured from stream),
+                        // inject the bypass value to prevent 400 errors.
+                        for (i in 0 until toolCallsArr.length()) {
+                            val tc = toolCallsArr.optJSONObject(i) ?: continue
+                            
+                            // Find any existing thought_signature
+                            var existingSig: String? = null
+                            if (tc.has("thought_signature")) {
+                                existingSig = tc.optString("thought_signature")
+                            }
+                            if (existingSig.isNullOrBlank()) {
+                                val fn = tc.optJSONObject("function")
+                                if (fn != null && fn.has("thought_signature")) {
+                                    existingSig = fn.optString("thought_signature")
+                                }
+                            }
+                            if (existingSig.isNullOrBlank()) {
+                                val ec = tc.optJSONObject("extra_content")
+                                val g = ec?.optJSONObject("google")
+                                if (g != null && g.has("thought_signature")) {
+                                    existingSig = g.optString("thought_signature")
+                                }
+                            }
+                            
+                            val finalSig = if (existingSig.isNullOrBlank()) {
+                                "skip_thought_signature_validator"
+                            } else {
+                                existingSig
+                            }
+                            
+                            // Always output both formats (flat and nested extra_content) for maximum compatibility with Gemini
+                            tc.put("thought_signature", finalSig)
+                            val extraContent = tc.optJSONObject("extra_content") ?: JSONObject().also { tc.put("extra_content", it) }
+                            val google = extraContent.optJSONObject("google") ?: JSONObject().also { extraContent.put("google", it) }
+                            google.put("thought_signature", finalSig)
+                        }
+                        put("tool_calls", toolCallsArr)
                     }
                 }
 
@@ -673,7 +711,8 @@ object ApiClient {
                             val dataJson = JSONObject(dataContent)
                             val choices = dataJson.optJSONArray("choices")
                             if (choices != null && choices.length() > 0) {
-                                val delta = choices.optJSONObject(0)?.optJSONObject("delta")
+                                val choiceObj = choices.optJSONObject(0)
+                                val delta = choiceObj?.optJSONObject("delta")
                                 
                                 // 1. Handle content
                                 val content = delta?.optString("content")
@@ -690,8 +729,87 @@ object ApiClient {
                                 // 3. Handle tool_calls
                                 val toolCalls = delta?.optJSONArray("tool_calls")
                                 if (toolCalls != null && toolCalls.length() > 0) {
+                                    // Capture thought_signature from all possible locations in Gemini response.
+                                    // Gemini's OpenAI-compat endpoint may place it at choice level, delta level,
+                                    // or inside extra_content rather than in each tool_call object.
+                                    var capturedThoughtSig: String? = null
+
+                                    // Check choice-level thought_signature
+                                    val choiceSig = choiceObj?.optString("thought_signature")
+                                    if (!choiceSig.isNullOrEmpty() && choiceSig != "null") {
+                                        capturedThoughtSig = choiceSig
+                                    }
+
+                                    // Check delta-level thought_signature
+                                    if (capturedThoughtSig == null) {
+                                        val deltaSig = delta?.optString("thought_signature")
+                                        if (!deltaSig.isNullOrEmpty() && deltaSig != "null") {
+                                            capturedThoughtSig = deltaSig
+                                        }
+                                    }
+
+                                    // Check choice-level or delta-level extra_content.google.thought_signature
+                                    if (capturedThoughtSig == null) {
+                                        val extraContent = choiceObj?.optJSONObject("extra_content") ?: delta?.optJSONObject("extra_content")
+                                        val googleExtra = extraContent?.optJSONObject("google")
+                                        val extraSig = googleExtra?.optString("thought_signature")
+                                        if (!extraSig.isNullOrEmpty() && extraSig != "null") {
+                                            capturedThoughtSig = extraSig
+                                        }
+                                    }
+
+                                    // Check individual tool_call extra_content.google.thought_signature in delta
+                                    if (capturedThoughtSig == null) {
+                                        for (j in 0 until toolCalls.length()) {
+                                            val tc = toolCalls.optJSONObject(j) ?: continue
+                                            val extraContent = tc.optJSONObject("extra_content")
+                                            val googleExtra = extraContent?.optJSONObject("google")
+                                            val extraSig = googleExtra?.optString("thought_signature")
+                                            if (!extraSig.isNullOrEmpty() && extraSig != "null") {
+                                                capturedThoughtSig = extraSig
+                                                break
+                                            }
+                                        }
+                                    }
+
+                                    // If we found a thought_signature outside tool_calls, inject it into
+                                    // each tool call object so the ViewModel can accumulate it properly.
+                                    if (capturedThoughtSig != null) {
+                                        for (i in 0 until toolCalls.length()) {
+                                            val tc = toolCalls.optJSONObject(i)
+                                            if (tc != null && !tc.has("thought_signature")) {
+                                                tc.put("thought_signature", capturedThoughtSig)
+                                            }
+                                        }
+                                    }
+
                                     // We prefix tool calls with a special marker for the ViewModel to catch
                                     emit("TOOL_CALL_DELTA:${toolCalls.toString()}")
+                                } else {
+                                    // Gemini may also emit thought_signature in chunks without tool_calls.
+                                    // Capture and forward standalone thought_signature for accumulation.
+                                    var standaloneSig: String? = null
+                                    val choiceSig2 = choiceObj?.optString("thought_signature")
+                                    if (!choiceSig2.isNullOrEmpty() && choiceSig2 != "null") {
+                                        standaloneSig = choiceSig2
+                                    }
+                                    if (standaloneSig == null) {
+                                        val deltaSig2 = delta?.optString("thought_signature")
+                                        if (!deltaSig2.isNullOrEmpty() && deltaSig2 != "null") {
+                                            standaloneSig = deltaSig2
+                                        }
+                                    }
+                                    if (standaloneSig == null) {
+                                        val extraContent2 = choiceObj?.optJSONObject("extra_content") ?: delta?.optJSONObject("extra_content")
+                                        val googleExtra2 = extraContent2?.optJSONObject("google")
+                                        val extraSig2 = googleExtra2?.optString("thought_signature")
+                                        if (!extraSig2.isNullOrEmpty() && extraSig2 != "null") {
+                                            standaloneSig = extraSig2
+                                        }
+                                    }
+                                    if (standaloneSig != null) {
+                                        emit("THOUGHT_SIG:$standaloneSig")
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
