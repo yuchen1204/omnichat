@@ -1,7 +1,6 @@
 package com.omnichat.tool
 
 import com.omnichat.mcp.McpRuntimeManager
-import com.omnichat.mcp.ToolSchemaDsl.schema
 import org.json.JSONObject
 
 /**
@@ -16,6 +15,8 @@ class McpRemoteTool(
     override val inputSchema: JSONObject,
     val serverId: Long,
     val serverName: String,
+    /** Name expected by the remote MCP server; [name] is globally unique in ToolRegistry. */
+    val remoteName: String,
     private val runtimeManager: McpRuntimeManager
 ) : Tool {
 
@@ -31,7 +32,7 @@ class McpRemoteTool(
     override val isConcurrencySafe: Boolean = false
     override val requiresSession: Boolean = false
 
-    override fun userFacingName(): String = "${serverName}/${name}"
+    override fun userFacingName(): String = "${serverName}/${remoteName}"
 
     // ══════════════════════════════════════════════════════════════
     // 执行
@@ -43,8 +44,8 @@ class McpRemoteTool(
         sessionId: Long?
     ): JSONObject {
         // 通过 McpRuntimeManager 调用远程工具
-        val result = runtimeManager.callRemoteTool(serverId, name, arguments, sessionId)
+        val result = runtimeManager.callRemoteTool(serverId, remoteName, arguments, sessionId)
 
-        return result ?: ToolExecutor.errorResponse("Remote tool $name returned null")
+        return result ?: ToolExecutor.errorResponse("Remote tool $remoteName returned null")
     }
 }

@@ -68,6 +68,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setSidebarExpanded(expanded: Boolean) {
+        viewModelScope.launch {
+            val current = repository.getUISettings() ?: UISettings()
+            if (current.sidebarExpanded != expanded) {
+                repository.upsertUISettings(current.copy(sidebarExpanded = expanded))
+            }
+        }
+    }
+
     // ── 导出/导入状态 ────────────────────────────────────────────────────
 
     var exportImportStatus by mutableStateOf<ExportImportStatus>(ExportImportStatus.Idle)

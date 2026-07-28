@@ -15,9 +15,19 @@ class CloudBackupWorker(
         const val WORK_NAME = "cloud_backup_periodic"
 
         /**
-         * Schedule periodic cloud backup with the given frequency.
-         * Pass "MANUAL" to cancel periodic work.
+         * Reconcile the unique periodic work with the persisted setting.
+         * This is the startup entry point so process creation cannot overwrite
+         * a user-selected cadence with the H6 default.
          */
+        suspend fun reconcilePeriodicWork(context: Context) {
+            val frequency = AppDatabase.getDatabase(context)
+                .uiSettingsDao()
+                .getSettings()
+                ?.cloudBackupFrequency
+                ?: "H6"
+            enqueuePeriodicWork(context, frequency)
+        }
+
         fun enqueuePeriodicWork(context: Context, frequency: String = "H6") {
             if (frequency == "MANUAL") {
                 cancelPeriodicWork(context)

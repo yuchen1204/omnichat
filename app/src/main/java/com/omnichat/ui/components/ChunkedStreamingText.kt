@@ -15,7 +15,30 @@ import dev.jeziellago.compose.markdowntext.MarkdownText
 
 /**
  * A component that renders Markdown in chunks to optimize streaming performance.
+ *
+ * Stable chunks keep their Markdown formatting. The currently growing chunk uses a
+ * lightweight Text fallback once it becomes large, preventing repeated full
+ * Markdown parsing for a long paragraph while tokens are arriving.
  */
+private const val LIVE_MARKDOWN_MAX_CHARS = 800
+
+private class StreamingMarkdownCache {
+    private val parser = MarkdownChunkParser()
+    private var previousText = ""
+    private var previousResult = ChunkParseResult(emptyList(), "")
+
+    fun parse(text: String): ChunkParseResult {
+        val result = if (text.startsWith(previousText)) {
+            parser.parseIncremental(text, previousResult)
+        } else {
+            parser.parse(text)
+        }
+        previousText = text
+        previousResult = result
+        return result
+    }
+}
+
 @Composable
 fun ChunkedStreamingText(
     text: String,
@@ -25,30 +48,30 @@ fun ChunkedStreamingText(
     fontFamily: FontFamily = FontFamily.Default,
     modifier: Modifier = Modifier
 ) {
-    val parser = remember { MarkdownChunkParser() }
+    val cache = remember { StreamingMarkdownCache() }
     val highlightBg = MaterialTheme.colorScheme.surfaceVariant
     val highlightText = MaterialTheme.colorScheme.onSurfaceVariant
-
-    // Incremental parse: reuse previously locked chunks and only re-parse the tail
-    var previousResult by remember { mutableStateOf(ChunkParseResult(emptyList(), "")) }
-    val result = remember(text) {
-        val newResult = parser.parseIncremental(text, previousResult)
-        previousResult = newResult
-        newResult
+    val markdownStyle = remember(textColor, fontSize, lineHeight, fontFamily) {
+        TextStyle(
+            color = textColor,
+            fontSize = fontSize,
+            lineHeight = lineHeight,
+            fontFamily = fontFamily
+        )
     }
 
+    // Incremental parse: reuse previously locked chunks and only re-parse the tail.
+    // The cache is deliberately not Compose state: parsing is derived from [text],
+    // and writing state during composition would schedule an extra recomposition.
+    val result = remember(text) { cache.parse(text) }
+
     Column(modifier = modifier) {
-        // 1. Render locked chunks
-        for (chunk in result.lockedChunks) {
-            key(chunk) {
+        // 1. Render locked chunks. Their index is stable because chunks are append-only.
+        result.lockedChunks.forEachIndexed { index, chunk ->
+            key(index) {
                 MarkdownText(
                     markdown = chunk,
-                    style = TextStyle(
-                        color = textColor,
-                        fontSize = fontSize,
-                        lineHeight = lineHeight,
-                        fontFamily = fontFamily
-                    ),
+                    style = markdownStyle,
                     syntaxHighlightColor = highlightBg,
                     syntaxHighlightTextColor = highlightText,
                     modifier = Modifier.fillMaxWidth()
@@ -56,30 +79,26 @@ fun ChunkedStreamingText(
             }
         }
 
-        // 2. Render the active chunk
+        // 2. Render the active chunk. Large / structurally incomplete Markdown is
+        // temporarily plain text; the final persisted message still renders fully
+        // formatted Markdown after streaming ends.
         if (result.activeChunk.isNotEmpty()) {
-            val isActiveChunkComplex = remember(result.activeChunk) {
-                result.activeChunk.contains("```") || result.activeChunk.contains("|")
+            val usePlainText = remember(result.activeChunk) {
+                result.activeChunk.length > LIVE_MARKDOWN_MAX_CHARS ||
+                    result.activeChunk.contains("```") ||
+                    result.activeChunk.contains("|")
             }
 
-            if (isActiveChunkComplex) {
+            if (usePlainText) {
                 Text(
                     text = result.activeChunk,
-                    color = textColor,
-                    fontSize = fontSize,
-                    lineHeight = lineHeight,
-                    fontFamily = fontFamily,
+                    style = markdownStyle,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
                 MarkdownText(
                     markdown = result.activeChunk,
-                    style = TextStyle(
-                        color = textColor,
-                        fontSize = fontSize,
-                        lineHeight = lineHeight,
-                        fontFamily = fontFamily
-                    ),
+                    style = markdownStyle,
                     syntaxHighlightColor = highlightBg,
                     syntaxHighlightTextColor = highlightText,
                     modifier = Modifier.fillMaxWidth()

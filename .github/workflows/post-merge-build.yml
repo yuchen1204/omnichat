@@ -29,11 +29,11 @@ jobs:
             echo "is_merge=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         if: steps.check.outputs.is_merge == 'true'
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Setup Android SDK
@@ -62,6 +62,10 @@ jobs:
       - name: Grant execute permission for gradlew
         if: steps.check.outputs.is_merge == 'true'
         run: chmod +x gradlew
+
+      - name: Run unit tests and lint
+        if: steps.check.outputs.is_merge == 'true'
+        run: ./gradlew testDebugUnitTest lintDebug
 
       - name: Build Debug APK
         if: steps.check.outputs.is_merge == 'true'

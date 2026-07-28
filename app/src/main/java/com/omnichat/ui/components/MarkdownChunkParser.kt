@@ -11,7 +11,12 @@ data class ChunkParseResult(
     /**
      * The remaining part of the text that is still being streamed.
      */
-    val activeChunk: String
+    val activeChunk: String,
+    /**
+     * Cached length of [lockedChunks] to keep incremental parsing O(1) for the
+     * already-stable prefix.
+     */
+    val lockedTextLength: Int = lockedChunks.sumOf { it.length }
 )
 
 /**
@@ -36,8 +41,9 @@ class MarkdownChunkParser {
             return parse(fullText)
         }
 
-        // Find how much of the text is already locked
-        val lockedLength = previousResult.lockedChunks.sumOf { it.length }
+        // Find how much of the text is already locked. This value is cached so
+        // each streaming update does not rescan every earlier chunk.
+        val lockedLength = previousResult.lockedTextLength
 
         if (lockedLength >= fullText.length) return previousResult
 
@@ -47,7 +53,11 @@ class MarkdownChunkParser {
 
         // Merge: keep all previously locked chunks, add newly locked from tail, plus new active
         val newLocked = previousResult.lockedChunks + tailResult.lockedChunks
-        return ChunkParseResult(newLocked, tailResult.activeChunk)
+        return ChunkParseResult(
+            lockedChunks = newLocked,
+            activeChunk = tailResult.activeChunk,
+            lockedTextLength = lockedLength + tailResult.lockedTextLength
+        )
     }
 
     /**
@@ -60,16 +70,18 @@ class MarkdownChunkParser {
 
         val lockedChunks = mutableListOf<String>()
         var remaining = fullText
+        var lockedTextLength = 0
 
         while (true) {
             val boundary = findChunkBoundary(remaining)
             if (boundary == -1 || boundary == 0) break
 
             lockedChunks.add(remaining.substring(0, boundary))
+            lockedTextLength += boundary
             remaining = remaining.substring(boundary)
         }
 
-        return ChunkParseResult(lockedChunks, remaining)
+        return ChunkParseResult(lockedChunks, remaining, lockedTextLength)
     }
 
     /**

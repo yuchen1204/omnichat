@@ -1,9 +1,26 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
 }
+
+val localSigningProperties = Properties().apply {
+  val propertiesFile = rootProject.file("keystore.properties")
+  if (propertiesFile.isFile) {
+    propertiesFile.inputStream().use(::load)
+  }
+}
+fun signingValue(name: String): String? =
+  System.getenv(name)?.takeIf { it.isNotBlank() }
+    ?: localSigningProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+
+val releaseKeystorePath = signingValue("KEYSTORE_PATH")
+val releaseStorePassword = signingValue("STORE_PASSWORD")
+val releaseKeyPassword = signingValue("KEY_PASSWORD")
+val releaseKeyAlias = signingValue("KEY_ALIAS") ?: "upload"
 
 android {
   namespace = "com.omnichat"
@@ -34,11 +51,12 @@ android {
 
   signingConfigs {
     create("release") {
-      storeFile = file("${rootDir}/my-upload-key.jks")
-      // CI uses env vars (STORE_PASSWORD / KEY_PASSWORD); local falls back to default
-      storePassword = System.getenv("STORE_PASSWORD") ?: "omnichat123"
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD") ?: "omnichat123"
+      // Do not provide a repository key or a fallback password. The release task
+      // validates these values before packaging a distributable artifact.
+      releaseKeystorePath?.let { storeFile = file(it) }
+      storePassword = releaseStorePassword
+      keyAlias = releaseKeyAlias
+      keyPassword = releaseKeyPassword
     }
   }
 
@@ -161,6 +179,23 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
 // Lint 任务也依赖 generateUiTextKeys（读取了 assets 目录的输出）
 tasks.matching { it.name.contains("Lint") || it.name.contains("lint") }.configureEach {
     dependsOn(generateUiTextKeys)
+}
+
+ksp {
+  arg("room.schemaLocation", file("schemas").absolutePath)
+}
+
+tasks.matching { it.name == "validateSigningRelease" }.configureEach {
+  doFirst {
+    check(
+      releaseKeystorePath != null &&
+        releaseStorePassword != null &&
+        releaseKeyPassword != null
+    ) {
+      "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, and KEY_PASSWORD " +
+        "through environment variables or an ignored keystore.properties file."
+    }
+  }
 }
 
 dependencies {

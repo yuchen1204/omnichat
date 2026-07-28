@@ -32,56 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Context
 import com.omnichat.R
+import com.omnichat.data.Message
+import com.omnichat.ui.presentation.ToolCallInfo
 import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.resolveFontFamily
 import com.omnichat.ui.theme.uiText
-import org.json.JSONArray
 import org.json.JSONObject
-
-// Adapts message types across Chat and Workspace sessions
-data class UIModelToolMessage(
-    val role: String,
-    val content: String,
-    val toolCallId: String?,
-    val toolCallsJson: String?,
-    val timestamp: Long
-)
-
-fun com.omnichat.data.Message.toUIModel() = UIModelToolMessage(role, content, toolCallId, toolCallsJson, timestamp)
-
-data class ToolCallInfo(
-    val id: String,
-    val name: String,
-    val arguments: JSONObject
-)
-
-// Helper to pre-scan all messages and build toolCallId lookup map
-fun buildToolCallLookup(messages: List<UIModelToolMessage>): Map<String, ToolCallInfo> {
-    val lookup = mutableMapOf<String, ToolCallInfo>()
-    messages.forEach { msg ->
-        if (msg.role == "assistant" && !msg.toolCallsJson.isNullOrBlank()) {
-            try {
-                val arr = JSONArray(msg.toolCallsJson)
-                for (i in 0 until arr.length()) {
-                    val item = arr.optJSONObject(i) ?: continue
-                    val id = item.optString("id")
-                    val function = item.optJSONObject("function") ?: continue
-                    val name = function.optString("name")
-                    val argsStr = function.optString("arguments", "{}")
-                    val args = try {
-                        JSONObject(argsStr)
-                    } catch (_: Exception) {
-                        JSONObject()
-                    }
-                    if (id.isNotEmpty() && name.isNotEmpty()) {
-                        lookup[id] = ToolCallInfo(id, name, args)
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-    }
-    return lookup
-}
 
 fun getToolIcon(name: String): ImageVector {
     return when (name) {
@@ -192,8 +148,8 @@ fun formatToolCallSummary(context: Context, name: String, args: JSONObject): Str
 
 @Composable
 fun ToolGroupCard(
-    messages: List<UIModelToolMessage>,
-    allMessages: List<UIModelToolMessage>,
+    messages: List<Message>,
+    lookup: Map<String, ToolCallInfo>,
     modifier: Modifier = Modifier
 ) {
     val uiSettings = LocalUISettings.current
@@ -202,7 +158,6 @@ fun ToolGroupCard(
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
     val context = LocalContext.current
 
-    val lookup = remember(allMessages) { buildToolCallLookup(allMessages) }
     val totalCount = messages.size
     
     var isExpanded by remember { mutableStateOf(false) }

@@ -225,10 +225,10 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val database = AppDatabase.getDatabase(getApplication())
             val current = database.uiSettingsDao().getSettings()
-            current?.let {
-                database.uiSettingsDao().upsertSettings(it.copy(cloudBackupFrequency = frequency))
-            }
-            CloudBackupWorker.enqueuePeriodicWork(getApplication(), frequency)
+            database.uiSettingsDao().upsertSettings(
+                (current ?: com.omnichat.data.UISettings()).copy(cloudBackupFrequency = frequency)
+            )
+            CloudBackupWorker.reconcilePeriodicWork(getApplication())
         }
     }
 

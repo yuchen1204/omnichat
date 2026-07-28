@@ -4,11 +4,17 @@ import android.content.Context
 import com.omnichat.data.AppDatabase
 import com.omnichat.data.AppRepository
 import com.omnichat.mcp.ToolSchemaDsl.schema
+import com.omnichat.memory.MemoryEngine
+import com.omnichat.memory.MemorySearchResult
+import com.omnichat.network.ApiClient
 import com.omnichat.tool.BuiltinTool
 import org.json.JSONObject
 
 /**
  * 记忆搜索工具。
+ *
+ * 委托给 MemoryEngine.searchMemory 执行搜索，支持 embedding 语义评分（当配置了 embedding 模型时）
+ * 和 bigram Jaccard 降级评分，以及关联图谱 BFS 展开。
  */
 object SearchMemoryTool : BuiltinTool(
     name = "search_memory",
@@ -40,93 +46,31 @@ object SearchMemoryTool : BuiltinTool(
         val depth = arguments.getIntInRange("depth", 3, 1, 5)
 
         val repository = AppRepository(AppDatabase.getDatabase(context))
+        val memoryEngine = MemoryEngine(repository, ApiClient)
 
-        // 确定候选集
-        val candidates: List<com.omnichat.data.MemoryItem>
-        val totalCount: Int
+        // 计算总记忆数（用于搜索结果的 totalCount）
+        val totalCount = repository.getMemoryCount()
 
-        if (tagFilter != null) {
-            candidates = repository.searchMemoriesByTag(tagFilter)
-            totalCount = candidates.size
-        } else {
-            val keywords = query.split(" ").filter { it.isNotBlank() }
-            if (keywords.isNotEmpty()) {
-                totalCount = repository.getAllMemories().size
-                candidates = keywords.flatMap { repository.searchMemoriesByKeyword(it) }.distinctBy { it.id }
-            } else {
-                candidates = repository.getAllMemories()
-                totalCount = candidates.size
-            }
-        }
-
-        // Jaccard 相似度计算
-        val queryTokens = com.omnichat.memory.MemoryTokenizer.tokenize(query)
-
-        data class ScoredMemory(val memory: com.omnichat.data.MemoryItem, val score: Double)
-
-        val scored = candidates
-            .mapNotNull { mem ->
-                val memTokens = com.omnichat.memory.MemoryTokenizer.tokenize(mem.content)
-                val intersection = queryTokens.intersect(memTokens).size
-                val union = queryTokens.union(memTokens).size
-                if (union == 0 || intersection == 0) return@mapNotNull null
-
-                var score = intersection.toDouble() / union.toDouble() * mem.confidence
-
-                // tag 匹配加成
-                if (tagFilter != null && mem.tags.split(",").contains(tagFilter)) {
-                    score *= 1.2
-                }
-
-                ScoredMemory(mem, score)
-            }
-            .sortedByDescending { it.score }
-            .take(limit)
-
-        // Association expansion via BFS
-        val maxExpand = 10
-        val expandedMemories = mutableListOf<Triple<com.omnichat.data.MemoryItem, String, Int>>()
-        val visited = scored.map { it.memory.id }.toMutableSet()
-
-        val queue: java.util.LinkedList<Pair<Long, Int>> = java.util.LinkedList()
-        for (sm in scored) {
-            queue.add(sm.memory.id to 0)
-        }
-
-        while (queue.isNotEmpty() && expandedMemories.size < maxExpand) {
-            val pollResult = queue.poll() ?: continue
-            val (currentId, currentDepth) = pollResult
-            if (currentDepth >= depth) continue
-
-            val associations = repository.getAssociationsFor(currentId)
-            for (assoc in associations) {
-                val relatedId = when {
-                    assoc.direction == "bidirectional" -> {
-                        if (assoc.fromMemoryId == currentId) assoc.toMemoryId else assoc.fromMemoryId
-                    }
-                    assoc.fromMemoryId == currentId -> assoc.toMemoryId
-                    else -> continue
-                }
-                if (relatedId in visited) continue
-                visited.add(relatedId)
-
-                val relatedMem = repository.getMemoryById(relatedId) ?: continue
-                expandedMemories.add(Triple(relatedMem, assoc.relationLabel, currentDepth + 1))
-                queue.add(relatedId to currentDepth + 1)
-            }
-        }
+        // 委托给 MemoryEngine 执行搜索（支持 embedding 语义评分 + Jaccard 降级 + BFS 展开）
+        val result = memoryEngine.searchMemory(
+            query = query,
+            tagFilter = tagFilter,
+            limit = limit,
+            depth = depth,
+            totalCount = totalCount
+        )
 
         // 构建响应
         val text = buildString {
             appendLine("Memory search: \"$query\"${if (tagFilter != null) " [tag: $tagFilter]" else ""}")
-            appendLine("Found: ${scored.size} of $totalCount total")
+            appendLine("Found: ${result.scored.size} of $totalCount total")
 
-            if (scored.isEmpty()) {
+            if (result.scored.isEmpty()) {
                 appendLine()
                 appendLine("No matching memories found.")
             } else {
                 appendLine()
-                scored.forEachIndexed { i, sm ->
+                result.scored.forEachIndexed { i, sm ->
                     val pinnedTag = if (sm.memory.pinned) " [PINNED]" else ""
                     val tagsDisplay = if (sm.memory.tags.isNotBlank()) " [${sm.memory.tags}]" else ""
                     appendLine("${i + 1}. [${sm.memory.id}] confidence=${sm.memory.confidence}, score=${String.format("%.3f", sm.score)}$pinnedTag$tagsDisplay")
@@ -134,10 +78,10 @@ object SearchMemoryTool : BuiltinTool(
                 }
             }
 
-            if (expandedMemories.isNotEmpty()) {
+            if (result.expandedMemories.isNotEmpty()) {
                 appendLine()
                 appendLine("Related via associations (depth $depth):")
-                expandedMemories.forEachIndexed { i, (mem, label, d) ->
+                result.expandedMemories.forEachIndexed { i, (mem, label, d) ->
                     appendLine("  • [$label] [${mem.id}] ${mem.content}")
                 }
             }

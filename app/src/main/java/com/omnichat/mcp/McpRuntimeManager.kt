@@ -15,8 +15,13 @@ import java.io.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.Locale
+import java.util.UUID
 import com.omnichat.R
-import com.omnichat.mcp.ToolSchemaDsl.schema
+import com.omnichat.tool.McpRemoteTool
+import com.omnichat.tool.ToolExecutor
+import com.omnichat.tool.ToolInitializer
+import com.omnichat.tool.ToolRegistry
 private const val TAG = "McpRuntimeManager"
 
 // ── 公开数据类 ────────────────────────────────────────────────────────────
@@ -24,9 +29,12 @@ private const val TAG = "McpRuntimeManager"
 data class McpTool(
     val serverId: Long,
     val serverName: String,
+    /** Globally unique name exposed to the model and used in tool calls. */
     val name: String,
     val description: String,
-    val inputSchema: JSONObject
+    val inputSchema: JSONObject,
+    /** Original name expected by the remote MCP server. Built-ins use [name]. */
+    val remoteName: String = name
 )
 
 enum class McpServerStatus { STOPPED, STARTING, RUNNING, ERROR }
@@ -316,41 +324,15 @@ class McpRuntimeManager private constructor(private val context: Context) {
         private var INSTANCE: McpRuntimeManager? = null
 
         /**
-         * 内置工具 → 分类组映射（供 UI 层静默过滤使用）
+         * Built-in tool-to-group mapping for UI display filtering.
+         *
+         * ToolRegistry owns tool metadata, so derive this map rather than
+         * maintaining another manual list that can omit newly registered tools.
          */
-        val builtinToolGroups = mapOf(
-            "get_current_time" to "core",
-            "search_memory" to "memory",
-            "mark_reminded" to "memory",
-            "get_ui_capabilities" to "ui_appearance",
-            "adjust_ui" to "ui_appearance",
-            "color_scheme" to "ui_appearance",
-            "list_ui_texts" to "ui_text",
-            "set_ui_texts" to "ui_text",
-            "file_write" to "files",
-            "file_read" to "files",
-            "file_append" to "files",
-            "file_delete" to "files",
-            "file_list" to "files",
-            "file_search" to "files",
-            "file_info" to "files",
-            "file_move" to "files",
-            "file_copy" to "files",
-            "file_mkdir" to "files",
-            "create_document" to "documents",
-            "ask_user" to "core",
-            "create_timer" to "efficiency",
-            "cancel_timer" to "efficiency",
-            "list_timers" to "efficiency",
-            "list_mcp_tool_groups" to "core",
-            "configure_mcp_tool_groups" to "core",
-            "set_tool_display_mode" to "efficiency",
-            "delegate_task" to "subagent",
-            "check_task_status" to "subagent",
-            "send_agent_message" to "subagent",
-            "read_agent_inbox" to "subagent",
-            "run_workflow" to "subagent",
-        )
+        val builtinToolGroups: Map<String, String>
+            get() = ToolRegistry.getAll()
+                .filterNot { it is McpRemoteTool }
+                .associate { tool -> tool.name to tool.group }
 
         fun getInstance(context: Context): McpRuntimeManager {
             val instance = INSTANCE ?: synchronized(this) {
@@ -375,7 +357,10 @@ class McpRuntimeManager private constructor(private val context: Context) {
 
     init {
         BUILTIN_SERVER_NAME = context.getString(R.string.builtin_server_name)
-        Log.i(TAG, "McpRuntimeManager 单例创建")
+        if (!ToolInitializer.isInitialized()) {
+            ToolInitializer.initialize(context)
+        }
+        Log.i(TAG, "McpRuntimeManager created")
     }
 
     /**
@@ -471,585 +456,31 @@ class McpRuntimeManager private constructor(private val context: Context) {
     // serverId -> 待响应请求 (requestId -> Deferred)
     private val pendingRequests = ConcurrentHashMap<Long, ConcurrentHashMap<Long, CompletableDeferred<JSONObject>>>()
 
+    // serverId -> ToolRegistry names for adapters representing that server
+    private val remoteToolNamesByServer = ConcurrentHashMap<Long, Set<String>>()
+
     private val requestIdCounter = AtomicLong(1)
 
     // ── 内置工具服务器 ────────────────────────────────────────────────────
     // 使用负数 ID 避免与用户创建的 MCP server ID 冲突
 
-    private val builtinTools = listOf(
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "get_current_time",
-            description = "Get the current real date and time (including timezone). Call this tool whenever you need to know today's date, the current time, the day of the week, or perform any reasoning that depends on the current time.",
-            // 使用 ToolSchemaDsl 替代手写 JSONObject
-            inputSchema = schema {
-                prop("timezone", "string", "Optional. IANA timezone name, e.g. Asia/Shanghai or America/New_York. Leave empty to use the device's local timezone.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "get_ui_capabilities",
-            description = "Query the capability manifest and current values of the app's UI theme configuration. **Call this tool before calling adjust_ui** to learn all adjustable fields, their semantics, constraints, and current effective values. The response includes: color field list (primary palette / status colors / extended colors), layout parameters (corner radius / spacing), valid value constraints (HEX range), and recommended color combination suggestions.",
-            inputSchema = schema {}
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "adjust_ui",
-            description = "Adjust the app's complete visual theme in a single call — color scheme, layout, and font settings.\n\n**Covers:** Material 3 color palette (primary / secondary / tertiary + their container and on-colors), surface and outline colors, error / success / warning / info / accent colors, corner radius, spacing multiplier, global font size scale, chat font size scale, and font family.\n\n**Important:** Call get_ui_capabilities first to see current values and constraints. All colors must be #RRGGBB or #RRGGBBAA. Fields not provided retain their current values (incremental update). Pass resetToDefault=true to restore everything to defaults. Changes take effect immediately without restart.",
-            inputSchema = schema {
-                for (f in UiFieldRegistry.colorFields) {
-                    put(f.key, colorProp(f.desc))
-                }
-                prop("cornerRadiusDp", "integer", "Global corner radius in dp, range 0–32. Affects cards, buttons, and other rounded elements.")
-                prop("spacingMultiplier", "number", "Global spacing multiplier, range 0.5–2.0. 1.0 is the default; >1 is more spacious, <1 is more compact.")
-                for (f in UiFieldRegistry.fontFields) {
-                    put(f.key, f.toSchemaProp())
-                }
-                prop("resetToDefault", "boolean", "Pass true to immediately reset ALL UI settings (colors, layout, font) to defaults. Other fields are ignored.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "color_scheme",
-            description = "Manage saved color scheme presets: save the current theme, list presets, apply a preset, or delete one.\n\n" +
-                "• **save** — Save current UI settings as a named preset (name + description required). Up to ${com.omnichat.data.ColorSchemePreset.MAX_PRESETS} presets allowed.\n" +
-                "• **list** — List all saved presets with their schemeId, name, description, and preview colors.\n" +
-                "• **apply** — Apply a preset by schemeId; takes effect immediately.\n" +
-                "• **delete** — Delete a preset by schemeId to free up a slot.",
-            inputSchema = schema {
-                prop("action", "string", "Operation to perform.") {
-                    enum("save", "list", "apply", "delete")
-                }
-                prop("name", "string", "Preset name (max 30 chars). Required for 'save'.")
-                prop("description", "string", "Preset description (max 100 chars). Required for 'save'.")
-                prop("schemeId", "string", "Preset ID (from list). Required for 'apply' and 'delete'.")
-                required("action")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "search_memory",
-            description = "Search the long-term memory store for entries related to a keyword. Call this tool when you need to recall a specific user preference, habit, or historical detail that is not present in the current context. The system automatically injects the top 30 highest-confidence memories; all other memories must be retrieved proactively via this tool. Results include automatic traversal of the memory association network (controlled by the 'depth' parameter).",
-            inputSchema = schema {
-                prop("query", "string", "Search keywords; multiple words are supported (space-separated), e.g. \"programming language Kotlin\" or \"dietary preference\". The search performs fuzzy matching against memory content.")
-                prop("tag", "string", "Optional tag filter. Valid values: preference, fact, instruction, habit, context. When provided, only memories with this tag are searched.")
-                prop("limit", "integer", "Maximum number of results to return. Default 10, max 50.")
-                prop("depth", "integer", "Association traversal depth (1-5). Default 3. When set, the tool traverses the memory association network to find related memories beyond direct keyword matches.")
-                required("query")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "mark_reminded",
-            description = "Mark a time reminder as reminded to prevent repeat reminders. Call this after you have naturally mentioned a pending reminder to the user in your response.",
-            inputSchema = schema {
-                prop("memory_id", "integer", "The ID of the memory reminder to mark as reminded")
-                required("memory_id")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "list_ui_texts",
-            description = "View all adjustable UI text strings in the app along with their default values (English primary, Chinese secondary) and current AI override values. An optional `query` parameter (e.g. \"mcp\" or \"session\") can be provided to fuzzy-filter results by key or default value.\n\n## Line break tip\n\nYou can use `\\n` in `set_ui_texts` values to insert line breaks. For longer translated strings (e.g. French, German), insert `\\n` at semantic break points to enable automatic wrapping and prevent text from being clipped.",
-            inputSchema = schema {
-                prop("query", "string", "Optional. Fuzzy-filter by key name or default value. If not provided, all UI text entries are listed.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "set_ui_texts",
-            description = "Override any UI text labels (buttons, headings, hints, placeholders, etc.). Changes take effect globally and immediately without a restart.\n\n## How it works\n\nEvery UI string in the app is registered via a `uiText(key, resId)` call. Each key maps to a localized string resource (English by default, Chinese on zh-CN devices). When the AI writes a new value for a key using this tool, every location that references that key immediately displays the new text. Keys without an override automatically fall back to the localized default.\n\n## Usage\n\n• `updates`: A key→value dictionary of strings to set or update. E.g. `{\"topbar.title.chat\": \"Chat\", \"action.confirm\": \"OK\"}`.\n• `delete`: A list of keys whose overrides should be removed (reverting to the localized default). E.g. `[\"action.confirm\"]`.\n• `resetAll`: Pass true to remove all overrides at once and restore all default localized strings.\n\n## Key naming conventions (not enforced)\n\ntopbar.* / sidebar.* / nav.* / tab.* / chat.* / models.* / memory.* / mcp.* / dialog.* / action.* / status.* / hint.* / icon.*\n\n## Line break support\n\nUse `\\n` in values to insert line breaks. For languages where translations are significantly longer (e.g. French, German), insert `\\n` at appropriate semantic break points to enable automatic wrapping and prevent text from being clipped. Example: `\"tab.settings.memory\": \"Mémoire\\nlongue\"`. The app handles multi-line text display automatically.\n\n## Important\n\nThe key must exactly match the key used in the `uiText()` call in the code for the override to take effect. Call `list_ui_texts` first to see existing overrides. If the user wants to change a string but no existing key is found, ask which area of the UI it appears in (top bar / sidebar / chat / settings / dialog, etc.) and derive the key from the naming conventions above. Common example keys: `topbar.title.chat`, `topbar.title.settings`, `topbar.menu.open`, `topbar.memory.syncing`, `topbar.provider.prefix`, `sidebar.title`, `sidebar.menu.newSession`, `chat.input.placeholder`, `chat.empty.title`, `action.confirm`, `action.cancel`, `dialog.delete.title`, `status.loading`, `hint.swipeDelete`.",
-            inputSchema = schema {
-                prop("updates", "object", "A key→value dictionary of UI text strings to set or update. The key is the name used in the uiText() call in the code; the value is the new text to display.") {
-                    additionalProperties { /* type string is default */ }
-                }
-                prop("delete", "array", "A list of keys whose overrides should be removed (reverting to the localized default).") {
-                    items { /* type string is default */ }
-                }
-                prop("resetAll", "boolean", "Pass true to remove all overrides at once and restore all default localized strings (other fields are ignored).")
-            }
-        ),
-        // ── 文件系统工具 ──────────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_write",
-            description = "Write content to a file on device storage. Creates the file (and any missing parent directories) if it does not exist, or overwrites it if it does. Use this to save notes, generated code, configuration snippets, or any text data the user wants to persist.\n\n**Path rules**: Relative paths (e.g. `notes/todo.txt`) resolve under /sdcard. Absolute paths (e.g. `/sdcard/Documents/file.txt`) are also accepted. A permission popup may appear for paths outside the app sandbox.",
-            inputSchema = schema {
-                prop("path", "string", "File path. Relative paths resolve under /sdcard. Absolute paths accepted. Parent directories are created automatically.")
-                prop("content", "string", "Text content to write. The file is saved as UTF-8.")
-                prop("encoding", "string", "Content encoding. \"utf8\" (default) writes the string as-is; \"base64\" decodes the string first (useful for binary files).") {
-                    enum("utf8", "base64")
-                }
-                required("path", "content")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_read",
-            description = "Read the content of a file from device storage. Returns the file content as a UTF-8 string (or Base64 if encoding is \"base64\"). Supports byte-based truncation and line-range reading.\n\n**Path rules**: Relative paths resolve under /sdcard. Absolute paths accepted. A permission popup may appear for paths outside the app sandbox.",
-            inputSchema = schema {
-                prop("path", "string", "File path. Relative paths resolve under /sdcard.")
-                prop("encoding", "string", "\"utf8\" (default) returns the content as a plain string; \"base64\" returns Base64-encoded bytes (useful for binary files).") {
-                    enum("utf8", "base64")
-                }
-                prop("maxBytes", "integer", "Optional. Maximum number of bytes to read from the start of the file. Useful for previewing large files. Default: read the entire file (up to 1 MB).")
-                prop("startLine", "integer", "Optional. Start line number (1-based, inclusive). When provided with or without endLine, reads by line range instead of bytes.")
-                prop("endLine", "integer", "Optional. End line number (1-based, inclusive). If omitted with startLine, reads to end of file.")
-                required("path")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_append",
-            description = "Append text to the end of an existing file on device storage. If the file does not exist it is created. A newline is automatically inserted before the appended content when the file already has content and does not end with a newline.",
-            inputSchema = schema {
-                prop("path", "string", "File path. Relative paths resolve under /sdcard.")
-                prop("content", "string", "Text to append. Saved as UTF-8.")
-                required("path", "content")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_delete",
-            description = "Delete a file or an empty directory from device storage. To delete a directory and all its contents recursively, set recursive to true.\n\n**Safety**: Deletion is permanent.",
-            inputSchema = schema {
-                prop("path", "string", "Path of the file or directory to delete.")
-                prop("recursive", "boolean", "If true, delete the directory and all its contents recursively. Default false (only deletes empty directories or files).")
-                required("path")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_list",
-            description = "List the contents of a directory on device storage. Returns file names, types, sizes, and last-modified timestamps. Supports recursive listing with configurable depth. Pass an empty string or \".\" to list /sdcard root.",
-            inputSchema = schema {
-                prop("path", "string", "Directory path. Use \"\" or \".\" for /sdcard root. Relative paths resolve under /sdcard.")
-                prop("showHidden", "boolean", "Include entries whose names start with a dot. Default false.")
-                prop("recursive", "boolean", "List subdirectories recursively. Default false.")
-                prop("maxDepth", "integer", "Maximum recursion depth (1-10). Default 3. Only effective when recursive=true.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_search",
-            description = "Search for files by name pattern or by text/regex content within device storage. Supports glob-style name matching and full-text or regex content search with context lines.",
-            inputSchema = schema {
-                prop("namePattern", "string", "Optional. Glob-style filename pattern, e.g. \"*.txt\", \"report_*\", \"*.json\". Matches against the file name only.")
-                prop("contentQuery", "string", "Optional. Search string or regex to look for inside file contents. Case-insensitive by default.")
-                prop("directory", "string", "Optional. Directory to restrict the search to. Defaults to /sdcard root (recursive).")
-                prop("maxResults", "integer", "Maximum number of results to return. Default 20, max 100.")
-                prop("isRegex", "boolean", "Treat contentQuery as a regular expression. Default false.")
-                prop("contextLines", "integer", "Number of lines to show before and after each match. Default 0, max 10.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_info",
-            description = "Get metadata for a file or directory on device storage: absolute path, size in bytes, last-modified timestamp, MIME type guess, whether it is readable/writable, and (for directories) the number of direct children.",
-            inputSchema = schema {
-                prop("path", "string", "File or directory path.")
-                required("path")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_move",
-            description = "Move or rename a file or directory on device storage. The destination parent directory is created automatically if it does not exist.",
-            inputSchema = schema {
-                prop("sourcePath", "string", "Source path.")
-                prop("destinationPath", "string", "Destination path.")
-                prop("overwrite", "boolean", "If true, overwrite the destination if it already exists. Default false (returns an error if destination exists).")
-                required("sourcePath", "destinationPath")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_copy",
-            description = "Copy a file or directory on device storage. Directories are copied recursively. The destination parent directory is created automatically if it does not exist.",
-            inputSchema = schema {
-                prop("sourcePath", "string", "Source path.")
-                prop("destinationPath", "string", "Destination path.")
-                prop("overwrite", "boolean", "If true, overwrite the destination if it already exists. Default false.")
-                required("sourcePath", "destinationPath")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "file_mkdir",
-            description = "Create a directory (and any missing parent directories) on device storage. Returns an error if the path exists and is not a directory.",
-            inputSchema = schema {
-                prop("path", "string", "Directory path to create.")
-                required("path")
-            }
-        ),
-        // ── 文档创建工具 ──────────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "create_document",
-            description = """Create a professionally formatted document (PDF, Word, Excel, or PowerPoint) with structured sections and styling.
-
-## When to Use
-- Reports, analysis, or documentation that needs professional formatting
-- Presentations with slides
-- Data tables that need structure
-- Multi-page documents with headers and sections
-
-## Format-Specific Notes
-
-**PDF**: Best for reports that need fixed layout.
-- Title appears on a colored cover banner
-- Headings have color hierarchy (H1 = theme color, H2/H3 = black bold)
-- Tables have alternating row colors with theme-colored headers
-- Pages include footer with page number
-
-**Word (.docx)**: Best for editable documents.
-- Title is centered, large, themed
-- Tables stretch full width with themed headers
-
-**Excel (.xlsx)**: Best for data-heavy documents.
-- Title spans merged cells at top
-- Tables are native spreadsheet rows/columns
-- Auto-sized columns
-
-**PowerPoint (.pptx)**: Best for presentations.
-- First slide is title slide
-- Each `page_break` creates a new slide
-- Use heading for slide title, text for bullet points
-
-## Section Types
-
-| Type | Purpose | Key Parameters |
-|------|---------|----------------|
-| `heading` | Section titles | `content` (text), `level` (1-3) |
-| `text` | Body paragraphs | `content` (plain text only) |
-| `table` | Data grids | `table.headers`, `table.rows` |
-| `image` | Insert image | `content` (file path) |
-| `page_break` | New page/slide | none |
-
-## Important Limitations
-
-1. **NO Markdown rendering**: Do NOT use `**bold**` or `*italic*` - it will appear as literal asterisks. Use ALL CAPS for emphasis sparingly.
-2. **Plain text only in `text` sections**: Write normal sentences.
-3. **Structure with headings**: Break long content into multiple `text` sections separated by `heading` sections.
-4. **Short paragraphs**: Each `text` section should be 1-3 sentences. Split long paragraphs.
-
-## Best Practices
-
-1. Start with a heading (level 1) for each major section
-2. Use heading hierarchy: H1 for main sections, H2 for subsections, H3 for details
-3. Add a heading before each table explaining what it shows
-4. Use page_break only for major section transitions
-
-## Example
-
-```json
-{
-  "path": "reports/q3-analysis.pdf",
-  "format": "pdf",
-  "title": "Q3 Performance Analysis",
-  "style": {"themeColor": "#1A73E8", "preset": "business"},
-  "sections": [
-    {"type": "heading", "content": "Executive Summary", "level": 1},
-    {"type": "text", "content": "Revenue grew 15% quarter-over-quarter."},
-    {"type": "heading", "content": "Revenue Breakdown", "level": 2},
-    {"type": "table", "table": {
-      "headers": ["Product", "Q2", "Q3", "Growth"],
-      "rows": [["Enterprise", ".1M", ".5M", "+19%"]]
-    }},
-    {"type": "page_break"},
-    {"type": "heading", "content": "Detailed Analysis", "level": 1},
-    {"type": "text", "content": "Enterprise growth is attributed to..."}
-  ]
-}
-```""",
-            inputSchema = schema {
-                prop("path", "string", "Relative file path inside OmniChat/files/, e.g. \"reports/analysis.pdf\".")
-                prop("format", "string", "Document format.") {
-                    enum("pdf", "xlsx", "docx", "pptx")
-                }
-                prop("title", "string", "Main document title.")
-                prop("style", "object", "Document style options.") {
-                    properties {
-                        prop("themeColor", "string", "Hex color code.")
-                        prop("preset", "string", "Style preset.") {
-                            enum("business", "modern", "classic")
-                        }
-                    }
-                }
-                prop("sections", "array", "List of document sections in order.") {
-                    items {
-                        properties {
-                            prop("type", "string", "Section type.") {
-                                enum("heading", "text", "table", "image", "page_break")
-                            }
-                            prop("content", "string", "Text content for heading/text, or image path.")
-                            prop("level", "integer", "For heading: 1 (main), 2 (sub), 3 (minor).")
-                            prop("markdown", "boolean", "Apply markdown formatting to text.")
-                            prop("table", "object", "Table data for table sections.") {
-                                properties {
-                                    prop("headers", "array", "Column headers.") { items { } }
-                                    prop("rows", "array", "Table rows.") { items { } }
-                                }
-                            }
-                        }
-                    }
-                }
-                prop("paragraphs", "array", "Legacy: use sections instead.") { items { } }
-                prop("table", "object", "Legacy: use sections instead.")
-                prop("slides", "array", "Legacy: use sections instead.") { items { } }
-                required("path", "format")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "ask_user",
-            description = "Ask the user a clarifying question when their request is ambiguous or underspecified, or to confirm a decision. You can provide 1 to 5 options for them to choose from, or they can input their custom answer. Supports single-select (default) and multi-select modes. The function will block and wait for user response.",
-            inputSchema = schema {
-                prop("question", "string", "The clarifying question or prompt to display to the user.")
-                prop("options", "array", "Optional list of 1 to 5 predefined options that the user can choose from.") {
-                    items { }
-                }
-                prop("multi_select", "boolean", "If true, the user can select multiple options (checkboxes). If false or omitted, the user can only select one option (buttons). When multi_select is true, the response is a JSON array of selected options.")
-                required("question")
-            }
-        ),
-        // ── 定时器工具 ────────────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "create_timer",
-            description = "Create a timer that fires after a delay (supports one-shot and repeating). When the timer fires, it inserts a reminder message into the current chat session AND sends a system notification. Timers survive app restarts and device reboots.\n\nPREREQUISITE: You MUST call get_current_time first to confirm the current time before creating any timer. This ensures the delay is calculated correctly relative to the actual time.\n\nUse this when the user asks to be reminded about something (e.g. \"remind me in 30 minutes\", \"set a timer for 1 hour\", \"remind me every 2 hours to drink water\").\n\nSpecify delay using hours, minutes, and/or seconds — at least one must be > 0. For example: hours=1, minutes=30 means 1 hour 30 minutes. Do NOT do math yourself — just pass the human-readable time components directly.\n\nReturns a `timerId` that can be used with `cancel_timer`.",
-            inputSchema = schema {
-                prop("hours", "integer", "Hours component of the delay (default 0). E.g. for \"2 hours 30 minutes\", set hours=2.")
-                prop("minutes", "integer", "Minutes component of the delay (default 0). E.g. for \"45 minutes\", set minutes=45.")
-                prop("seconds", "integer", "Seconds component of the delay (default 0). E.g. for \"90 seconds\", set seconds=90.")
-                prop("delay_seconds", "integer", "Legacy parameter. Prefer using hours/minutes/seconds instead. Total delay in seconds. If hours/minutes/seconds are also provided, they take precedence.")
-                prop("message", "string", "The reminder message to display when the timer fires. This text will appear in the chat and in the system notification. Be specific and actionable.")
-                prop("label", "string", "Optional short label for the notification title (max 30 characters). Defaults to \"AI 定时提醒\" if not provided.")
-                prop("repeat_hours", "integer", "Repeat interval: hours component (default 0). E.g. for \"every 2 hours\", set repeat_hours=2.")
-                prop("repeat_minutes", "integer", "Repeat interval: minutes component (default 0). E.g. for \"every 30 minutes\", set repeat_minutes=30.")
-                prop("repeat_seconds", "integer", "Repeat interval: seconds component (default 0). E.g. for \"every 90 seconds\", set repeat_seconds=90.")
-                prop("repeat_interval_seconds", "integer", "Legacy parameter. Prefer repeat_hours/repeat_minutes/repeat_seconds. Repeat interval in seconds. The new params take precedence if provided.")
-                required("message")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "cancel_timer",
-            description = "Cancel a pending timer before it fires. Use the `timerId` returned by `create_timer`. Returns an error if the timer does not exist or has already fired.",
-            inputSchema = schema {
-                prop("timer_id", "string", "The timer ID returned by create_timer.")
-                required("timer_id")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "list_timers",
-            description = "List all currently pending (not yet fired) timers created in this session. Returns each timer's ID, label, message, remaining seconds, and scheduled fire time.",
-            inputSchema = schema {}
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "set_tool_display_mode",
-            description = "Control which tool groups are hidden in the chat UI. Tools still execute normally; only the display is suppressed. Use this when performing multiple sequential tool calls to avoid flooding the screen. Call with groups=\"\" to restore normal display for all tools.",
-            inputSchema = schema {
-                prop("groups", "string", "Comma-separated group names to silence. Empty string = show all (default). '*' = silence all built-in tools. Available groups: core, memory, ui_appearance, ui_text, files, documents, efficiency. External MCP tools are never affected.")
-                required("groups")
-            }
-        ),
-        // ── 运行时工具组管理 ──────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "list_mcp_tool_groups",
-            description = "List all available built-in MCP tool groups and their current enabled/disabled status. Use this tool to discover what capabilities are currently available to you or can be activated. Groups: core (essential), ui_appearance (theming/colors), ui_text (i18n), files (storage), documents (office), efficiency (timers), memory (long-term facts).",
-            inputSchema = schema {}
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "configure_mcp_tool_groups",
-            description = "Enable or disable specific built-in MCP tool groups. Use this when you need a tool that is currently disabled, or when you want to simplify your toolset. Note: 'core' group cannot be disabled. Changes persist across sessions.",
-            // BUG-010: 使用 enum 约束有效组名，避免无效值写入数据库
-            inputSchema = schema {
-                prop("enable", "array", "List of group names to enable. Valid: ui_text, ui_appearance, files, documents, efficiency, memory. Note: 'core' cannot be disabled.") {
-                    items {
-                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory", "subagent")
-                    }
-                }
-                prop("disable", "array", "List of group names to disable. Note: 'core' cannot be disabled.") {
-                    items {
-                        enum("ui_text", "ui_appearance", "files", "documents", "efficiency", "memory", "subagent")
-                    }
-                }
-            }
-        ),
-        // ── SubAgent tools ───────────────────────────────────────────────
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "delegate_task",
-            description = """Delegate a task to a sub-agent for independent execution. The sub-agent runs with its own LLM context and tool access. Returns a taskId.
-
-⚠️ BLOCKING CALL: This tool is ASYNC but the result arrives as a chat message. You MUST NOT duplicate the delegated task yourself. DO NOT start the same work in parallel. Wait for the result message to appear before proceeding with related work.
-
-WHEN TO DELEGATE:
-- Research tasks (web search, memory lookup, information gathering)
-- Multi-step operations that would block the conversation
-- Tasks requiring focused execution without conversation context
-- Parallel investigations of independent problems
-
-WHEN NOT TO DELEGATE:
-- Simple questions you can answer directly
-- Tasks requiring full conversation history context
-- Single-step tool calls (just call the tool directly)
-- Tasks requiring user interaction/clarification
-
-AGENT TYPE SELECTION:
-- general: Default. Simple focused tasks.
-- researcher: Information gathering, fact-checking, web search.
-- coder: Code analysis, generation, refactoring.
-- reviewer: Code review, quality assessment, spec compliance.
-- tester: Test creation, verification, bug reproduction.
-- planner: Implementation planning, architecture design.
-- orchestrator: Multi-step coordination (rarely needed — prefer direct delegation).
-
-TASK DESCRIPTION BEST PRACTICES:
-1. State the objective clearly (WHAT to achieve)
-2. Provide necessary context (WHY, where it fits)
-3. List acceptance criteria (how to know it's done)
-4. Include constraints (what NOT to do)
-5. Specify expected output format
-
-The sub-agent's result is delivered directly as a chat message — no polling needed.""",
-            inputSchema = schema {
-                prop("agentType", "string", "The type of sub-agent: general, researcher, coder, reviewer, tester, planner, orchestrator.") {
-                    enum("general", "researcher", "coder", "reviewer", "tester", "planner", "orchestrator")
-                }
-                prop("task", "string", "The task description for the sub-agent to perform.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "check_task_status",
-            description = "Check the status and result of a previously delegated sub-agent task.",
-            inputSchema = schema {
-                prop("taskId", "string", "The taskId returned by delegate_task.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "send_agent_message",
-            description = "Send a message to another agent's inbox. Used for inter-agent communication during collaborative workflows.",
-            inputSchema = schema {
-                prop("to", "string", "The target agent ID (e.g. 'main', 'subagent:coder:task-id').")
-                prop("content", "string", "The message content.")
-            }
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "read_agent_inbox",
-            description = "Read messages from the current agent's inbox. Returns pending messages from other agents.",
-            inputSchema = schema {}
-        ),
-        McpTool(
-            serverId = BUILTIN_SERVER_ID,
-            serverName = BUILTIN_SERVER_NAME,
-            name = "run_workflow",
-            description = """Execute a multi-agent workflow with coordinated execution.
-
-⚠️ BLOCKING CALL: This tool is SYNCHRONOUS. You MUST wait for it to complete before taking any other action. DO NOT start parallel work while the workflow is running. DO NOT attempt the same task yourself while waiting. You will receive the complete results when the tool returns.
-
-MODES:
-- pipeline: Sequential execution. Each step receives prior results as context.
-- dag: Dependency-based execution. Independent steps run in parallel.
-- conversational: Two agents exchange messages until convergence.
-
-WHEN TO USE EACH MODE:
-- pipeline: Steps have strict order dependency (A must finish before B starts).
-  Example: "Research → Code → Review" → pipeline
-- dag: Steps have partial dependencies, some can run in parallel.
-  Example: "Analyze modules A, B, C independently, then integrate" → dag
-- conversational: Need multi-perspective discussion or debate between two agents.
-  Example: "Design debate between coder and reviewer" → conversational
-
-AGENT TYPES AVAILABLE:
-general, researcher, coder, reviewer, tester, planner, orchestrator
-
-FAILURE HANDLING:
-- pipeline: Stops immediately on first failure.
-- dag: Failed step blocks its dependents; independent steps continue.
-- conversational: Stops immediately on any agent failure.
-
-CONVERGENCE (conversational mode):
-Agents must output [CONVERGED] marker when discussion is complete.
-If no marker, runs until maxRounds (default: 5).
-
-OUTPUT FORMAT:
-Returns step summary + final result. Failed steps show error message.
-""",
-            inputSchema = schema {
-                prop("mode", "string", "Execution mode") {
-                    enum("pipeline", "dag", "conversational")
-                }
-                prop("steps", "array", "Workflow steps (required for pipeline/dag mode)") {
-                    items {
-                        prop("id", "string", "Step identifier (e.g. 'step1', 'research')")
-                        prop("agentType", "string", "Agent type for this step")
-                        prop("task", "string", "Task description for this agent")
-                        prop("dependsOn", "array", "Step IDs this depends on (dag mode only)") {
-                            items { }
-                        }
-                        prop("resultVariable", "string", "Optional: name to reference this result in downstream steps")
-                    }
-                }
-                prop("agentA", "string", "First agent type (conversational mode)")
-                prop("agentB", "string", "Second agent type (conversational mode)")
-                prop("topic", "string", "Discussion topic (conversational mode)")
-                prop("maxRounds", "integer", "Max conversation rounds (default: 5, conversational mode)")
-                required("mode")
-            }
-        ),
-    )
-
-    /** Internal helper: build a HEX color schema node */
-    private fun colorProp(desc: String): JSONObject = JSONObject().apply {
-        put("type", "string")
-        put("pattern", "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$")
-        put("description", "$desc. Format: #RRGGBB or #RRGGBBAA")
-    }
-
-    /** Internal helper: build a string schema node */
-    private fun strProp(desc: String): JSONObject = JSONObject().apply {
-        put("type", "string")
-        put("description", desc)
-    }
+    /**
+     * Built-in metadata is derived from ToolRegistry. This intentionally avoids
+     * an initialization-time snapshot: registering a new tool updates the model
+     * catalog without creating a second schema source of truth.
+     */
+    private fun currentBuiltinTools(): List<McpTool> = ToolRegistry.getAll()
+        .filterNot { it is McpRemoteTool }
+        .sortedBy { it.name }
+        .map { tool ->
+            McpTool(
+                serverId = BUILTIN_SERVER_ID,
+                serverName = BUILTIN_SERVER_NAME,
+                name = tool.name,
+                description = tool.description,
+                inputSchema = tool.inputSchema
+            )
+        }
 
     private val _serverStates = MutableStateFlow<Map<Long, McpServerState>>(
         mapOf(
@@ -1060,21 +491,29 @@ Returns step summary + final result. Failed steps show error message.
                     command = ""
                 ),
                 status = McpServerStatus.RUNNING,
-                tools = builtinTools
+                tools = currentBuiltinTools()
             )
         )
     )
     val serverStates: StateFlow<Map<Long, McpServerState>> = _serverStates.asStateFlow()
 
-    private val enabledBuiltinTools: StateFlow<List<McpTool>> = AppDatabase.getDatabase(context).uiSettingsDao().getSettingsFlow()
-        .map { settings ->
-            val enabledGroups = settings?.enabledMcpGroups?.split(",")?.toSet() ?: setOf("core", "ui_appearance", "efficiency", "memory", "subagent")
-            builtinTools.filter { tool ->
-                val group = builtinToolGroups[tool.name] ?: "core"
-                group == "core" || group in enabledGroups
-            }
+    private val enabledBuiltinTools: StateFlow<List<McpTool>> = combine(
+        AppDatabase.getDatabase(context).uiSettingsDao().getSettingsFlow(),
+        ToolRegistry.changes
+    ) { settings, _ ->
+        val enabledGroups = settings?.enabledMcpGroups?.split(",")?.filter { it.isNotBlank() }?.toSet()
+            ?: setOf("core", "ui_appearance", "efficiency", "memory", "subagent")
+        currentBuiltinTools().filter { tool ->
+            val group = builtinToolGroups[tool.name] ?: "core"
+            group == "core" || group in enabledGroups
         }
-        .stateIn(scope, SharingStarted.Eagerly, builtinTools.filter { builtinToolGroups[it.name] == "core" || builtinToolGroups[it.name] in listOf("ui_appearance", "efficiency", "memory") })
+    }.stateIn(
+        scope,
+        SharingStarted.Eagerly,
+        currentBuiltinTools().filter {
+            builtinToolGroups[it.name] == "core" || builtinToolGroups[it.name] in listOf("ui_appearance", "efficiency", "memory")
+        }
+    )
 
     private val _toolsVersion = AtomicLong(0)
     val toolsVersion: Long get() = _toolsVersion.get()
@@ -1197,6 +636,7 @@ Returns step summary + final result. Failed steps show error message.
     fun stopServer(serverId: Long) {
         Log.i(TAG, "[stopServer] serverId=$serverId")
         scope.launch {
+            unregisterRemoteTools(serverId)
             val channel = channels[serverId]
             channel?.close()
             channels.remove(serverId)
@@ -1218,67 +658,32 @@ Returns step summary + final result. Failed steps show error message.
      * 假设工具名在所有 server 中是唯一的。
      */
     fun findServerIdForTool(toolName: String): Long? {
-        return allTools.value.find { it.name == toolName }?.serverId
+        return allTools.value.firstOrNull { it.name == toolName }?.serverId
     }
 
     suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject? {
         Log.d(TAG, "[callTool] serverId=$serverId, tool=$toolName")
 
-        val rawResult = if (serverId == BUILTIN_SERVER_ID) {
+        return if (serverId == BUILTIN_SERVER_ID) {
             try {
                 handleBuiltinTool(toolName, arguments, sessionId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
-                Log.e(TAG, "内置工具 $toolName 执行发生严重错误", t)
-                JSONObject().apply {
-                    put("content", org.json.JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("type", "text")
-                            put("text", "Error running builtin tool $toolName: ${t.localizedMessage}")
-                        })
-                    })
-                    put("isError", true)
-                }
+                Log.e(TAG, "Builtin tool $toolName failed unexpectedly", t)
+                ToolExecutor.errorResponse("Error running builtin tool $toolName: ${t.localizedMessage}")
             }
         } else {
-            try {
-                val response = sendRequest(
-                    serverId = serverId,
-                    method = "tools/call",
-                    params = JSONObject().apply {
-                        put("name", toolName)
-                        put("arguments", arguments)
-                    }
-                )
-                response.optJSONObject("result")
-            } catch (e: Exception) {
-                Log.e(TAG, "调用工具 $toolName 失败", e)
-                null
-            }
+            val remoteTool = findRemoteTool(serverId, toolName)
+                ?: return ToolExecutor.errorResponse("Unknown remote tool: $toolName")
+            ToolExecutor.executeTool(context, remoteTool, arguments, sessionId)
         }
-
-        // 2. Return result
-        if (rawResult != null) {
-            return rawResult
-        }
-
-        return null
     }
 
-    /**
-     * 处理内置工具调用，直接在 JVM 层执行，无需外部进程。
-     * 优先使用新的 ToolRegistry，若工具未注册则回退到 BuiltinToolHandler。
-     */
+    /** Executes a built-in tool through ToolRegistry and ToolExecutor only. */
     private suspend fun handleBuiltinTool(toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject {
-        // 尝试从 ToolRegistry 获取工具
-        val tool = com.omnichat.tool.ToolRegistry.get(toolName)
-        if (tool != null) {
-            Log.d(TAG, "[handleBuiltinTool] 使用 ToolRegistry 执行: $toolName")
-            return com.omnichat.tool.ToolExecutor.executeTool(context, tool, arguments, sessionId)
-        }
-
-        // 回退到旧的 BuiltinToolHandler
-        Log.d(TAG, "[handleBuiltinTool] 回退到 BuiltinToolHandler 执行: $toolName")
-        return BuiltinToolHandler.handleBuiltinTool(context, toolName, arguments, sessionId)
+        Log.d(TAG, "[handleBuiltinTool] ToolExecutor: $toolName")
+        return ToolExecutor.execute(context, toolName, arguments, sessionId)
     }
 
     /**
@@ -1295,10 +700,69 @@ Returns step summary + final result. Failed steps show error message.
                 }
             )
             response.optJSONObject("result")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "调用远程工具 $toolName 失败", e)
+            Log.e(TAG, "Remote tool $toolName failed", e)
             null
         }
+    }
+
+    private fun remoteRegistryName(serverId: Long, remoteName: String): String =
+        "mcp_remote:$serverId:$remoteName"
+
+    /**
+     * MCP permits multiple servers to expose the same remote tool name. OpenAI-style
+     * function calls do not carry a server ID, so expose a stable, valid, unique name.
+     */
+    private fun remoteModelToolName(serverId: Long, remoteName: String): String {
+        val normalized = remoteName.lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z0-9_-]+"), "_")
+            .trim('_')
+            .ifBlank { "tool" }
+        val hash = UUID.nameUUIDFromBytes(remoteName.toByteArray(Charsets.UTF_8))
+            .toString()
+            .substring(0, 12)
+        val prefix = "mcp_${serverId}_"
+        val maxStemLength = (64 - prefix.length - hash.length - 1).coerceAtLeast(1)
+        return "$prefix${normalized.take(maxStemLength)}_$hash"
+    }
+
+    private fun unregisterRemoteTools(serverId: Long) {
+        val trackedNames = remoteToolNamesByServer.remove(serverId).orEmpty()
+        trackedNames.forEach(ToolRegistry::unregister)
+
+        // Also remove adapters left by an interrupted refresh before bookkeeping completed.
+        ToolRegistry.getAll()
+            .filterIsInstance<McpRemoteTool>()
+            .filter { it.serverId == serverId }
+            .forEach { ToolRegistry.unregister(it.name) }
+    }
+
+    private fun findRemoteTool(serverId: Long, modelToolName: String): McpRemoteTool? {
+        val remoteName = _serverStates.value[serverId]
+            ?.tools
+            ?.firstOrNull { it.name == modelToolName }
+            ?.remoteName
+            ?: return null
+        return ToolRegistry.get(remoteRegistryName(serverId, remoteName)) as? McpRemoteTool
+    }
+
+    private fun registerRemoteTools(server: McpServer, tools: List<McpTool>) {
+        unregisterRemoteTools(server.id)
+        val adapters = tools.map { tool ->
+            McpRemoteTool(
+                name = remoteRegistryName(server.id, tool.remoteName),
+                description = tool.description,
+                inputSchema = tool.inputSchema,
+                serverId = server.id,
+                serverName = server.name,
+                remoteName = tool.remoteName,
+                runtimeManager = this
+            )
+        }
+        adapters.forEach(ToolRegistry::register)
+        remoteToolNamesByServer[server.id] = adapters.mapTo(linkedSetOf()) { it.name }
     }
 
     suspend fun refreshTools(serverId: Long) {
@@ -1308,19 +772,25 @@ Returns step summary + final result. Failed steps show error message.
             val toolsArray = response.optJSONObject("result")?.optJSONArray("tools") ?: return
             val server = _serverStates.value[serverId]?.server ?: return
             val tools = (0 until toolsArray.length()).mapNotNull { i ->
-                val t = toolsArray.optJSONObject(i) ?: return@mapNotNull null
+                val tool = toolsArray.optJSONObject(i) ?: return@mapNotNull null
+                val name = tool.optString("name").trim()
+                if (name.isBlank()) return@mapNotNull null
                 McpTool(
                     serverId = serverId,
                     serverName = server.name,
-                    name = t.optString("name"),
-                    description = t.optString("description"),
-                    inputSchema = t.optJSONObject("inputSchema") ?: JSONObject()
+                    name = remoteModelToolName(serverId, name),
+                    remoteName = name,
+                    description = tool.optString("description"),
+                    inputSchema = tool.optJSONObject("inputSchema") ?: JSONObject()
                 )
-            }
+            }.distinctBy { it.name }
+            registerRemoteTools(server, tools)
             updateState(serverId) { it.copy(tools = tools) }
-            Log.i(TAG, "[refreshTools] serverId=$serverId, 发现 ${tools.size} 个工具: ${tools.map { it.name }}")
+            Log.i(TAG, "[refreshTools] serverId=$serverId, found ${tools.size} tools: ${tools.map { it.name }}")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "刷新工具列表失败 serverId=$serverId", e)
+            Log.e(TAG, "Failed to refresh tools for serverId=$serverId", e)
         }
     }
 

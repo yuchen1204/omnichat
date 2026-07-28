@@ -121,108 +121,127 @@ fun SkillsView(viewModel: ChatViewModel) {
             }
         }
 
-        // 内容区
-        if (skills.isEmpty()) {
-            // 空状态
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Extension,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "暂无 Skill",
-                        fontSize = (16 * fs).sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = fontFamily,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "点击右下角 + 按钮安装 .skill.md 文件",
-                        fontSize = (13 * fs).sp,
-                        fontFamily = fontFamily,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 8.dp)
-            ) {
-                // 内置 Skill 提示
-                item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        shape = RoundedCornerShape(corner),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        // 用 Box 包裹内容区和 FAB，实现 FAB 悬浮叠加
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // 内容区
+            if (skills.isEmpty()) {
+                // 空状态
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Extension,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "暂无 Skill",
+                            fontSize = (16 * fs).sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = fontFamily,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "点击右下角 + 按钮或下方按钮安装 .skill.md 文件",
+                            fontSize = (13 * fs).sp,
+                            fontFamily = fontFamily,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        FilledTonalButton(
+                            onClick = { filePickerLauncher.launch("*/*") },
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Info,
+                                imageVector = Icons.Default.Add,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "匹配到对应关键词时，Skill 会自动激活并增强 LLM 的能力。",
-                                fontSize = (12 * fs).sp,
-                                fontFamily = fontFamily,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Text("安装 Skill 文件", fontSize = (14 * fs).sp)
                         }
                     }
                 }
-
-                items(skills, key = { it.id }) { skill ->
-                    SkillCard(
-                        skill = skill,
-                        onToggleEnabled = { id, enabled ->
-                            scope.launch {
-                                viewModel.skillManager.setEnabled(id, enabled)
-                            }
-                        },
-                        onDelete = if (!skill.isBuiltin) { id ->
-                            scope.launch {
-                                viewModel.skillManager.delete(id)
-                            }
-                        } else null
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(
+                        top = 8.dp,
+                        bottom = 80.dp  // 给底部 FAB 留空间
                     )
+                ) {
+                    // 内置 Skill 提示
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            shape = RoundedCornerShape(corner),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "匹配到对应关键词时，Skill 会自动激活并增强 LLM 的能力。",
+                                    fontSize = (12 * fs).sp,
+                                    fontFamily = fontFamily,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    items(skills, key = { it.id }) { skill ->
+                        SkillCard(
+                            skill = skill,
+                            onToggleEnabled = { id, enabled ->
+                                scope.launch {
+                                    viewModel.skillManager.setEnabled(id, enabled)
+                                }
+                            },
+                            onDelete = if (!skill.isBuiltin) { id ->
+                                scope.launch {
+                                    viewModel.skillManager.delete(id)
+                                }
+                            } else null
+                        )
+                    }
                 }
             }
-        }
 
-        // 浮动按钮：安装 Skill
-        FloatingActionButton(
-            onClick = { filePickerLauncher.launch("*/*") },
-            modifier = Modifier
-                .align(Alignment.End)
-                .padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "安装 Skill"
-            )
+            // 悬浮 FAB 按钮（右下角）
+            FloatingActionButton(
+                onClick = { filePickerLauncher.launch("*/*") },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "安装 Skill"
+                )
+            }
         }
     }
 }

@@ -5,7 +5,7 @@ import org.junit.Test
 
 class BigramTokenizeTest {
 
-    /** Mirrors the private function in BuiltinToolHandler */
+    /** Mirrors the private function in built-in tool logic */
     private fun bigramTokenize(text: String): Set<String> {
         val tokens = mutableSetOf<String>()
         val cjkRange = '一'..'鿿'

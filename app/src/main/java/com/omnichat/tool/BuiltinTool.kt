@@ -1,6 +1,7 @@
 package com.omnichat.tool
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import com.omnichat.mcp.ToolSchemaDsl
 import org.json.JSONObject
 
@@ -181,6 +182,8 @@ abstract class BuiltinTool(
     final override suspend fun call(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         return try {
             doExecute(context, arguments, sessionId)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e(name, "Tool execution failed", e)
             errorResponse(e.localizedMessage ?: "Unknown error")

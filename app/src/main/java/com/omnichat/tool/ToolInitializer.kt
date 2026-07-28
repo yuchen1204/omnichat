@@ -63,6 +63,7 @@ object ToolInitializer {
             ToolRegistry.registerAll(
                 GetUiCapabilitiesTool,
                 AdjustUiTool,
+                ResetUiToDefaultTool,
                 ColorSchemeTool
             )
 

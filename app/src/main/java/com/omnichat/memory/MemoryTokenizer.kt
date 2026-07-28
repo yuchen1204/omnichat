@@ -3,7 +3,7 @@ package com.omnichat.memory
 /**
  * 共享的文本分词器，支持 CJK bigram 和英文 word-level 分词。
  *
- * 统一了 ChatViewModel（去重用）和 BuiltinToolHandler（搜索用）的分词逻辑，
+ * 统一了 ChatViewModel（去重用）和 built-in tool logic（搜索用）的分词逻辑，
  * 修复了原来 ChatViewModel 使用词级分词导致中文去重失效的问题。
  */
 object MemoryTokenizer {

@@ -32,7 +32,7 @@ object WorkflowTemplates {
         description = "检索信息并生成报告",
         steps = listOf(
             TemplateStep("research", "researcher", "{{task}}"),
-            TemplateStep("report", "general", "根据研究结果生成报告")
+            TemplateStep("report", "general", "根据研究结果生成报告", dependsOn = listOf("research"))
         )
     )
 
@@ -42,7 +42,7 @@ object WorkflowTemplates {
         description = "编写代码并进行审查",
         steps = listOf(
             TemplateStep("code", "coder", "{{task}}"),
-            TemplateStep("review", "reviewer", "审查代码并提供反馈")
+            TemplateStep("review", "reviewer", "审查代码并提供反馈", dependsOn = listOf("code"))
         )
     )
 
@@ -52,8 +52,8 @@ object WorkflowTemplates {
         description = "研究→编码→审查的完整流程",
         steps = listOf(
             TemplateStep("research", "researcher", "研究需求相关信息：{{task}}"),
-            TemplateStep("code", "coder", "根据研究结果实现功能"),
-            TemplateStep("review", "reviewer", "审查代码质量，如发现问题请发送消息给 code 步骤")
+            TemplateStep("code", "coder", "根据研究结果实现功能", dependsOn = listOf("research")),
+            TemplateStep("review", "reviewer", "审查代码质量，如发现问题请发送消息给 code 步骤", dependsOn = listOf("code"))
         )
     )
 

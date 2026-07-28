@@ -5,7 +5,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.omnichat.data.AppDatabase
 import com.omnichat.data.UISettings
-import com.omnichat.mcp.BuiltinToolHandler
+import com.omnichat.tool.ToolExecutor
+import com.omnichat.tool.ToolInitializer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
@@ -82,7 +83,8 @@ class ExampleRobolectricTest {
       })
     }
 
-    BuiltinToolHandler.handleBuiltinTool(context, "set_ui_texts", arguments)
+    ToolInitializer.initialize(context)
+    ToolExecutor.execute(context, "set_ui_texts", arguments)
 
     delay(200)
     job.cancel()

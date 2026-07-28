@@ -27,7 +27,6 @@ import com.omnichat.ui.viewmodel.SettingsViewModel
 import com.omnichat.mcp.TimerManager
 import com.omnichat.StreamingForegroundService
 import com.omnichat.worker.CloudBackupWorker
-import com.omnichat.data.AppDatabase
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
@@ -72,12 +71,10 @@ class MainActivity : AppCompatActivity() {
         // 初始化内置工具注册表
         com.omnichat.tool.ToolInitializer.initialize(applicationContext)
 
-        // Schedule cloud backup based on saved settings
+        // Reconcile cloud backup with the persisted user setting. MyApplication also
+        // handles non-UI process starts; this is a harmless foreground retry.
         lifecycleScope.launch {
-            val database = AppDatabase.getDatabase(applicationContext)
-            val settings = database.uiSettingsDao().getSettings()
-            val frequency = settings?.cloudBackupFrequency ?: "H6"
-            CloudBackupWorker.enqueuePeriodicWork(applicationContext, frequency)
+            CloudBackupWorker.reconcilePeriodicWork(applicationContext)
         }
 
         // 在 Activity 创建时立即触发 MCP 运行时自动启动（已启用的 server 在数据库就绪后会被自动启动）。

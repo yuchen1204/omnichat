@@ -1,6 +1,9 @@
 package com.omnichat.tool
 
 import android.util.Log
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -22,6 +25,12 @@ object ToolRegistry {
 
     // 版本号，每次变更递增
     private val versionCounter = AtomicLong(0)
+    private val _changes = MutableStateFlow(0L)
+    val changes: StateFlow<Long> = _changes.asStateFlow()
+
+    private fun markChanged() {
+        _changes.value = versionCounter.incrementAndGet()
+    }
 
     // ══════════════════════════════════════════════════════════════
     // 注册与注销
@@ -45,7 +54,7 @@ object ToolRegistry {
             tools[alias] = tool
         }
 
-        versionCounter.incrementAndGet()
+        markChanged()
         Log.d(TAG, "已注册工具: ${tool.name}${if (tool.aliases.isNotEmpty()) " (别名: ${tool.aliases.joinToString(", ")})" else ""}")
     }
 
@@ -76,7 +85,7 @@ object ToolRegistry {
         // 移除别名
         tool.aliases.forEach { tools.remove(it) }
 
-        versionCounter.incrementAndGet()
+        markChanged()
         Log.d(TAG, "已注销工具: ${tool.name}")
     }
 
@@ -85,7 +94,7 @@ object ToolRegistry {
      */
     fun clear() {
         tools.clear()
-        versionCounter.incrementAndGet()
+        markChanged()
         Log.d(TAG, "已清空所有工具")
     }
 

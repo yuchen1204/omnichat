@@ -2,6 +2,7 @@ package com.omnichat.agent
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -76,6 +77,7 @@ internal data class AgentState(
     val status: WorkflowStepStatus,
     val idleSince: Long?,
     val runningSince: Long?,
+    val hasStarted: Boolean = false,
     val conversationHistory: MutableList<JSONObject>,
     val idleTimeoutWarningSent: Boolean = false,
     val revisionCount: Int = 0,
@@ -167,6 +169,51 @@ object WorkflowEngine {
     }
 
     /**
+     * Validate a workflow definition before any SubAgent is created.
+     *
+     * This is shared by the tool entry point and protects direct engine callers
+     * from malformed IDs or dependencies that would otherwise leave a dynamic
+     * workflow waiting forever.
+     */
+    fun validateSteps(steps: List<WorkflowStep>, mode: String): String? {
+        if (steps.isEmpty()) return "Workflow must contain at least one step"
+
+        val ids = mutableSetOf<String>()
+        steps.forEachIndexed { index, step ->
+            if (step.id.isBlank()) return "steps[$index].id is required"
+            if (!ids.add(step.id)) return "Duplicate step id: '${step.id}'"
+            if (step.agentType.isBlank()) return "steps[$index].agentType is required"
+            if (step.task.isBlank()) return "steps[$index].task is required"
+            if (step.maxRetries < 0) return "steps[$index].maxRetries must be >= 0"
+            if (step.dependsOn.any { it.isBlank() }) return "steps[$index].dependsOn cannot contain empty IDs"
+            if (step.dependsOn.size != step.dependsOn.distinct().size) {
+                return "steps[$index].dependsOn contains duplicate IDs"
+            }
+        }
+
+        val knownIds = steps.mapTo(mutableSetOf()) { it.id }
+        steps.forEachIndexed { index, step ->
+            val unknownDependencies = step.dependsOn.filter { it !in knownIds }
+            if (unknownDependencies.isNotEmpty()) {
+                return "steps[$index] references unknown dependencies: ${unknownDependencies.joinToString()}"
+            }
+            if (step.id in step.dependsOn) {
+                return "steps[$index] cannot depend on itself ('${step.id}')"
+            }
+            if (mode == "pipeline" || mode == "interactive_pipeline") {
+                val priorIds = steps.take(index).mapTo(mutableSetOf()) { it.id }
+                val forwardDependencies = step.dependsOn.filter { it !in priorIds }
+                if (forwardDependencies.isNotEmpty()) {
+                    return "In $mode mode, steps[$index].dependsOn must only reference earlier steps: " +
+                        forwardDependencies.joinToString()
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
      * Get all active workflows for a specific session.
      * Used by export_session_log tool.
      */
@@ -252,8 +299,15 @@ object WorkflowEngine {
                 break
             }
 
-            // Build task description with prior context
-            val fullTask = buildTaskWithContext(step.task, step.dependsOn, contextVariables, steps)
+            // Pipeline mode promises that each step receives its predecessor's
+            // result even when the caller omits dependsOn. Explicit dependencies
+            // still take precedence for fan-in style pipeline steps.
+            val contextDependencies = if (step.dependsOn.isEmpty() && index > 0) {
+                listOf(steps[index - 1].id)
+            } else {
+                step.dependsOn
+            }
+            val fullTask = buildTaskWithContext(step.task, contextDependencies, contextVariables, steps)
 
             // ── Emit StepStarted event ──
             WorkflowEventBus.emit(
@@ -397,19 +451,14 @@ object WorkflowEngine {
             state.agentStates[step.id] = AgentState(
                 stepId = step.id,
                 handle = handle,
-                status = WorkflowStepStatus.IDLE,
-                idleSince = System.currentTimeMillis(),
+                // The SubAgent is suspended and ready, but this workflow step has not
+                // run its initial task yet. Keeping that distinction prevents an
+                // unstarted step from being mistaken for a completed idle step.
+                status = WorkflowStepStatus.PENDING,
+                idleSince = null,
                 runningSince = null,
                 conversationHistory = mutableListOf()
             )
-
-            WorkflowEventBus.emit(WorkflowEvent.StepEnteredIdle(
-                workflowId = actualWorkflowId,
-                sessionId = sessionId,
-                stepId = step.id,
-                agentType = step.agentType,
-                reason = "等待工作流启动"
-            ))
         }
 
         // Phase 2: Start first agent
@@ -448,7 +497,16 @@ object WorkflowEngine {
                 appendLine("你的任务：${step.task}")
             }
         } else {
-            buildTaskWithContext(step.task, step.dependsOn, state.contextVariables, state.steps)
+            // Keep interactive_pipeline consistent with pipeline mode: in the
+            // absence of explicit dependencies, the initial task receives the
+            // immediately preceding step's result.
+            val stepIndex = state.steps.indexOf(step)
+            val contextDependencies = if (step.dependsOn.isEmpty() && stepIndex > 0) {
+                listOf(state.steps[stepIndex - 1].id)
+            } else {
+                step.dependsOn
+            }
+            buildTaskWithContext(step.task, contextDependencies, state.contextVariables, state.steps)
         }
 
         // Update state
@@ -456,6 +514,7 @@ object WorkflowEngine {
             status = WorkflowStepStatus.RUNNING,
             runningSince = System.currentTimeMillis(),
             idleSince = null,
+            hasStarted = true,
             lastMessageFrom = fromAgent
         )
 
@@ -479,15 +538,34 @@ object WorkflowEngine {
             ))
         }
 
-        // Execute
+        // Execute. The event loop cannot inspect a synchronous wake-up while it
+        // is in flight, so enforce the per-step timeout here instead of relying
+        // on the later polling timeout check.
         try {
-            val result = SubAgent.wakeUp(
-                handle = handle,
-                task = fullTask,
-                contextVariables = state.contextVariables,
-                conversationHistory = agentState.conversationHistory,
-                promptMode = AgentPrompts.PromptMode.WORKFLOW
-            )
+            val result = if (step.timeoutMs != null && step.timeoutMs > 0) {
+                withTimeoutOrNull(step.timeoutMs) {
+                    SubAgent.wakeUp(
+                        handle = handle,
+                        task = fullTask,
+                        contextVariables = state.contextVariables,
+                        conversationHistory = agentState.conversationHistory,
+                        promptMode = AgentPrompts.PromptMode.WORKFLOW
+                    )
+                }
+            } else {
+                SubAgent.wakeUp(
+                    handle = handle,
+                    task = fullTask,
+                    contextVariables = state.contextVariables,
+                    conversationHistory = agentState.conversationHistory,
+                    promptMode = AgentPrompts.PromptMode.WORKFLOW
+                )
+            }
+
+            if (result == null) {
+                handleRunningTimeout(state, stepId, step.timeoutMs ?: 0L)
+                return
+            }
 
             // Store result
             state.contextVariables[stepId] = result
@@ -496,6 +574,9 @@ object WorkflowEngine {
             // Return to IDLE (waiting for next step or completion)
             setStepIdle(state, stepId, result)
 
+        } catch (e: CancellationException) {
+            // A user cancellation must reach the owning workflow coroutine.
+            throw e
         } catch (e: Exception) {
             handleStepFailure(state, stepId, e.message ?: "Unknown error")
         }
@@ -535,6 +616,26 @@ object WorkflowEngine {
         ))
 
         Log.d(TAG, "[InteractivePipeline] Step $stepId returned to IDLE")
+
+        // interactive_pipeline is still a pipeline for its initial pass: every
+        // declared step must receive its initial task once. Previously only the
+        // first step was ever started, leaving all later steps pending forever.
+        startNextPendingStep(state)
+    }
+
+    /**
+     * Start the next step that has not received its initial task yet.
+     *
+     * SubAgents themselves are created in IDLE state; the workflow-level
+     * PENDING status tracks whether that initial task has been dispatched.
+     */
+    private suspend fun startNextPendingStep(state: InteractivePipelineState) {
+        val nextStep = state.steps.firstOrNull { step ->
+            state.agentStates[step.id]?.status == WorkflowStepStatus.PENDING
+        } ?: return
+
+        Log.d(TAG, "[InteractivePipeline] Starting initial task for ${nextStep.id}")
+        wakeUpStep(state, nextStep.id, nextStep.task)
     }
 
     /**
@@ -558,6 +659,10 @@ object WorkflowEngine {
         ))
 
         Log.e(TAG, "[InteractivePipeline] Step $stepId failed: $error")
+
+        // A failed initial step must not leave later PENDING steps holding the
+        // event loop open indefinitely.
+        startNextPendingStep(state)
     }
 
     /**
@@ -610,9 +715,16 @@ object WorkflowEngine {
      */
     private suspend fun processPendingMessages(state: InteractivePipelineState) {
         state.agentStates.forEach { (stepId, agentState) ->
-            if (agentState.status == WorkflowStepStatus.IDLE) {
+            if (agentState.status == WorkflowStepStatus.IDLE || agentState.status == WorkflowStepStatus.PENDING) {
                 val agentId = agentState.handle?.agentId ?: return@forEach
-                val messages = MessageBus.readInbox(agentId)
+                // The public tool documents step:<id> as the target. The tool
+                // scopes that alias by session before writing to the process-wide
+                // MessageBus, so two workflows can safely reuse IDs such as
+                // "code" or "review". Concrete SubAgent IDs are already unique.
+                // Clear messages as they are consumed so revisions are not
+                // replayed on every 500ms event-loop tick.
+                val messages = MessageBus.readAndClearInbox(agentId) +
+                    MessageBus.readAndClearInbox("session:${state.sessionId}:step:$stepId")
 
                 for (msg in messages) {
                     handleIncomingMessage(state, stepId, msg)
@@ -621,7 +733,7 @@ object WorkflowEngine {
         }
 
         // Also check MainAgent inbox for timeout responses
-        val mainMessages = MessageBus.readInbox("main")
+        val mainMessages = MessageBus.readAndClearInbox("main")
         for (msg in mainMessages) {
             handleMainAgentMessage(state, msg)
         }
@@ -636,6 +748,13 @@ object WorkflowEngine {
         message: AgentMessage
     ) {
         val agentState = state.agentStates[targetStepId]
+
+        val step = state.steps.find { it.id == targetStepId }
+        if (step?.wakeUpOnMessage == false) {
+            val statusMsg = "Step '$targetStepId' is configured not to wake on messages"
+            MessageBus.send(from = "workflow", to = message.from, content = statusMsg)
+            return
+        }
 
         if (agentState == null) {
             // Target not found - send error back
@@ -655,6 +774,11 @@ object WorkflowEngine {
         }
 
         when (agentState.status) {
+            WorkflowStepStatus.PENDING -> {
+                // A message can explicitly start a later step before the
+                // normal initial-pipeline scheduler reaches it.
+                wakeUpStep(state, targetStepId, message.content, message.from)
+            }
             WorkflowStepStatus.IDLE -> {
                 // Wake up the agent
                 wakeUpStep(state, targetStepId, message.content, message.from)
@@ -760,15 +884,11 @@ object WorkflowEngine {
         // Notify dependent steps
         notifyDependentStepsOfFailure(state, stepId)
 
-        // Check if workflow should fail
-        if (checkAllStepsFailed(state)) {
-            state.status = WorkflowStatus.FAILED
-            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
-                workflowId = state.workflowId,
-                sessionId = state.sessionId,
-                error = "步骤 $stepId 超时失败"
-            ))
-        }
+        // A timed-out initial step is terminal just like a normal failure.
+        // Continue scheduling later initial steps so PENDING cannot keep the
+        // event loop alive forever. Final failure/completion is emitted once by
+        // collectInteractiveResults after every initial task has settled.
+        startNextPendingStep(state)
     }
 
     /**
@@ -881,21 +1001,51 @@ object WorkflowEngine {
     }
 
     /**
-     * Check if all steps are completed or failed.
+     * Check whether the interactive pipeline has reached a terminal state.
+     *
+     * A successful interactive step intentionally returns to IDLE so it can be
+     * recalled for a revision. IDLE is therefore a terminal state for the
+     * initial pipeline pass, not an indication that the work never completed.
+     * Once every declared step has run at least once and all of them are idle
+     * or otherwise terminal, promote the idle steps to COMPLETED and end the
+     * workflow. This gives the blocking run_workflow call a deterministic
+     * completion path and guarantees cleanup of suspended SubAgents.
      */
-    private fun checkWorkflowComplete(state: InteractivePipelineState): Boolean {
-        val allDone = state.agentStates.values.all {
-            it.status == WorkflowStepStatus.COMPLETED ||
-            it.status == WorkflowStepStatus.FAILED ||
-            it.status == WorkflowStepStatus.SKIPPED
+    private suspend fun checkWorkflowComplete(state: InteractivePipelineState): Boolean {
+        val allInitialTasksSettled = state.agentStates.values.all { agentState ->
+            agentState.hasStarted && (
+                agentState.status == WorkflowStepStatus.IDLE ||
+                    agentState.status == WorkflowStepStatus.COMPLETED ||
+                    agentState.status == WorkflowStepStatus.FAILED ||
+                    agentState.status == WorkflowStepStatus.SKIPPED
+                )
         }
 
-        if (allDone) {
+        if (allInitialTasksSettled) {
+            state.agentStates.forEach { (stepId, agentState) ->
+                if (agentState.status == WorkflowStepStatus.IDLE) {
+                    state.agentStates[stepId] = agentState.copy(
+                        status = WorkflowStepStatus.COMPLETED,
+                        idleSince = null
+                    )
+
+                    val stepIndex = state.steps.indexOfFirst { it.id == stepId }
+                    WorkflowEventBus.emit(WorkflowEvent.StepCompleted(
+                        workflowId = state.workflowId,
+                        sessionId = state.sessionId,
+                        stepId = stepId,
+                        stepIndex = stepIndex,
+                        result = state.contextVariables[stepId],
+                        status = WorkflowStepStatus.COMPLETED
+                    ))
+                }
+            }
+
             val hasFailures = state.agentStates.values.any { it.status == WorkflowStepStatus.FAILED }
             state.status = if (hasFailures) WorkflowStatus.FAILED else WorkflowStatus.COMPLETED
         }
 
-        return allDone
+        return allInitialTasksSettled
     }
 
     /**
@@ -942,7 +1092,7 @@ object WorkflowEngine {
     /**
      * Execute a single step with retry and timeout support.
      */
-    private suspend fun executeStepWithRetryAndTimeout(
+    internal suspend fun executeStepWithRetryAndTimeout(
         context: Context,
         sessionId: Long,
         step: WorkflowStep,
@@ -1130,19 +1280,14 @@ object WorkflowEngine {
                         includeFullOutput = true  // Include full_output for DAG summary steps
                     )
 
-                    try {
-                        val output = SubAgent.executeSync(
-                            context = context,
-                            agentType = step.agentType,
-                            taskDescription = fullTask,
-                            sessionId = sessionId,
-                            callerContext = callerContext,
-                            promptMode = AgentPrompts.PromptMode.DAG  // DAG uses DAG mode for parallel awareness
-                        )
-                        StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
-                    } catch (e: Exception) {
-                        StepResult(step.id, WorkflowStepStatus.FAILED, error = e.message)
-                    }
+                    executeStepWithRetryAndTimeout(
+                        context = context,
+                        sessionId = sessionId,
+                        step = step,
+                        fullTask = fullTask,
+                        callerContext = callerContext,
+                        promptMode = AgentPrompts.PromptMode.DAG
+                    )
                 }
             }.awaitAll()
 

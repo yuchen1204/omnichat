@@ -82,6 +82,9 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun deleteAllUnpinnedMemories() = memoryItemDao.deleteAllUnpinnedMemories()
     suspend fun deleteAllMemories() = memoryItemDao.deleteAllMemories()
     suspend fun batchDecayConfidence(now: Long) = memoryItemDao.batchDecayConfidence(now)
+    suspend fun getPinnedMemories(): List<MemoryItem> = memoryItemDao.getPinnedMemories()
+    suspend fun getTopUnpinnedMemories(limit: Int): List<MemoryItem> = memoryItemDao.getTopUnpinnedMemories(limit)
+    suspend fun getMemoryCount(): Int = memoryItemDao.getMemoryCount()
 
     // Time Reminders
     suspend fun getPendingReminders(todayStr: String): List<MemoryItem> = memoryItemDao.getPendingReminders(todayStr)

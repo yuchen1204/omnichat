@@ -1,6 +1,7 @@
 package com.omnichat.tool
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
@@ -89,60 +90,70 @@ object ToolExecutor {
                 return errorResponse("Tool ${tool.name} requires a session context")
             }
 
-            // 5. 获取执行许可
-            acquireExecutionPermit(tool)
-
-            // 6. 执行工具
+            // Acquire permits before invoking the tool. The permit owns every
+            // successfully acquired semaphore and releases them exactly once.
+            val permit = acquireExecutionPermit(tool)
             return try {
                 val result = tool.call(context, arguments, sessionId)
-
                 val duration = System.currentTimeMillis() - startTime
                 android.util.Log.d(TAG, "[${tool.name}] Completed in ${duration}ms")
-
                 result
             } finally {
-                releaseExecutionPermit(tool)
+                permit.release()
             }
 
+        } catch (e: CancellationException) {
+            // Cancellation is control flow. Do not turn it into a tool error.
+            throw e
         } catch (e: Exception) {
             val duration = System.currentTimeMillis() - startTime
             android.util.Log.e(TAG, "[${tool.name}] Failed after ${duration}ms", e)
             return errorResponse("Tool execution failed: ${e.localizedMessage}")
         }
     }
-
     // ══════════════════════════════════════════════════════════════
     // 并发控制
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * 获取执行许可。
-     * - 并发安全工具：获取全局许可
-     * - 非并发安全工具：获取全局许可 + 工具专属串行锁
+     * Acquires the permits required by [tool]. A cancellation while waiting for
+     * the global semaphore cannot leak a previously acquired serial semaphore.
      */
-    private suspend fun acquireExecutionPermit(tool: Tool) {
-        // 非并发安全工具需要先获取专属锁
-        if (!tool.isConcurrencySafe) {
-            val lock = serialExecutionLocks.getOrPut(tool.name) { Semaphore(1) }
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                lock.acquire()
+    private suspend fun acquireExecutionPermit(tool: Tool): ExecutionPermit {
+        var serialLock: Semaphore? = null
+        var serialAcquired = false
+        var globalAcquired = false
+        try {
+            if (!tool.isConcurrencySafe) {
+                serialLock = serialExecutionLocks.getOrPut(tool.name) { Semaphore(1) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    serialLock.acquire()
+                }
+                serialAcquired = true
             }
-        }
-
-        // 获取全局许可
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            globalSemaphore.acquire()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                globalSemaphore.acquire()
+            }
+            globalAcquired = true
+            return ExecutionPermit(globalAcquired, if (serialAcquired) serialLock else null)
+        } catch (t: Throwable) {
+            if (globalAcquired) globalSemaphore.release()
+            if (serialAcquired) serialLock?.release()
+            throw t
         }
     }
 
-    /**
-     * 释放执行许可。
-     */
-    private fun releaseExecutionPermit(tool: Tool) {
-        globalSemaphore.release()
-
-        if (!tool.isConcurrencySafe) {
-            serialExecutionLocks[tool.name]?.release()
+    private class ExecutionPermit(
+        private var globalAcquired: Boolean,
+        private var serialLock: Semaphore?
+    ) {
+        fun release() {
+            if (globalAcquired) {
+                globalSemaphore.release()
+                globalAcquired = false
+            }
+            serialLock?.release()
+            serialLock = null
         }
     }
 

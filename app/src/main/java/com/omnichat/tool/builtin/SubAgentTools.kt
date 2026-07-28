@@ -185,13 +185,24 @@ object SendAgentMessageTool : BuiltinTool(
     }
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val to = arguments.optString("to")
-        val content = arguments.optString("content")
+        val requestedTarget = arguments.optString("to").trim()
+        val content = arguments.optString("content").trim()
+        val from = SubAgent.getCurrentContext()?.taskId ?: "main"
 
-        // 使用 "main" 作为默认发送者
-        MessageBus.send(from = "main", to = to, content = content)
+        // step:<id> is the public workflow address. Scope it to the current
+        // session before it reaches the process-global MessageBus, otherwise
+        // concurrent workflows with the same step IDs can consume each other's
+        // revision messages. Concrete sub-agent IDs remain globally unique and
+        // are intentionally left unchanged.
+        val target = if (sessionId != null && requestedTarget.startsWith("step:")) {
+            "session:$sessionId:$requestedTarget"
+        } else {
+            requestedTarget
+        }
 
-        return successResponse("Message sent to: $to")
+        MessageBus.send(from = from, to = target, content = content)
+
+        return successResponse("Message sent to: $requestedTarget")
     }
 }
 
@@ -350,8 +361,9 @@ OR use template:
 - `steps[].maxIdleMs`: IDLE timeout (default: 1800000 = 30min)
 
 **Execution behavior**:
-- Steps can enter IDLE state after completion
-- Steps can be recalled for REVISION if issues found
+- The initial pass runs each declared step in order
+- A completed step enters IDLE briefly and can process queued revision messages
+- Once every initial task has settled, the workflow marks idle steps COMPLETED and returns results
 - Agents can communicate via `send_agent_message(to="step:step_id", content="...")`
 - Example: Reviewer sends revision request to coder
 
@@ -414,9 +426,13 @@ Each step returns structured JSON:
                     prop("id", "string", "Step identifier.")
                     prop("agentType", "string", "Agent type for this step.")
                     prop("task", "string", "Task description.")
-                    prop("dependsOn", "array", "IDs of steps this depends on (dag only).") { items { } }
+                    prop("dependsOn", "array", "IDs of earlier steps required as context (DAG/pipeline/interactive_pipeline).") { items { } }
+                    prop("resultVariable", "string", "Optional context-variable name for this step's output.")
                     prop("timeoutMs", "integer", "Running timeout in milliseconds (default 600000 = 10min).")
+                    prop("maxRetries", "integer", "Retry count after a failed or timed-out step (default 0).")
                     prop("maxIdleMs", "integer", "IDLE timeout in milliseconds (default 1800000 = 30min, interactive_pipeline only).")
+                    prop("wakeUpOnMessage", "boolean", "Whether an interactive step accepts wake-up messages (default true).")
+                    required("id", "agentType", "task")
                 }
             }
         }
@@ -428,6 +444,7 @@ Each step returns structured JSON:
         prop("agentB", "string", "Second agent type (conversational only).")
         prop("topic", "string", "Discussion topic (conversational only).")
         prop("maxRounds", "integer", "Maximum rounds (conversational only, default 5).")
+        required("mode")
     }
 
     override fun validateInput(arguments: JSONObject): String? {
@@ -445,6 +462,14 @@ Each step returns structured JSON:
                 }
                 if (template.isNotEmpty() && arguments.optString("task").isEmpty()) {
                     return "task is required when using template"
+                }
+                if (steps != null) {
+                    val parsedSteps = try {
+                        parseStepsArray(steps)
+                    } catch (e: IllegalArgumentException) {
+                        return e.message ?: "Invalid workflow steps"
+                    }
+                    WorkflowEngine.validateSteps(parsedSteps, mode)?.let { return it }
                 }
             }
             "conversational" -> {
@@ -473,13 +498,25 @@ Each step returns structured JSON:
                 WorkflowTemplates.instantiateTemplate(templateId, mapOf("task" to task))
             }
             arguments.optJSONArray("steps") != null -> {
-                parseStepsArray(arguments.optJSONArray("steps")!!)
+                try {
+                    parseStepsArray(arguments.optJSONArray("steps")!!)
+                } catch (e: IllegalArgumentException) {
+                    return errorResponse(e.message ?: "Invalid workflow steps")
+                }
             }
             else -> null
         }
 
         if (steps == null && mode in listOf("pipeline", "dag", "interactive_pipeline")) {
-            return errorResponse("Failed to parse steps")
+            val templateId = arguments.optString("template").trim()
+            return if (templateId.isNotEmpty()) {
+                errorResponse("Unknown workflow template: $templateId")
+            } else {
+                errorResponse("Failed to parse steps")
+            }
+        }
+        if (steps != null) {
+            WorkflowEngine.validateSteps(steps, mode)?.let { return errorResponse(it) }
         }
 
         return when (mode) {
@@ -492,20 +529,32 @@ Each step returns structured JSON:
     }
 
     private fun parseStepsArray(stepsArray: JSONArray): List<WorkflowStep> {
-        return (0 until stepsArray.length()).map { i ->
-            val stepObj = stepsArray.optJSONObject(i)!!
+        return (0 until stepsArray.length()).map { index ->
+            val stepObj = stepsArray.optJSONObject(index)
+                ?: throw IllegalArgumentException("steps[$index] must be an object")
             val dependsOnArray = stepObj.optJSONArray("dependsOn")
             val dependsOn = if (dependsOnArray != null) {
-                (0 until dependsOnArray.length()).map { dependsOnArray.optString(it) }
-            } else emptyList()
+                (0 until dependsOnArray.length()).map { dependencyIndex ->
+                    dependsOnArray.optString(dependencyIndex).trim()
+                }
+            } else {
+                emptyList()
+            }
 
             WorkflowStep(
-                id = stepObj.optString("id"),
-                agentType = stepObj.optString("agentType"),
-                task = stepObj.optString("task"),
+                id = stepObj.optString("id").trim(),
+                agentType = stepObj.optString("agentType").trim(),
+                task = stepObj.optString("task").trim(),
                 dependsOn = dependsOn,
+                resultVariable = stepObj.optString("resultVariable").trim().ifBlank { null },
                 timeoutMs = stepObj.optLong("timeoutMs").let { if (it > 0) it else null },
-                maxIdleMs = stepObj.optLong("maxIdleMs").let { if (it > 0) it else null }
+                maxRetries = stepObj.optInt("maxRetries", 0),
+                maxIdleMs = stepObj.optLong("maxIdleMs").let { if (it > 0) it else null },
+                wakeUpOnMessage = if (stepObj.has("wakeUpOnMessage")) {
+                    stepObj.optBoolean("wakeUpOnMessage", true)
+                } else {
+                    true
+                }
             )
         }
     }
@@ -522,16 +571,34 @@ Each step returns structured JSON:
 
         // Execute with progress tracking
         val results = executePipelineWithEvents(context, sessionId, steps, workflowId)
+        val cancelled = WorkflowEngine.isCancellationRequested(workflowId)
+        val failedResult = results.firstOrNull {
+            it.status == WorkflowStepStatus.FAILED || it.status == WorkflowStepStatus.SKIPPED
+        }
 
-        // Emit completion event
-        WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
-            workflowId = workflowId,
-            sessionId = sessionId,
-            results = results
-        ))
+        if (cancelled) {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                error = "Workflow cancelled"
+            ))
+        } else if (failedResult != null) {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                error = failedResult.error ?: "Pipeline failed at step ${failedResult.stepId}"
+            ))
+        } else {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                results = results
+            ))
+        }
+        WorkflowEngine.clearCancellation(workflowId)
 
         val text = buildString {
-            appendLine("Pipeline execution completed.")
+            appendLine(if (cancelled) "Pipeline execution cancelled." else if (failedResult != null) "Pipeline execution failed." else "Pipeline execution completed.")
             appendLine()
 
             results.forEachIndexed { i, result ->
@@ -558,6 +625,10 @@ Each step returns structured JSON:
         val contextVariables = mutableMapOf<String, String>()
 
         steps.forEachIndexed { index, step ->
+            if (WorkflowEngine.isCancellationRequested(workflowId)) {
+                return results
+            }
+
             // Emit step started event
             WorkflowEventBus.emit(WorkflowEvent.StepStarted(
                 workflowId = workflowId,
@@ -568,20 +639,23 @@ Each step returns structured JSON:
                 task = step.task
             ))
 
-            val fullTask = WorkflowEngine.buildTaskWithContext(step.task, step.dependsOn, contextVariables, steps)
+            val contextDependencies = if (step.dependsOn.isEmpty() && index > 0) {
+                listOf(steps[index - 1].id)
+            } else {
+                step.dependsOn
+            }
+            val fullTask = WorkflowEngine.buildTaskWithContext(step.task, contextDependencies, contextVariables, steps)
 
-            val result = try {
-                val output = SubAgent.executeSync(
-                    context = context,
-                    agentType = step.agentType,
-                    taskDescription = fullTask,
-                    sessionId = sessionId
-                )
-                contextVariables[step.id] = output
-                step.resultVariable?.let { contextVariables[it] = output }
-                StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
-            } catch (e: Exception) {
-                StepResult(step.id, WorkflowStepStatus.FAILED, error = e.message)
+            val result = WorkflowEngine.executeStepWithRetryAndTimeout(
+                context = context,
+                sessionId = sessionId,
+                step = step,
+                fullTask = fullTask,
+                callerContext = null
+            )
+            if (result.status == WorkflowStepStatus.COMPLETED && result.result != null) {
+                contextVariables[step.id] = result.result
+                step.resultVariable?.let { contextVariables[it] = result.result }
             }
 
             results.add(result)
@@ -606,13 +680,9 @@ Each step returns structured JSON:
                 currentStepIndex = index
             ))
 
-            // Stop pipeline on failure
+            // Stop pipeline on failure. The outer function emits one terminal
+            // workflow event after it has determined the final status.
             if (result.status == WorkflowStepStatus.FAILED) {
-                WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
-                    workflowId = workflowId,
-                    sessionId = sessionId,
-                    error = "Pipeline failed at step ${step.id}: ${result.error}"
-                ))
                 return results
             }
         }
@@ -632,16 +702,34 @@ Each step returns structured JSON:
 
         // Execute with progress tracking
         val results = executeDagWithEvents(context, sessionId, steps, workflowId)
+        val cancelled = WorkflowEngine.isCancellationRequested(workflowId)
+        val failedResult = results.firstOrNull {
+            it.status == WorkflowStepStatus.FAILED || it.status == WorkflowStepStatus.SKIPPED
+        }
 
-        // Emit completion event
-        WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
-            workflowId = workflowId,
-            sessionId = sessionId,
-            results = results
-        ))
+        if (cancelled) {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                error = "Workflow cancelled"
+            ))
+        } else if (failedResult != null) {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                error = failedResult.error ?: "DAG failed at step ${failedResult.stepId}"
+            ))
+        } else {
+            WorkflowEventBus.emit(WorkflowEvent.WorkflowCompleted(
+                workflowId = workflowId,
+                sessionId = sessionId,
+                results = results
+            ))
+        }
+        WorkflowEngine.clearCancellation(workflowId)
 
         val text = buildString {
-            appendLine("DAG execution completed.")
+            appendLine(if (cancelled) "DAG execution cancelled." else if (failedResult != null) "DAG execution failed." else "DAG execution completed.")
             appendLine()
 
             results.forEach { result: StepResult ->
@@ -705,15 +793,9 @@ Each step returns structured JSON:
         }
 
         if (hasCycle) {
-            val results = steps.map {
-                StepResult(it.id, WorkflowStepStatus.SKIPPED, error = "Cycle detected: ${cyclePath.joinToString(" → ")}")
+            return@coroutineScope steps.map {
+                StepResult(it.id, WorkflowStepStatus.SKIPPED, error = "Cycle detected: ${cyclePath.joinToString(" -> ")}")
             }
-            WorkflowEventBus.emit(WorkflowEvent.WorkflowFailed(
-                workflowId = workflowId,
-                sessionId = sessionId,
-                error = "Cycle detected: ${cyclePath.joinToString(" → ")}"
-            ))
-            return@coroutineScope results
         }
 
         // Execute DAG with events
@@ -723,6 +805,12 @@ Each step returns structured JSON:
         val remaining = steps.toMutableList()
 
         while (remaining.isNotEmpty()) {
+            if (WorkflowEngine.isCancellationRequested(workflowId)) {
+                return@coroutineScope steps.map { step ->
+                    results[step.id] ?: StepResult(step.id, WorkflowStepStatus.SKIPPED, error = "Workflow cancelled")
+                }
+            }
+
             val ready = remaining.filter { step ->
                 step.dependsOn.all { it in completedSteps } &&
                     step.dependsOn.none { it in failedSteps }
@@ -776,18 +864,14 @@ Each step returns structured JSON:
                         includeFullOutput = true  // Include full_output for DAG summary steps
                     )
 
-                    try {
-                        val output = SubAgent.executeSync(
-                            context = context,
-                            agentType = step.agentType,
-                            taskDescription = fullTask,
-                            sessionId = sessionId,
-                            promptMode = AgentPrompts.PromptMode.DAG  // DAG mode for parallel execution awareness
-                        )
-                        StepResult(step.id, WorkflowStepStatus.COMPLETED, result = output)
-                    } catch (e: Exception) {
-                        StepResult(step.id, WorkflowStepStatus.FAILED, error = e.message)
-                    }
+                    WorkflowEngine.executeStepWithRetryAndTimeout(
+                        context = context,
+                        sessionId = sessionId,
+                        step = step,
+                        fullTask = fullTask,
+                        callerContext = null,
+                        promptMode = AgentPrompts.PromptMode.DAG
+                    )
                 }
             }.awaitAll()
 
@@ -832,13 +916,6 @@ Each step returns structured JSON:
         sessionId: Long
     ): JSONObject {
         val workflowId = UUID.randomUUID().toString()
-
-        WorkflowEventBus.emit(WorkflowEvent.WorkflowStarted(
-            workflowId = workflowId,
-            sessionId = sessionId,
-            mode = WorkflowMode.PIPELINE,
-            totalSteps = steps.size
-        ))
 
         val results = WorkflowEngine.executeInteractivePipeline(
             context = context,

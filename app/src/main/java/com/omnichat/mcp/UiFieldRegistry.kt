@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /**
  * 集中定义所有 UI 可调整字段的元数据。
- * 消除 McpRuntimeManager（schema）、BuiltinToolHandler（赋值/变更检测/capabilities）中的重复定义。
+ * 消除 McpRuntimeManager（schema）、built-in tool logic（赋值/变更检测/capabilities）中的重复定义。
  */
 object UiFieldRegistry {
 

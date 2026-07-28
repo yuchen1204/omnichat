@@ -18,6 +18,7 @@ captures/
 !.env.example
 *.jks
 *.keystore
+keystore.properties
 debug.keystore
 
 ### Build ###
@@ -55,3 +56,4 @@ ClaudeCode-main/
 
 ###superpower source ###
 superpowers-main/
+.worktree/
