@@ -62,7 +62,8 @@ data class Message(
     tableName = "memory_items",
     indices = [
         Index(value = ["confidence"]),
-        Index(value = ["updatedAt"])
+        Index(value = ["updatedAt"]),
+        Index(value = ["embeddingModelId"])
     ]
 )
 @Immutable
@@ -76,23 +77,28 @@ data class MemoryItem(
     val updatedAt: Long = System.currentTimeMillis(),
     /** 用户手动锁定：pinned=true 时 LLM 不可删除或覆盖此条目 */
     val pinned: Boolean = false,
-    /** 最近一次被强化的时间戳，用于置信度衰减计算 */
+    /** 最近一次被强化的时间戳，仅用于追踪强化事件 */
     val lastReinforcedAt: Long = System.currentTimeMillis(),
     /** LLM 生成的语义标签，逗号分隔，如 "preference,fact" */
     val tags: String = "",
     /** 嵌入向量的 JSON 序列化，如 "[0.1,0.2,...]"，用于语义搜索 */
     val embedding: String = "",
+    /** 生成此 embedding 的模型 ID，用于检测模型变更后重新计算 */
+    val embeddingModelId: String = "",
     /** 截止日期（ISO 格式 "YYYY-MM-DD"），null 表示非时间记忆 */
     val dueDate: String? = null,
     /** 是否已提醒用户，防止重复提醒 */
-    val reminded: Boolean = false
+    val reminded: Boolean = false,
+    /** 最近一次置信度衰减的时间戳，与 lastReinforcedAt 语义分离 */
+    val lastDecayedAt: Long = System.currentTimeMillis()
 )
 
 @Entity(
     tableName = "memory_associations",
     indices = [
         Index(value = ["fromMemoryId"]),
-        Index(value = ["toMemoryId"])
+        Index(value = ["toMemoryId"]),
+        Index(value = ["fromMemoryId", "toMemoryId", "relationLabel"], unique = true)
     ]
 )
 data class MemoryAssociation(

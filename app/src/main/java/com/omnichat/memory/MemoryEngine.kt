@@ -46,19 +46,27 @@ class MemoryEngine(
      * 2. 剩余槽位用 embedding 语义相关度 × confidence 排序填充
      * 3. 无 embedding 时降级为 confidence 排序（兼容旧行为）
      *
+     * 优化：先检查是否有 unpinned 记忆含有 embedding，若无则跳过 embedding 计算，节省 API 调用。
+     *
      * @param userMessage 当前用户消息，用于计算语义相关度
      * @param limit 最大注入数量
      */
     suspend fun selectRelevantMemories(userMessage: String = "", limit: Int = MEMORY_INJECT_LIMIT): List<MemoryItem> {
-        val allMemories = try {
-            repository.getAllMemories()
+        val pinned = try {
+            repository.getPinnedMemories()
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e(TAG, "Failed to load memories for injection: ${e.message}")
+            Log.e(TAG, "Failed to load pinned memories for injection: ${e.message}")
             return emptyList()
         }
-        val pinned = allMemories.filter { it.pinned }
-        val unpinned = allMemories.filter { !it.pinned }
+        val unpinned = try {
+            // 加载 2 倍于需要的数量，给 embedding 排序留余地
+            repository.getTopUnpinnedMemories(limit * 2)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(TAG, "Failed to load unpinned memories for injection: ${e.message}")
+            return pinned.take(limit)
+        }
 
         if (unpinned.isEmpty()) return pinned.take(limit)
 
@@ -66,10 +74,12 @@ class MemoryEngine(
         val messageKeywords = extractKeywordsFromMessage(userMessage)
 
         // 尝试 embedding 语义排序
+        // 优化：仅当至少有一个 unpinned 记忆含有 embedding 时才计算查询 embedding
         val config = getMemoryModelConfig()
         val embeddingModelId = config?.embeddingModelId?.takeIf { it.isNotBlank() }
-        val queryEmbedding = if (!userMessage.isBlank() && embeddingModelId != null) {
-            computeEmbedding(userMessage, config, embeddingModelId)
+        val hasAnyEmbedding = embeddingModelId != null && unpinned.any { it.embedding.isNotBlank() }
+        val queryEmbedding = if (!userMessage.isBlank() && hasAnyEmbedding) {
+            computeEmbedding(userMessage, config!!, embeddingModelId!!)
         } else null
 
         val ranked = unpinned.map { mem ->
@@ -132,29 +142,30 @@ class MemoryEngine(
      * 获取记忆总数（用于判断是否注入 SEARCH HINT）。
      */
     suspend fun getTotalMemoryCount(): Int {
-        return repository.getAllMemories().size
+        return repository.getMemoryCount()
     }
 
     // ── 置信度衰减 ─────────────────────────────────────────────────────
 
     /**
-     * 批量置信度衰减：每行独立计算衰减天数（SQL 中按 lastReinforcedAt 计算）。
+     * 批量置信度衰减：每行独立计算衰减天数（SQL 中按 lastDecayedAt 计算）。
      * 使用单条 SQL UPDATE 替代逐条更新，大幅提升性能。
+     * 衰减只修改 lastDecayedAt 和 confidence，不修改 lastReinforcedAt。
      */
     suspend fun applyConfidenceDecay(now: Long) {
         try {
             repository.batchDecayConfidence(now)
         } catch (e: Exception) {
             Log.w(TAG, "Batch confidence decay failed, falling back to per-item: ${e.message}")
-            // 降级为逐条更新
+            // 降级为逐条更新（使用 lastDecayedAt 而非 lastReinforcedAt）
             val allMemories = repository.getAllMemories()
             for (memory in allMemories) {
                 if (memory.pinned) continue
-                val daysSince = ((now - memory.lastReinforcedAt) / 86_400_000L).toInt()
+                val daysSince = ((now - memory.lastDecayedAt) / 86_400_000L).toInt()
                 if (daysSince <= 0) continue
                 val newConfidence = maxOf(1, memory.confidence - daysSince)
                 if (newConfidence != memory.confidence) {
-                    repository.updateMemory(memory.copy(confidence = newConfidence, lastReinforcedAt = now))
+                    repository.updateMemory(memory.copy(confidence = newConfidence, lastDecayedAt = now))
                 }
             }
         }
@@ -452,12 +463,16 @@ Do NOT create associations for newly added facts (they don't have stable IDs yet
 
     /**
      * 生成冷启动关联回填的 LLM prompt 并执行。
+     * 每次最多处理 [BATCH_SIZE] 条记忆，避免 LLM 一次性处理过多导致遗漏关联。
      */
     suspend fun generateAssociationsForUnassociated(
         unassociated: List<MemoryItem>,
-        memoryConfig: ModelConfig
+        memoryConfig: ModelConfig,
+        batchSize: Int = 8
     ): String? {
-        val candidatesFormatted = unassociated.joinToString("\n") { mem ->
+        // 分批：取前 batchSize 条，避免 LLM 一次性处理过多
+        val batch = unassociated.take(batchSize)
+        val candidatesFormatted = batch.joinToString("\n") { mem ->
             "${mem.id}. (confidence=${mem.confidence}) ${mem.content}"
         }
         val backfillSystemPrompt = """
@@ -479,10 +494,49 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
         return ApiClient.executeCompletion(memoryConfig, backfillSystemPrompt, backfillQuery)?.trim()
     }
 
+    /**
+     * 批量执行冷启动关联回填：将未关联记忆分批处理，每批调用一次 LLM。
+     * 返回成功处理的总批次数，失败时返回 0。
+     */
+    suspend fun batchBackfillAssociations(
+        memoryConfig: ModelConfig,
+        batchSize: Int = 8,
+        maxBatches: Int = 3
+    ): Int {
+        var totalBatches = 0
+        try {
+            while (totalBatches < maxBatches) {
+                val unassociated = repository.getUnassociatedMemories(limit = batchSize)
+                if (unassociated.size < 2) break // 不足 2 条无法形成关联
+
+                val backfillJson = generateAssociationsForUnassociated(
+                    unassociated = unassociated,
+                    memoryConfig = memoryConfig,
+                    batchSize = batchSize
+                )
+                if (backfillJson != null) {
+                    applyAssociationsFromJson(backfillJson, unassociated.map { it.id }.toSet())
+                }
+                totalBatches++
+
+                // 检查是否已处理完所有未关联记忆
+                val remaining = repository.getUnassociatedMemories(limit = batchSize)
+                if (remaining.size < 2) break
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "batchBackfillAssociations: completed $totalBatches batches, then error: ${e.message}")
+        }
+        return totalBatches
+    }
+
     // ── 记忆搜索 ───────────────────────────────────────────────────────
 
     /**
      * 执行记忆搜索：embedding 语义评分（优先） + bigram Jaccard 降级 + 关联图谱 BFS 展开。
+     *
+     * 如果当前 embedding 模型与记忆存储的 embeddingModelId 不匹配，则跳过 embedding 搜索，
+     * 降级为 Jaccard，避免跨模型语义不兼容。
      */
     suspend fun searchMemory(
         query: String,
@@ -518,8 +572,12 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
         // 尝试 embedding 语义评分
         val config = getMemoryModelConfig()
         val embeddingModelId = config?.embeddingModelId?.takeIf { it.isNotBlank() }
+        // 仅当当前 embedding 模型与记忆存储的模型一致时才使用 embedding 搜索
         val queryEmbedding = if (embeddingModelId != null) {
-            computeEmbedding(query, config, embeddingModelId)
+            val hasMatchingEmbedding = candidates.any { it.embeddingModelId == embeddingModelId && it.embedding.isNotBlank() }
+            if (hasMatchingEmbedding) {
+                computeEmbedding(query, config!!, embeddingModelId)
+            } else null
         } else null
 
         val scored = if (queryEmbedding != null) {
@@ -694,6 +752,7 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
 
     /**
      * 为指定记忆计算并存储 embedding。
+     * 同时记录当前使用的 embedding 模型 ID，用于检测模型变更后重新计算。
      * 用于新记忆写入时和批量回填。
      */
     suspend fun computeAndStoreEmbedding(memoryId: Long, content: String) {
@@ -701,7 +760,50 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
         val embeddingModelId = config.embeddingModelId.takeIf { it.isNotBlank() } ?: return
         val embedding = computeEmbedding(content, config, embeddingModelId) ?: return
         val memory = repository.getMemoryById(memoryId) ?: return
-        repository.updateMemory(memory.copy(embedding = MemoryTokenizer.embeddingToJson(embedding)))
+        repository.updateMemory(memory.copy(
+            embedding = MemoryTokenizer.embeddingToJson(embedding),
+            embeddingModelId = embeddingModelId
+        ))
+    }
+
+    /**
+     * 检测并回填：当 embedding 模型变更时，批量重新计算所有旧模型 embedding。
+     *
+     * 策略：读取所有记忆，筛选出 embeddingModelId 与当前模型不一致或 embedding 为空但内容非空的条目，
+     * 分批（每批 20 条）重新计算并存储。
+     *
+     * @return 成功回填的条数
+     */
+    suspend fun rebuildEmbeddingsIfModelChanged(): Int {
+        val config = getMemoryModelConfig() ?: return 0
+        val currentModelId = config.embeddingModelId.takeIf { it.isNotBlank() } ?: return 0
+        val allMemories = repository.getAllMemories()
+
+        // 筛选出需要重建 embedding 的记忆
+        val needsRebuild = allMemories.filter { mem ->
+            mem.content.isNotBlank() && (
+                mem.embeddingModelId != currentModelId || mem.embedding.isBlank()
+            )
+        }
+        if (needsRebuild.isEmpty()) return 0
+
+        Log.d(TAG, "Rebuilding embeddings for ${needsRebuild.size} memories (model: $currentModelId)")
+
+        var rebuiltCount = 0
+        for (batch in needsRebuild.chunked(20)) {
+            val texts = batch.map { it.content }
+            val embeddings = computeEmbeddingsBatch(texts, config, currentModelId)
+            for (i in batch.indices) {
+                val embedding = embeddings.getOrNull(i) ?: continue
+                repository.updateMemory(batch[i].copy(
+                    embedding = MemoryTokenizer.embeddingToJson(embedding),
+                    embeddingModelId = currentModelId
+                ))
+                rebuiltCount++
+            }
+        }
+        Log.d(TAG, "Rebuilt $rebuiltCount / ${needsRebuild.size} embeddings")
+        return rebuiltCount
     }
 
     // ── 审计日志 ────────────────────────────────────────────────────────

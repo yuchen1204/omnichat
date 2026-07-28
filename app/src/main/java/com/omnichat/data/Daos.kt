@@ -138,8 +138,20 @@ interface MemoryItemDao {
     @Query("DELETE FROM memory_items")
     suspend fun deleteAllMemories()
 
-    /** 批量衰减置信度：每行独立计算衰减天数，confidence 减去该行的天数差（下限 1） */
-    @Query("UPDATE memory_items SET confidence = MAX(1, confidence - MAX(0, CAST((:now - lastReinforcedAt) / 86400000 AS INT))), lastReinforcedAt = :now WHERE pinned = 0 AND lastReinforcedAt < :now AND confidence > 1")
+    /** 获取所有置钉记忆（按置信度、更新时间降序） */
+    @Query("SELECT * FROM memory_items WHERE pinned = 1 ORDER BY confidence DESC, updatedAt DESC")
+    suspend fun getPinnedMemories(): List<MemoryItem>
+
+    /** 获取 top-k 未置钉记忆（按置信度、更新时间降序，避免全表加载） */
+    @Query("SELECT * FROM memory_items WHERE pinned = 0 ORDER BY confidence DESC, updatedAt DESC LIMIT :limit")
+    suspend fun getTopUnpinnedMemories(limit: Int): List<MemoryItem>
+
+    /** 获取记忆总数（轻量 COUNT，避免全表传输） */
+    @Query("SELECT COUNT(*) FROM memory_items")
+    suspend fun getMemoryCount(): Int
+
+    /** 批量衰减置信度：每行独立计算衰减天数，基于 lastDecayedAt 计算，仅更新 lastDecayedAt 不修改 lastReinforcedAt */
+    @Query("UPDATE memory_items SET confidence = MAX(1, confidence - MAX(0, CAST((:now - lastDecayedAt) / 86400000 AS INT))), lastDecayedAt = :now WHERE pinned = 0 AND lastDecayedAt < :now AND confidence > 1")
     suspend fun batchDecayConfidence(now: Long)
 
     /** 查询所有未提醒的已过期时间记忆（dueDate < today，不含今天新建的） */
@@ -185,7 +197,7 @@ interface MemoryAssociationDao {
         ORDER BY confidence DESC, updatedAt DESC
         LIMIT :limit
     """)
-    suspend fun getUnassociatedMemories(limit: Int): List<MemoryItem>
+    suspend fun getUnassociatedMemories(limit: Int = 20): List<MemoryItem>
 }
 
 @Dao

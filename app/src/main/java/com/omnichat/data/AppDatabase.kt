@@ -27,8 +27,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 云端备份记录
         CloudBackupRecord::class,
     ],
-    version = 55,
-    exportSchema = false,
+    version = 56,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun modelConfigDao(): ModelConfigDao
@@ -906,6 +906,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v55→v56: 记忆系统增强 — embeddingModelId、lastDecayedAt、关联唯一索引 */
+        private val MIGRATION_55_56 = object : Migration(55, 56) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. memory_items 添加 embeddingModelId 列
+                db.execSQL("ALTER TABLE memory_items ADD COLUMN embeddingModelId TEXT NOT NULL DEFAULT ''")
+                // 2. memory_items 添加 lastDecayedAt 列（与 lastReinforcedAt 语义分离）
+                db.execSQL("ALTER TABLE memory_items ADD COLUMN lastDecayedAt INTEGER NOT NULL DEFAULT 0")
+                // 回填 lastDecayedAt = lastReinforcedAt（兼容旧数据）
+                db.execSQL("UPDATE memory_items SET lastDecayedAt = lastReinforcedAt WHERE lastDecayedAt = 0")
+                // 3. 为 embeddingModelId 创建索引
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_memory_items_embeddingModelId ON memory_items(embeddingModelId)")
+                // 4. memory_associations 添加唯一索引（防止重复关联边）
+                // 需先删除可能的重复记录，再创建唯一索引
+                db.execSQL("""
+                    DELETE FROM memory_associations WHERE id NOT IN (
+                        SELECT MIN(id) FROM memory_associations
+                        GROUP BY fromMemoryId, toMemoryId, relationLabel
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_memory_associations_unique ON memory_associations(fromMemoryId, toMemoryId, relationLabel)")
+            }
+        }
+
         /**
          * 清除单例实例（用于数据库恢复后重新初始化）。
          */
@@ -967,10 +990,11 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_51_52,
                         MIGRATION_52_53,
                         MIGRATION_53_54,
-                        MIGRATION_54_55
+                        MIGRATION_54_55,
+                        MIGRATION_55_56
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
-                    // 兜底：v1-v3 使用破坏性迁移（非常老的安装版本）。
+                    // 兜底：v1-v3 使用破坏性迁移（非常旧的安装版本）。
                     // v4+ 均有显式迁移脚本（含中间版本的破坏性迁移 MIGRATION_19_22/23_25/30_32）。
                     .fallbackToDestructiveMigrationFrom(dropAllTables = true, *(1..3).toList().toIntArray())
                     // 全局兜底：恢复备份等场景下数据库版本可能不匹配，允许 destructive migration

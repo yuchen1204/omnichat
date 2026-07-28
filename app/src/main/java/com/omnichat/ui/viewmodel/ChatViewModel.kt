@@ -8,6 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnichat.data.*
+import com.omnichat.ui.presentation.ChatDisplayState
+import com.omnichat.ui.presentation.buildChatDisplayState
 import com.omnichat.network.ApiClient
 import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
@@ -38,6 +40,9 @@ import com.omnichat.ui.screens.SubAgentTaskUiState
 import com.omnichat.ui.screens.TaskStatus
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+
+private const val STREAMING_UI_UPDATE_INTERVAL_MS = 50L
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
@@ -64,6 +69,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Preprocesses the entire persisted message snapshot off the composition
+    // path: tool-call JSON is parsed once, hidden tools are removed, and
+    // contiguous tool outputs are grouped for the reverse-layout list.
+    val chatDisplayState: StateFlow<ChatDisplayState> = combine(
+        activeMessages,
+        repository.uiSettings
+    ) { messages, settings ->
+        buildChatDisplayState(messages, settings?.silentToolGroups.orEmpty())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatDisplayState())
 
     // Model configurations flow
     val modelConfigs: StateFlow<List<ModelConfig>> = repository.allConfigs
@@ -132,8 +149,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var subAgentActive by mutableStateOf(false)
         private set
 
-    // BUG-016: 使用 Mutex 替代非原子的 boolean 检查，防止并发 triggerMemorySync
-    private val memorySyncMutex = kotlinx.coroutines.sync.Mutex()
+    // CONFLATED Channel 替代 Mutex：合并短时间内多次请求，单协程串行处理
+    private val memorySyncChannel = Channel<Boolean>(Channel.CONFLATED)
 
     // Temporary list of models fetched from endpoints
     var fetchedModels by mutableStateOf<List<FetchedModel>>(emptyList())
@@ -1222,21 +1239,39 @@ Output the title now."""
             }
         }
 
+        fun publishStreamingStates(force: Boolean = false) {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastUiUpdateTime < STREAMING_UI_UPDATE_INTERVAL_MS) {
+                return
+            }
+
+            // Providers that emit dedicated reasoning deltas previously bypassed
+            // the text throttle. Apply the same cadence to both output channels.
+            if (accumulatedReasoningContent.isNotEmpty()) {
+                currentStreamingThinking = accumulatedReasoningContent
+                currentStreamingBody = accumulatedText
+                isThinkingFinished = false
+            } else {
+                updateStreamingStates(accumulatedText)
+            }
+            lastUiUpdateTime = now
+        }
+
         ApiClient.executeStreamingChat(config, systemPrompt, messageHistory, openAiTools, getApplication(), thinkingEffortOverride = sessionThinkingEffort)
             .collect { chunk ->
                 if (errorReceived) return@collect
                 if (chunk.startsWith("ERROR:")) {
                     accumulatedText += "\n$chunk"
-                    updateStreamingStates(accumulatedText)
+                    publishStreamingStates(force = true)
                     errorReceived = true
                 } else if (chunk.startsWith("INFO:")) {
                     accumulatedText += "\n$chunk"
-                    updateStreamingStates(accumulatedText)
+                    publishStreamingStates(force = true)
                 } else if (chunk == "RETRY_RESET:") {
                     accumulatedText = ""
                     accumulatedReasoningContent = ""
                     accumulatedToolCalls.clear()
-                    updateStreamingStates("")
+                    publishStreamingStates(force = true)
                 } else if (chunk.startsWith("TOOL_CALL_DELTA:")) {
                     val deltaJson = chunk.substringAfter("TOOL_CALL_DELTA:")
                     try {
@@ -1308,17 +1343,11 @@ Output the title now."""
                     }
                 } else if (chunk.startsWith("REASONING:")) {
                     accumulatedReasoningContent += chunk.substringAfter("REASONING:")
-                    currentStreamingThinking = accumulatedReasoningContent
-                    isThinkingFinished = false
+                    publishStreamingStates()
                 } else {
                     if (chunk != "null") {
                         accumulatedText += chunk
-                        val now = System.currentTimeMillis()
-                        // 节流更新 UI，每 50ms 更新一次
-                        if (now - lastUiUpdateTime > 50) {
-                            updateStreamingStates(accumulatedText)
-                            lastUiUpdateTime = now
-                        }
+                        publishStreamingStates()
                     }
                 }
             }
@@ -1329,6 +1358,8 @@ Output the title now."""
         } else {
             accumulatedText
         }
+        // Always publish the completed value, even if the final delta arrived
+        // within the throttle window.
         updateStreamingStates(finalAccumulatedText)
 
         val finalContent = if (finalAccumulatedText.trim() == "null") "" else finalAccumulatedText
@@ -1493,6 +1524,9 @@ Output the title now."""
                 // 衰减非 pinned 记忆的置信度
                 memoryEngine.applyConfidenceDecay(now)
 
+                // 检测并重建 embedding（当模型变更时自动回填）
+                memoryEngine.rebuildEmbeddingsIfModelChanged()
+
                 // ── Step 1：生成本会话的新滚动摘要 ──────────────────────
                 val recentMessages = run {
                     var charCount = 0
@@ -1531,15 +1565,13 @@ Output the title now."""
 
                 memoryEngine.applyMemoryCrudOps(crudJson, currentMemories, now)
 
-                // ── Step 2.5：冷启动补关联（阈值提高到 5，因为即时关联已覆盖新记忆）──
+                // ── Step 2.5：冷启动补关联（分批处理，每次最多 8 条，最多 3 批）──
                 try {
-                    val unassociated = repository.getUnassociatedMemories(COLD_START_ASSOC_LIMIT)
-                    if (unassociated.size >= 5) {
-                        val backfillJson = memoryEngine.generateAssociationsForUnassociated(unassociated, memoryConfig)
-                        if (backfillJson != null) {
-                            memoryEngine.applyAssociationsFromJson(backfillJson, unassociated.map { it.id }.toSet())
-                        }
-                    }
+                    memoryEngine.batchBackfillAssociations(
+                        memoryConfig = memoryConfig,
+                        batchSize = 8,
+                        maxBatches = 3
+                    )
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     android.util.Log.e("ChatViewModel", "Association backfill failed: ${e.message}", e)
@@ -1564,7 +1596,6 @@ Output the title now."""
         private const val MEMORY_WINDOW_CHARS = 12_000           // 摘要窗口最大字符数
         private const val MEMORY_RECENT_RAW_COUNT = 20           // Step 2 额外传入的原始消息条数
         private const val MAX_TOOL_CALL_DEPTH = 10               // 工具调用最大递归深度，防止无限循环
-        private const val COLD_START_ASSOC_LIMIT = 20
     }
 
     /**
