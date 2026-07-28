@@ -50,8 +50,9 @@ fun SkillsView(viewModel: ChatViewModel) {
 
     var showInstallInfo by remember { mutableStateOf(false) }
     var installError by remember { mutableStateOf<String?>(null) }
+    var installCount by remember { mutableStateOf(0) }
 
-    // 文件选择器：安装 .skill.md 文件
+    // 文件选择器：安装 .skill.md 文件或 .zip 压缩包
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -59,9 +60,10 @@ fun SkillsView(viewModel: ChatViewModel) {
             scope.launch {
                 val result = viewModel.skillManager.installFromUri(uri)
                 result.fold(
-                    onSuccess = {
+                    onSuccess = { skills ->
                         showInstallInfo = true
                         installError = null
+                        installCount = skills.size
                     },
                     onFailure = {
                         installError = it.message ?: "安装失败"
@@ -99,7 +101,7 @@ fun SkillsView(viewModel: ChatViewModel) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (installError != null) installError!! else "Skill 安装成功！",
+                        text = if (installError != null) installError!! else "Skill 安装成功！共安装 $installCount 个 Skill",
                         fontSize = (13 * fs).sp,
                         fontFamily = fontFamily,
                         color = if (installError != null)
@@ -147,7 +149,7 @@ fun SkillsView(viewModel: ChatViewModel) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "点击右下角 + 按钮或下方按钮安装 .skill.md 文件",
+                            text = "选择 .skill.md 或 .zip 文件安装",
                             fontSize = (13 * fs).sp,
                             fontFamily = fontFamily,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
@@ -163,7 +165,7 @@ fun SkillsView(viewModel: ChatViewModel) {
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("安装 Skill 文件", fontSize = (14 * fs).sp)
+                            Text("安装 Skill（.md / .zip）", fontSize = (14 * fs).sp)
                         }
                     }
                 }

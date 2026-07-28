@@ -96,23 +96,29 @@ class SkillManager(private val context: Context) {
 
     /**
      * 从 Uri 安装 Skill。
+     * 自动识别 .skill.md 单文件和 .zip 压缩包。
+     * 返回安装的 Skill 列表。
      */
-    suspend fun installFromUri(uri: Uri): Result<SkillEntity> {
+    suspend fun installFromUri(uri: Uri): Result<List<SkillEntity>> {
         return withContext(Dispatchers.IO) {
             val result = SkillInstaller.installFromUri(context, uri)
             result.fold(
-                onSuccess = { skill ->
-                    val existing = skillDao.getBySkillId(skill.skillId)
-                    if (existing != null) {
-                        skillDao.update(skill.copy(id = existing.id, isBuiltin = existing.isBuiltin))
-                        SkillRegistry.update(skill.copy(id = existing.id, isBuiltin = existing.isBuiltin))
-                    } else {
-                        val id = skillDao.insert(skill)
-                        val saved = skill.copy(id = id)
-                        SkillRegistry.register(saved)
-                        Result.success(saved)
+                onSuccess = { skills ->
+                    val installed = mutableListOf<SkillEntity>()
+                    for (skill in skills) {
+                        val existing = skillDao.getBySkillId(skill.skillId)
+                        if (existing != null) {
+                            skillDao.update(skill.copy(id = existing.id, isBuiltin = existing.isBuiltin))
+                            SkillRegistry.update(skill.copy(id = existing.id, isBuiltin = existing.isBuiltin))
+                            installed.add(skill.copy(id = existing.id))
+                        } else {
+                            val id = skillDao.insert(skill)
+                            val saved = skill.copy(id = id)
+                            SkillRegistry.register(saved)
+                            installed.add(saved)
+                        }
                     }
-                    Result.success(skill)
+                    Result.success(installed)
                 },
                 onFailure = { Result.failure(it) }
             )

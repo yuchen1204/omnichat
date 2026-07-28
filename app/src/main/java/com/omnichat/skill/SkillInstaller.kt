@@ -6,12 +6,14 @@ import com.omnichat.data.SkillEntity
 import org.json.JSONArray
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.zip.ZipInputStream
 
 /**
  * Skill 安装器。
  *
- * 解析 .skill.md 文件（Markdown + YAML frontmatter），
- * 将其安装到数据库中。
+ * 支持两种安装格式：
+ * 1. .skill.md 单文件（Markdown + YAML frontmatter）
+ * 2. .zip 压缩包（内含一个或多个 .skill.md 文件）
  *
  * .skill.md 文件格式：
  * ```markdown
@@ -31,16 +33,27 @@ import java.io.InputStreamReader
 object SkillInstaller {
 
     /**
-     * 从 Uri 读取并解析 .skill.md 文件。
+     * 从 Uri 安装 Skill，自动识别 .md 和 .zip 文件。
      */
-    suspend fun installFromUri(context: Context, uri: Uri): Result<SkillEntity> {
+    suspend fun installFromUri(context: Context, uri: Uri): Result<List<SkillEntity>> {
         return try {
-            val content = readUriContent(context, uri)
-            val skill = parseSkillMarkdown(content)
-            if (skill != null) {
-                Result.success(skill)
+            val uriStr = uri.toString().lowercase()
+            if (uriStr.endsWith(".zip")) {
+                installFromZipUri(context, uri)
             } else {
-                Result.failure(IllegalArgumentException("无法解析 .skill.md 文件：格式不正确"))
+                // 尝试作为 .md 文件解析
+                val content = readUriContent(context, uri)
+                val skill = parseSkillMarkdown(content)
+                if (skill != null) {
+                    Result.success(listOf(skill))
+                } else {
+                    // 如果解析失败，也尝试作为 ZIP 处理（某些文件选择器可能丢失扩展名）
+                    try {
+                        installFromZipUri(context, uri)
+                    } catch (_: Exception) {
+                        Result.failure(IllegalArgumentException("无法解析文件：格式不正确。请使用 .skill.md 或 .zip 文件。"))
+                    }
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -48,7 +61,37 @@ object SkillInstaller {
     }
 
     /**
-     * 从字符串内容解析 .skill.md 文件。
+     * 从 Zip 压缩包中安装 Skill。
+     * 扫描包内所有 .skill.md 文件并解析。
+     */
+    private suspend fun installFromZipUri(context: Context, uri: Uri): Result<List<SkillEntity>> {
+        val skills = mutableListOf<SkillEntity>()
+
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            ZipInputStream(inputStream.buffered()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && entry.name.lowercase().endsWith(".skill.md")) {
+                        val content = zis.readBytes().toString(Charsets.UTF_8)
+                        val skill = parseSkillMarkdown(content)
+                        if (skill != null) {
+                            skills.add(skill)
+                        }
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        } ?: throw IllegalArgumentException("无法读取文件")
+
+        if (skills.isEmpty()) {
+            return Result.failure(IllegalArgumentException("ZIP 文件中未找到任何 .skill.md 文件"))
+        }
+
+        return Result.success(skills)
+    }
+
+    /**
+     * 从字符串内容解析单个 .skill.md 文件。
      */
     fun installFromContent(content: String): Result<SkillEntity> {
         return try {
