@@ -358,7 +358,7 @@
     <string name="role_assistant">[助手]</string>
     <string name="role_tool_result">[工具结果]</string>
 
-    <!-- ── BuiltinToolHandler: Core ── -->
+    <!-- ── built-in tool logic: Core ── -->
     <string name="tool_unknown_builtin">未知的内置工具: %s</string>
     <string name="tool_ui_reset">UI 已重置为默认设置。</string>
     <string name="tool_time_info">当前时间信息</string>
@@ -367,12 +367,12 @@
     <string name="tool_time_iso">• ISO 8601：%s</string>
     <string name="tool_time_unix">• Unix 时间戳：%s</string>
 
-    <!-- ── BuiltinToolHandler: UI ── -->
+    <!-- ── built-in tool logic: UI ── -->
     <string name="tool_ui_no_changes">未检测到任何字段变化（输入可能为空或全部无效）。</string>
     <string name="tool_ui_applied">UI 设置已应用。已更新 %d 项：%s</string>
     <string name="tool_ui_capability_desc">UI 主题能力清单。使用 adjust_ui 传入想改的字段即可，未传字段保持当前值。传 resetToDefault=true 可还原全部设置。</string>
 
-    <!-- ── BuiltinToolHandler: Color Scheme ── -->
+    <!-- ── built-in tool logic: Color Scheme ── -->
     <string name="tool_color_action_invalid">参数 \'action\' 必须是 save、list、apply 或 delete 之一。</string>
     <string name="tool_color_save_name_empty">保存失败：name 不能为空。</string>
     <string name="tool_color_save_limit">保存失败：已达到最多 %d 个方案上限。\n\n当前已保存：\n%s\n\n请先用 action=\"delete\" 删除一个方案。</string>
@@ -390,7 +390,7 @@
     <string name="tool_color_delete_not_found">删除失败：找不到 schemeId=%s 的方案。</string>
     <string name="tool_color_deleted">配色方案「%s」已删除。当前剩余 %d/%d 个方案。</string>
 
-    <!-- ── BuiltinToolHandler: Memory ── -->
+    <!-- ── built-in tool logic: Memory ── -->
     <string name="tool_memory_query_empty">搜索失败：query 不能为空。</string>
     <string name="tool_memory_search_results">记忆库搜索结果（关键词：「%s」%s，共 %d 条记忆，命中 %d 条）：</string>
     <string name="tool_memory_no_results">未找到与关键词相关的记忆。</string>
@@ -398,7 +398,7 @@
     <string name="tool_memory_pinned_tag"> [已锁定]</string>
     <string name="tool_memory_entry_format">%d. [id=%d, 置信度=%.2f, 相关度=%.2f%s%s]</string>
 
-    <!-- ── BuiltinToolHandler: UI Text ── -->
+    <!-- ── built-in tool logic: UI Text ── -->
     <string name="tool_ui_text_header">=== App 可调整/翻译的 UI 文字列表 ===</string>
     <string name="tool_ui_text_filter">过滤关键词：「%s」</string>
     <string name="tool_ui_text_hint">提示：当前返回所有文字。可以调用 list_ui_texts 时提供 query 参数进行模糊匹配过滤。</string>
@@ -418,7 +418,7 @@
     <string name="tool_ui_text_no_changes">未检测到任何变化（输入可能为空）。</string>
     <string name="tool_ui_text_override_count">当前共有 %d 个被覆盖的 key。</string>
 
-    <!-- ── BuiltinToolHandler: MCP Tool Groups ── -->
+    <!-- ── built-in tool logic: MCP Tool Groups ── -->
     <string name="tool_group_header">=== 内置 MCP 工具组状态 ===</string>
     <string name="tool_group_enabled">✅ 已启用</string>
     <string name="tool_group_disabled">❌ 已禁用</string>
@@ -436,11 +436,11 @@
     <string name="tool_group_desc_files">文件管理：读写外部存储文件 (默认关闭)</string>
     <string name="tool_group_desc_documents">文档创作：生成 PDF/Excel/Word/PPT (默认关闭)</string>
 
-    <!-- ── BuiltinToolHandler: Tool Display Mode ── -->
+    <!-- ── built-in tool logic: Tool Display Mode ── -->
     <string name="tool_display_silent_on">已开启静默模式。后续工具调用将以紧凑方式显示，不再展开详情卡片。如需恢复，请调用 set_tool_display_mode(silent=false)。</string>
     <string name="tool_display_silent_off">已关闭静默模式。后续工具调用将以正常详情卡片显示。</string>
 
-    <!-- ── BuiltinToolHandler: File Operations ── -->
+    <!-- ── built-in tool logic: File Operations ── -->
     <string name="tool_file_path_empty">参数 \'path\' 不能为空。</string>
     <string name="tool_file_path_invalid">路径无效或权限被拒绝：%s</string>
     <string name="tool_file_not_exists">文件不存在：%s</string>
@@ -473,16 +473,16 @@
     <string name="tool_file_dir_created">目录已创建：%s</string>
     <string name="tool_file_dir_create_failed">创建目录失败：%s</string>
 
-    <!-- ── BuiltinToolHandler: Document Creation ── -->
+    <!-- ── built-in tool logic: Document Creation ── -->
     <string name="tool_doc_format_invalid">参数 \'format\' 必须是 pdf、xlsx、docx 或 pptx 之一。</string>
     <string name="tool_doc_created">精致文档已创建：%s\n格式：%s\n大小：%d 字节</string>
     <string name="tool_doc_create_failed">创建精致文档失败：%s</string>
     <string name="tool_doc_pptx_table_fallback">[表格数据 (暂不支持直接渲染表格)]:</string>
 
-    <!-- ── BuiltinToolHandler: Ask User ── -->
+    <!-- ── built-in tool logic: Ask User ── -->
     <string name="tool_ask_user_question_empty">参数 \'question\' 不能为空。</string>
 
-    <!-- ── BuiltinToolHandler: Timer ── -->
+    <!-- ── built-in tool logic: Timer ── -->
     <string name="tool_timer_delay_min">参数 \'delay_seconds\' 必须 ≥ 1。</string>
     <string name="tool_timer_repeat_negative">参数 \'repeat_interval_seconds\' 不能为负数。</string>
     <string name="tool_timer_repeat_min">参数 \'repeat_interval_seconds\' 如提供则必须 ≥ 1。</string>
@@ -500,7 +500,7 @@
     <string name="tool_timer_list_entry_message">   内容：%s</string>
     <string name="tool_timer_list_entry_remaining">   剩余：%s（%s 触发）</string>
 
-    <!-- ── BuiltinToolHandler: Search ── -->
+    <!-- ── built-in tool logic: Search ── -->
     <string name="tool_search_scope">搜索范围：%s</string>
     <string name="tool_search_name_pattern">文件名模式：%s</string>
     <string name="tool_search_content_query">内容关键词：%s%s</string>
@@ -508,7 +508,7 @@
     <string name="tool_search_results_count">找到 %d 个结果%s：</string>
     <string name="tool_search_limit_reached">（已达上限 %d）</string>
 
-    <!-- ── BuiltinToolHandler: File Info ── -->
+    <!-- ── built-in tool logic: File Info ── -->
     <string name="tool_fileinfo_type_dir">目录</string>
     <string name="tool_fileinfo_type_file">文件</string>
     <string name="tool_fileinfo_type">类型：%s</string>
@@ -524,7 +524,7 @@
     <string name="tool_fileinfo_yes">是</string>
     <string name="tool_fileinfo_no">否</string>
 
-    <!-- ── BuiltinToolHandler: Additional Keys ── -->
+    <!-- ── built-in tool logic: Additional Keys ── -->
     <string name="tool_ui_applied_no_changes">UI 设置已应用。未检测到任何字段变化。</string>
     <string name="tool_duration_hours">%d 小时 </string>
     <string name="tool_duration_minutes">%d 分钟 </string>
@@ -579,7 +579,7 @@
     <!-- ── McpRuntimeManager ── -->
     <string name="builtin_server_name">内置工具</string>
 
-    <!-- ── BuiltinToolHandler ── -->
+    <!-- ── built-in tool logic ── -->
     <string name="tool_time_format_pattern">yyyy年MM月dd日 HH:mm:ss (EEEE)</string>
     <string name="tool_memory_tag_filter">，标签过滤：%s</string>
     <string name="tool_memory_assoc_expansion_header">--- 关联网络展开（深度=%d）---</string>
@@ -668,6 +668,7 @@
 
     <!-- ── Permission Manager ── -->
     <string name="tab_settings_permissions">权限管理</string>
+    <string name="tab_settings_skills">技能管理</string>
     <string name="permission_title">文件访问权限</string>
     <string name="permission_allowed_group">已允许</string>
     <string name="permission_denied_group">已禁止</string>

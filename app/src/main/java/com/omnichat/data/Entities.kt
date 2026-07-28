@@ -5,6 +5,8 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import org.json.JSONArray
+import org.json.JSONObject
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 原有实体
@@ -464,3 +466,52 @@ data class CloudBackupRecord(
     val createdAt: Long,
     val userId: String
 )
+
+/**
+ * Skill 技能实体。
+ *
+ * Skill 是"能力包"：一个 Skill = 触发条件 + 系统提示词 + 工具组绑定 + 可选工作流。
+ * 用户安装 .skill.md 文件后，LLM 在匹配到用户意图时自动激活该 Skill 的能力。
+ *
+ * [triggerPatterns] — JSON 数组字符串，如 ["周报", "weekly report", "工作总结"]
+ * [requiredToolGroups] — JSON 数组字符串，如 ["files", "memory"]
+ */
+@Entity(tableName = "skills")
+data class SkillEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** 唯一标识符，如 "weekly-report" */
+    val skillId: String,
+    val name: String,
+    val description: String,
+    val version: String,
+    val author: String,
+    /** JSON 数组字符串，触发关键词列表 */
+    val triggerPatterns: String = "[]",
+    /** Skill 的系统提示词，注入到 LLM 上下文中 */
+    val systemPrompt: String = "",
+    /** JSON 数组字符串，需要的工具组列表 */
+    val requiredToolGroups: String = "[]",
+    /** 关联的工作流模板 ID，null 表示无 */
+    val workflowTemplateId: String? = null,
+    val isEnabled: Boolean = true,
+    /** 是否为内置 Skill（内置不可删除） */
+    val isBuiltin: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    /** 解析 triggerPatterns JSON 为列表 */
+    fun getTriggerPatternList(): List<String> {
+        return try {
+            val arr = JSONArray(triggerPatterns)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** 解析 requiredToolGroups JSON 为列表 */
+    fun getRequiredToolGroupList(): List<String> {
+        return try {
+            val arr = JSONArray(requiredToolGroups)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) { emptyList() }
+    }
+}

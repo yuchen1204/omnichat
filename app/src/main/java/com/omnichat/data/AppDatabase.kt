@@ -26,8 +26,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemoryAuditEntry::class,
         // 云端备份记录
         CloudBackupRecord::class,
+        // 技能系统
+        SkillEntity::class,
     ],
-    version = 56,
+    version = 57,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +51,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memoryAuditDao(): MemoryAuditDao
     // 云端备份记录 DAO
     abstract fun cloudBackupDao(): CloudBackupDao
+    // 技能系统 DAO
+    abstract fun skillDao(): SkillDao
 
     companion object {
         @Volatile
@@ -929,6 +933,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v56→v57: 新增 skills 表（技能系统） */
+        private val MIGRATION_56_57 = object : Migration(56, 57) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS skills (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        skillId TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        version TEXT NOT NULL,
+                        author TEXT NOT NULL,
+                        triggerPatterns TEXT NOT NULL DEFAULT '[]',
+                        systemPrompt TEXT NOT NULL DEFAULT '',
+                        requiredToolGroups TEXT NOT NULL DEFAULT '[]',
+                        workflowTemplateId TEXT DEFAULT NULL,
+                        isEnabled INTEGER NOT NULL DEFAULT 1,
+                        isBuiltin INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+            }
+        }
+
         /**
          * 清除单例实例（用于数据库恢复后重新初始化）。
          */
@@ -991,7 +1019,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_52_53,
                         MIGRATION_53_54,
                         MIGRATION_54_55,
-                        MIGRATION_55_56
+                        MIGRATION_55_56,
+                        MIGRATION_56_57
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常旧的安装版本）。

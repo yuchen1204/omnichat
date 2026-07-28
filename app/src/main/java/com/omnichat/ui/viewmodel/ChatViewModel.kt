@@ -36,6 +36,7 @@ import com.omnichat.agent.WorkflowStatus
 import com.omnichat.agent.WorkflowStepStatus
 import com.omnichat.agent.WorkflowStepUiState
 import com.omnichat.agent.WorkflowUiState
+import com.omnichat.skill.SkillManager
 import com.omnichat.ui.screens.SubAgentTaskUiState
 import com.omnichat.ui.screens.TaskStatus
 import androidx.compose.runtime.mutableStateMapOf
@@ -49,6 +50,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val repository = AppRepository(database)
     private val runtimeManager = com.omnichat.mcp.McpRuntimeManager.getInstance(application)
     private val memoryEngine = com.omnichat.memory.MemoryEngine(repository, ApiClient)
+    val skillManager = SkillManager(application)
 
     // Active session selection state
     private val _selectedSessionId = MutableStateFlow<Long?>(null)
@@ -203,6 +205,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             fetchedModels = repository.getAllFetchedModels()
             refreshCurrentModelVision()
 
+            // 初始化 Skill 系统：安装内置 Skill 并加载到注册表
+            skillManager.initialize()
+
 
         }
 
@@ -224,6 +229,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             WorkflowEventBus.events.collect { event ->
                 handleWorkflowEvent(event)
+            }
+        }
+
+        // 记忆同步后台消费者：CONFLATED Channel 保证串行处理+请求合并
+        viewModelScope.launch {
+            for (force in memorySyncChannel) {
+                isMemorySyncing = true
+                try {
+                    executeMemorySync(force)
+                } finally {
+                    isMemorySyncing = false
+                }
             }
         }
 
@@ -931,6 +948,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             customSystemPrompt + "\n\n[User's Cross-Session History & Preferences]:\n" + memoriesText
         }
 
+        // 4.5 Inject matched Skill prompts
+        val matchedSkills = skillManager.matchByIntent(userMessage)
+        if (matchedSkills.isNotEmpty()) {
+            val skillsText = matchedSkills.joinToString("\n\n") { skill ->
+                """[Activated Skill: ${skill.name}]
+${skill.systemPrompt}"""
+            }
+            finalSystemPrompt += "\n\n[Activated Skills]:\n$skillsText"
+        }
+
         finalSystemPrompt = if (finalSystemPrompt.contains("[MCP_TOOLS]")) {
             finalSystemPrompt.replace("[MCP_TOOLS]", mcpToolsText)
         } else {
@@ -1495,99 +1522,95 @@ Output the title now."""
      * - 解析失败或 ops 为空 → 放弃本次 Step 2，旧记忆完整保留
      */
     fun triggerMemorySync(force: Boolean = false) {
+        // CONFLATED Channel 自动合并并发请求，后台消费者协程串行处理，无需 Mutex
+        if (_selectedSessionId.value == null) return
+        memorySyncChannel.trySend(force)
+    }
+
+    /**
+     * 实际的记忆同步逻辑，在后台消费者协程中串行执行。
+     * 从 triggerMemorySync 中提取，由 memorySyncChannel 消费者循环调用。
+     */
+    private suspend fun executeMemorySync(force: Boolean) {
         val sessionId = _selectedSessionId.value ?: return
-        viewModelScope.launch {
-            // BUG-016: 使用 Mutex 保证原子性，避免并发调用同时通过 guard 检查
-            if (!memorySyncMutex.tryLock()) return@launch
-            isMemorySyncing = true
-            try {
-                val memoryConfig = memoryEngine.getMemoryModelConfig() ?: return@launch
+        val memoryConfig = memoryEngine.getMemoryModelConfig() ?: return
 
-                val allMessages = repository.getMessagesBySession(sessionId)
-                if (allMessages.size < 2) return@launch
+        val allMessages = repository.getMessagesBySession(sessionId)
+        if (allMessages.size < 2) return
 
-                // 读取上次摘要记录，判断是否需要运行
-                val prevSummary = repository.getSessionSummary(sessionId)
-                val now = System.currentTimeMillis()
-                val lastSummarizedAt = prevSummary?.lastSummarizedAt ?: 0L
-                val msgCountAtLast = prevSummary?.messageCountAtLastSummary ?: 0
-                val newMsgCount = allMessages.size - msgCountAtLast
-                val timeSinceLast = now - lastSummarizedAt
+        // 读取上次摘要记录，判断是否需要运行
+        val prevSummary = repository.getSessionSummary(sessionId)
+        val now = System.currentTimeMillis()
+        val lastSummarizedAt = prevSummary?.lastSummarizedAt ?: 0L
+        val msgCountAtLast = prevSummary?.messageCountAtLastSummary ?: 0
+        val newMsgCount = allMessages.size - msgCountAtLast
+        val timeSinceLast = now - lastSummarizedAt
 
-                // 节流检查
-                if (!force) {
-                    val newMessages = allMessages.drop(msgCountAtLast)
-                    val newCharsTotal = newMessages.sumOf { it.content.length }
-                    if (!memoryEngine.shouldRunSync(force, timeSinceLast, newMsgCount, newCharsTotal)) return@launch
-                }
-
-                // 衰减非 pinned 记忆的置信度
-                memoryEngine.applyConfidenceDecay(now)
-
-                // 检测并重建 embedding（当模型变更时自动回填）
-                memoryEngine.rebuildEmbeddingsIfModelChanged()
-
-                // ── Step 1：生成本会话的新滚动摘要 ──────────────────────
-                val recentMessages = run {
-                    var charCount = 0
-                    allMessages.asReversed().takeWhile { msg ->
-                        charCount += msg.content.length
-                        charCount <= MEMORY_WINDOW_CHARS
-                    }.reversed()
-                }
-
-                val newSummaryText = memoryEngine.generateSessionSummary(
-                    recentMessages = recentMessages,
-                    previousSummary = prevSummary?.summaryText?.takeIf { it.isNotBlank() },
-                    memoryConfig = memoryConfig
-                ) ?: return@launch
-
-                // 持久化新摘要
-                repository.upsertSessionSummary(
-                    SessionSummary(
-                        sessionId = sessionId,
-                        summaryText = newSummaryText,
-                        lastSummarizedAt = now,
-                        messageCountAtLastSummary = allMessages.size
-                    )
-                )
-
-                // ── Step 2：增量 CRUD ────────────────────────────────────
-                val currentMemories = repository.getAllMemories()
-                val recentRawMessages = allMessages.takeLast(MEMORY_RECENT_RAW_COUNT)
-
-                val crudJson = memoryEngine.generateCrudOps(
-                    currentMemories = currentMemories,
-                    summaryText = newSummaryText,
-                    recentRawMessages = recentRawMessages,
-                    memoryConfig = memoryConfig
-                ) ?: return@launch
-
-                memoryEngine.applyMemoryCrudOps(crudJson, currentMemories, now)
-
-                // ── Step 2.5：冷启动补关联（分批处理，每次最多 8 条，最多 3 批）──
-                try {
-                    memoryEngine.batchBackfillAssociations(
-                        memoryConfig = memoryConfig,
-                        batchSize = 8,
-                        maxBatches = 3
-                    )
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("ChatViewModel", "Association backfill failed: ${e.message}", e)
-                }
-
-                // 裁剪旧审计日志（30 天前）
-                memoryEngine.pruneOldAuditLogs()
-
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                android.util.Log.e("ChatViewModel", "Memory sync failed: ${e.message}", e)
-            } finally {
-                isMemorySyncing = false
-                memorySyncMutex.unlock()
-            }
+        // 节流检查
+        if (!force) {
+            val newMessages = allMessages.drop(msgCountAtLast)
+            val newCharsTotal = newMessages.sumOf { it.content.length }
+            if (!memoryEngine.shouldRunSync(force, timeSinceLast, newMsgCount, newCharsTotal)) return
         }
+
+        // 衰减非 pinned 记忆的置信度
+        memoryEngine.applyConfidenceDecay(now)
+
+        // 检测并重建 embedding（当模型变更时自动回填）
+        memoryEngine.rebuildEmbeddingsIfModelChanged()
+
+        // ── Step 1：生成本会话的新滚动摘要 ──────────────────────
+        val recentMessages = run {
+            var charCount = 0
+            allMessages.asReversed().takeWhile { msg ->
+                charCount += msg.content.length
+                charCount <= MEMORY_WINDOW_CHARS
+            }.reversed()
+        }
+
+        val newSummaryText = memoryEngine.generateSessionSummary(
+            recentMessages = recentMessages,
+            previousSummary = prevSummary?.summaryText?.takeIf { it.isNotBlank() },
+            memoryConfig = memoryConfig
+        ) ?: return
+
+        // 持久化新摘要
+        repository.upsertSessionSummary(
+            SessionSummary(
+                sessionId = sessionId,
+                summaryText = newSummaryText,
+                lastSummarizedAt = now,
+                messageCountAtLastSummary = allMessages.size
+            )
+        )
+
+        // ── Step 2：增量 CRUD ────────────────────────────────────
+        val currentMemories = repository.getAllMemories()
+        val recentRawMessages = allMessages.takeLast(MEMORY_RECENT_RAW_COUNT)
+
+        val crudJson = memoryEngine.generateCrudOps(
+            currentMemories = currentMemories,
+            summaryText = newSummaryText,
+            recentRawMessages = recentRawMessages,
+            memoryConfig = memoryConfig
+        ) ?: return
+
+        memoryEngine.applyMemoryCrudOps(crudJson, currentMemories, now)
+
+        // ── Step 2.5：冷启动补关联（分批处理）──
+        try {
+            memoryEngine.batchBackfillAssociations(
+                memoryConfig = memoryConfig,
+                batchSize = 8,
+                maxBatches = 3
+            )
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.e("ChatViewModel", "Association backfill failed: ${e.message}", e)
+        }
+
+        // 裁剪旧审计日志（30 天前）
+        memoryEngine.pruneOldAuditLogs()
     }
 
     // ── 记忆辅助方法已迁移到 com.omnichat.memory.MemoryEngine ─────────

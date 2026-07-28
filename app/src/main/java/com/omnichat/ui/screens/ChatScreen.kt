@@ -5,6 +5,7 @@ import kotlin.math.roundToInt
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,7 +66,6 @@ import com.omnichat.ui.components.ToolGroupCard
 import com.omnichat.ui.theme.LocalWindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 
-import com.omnichat.ui.components.toUIModel
 import com.omnichat.ui.theme.LocalChatFontScale
 import com.omnichat.ui.theme.LocalUISettings
 import com.omnichat.ui.theme.resolveFontFamily
@@ -73,12 +73,21 @@ import androidx.compose.ui.res.stringResource
 import com.omnichat.R
 import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.viewmodel.ChatViewModel
-import com.omnichat.mcp.McpRuntimeManager
-import org.json.JSONArray
+import com.omnichat.ui.presentation.ChatDisplayItem
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.omnichat.agent.WorkflowUiState
+
+private const val STREAMING_SCROLL_INTERVAL_MS = 100L
+
+private data class StreamingScrollState(
+    val bodyLength: Int,
+    val thinkingLength: Int,
+    val isStreaming: Boolean,
+    val isCurrentSession: Boolean,
+    val autoScrollEnabled: Boolean
+)
 
 data class AttachedFile(
     val name: String,
@@ -90,6 +99,7 @@ data class AttachedFile(
 @Composable
 fun ChatView(viewModel: ChatViewModel) {
     val messages by viewModel.activeMessages.collectAsStateWithLifecycle()
+    val chatDisplayState by viewModel.chatDisplayState.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val isStreaming = viewModel.isStreaming
     val streamingSessionId = viewModel.streamingSessionId
@@ -190,26 +200,36 @@ fun ChatView(viewModel: ChatViewModel) {
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 9)
     ) { uris: List<Uri> ->
-        val newPaths = uris.mapNotNull { uri ->
-            try {
-                val tempFile = java.io.File(
-                    context.cacheDir,
-                    "picked_${System.currentTimeMillis()}_${uri.lastPathSegment?.take(20) ?: "img"}.jpg"
-                )
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    java.io.FileOutputStream(tempFile).use { output ->
-                        input.copyTo(output)
+        if (uris.isNotEmpty()) {
+            // Activity-result callbacks run on the main thread. Copying several
+            // camera-size images here would block input and the picker transition.
+            scope.launch(Dispatchers.IO) {
+                val newPaths = uris.mapIndexedNotNull { index, uri ->
+                    try {
+                        val tempFile = java.io.File(
+                            context.cacheDir,
+                            "picked_${SystemClock.elapsedRealtime()}_${index}_${uri.lastPathSegment?.take(20) ?: "img"}.jpg"
+                        )
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            java.io.FileOutputStream(tempFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        tempFile.absolutePath
+                    } catch (_: Exception) {
+                        null
                     }
                 }
-                tempFile.absolutePath
-            } catch (e: Exception) {
-                null
+                if (newPaths.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        selectedImagePaths = selectedImagePaths + newPaths
+                    }
+                }
             }
         }
-        selectedImagePaths = selectedImagePaths + newPaths
     }
 
-    // 相机权限检查
+    // Activity-result permissions
     val cameraPermissionState = remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -253,55 +273,37 @@ fun ChatView(viewModel: ChatViewModel) {
 
     // 新消息到来时的自动滚动（使用 scrollToItem 避免动画与用户手势冲突）
     // 注意：静默模式下 tool 消息不渲染，需要用过滤后的数量，否则隐藏 tool 消息也会触发滚动
-    val visibleMessageCount = remember(messages, uiSettings.silentToolGroups) {
-        val silentGroups = uiSettings.silentToolGroups
-            .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        if (silentGroups.isEmpty()) {
-            messages.size
-        } else {
-            val wildcard = silentGroups.contains("*")
-            // 构建 toolCallId → group 查找表
-            val toolGroupLookup = mutableMapOf<String, String>()
-            messages.forEach { msg ->
-                if (msg.role == "assistant" && !msg.toolCallsJson.isNullOrBlank()) {
-                    try {
-                        val arr = JSONArray(msg.toolCallsJson)
-                        for (i in 0 until arr.length()) {
-                            val item = arr.optJSONObject(i) ?: continue
-                            val id = item.optString("id")
-                            val function = item.optJSONObject("function") ?: continue
-                            val name = function.optString("name")
-                            val group = McpRuntimeManager.builtinToolGroups[name]
-                            if (id.isNotEmpty() && group != null) {
-                                toolGroupLookup[id] = group
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-            messages.count { msg ->
-                if (msg.role != "tool") true
-                else {
-                    val group = msg.toolCallId?.let { toolGroupLookup[it] }
-                    !wildcard && (group == null || group !in silentGroups)
-                }
-            }
-        }
-    }
+    val visibleMessageCount = chatDisplayState.visibleMessageCount
     LaunchedEffect(visibleMessageCount) {
         if (autoScrollEnabled && messages.isNotEmpty()) {
             listState.scrollToItem(0)
         }
     }
 
-    // 流式输出时的跟随滚动（使用 scrollToItem 即时定位，避免 animateScrollToItem 动画抖动）
     LaunchedEffect(Unit) {
-        snapshotFlow { streamingBody?.length to streamingThinking?.length }
-            .collect {
-                if (autoScrollEnabled && isStreaming) {
-                    listState.scrollToItem(0)
-                }
+        var lastStreamingScrollAt = 0L
+        snapshotFlow {
+            StreamingScrollState(
+                bodyLength = streamingBody?.length ?: 0,
+                thinkingLength = streamingThinking?.length ?: 0,
+                isStreaming = isStreaming,
+                isCurrentSession = streamingSessionId == activeSessionId,
+                autoScrollEnabled = autoScrollEnabled
+            )
+        }.collect { state ->
+            if (!state.isStreaming || !state.isCurrentSession || !state.autoScrollEnabled) {
+                return@collect
             }
+
+            // Layout work from scrollToItem is expensive when a provider emits
+            // many tiny chunks. Keep the chat pinned without scrolling more than
+            // ten times per second.
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastStreamingScrollAt >= STREAMING_SCROLL_INTERVAL_MS) {
+                listState.scrollToItem(0)
+                lastStreamingScrollAt = now
+            }
+        }
     }
 
     val defaultProvider = modelConfigs.find { it.isDefaultProvider }
@@ -349,82 +351,8 @@ fun ChatView(viewModel: ChatViewModel) {
             }
         }
 
-        val uiModelMessages = remember(messages) {
-            messages.map { it.toUIModel() }
-        }
+        val displayItems = chatDisplayState.items
 
-        // --- 聚合 Tool 消息展示逻辑并反转以适应 reverseLayout ---
-        val processedMessages = remember(messages, uiSettings.silentToolGroups) {
-            val list = mutableListOf<Any>()
-            val silentGroups = uiSettings.silentToolGroups
-                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-            if (silentGroups.isNotEmpty()) {
-                // 构建 toolCallId → toolName 查找表
-                val toolNameLookup = mutableMapOf<String, String>()
-                messages.forEach { msg ->
-                    if (msg.role == "assistant" && !msg.toolCallsJson.isNullOrBlank()) {
-                        try {
-                            val arr = JSONArray(msg.toolCallsJson)
-                            for (i in 0 until arr.length()) {
-                                val item = arr.optJSONObject(i) ?: continue
-                                val id = item.optString("id")
-                                val function = item.optJSONObject("function") ?: continue
-                                val name = function.optString("name")
-                                if (id.isNotEmpty() && name.isNotEmpty()) {
-                                    toolNameLookup[id] = name
-                                }
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
-                // 按组过滤 tool 消息，并聚合连续的非静默 tool 消息
-                val wildcard = silentGroups.contains("*")
-                var currentToolGroup = mutableListOf<com.omnichat.data.Message>()
-                fun flushToolGroup() {
-                    if (currentToolGroup.isNotEmpty()) {
-                        list.add(currentToolGroup.toList())
-                        currentToolGroup.clear()
-                    }
-                }
-                messages.forEach { msg ->
-                    if (msg.role == "tool") {
-                        val toolName = msg.toolCallId?.let { toolNameLookup[it] }
-                        val group = toolName?.let { McpRuntimeManager.builtinToolGroups[it] }
-                        val shouldSilence = wildcard || (group != null && group in silentGroups)
-                        if (!shouldSilence) {
-                            currentToolGroup.add(msg)
-                        } else {
-                            flushToolGroup() // 遇到静默的 tool，先刷出之前的非静默组
-                        }
-                    } else {
-                        flushToolGroup()
-                        list.add(msg)
-                    }
-                }
-                flushToolGroup()
-            } else {
-                // 正常模式：聚合连续的 tool 消息为一组
-                var currentToolGroup = mutableListOf<com.omnichat.data.Message>()
-                fun flushToolGroup() {
-                    if (currentToolGroup.isNotEmpty()) {
-                        list.add(currentToolGroup.toList())
-                        currentToolGroup.clear()
-                    }
-                }
-                messages.forEach { msg ->
-                    if (msg.role == "tool") {
-                        currentToolGroup.add(msg)
-                    } else {
-                        flushToolGroup()
-                        list.add(msg)
-                    }
-                }
-                flushToolGroup()
-            }
-            list.reversed()
-        }
-
-        // "回到最新"浮动按钮 - 当用户上翻时显示
         val showScrollToBottom by remember {
             derivedStateOf {
                 listState.firstVisibleItemIndex > 0 || 
@@ -481,28 +409,24 @@ fun ChatView(viewModel: ChatViewModel) {
                         }
                     }
 
-                items(processedMessages, key = {
-                    when(it) {
-                        is com.omnichat.data.Message -> it.id
-                        is List<*> -> "group_${(it.firstOrNull() as? com.omnichat.data.Message)?.id}"
-                        else -> it.hashCode()
+                items(displayItems, key = { item ->
+                    when (item) {
+                        is ChatDisplayItem.MessageItem -> item.message.id
+                        is ChatDisplayItem.ToolGroupItem -> "group_${item.messages.firstOrNull()?.id}"
                     }
                 }) { item ->
                     when (item) {
-                        is com.omnichat.data.Message -> {
+                        is ChatDisplayItem.MessageItem -> {
                             BubbleMessage(
-                                message = item,
+                                message = item.message,
                                 onRetry = { viewModel.retryMessage(it) },
                                 onEdit = { viewModel.editMessage(it) }
                             )
                         }
-                        is List<*> -> {
-                            // 渲染工具调用聚合条（静默模式下不会出现此分支）
-                            @Suppress("UNCHECKED_CAST")
-                            val toolMsgs = (item as List<com.omnichat.data.Message>).map { it.toUIModel() }
+                        is ChatDisplayItem.ToolGroupItem -> {
                             ToolGroupCard(
-                                messages = toolMsgs,
-                                allMessages = uiModelMessages
+                                messages = item.messages,
+                                lookup = chatDisplayState.toolCallLookup
                             )
                         }
                     }
@@ -1046,6 +970,41 @@ fun ChatView(viewModel: ChatViewModel) {
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
+                        }
+                    }
+                }
+
+                // ── 活跃 Skill 指示器 ──────────────────────────────
+                val activeSkills = viewModel.skillManager.matchByIntent(textInput)
+                if (activeSkills.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        activeSkills.take(2).forEach { skill ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                            ) {
+                                Text(
+                                    text = "🧩 ${skill.name}",
+                                    fontSize = (11 * fs).sp,
+                                    fontFamily = resolvedFontFamily,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        if (activeSkills.size > 2) {
+                            Text(
+                                text = "+${activeSkills.size - 2}",
+                                fontSize = (11 * fs).sp,
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp)
+                            )
                         }
                     }
                 }

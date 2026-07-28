@@ -353,7 +353,7 @@
     <string name="time_hours_ago_short">%dh ago</string>
     <string name="time_days_ago_short">%dd ago</string>
 
-    <!-- ── BuiltinToolHandler: Core ── -->
+    <!-- ── built-in tool logic: Core ── -->
     <string name="tool_unknown_builtin">Unknown built-in tool: %s</string>
     <string name="tool_ui_reset">UI has been reset to default settings.</string>
     <string name="tool_time_info">Current time information</string>
@@ -362,12 +362,12 @@
     <string name="tool_time_iso">• ISO 8601: %s</string>
     <string name="tool_time_unix">• Unix timestamp: %s</string>
 
-    <!-- ── BuiltinToolHandler: UI ── -->
+    <!-- ── built-in tool logic: UI ── -->
     <string name="tool_ui_no_changes">No field changes detected (input may be empty or all invalid).</string>
     <string name="tool_ui_applied">UI settings applied. Updated %d items: %s</string>
     <string name="tool_ui_capability_desc">UI theme fields. Use adjust_ui to change; unpassed fields keep current values. resetToDefault=true to restore all.</string>
 
-    <!-- ── BuiltinToolHandler: Color Scheme ── -->
+    <!-- ── built-in tool logic: Color Scheme ── -->
     <string name="tool_color_action_invalid">Parameter \'action\' must be one of save, list, apply, or delete.</string>
     <string name="tool_color_save_name_empty">Save failed: name cannot be empty.</string>
     <string name="tool_color_save_limit">Save failed: maximum of %d presets reached.\n\nCurrently saved:\n%s\n\nPlease use action=\"delete\" to remove a preset first.</string>
@@ -385,7 +385,7 @@
     <string name="tool_color_delete_not_found">Delete failed: schemeId=%s not found.</string>
     <string name="tool_color_deleted">Color scheme \"%s\" deleted. Remaining %d/%d presets.</string>
 
-    <!-- ── BuiltinToolHandler: Memory ── -->
+    <!-- ── built-in tool logic: Memory ── -->
     <string name="tool_memory_query_empty">Search failed: query cannot be empty.</string>
     <string name="tool_memory_search_results">Memory library search results (keyword: \"%s\"%s, %d total memories, %d matched):</string>
     <string name="tool_memory_no_results">No memories found matching the keyword.</string>
@@ -393,7 +393,7 @@
     <string name="tool_memory_pinned_tag"> [Pinned]</string>
     <string name="tool_memory_entry_format">%d. [id=%d, confidence=%.2f, relevance=%.2f%s%s]</string>
 
-    <!-- ── BuiltinToolHandler: UI Text ── -->
+    <!-- ── built-in tool logic: UI Text ── -->
     <string name="tool_ui_text_header">=== App Adjustable/Translatable UI Text List ===</string>
     <string name="tool_ui_text_filter">Filter keyword: \"%s\"</string>
     <string name="tool_ui_text_hint">Tip: Provide a query parameter for fuzzy matching.</string>
@@ -413,7 +413,7 @@
     <string name="tool_ui_text_no_changes">No changes detected (input may be empty).</string>
     <string name="tool_ui_text_override_count">Currently %d overridden keys.</string>
 
-    <!-- ── BuiltinToolHandler: MCP Tool Groups ── -->
+    <!-- ── built-in tool logic: MCP Tool Groups ── -->
     <string name="tool_group_header">=== Built-in MCP Tool Group Status ===</string>
     <string name="tool_group_enabled">✅ Enabled</string>
     <string name="tool_group_disabled">❌ Disabled</string>
@@ -431,11 +431,11 @@
     <string name="tool_group_desc_files">Files: read/write external storage (default off)</string>
     <string name="tool_group_desc_documents">Docs: generate PDF/Excel/Word/PPT (default off)</string>
 
-    <!-- ── BuiltinToolHandler: Tool Display Mode ── -->
+    <!-- ── built-in tool logic: Tool Display Mode ── -->
     <string name="tool_display_silent_on">Silent mode on. Tool calls shown in compact form. Call set_tool_display_mode(silent=false) to restore.</string>
     <string name="tool_display_silent_off">Silent mode off. Tool calls shown as normal detail cards.</string>
 
-    <!-- ── BuiltinToolHandler: File Operations ── -->
+    <!-- ── built-in tool logic: File Operations ── -->
     <string name="tool_file_path_empty">Parameter \'path\' cannot be empty.</string>
     <string name="tool_file_path_invalid">Path invalid or permission denied: %s</string>
     <string name="tool_file_not_exists">File does not exist: %s</string>
@@ -468,16 +468,16 @@
     <string name="tool_file_dir_created">Directory created: %s</string>
     <string name="tool_file_dir_create_failed">Failed to create directory: %s</string>
 
-    <!-- ── BuiltinToolHandler: Document Creation ── -->
+    <!-- ── built-in tool logic: Document Creation ── -->
     <string name="tool_doc_format_invalid">Parameter \'format\' must be one of pdf, xlsx, docx, or pptx.</string>
     <string name="tool_doc_created">Document created: %s\nFormat: %s\nSize: %d bytes</string>
     <string name="tool_doc_create_failed">Failed to create document: %s</string>
     <string name="tool_doc_pptx_table_fallback">[Table data (table rendering not directly supported)]:</string>
 
-    <!-- ── BuiltinToolHandler: Ask User ── -->
+    <!-- ── built-in tool logic: Ask User ── -->
     <string name="tool_ask_user_question_empty">Parameter \'question\' cannot be empty.</string>
 
-    <!-- ── BuiltinToolHandler: Timer ── -->
+    <!-- ── built-in tool logic: Timer ── -->
     <string name="tool_timer_delay_min">Parameter \'delay_seconds\' must be ≥ 1.</string>
     <string name="tool_timer_repeat_negative">Parameter \'repeat_interval_seconds\' cannot be negative.</string>
     <string name="tool_timer_repeat_min">Parameter \'repeat_interval_seconds\' if provided must be ≥ 1.</string>
@@ -495,7 +495,7 @@
     <string name="tool_timer_list_entry_message">   Content: %s</string>
     <string name="tool_timer_list_entry_remaining">   Remaining: %s (triggers at %s)</string>
 
-    <!-- ── BuiltinToolHandler: Search ── -->
+    <!-- ── built-in tool logic: Search ── -->
     <string name="tool_search_scope">Search scope: %s</string>
     <string name="tool_search_name_pattern">Filename pattern: %s</string>
     <string name="tool_search_content_query">Content keyword: %s%s</string>
@@ -503,7 +503,7 @@
     <string name="tool_search_results_count">Found %d results%s:</string>
     <string name="tool_search_limit_reached"> (limit reached: %d)</string>
 
-    <!-- ── BuiltinToolHandler: File Info ── -->
+    <!-- ── built-in tool logic: File Info ── -->
     <string name="tool_fileinfo_type_dir">Directory</string>
     <string name="tool_fileinfo_type_file">File</string>
     <string name="tool_fileinfo_type">Type: %s</string>
@@ -519,7 +519,7 @@
     <string name="tool_fileinfo_yes">Yes</string>
     <string name="tool_fileinfo_no">No</string>
 
-    <!-- ── BuiltinToolHandler: Additional Keys ── -->
+    <!-- ── built-in tool logic: Additional Keys ── -->
     <string name="tool_ui_applied_no_changes">UI settings applied. No field changes detected.</string>
     <string name="tool_duration_hours">%d hours </string>
     <string name="tool_duration_minutes">%d minutes </string>
@@ -578,7 +578,7 @@
     <!-- ── McpRuntimeManager ── -->
     <string name="builtin_server_name">Built-in Tools</string>
 
-    <!-- ── BuiltinToolHandler ── -->
+    <!-- ── built-in tool logic ── -->
     <string name="tool_time_format_pattern">MMMM d, yyyy HH:mm:ss (EEEE)</string>
     <string name="tool_memory_tag_filter">, tag filter: %s</string>
     <string name="tool_memory_assoc_expansion_header">--- Association Expansion (depth=%d) ---</string>
@@ -666,6 +666,7 @@
     <string name="sidebar_update_dismiss">Dismiss</string>
     <!-- ── Permission Manager ── -->
     <string name="tab_settings_permissions">Permissions</string>
+    <string name="tab_settings_skills">Skills</string>
     <string name="permission_title">File Access Permissions</string>
     <string name="permission_allowed_group">Allowed</string>
     <string name="permission_denied_group">Blocked</string>

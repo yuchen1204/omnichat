@@ -394,3 +394,36 @@ interface CloudBackupDao {
     @Query("SELECT COUNT(*) FROM cloud_backups WHERE userId = :userId")
     suspend fun getBackupCount(userId: String): Int
 }
+
+@Dao
+interface SkillDao {
+    @Query("SELECT * FROM skills ORDER BY updatedAt DESC")
+    fun getAllSkillsFlow(): Flow<List<SkillEntity>>
+
+    @Query("SELECT * FROM skills ORDER BY updatedAt DESC")
+    suspend fun getAllSkills(): List<SkillEntity>
+
+    @Query("SELECT * FROM skills WHERE isEnabled = 1 ORDER BY updatedAt DESC")
+    suspend fun getEnabledSkills(): List<SkillEntity>
+
+    @Query("SELECT * FROM skills WHERE skillId = :skillId LIMIT 1")
+    suspend fun getBySkillId(skillId: String): SkillEntity?
+
+    @Query("SELECT * FROM skills WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): SkillEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(skill: SkillEntity): Long
+
+    @Update
+    suspend fun update(skill: SkillEntity)
+
+    @Delete
+    suspend fun delete(skill: SkillEntity)
+
+    @Query("UPDATE skills SET isEnabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("SELECT COUNT(*) FROM skills")
+    suspend fun getCount(): Int
+}

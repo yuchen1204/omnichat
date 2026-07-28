@@ -284,13 +284,7 @@ fun MainScreen(
             }
             ContentScaffold(onOpenDrawer = {
                 sidebarExpanded = !sidebarExpanded
-                scope.launch {
-                    val db = com.omnichat.data.AppDatabase.getDatabase(viewModel.getApplication())
-                    val current = db.uiSettingsDao().getSettings()
-                    if (current != null) {
-                        db.uiSettingsDao().upsertSettings(current.copy(sidebarExpanded = sidebarExpanded))
-                    }
-                }
+                settingsViewModel.setSidebarExpanded(sidebarExpanded)
             })
         }
     } else {
@@ -332,7 +326,8 @@ fun SettingsView(
         uiText("tab.settings.mcp", R.string.tab_settings_mcp),
         uiText("tab.settings.memory", R.string.tab_settings_memory),
         uiText("tab.settings.data", R.string.tab_settings_data),
-        uiText("tab.settings.permissions", R.string.tab_settings_permissions)
+        uiText("tab.settings.permissions", R.string.tab_settings_permissions),
+        uiText("tab.settings.skills", R.string.tab_settings_skills)
     )
     val settingsViewModel: SettingsViewModel = viewModel()
 
@@ -398,6 +393,7 @@ fun SettingsView(
                         onDeleteAllowed = { settingsViewModel.deleteAllowedPermissions() }
                     )
                 }
+                5 -> SkillsView(viewModel = viewModel)
             }
         }
     }
