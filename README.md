@@ -37,13 +37,13 @@
 │  └────┬─────┘  └─────┬─────┘  └─────┬──────┘  └──────┬───────┘ │
 ├───────┴───────────────┴──────────────┴────────────────┴─────────┤
 │                       ViewModel Layer                            │
-│  ┌──────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │
-│  │ ChatViewModel│  │SettingsViewModel│  │WorkspaceViewModel   │ │
-│  └──────┬───────┘  └───────┬─────────┘  └──────────┬──────────┘ │
+│  ┌──────────────┐  ┌─────────────────┐                           │
+│  │ ChatViewModel│  │SettingsViewModel│                           │
+│  └──────┬───────┘  └───────┬─────────┘                           │
 ├─────────┴──────────────────┴───────────────────────┴────────────┤
 │                   Data / Repository Layer                        │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │         AppRepository (Room DB v47, 16 entities)           │ │
+│  │         AppRepository (Room DB v55, 16 entities)           │ │
 │  └────────────────────────────────────────────────────────────┘ │
 ├────────────────────────────────────────────────────────────────┤
 │                    MCP Runtime Layer                             │
@@ -54,14 +54,14 @@
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Single Activity architecture (`MainActivity`), three top-level views: Chat, Workspace, Settings (with 5 sub-tabs: 模型配置, MCP工具, 长效记忆, Agent 预置, 数据管理).
+Single Activity architecture (`MainActivity`), three top-level views: Chat, Workspace, Settings (with 5 tabs: 模型配置, MCP工具, 长效记忆, Agent 预置, 数据管理).
 
 ## Quick Start
 
 ### Requirements
 
 - Android Studio Hedgehog or later
-- JDK 17+
+- JDK 21+
 - Android SDK 36
 
 ### Install
@@ -99,63 +99,61 @@ cd omnichat
 
 ```
 omnichat/
-├── app/src/main/java/com/omnichat/
-│   ├── MainActivity.kt              # Entry Activity
-│   ├── MyApplication.kt             # Application class (backup scheduling)
-│   ├── StreamingForegroundService.kt # Foreground service during LLM streaming
-│   ├── data/                        # Data layer
-│   │   ├── Entities.kt              # 16 Room entity definitions
-│   │   ├── Daos.kt                  # DAO interfaces
-│   │   ├── AppDatabase.kt           # Database config (v47, 43 migrations)
-│   │   ├── Repository.kt            # Repository (AppRepository)
-│   │   └── OmnifileFormat.kt        # Binary export format (.omnifile)
-│   ├── network/
-│   │   └── ApiClient.kt            # OpenAI-compatible API client (SSE, vision, embedding)
-│   ├── mcp/                         # MCP runtime
-│   │   ├── McpRuntimeManager.kt     # Runtime manager (34 built-in tools)
-│   │   ├── BuiltinToolHandler.kt    # Built-in tool handler
-│   │   ├── McpPermissionManager.kt  # MCP file permission manager
-│   │   ├── AskUserManager.kt        # ask_user tool suspend/resume
-│   │   ├── TimerManager.kt          # Dual-track timer (AlarmManager + Handler)
-│   │   ├── TimerStorage.kt          # Timer disk persistence
-│   │   ├── ToolSchemaDsl.kt         # JSON Schema DSL for tool definitions
-│   │   ├── UiFieldRegistry.kt       # AI-adjustable UI field metadata
-│   │   └── McpViewModel.kt          # MCP config ViewModel
-│   ├── memory/                      # Memory engine
-│   │   ├── MemoryEngine.kt          # Cross-session memory (associations, embedding, FTS)
-│   │   └── MemoryTokenizer.kt       # CJK bigram + English tokenizer
-│   ├── workspace/                   # Multi-agent workspace
-│   │   ├── TeamManager.kt           # Team facade
-│   │   ├── AgentRunner.kt           # Per-agent LLM loop
-│   │   ├── AgentTool.kt             # SubAgent spawning
-│   │   ├── AgentDefinition.kt       # Agent type registry
-│   │   ├── ToolOrchestrator.kt      # Tool routing
-│   │   ├── SendMessageTool.kt       # Inter-agent messaging
-│   │   ├── TaskTools.kt             # Task CRUD
-│   │   └── WorkspaceModels.kt       # Workspace data models
-│   ├── agent/                       # Legacy subAgent system
-│   │   ├── AgentExecutor.kt         # Task execution engine
-│   │   ├── AgentPrompts.kt          # System prompt templates
-│   │   └── AgentTeamManager.kt      # Inter-agent messaging
-│   ├── cloud/                       # Cloud backup
-│   │   ├── CloudBackupApi.kt        # Retrofit API interface
-│   │   ├── CloudBackupRepository.kt # Auth + API client management
-│   │   ├── CloudBackupManager.kt    # Backup/restore operations
-│   │   └── CloudBackupViewModel.kt  # Cloud backup ViewModel
-│   ├── update/
-│   │   └── UpdateChecker.kt         # GitHub tag-based version check
-│   ├── worker/
-│   │   └── CloudBackupWorker.kt     # WorkManager periodic backup
-│   └── ui/
-│       ├── screens/                 # Compose screens
-│       ├── viewmodel/               # ViewModels
-│       ├── components/              # Reusable components
-│       ├── theme/                   # Material 3 theme system
-│       └── performance/             # Refresh rate & animation optimization
-├── app/src/main/assets/
-│   └── node/                        # Node.js MCP scripts
-├── cloudflare-worker/               # Cloud backup backend (CF Workers + R2 + KV)
-└── scripts/                         # Utility scripts
+	├── app/src/main/java/com/omnichat/
+	│   ├── MainActivity.kt              # Entry Activity
+	│   ├── MyApplication.kt             # Application class (backup scheduling)
+	│   ├── StreamingForegroundService.kt # Foreground service during LLM streaming
+	│   ├── data/                        # Data layer
+	│   │   ├── Entities.kt              # 16 Room entity definitions
+	│   │   ├── Daos.kt                  # DAO interfaces
+	│   │   ├── AppDatabase.kt           # Database config (v55, 94 migrations)
+	│   │   ├── Repository.kt            # Repository (AppRepository)
+	│   │   └── OmnifileFormat.kt        # Binary export format (.omnifile)
+	│   ├── network/
+	│   │   └── ApiClient.kt            # OpenAI-compatible API client (SSE, vision, embedding)
+	│   ├── mcp/                         # MCP runtime
+	│   │   ├── McpRuntimeManager.kt     # Remote MCP transport and catalog aggregation
+	│   │   ├── McpPermissionManager.kt  # MCP file permission manager
+	│   │   ├── AskUserManager.kt        # ask_user tool suspend/resume
+	│   │   ├── TimerManager.kt          # Dual-track timer (AlarmManager + Handler)
+	│   │   ├── TimerStorage.kt          # Timer disk persistence
+	│   │   ├── ToolSchemaDsl.kt         # JSON Schema DSL for tool definitions
+	│   │   ├── UiFieldRegistry.kt       # AI-adjustable UI field metadata
+	│   │   └── McpViewModel.kt          # MCP config ViewModel
+	│   ├── memory/                      # Memory engine
+	│   │   ├── MemoryEngine.kt          # Cross-session memory (associations, embedding, FTS)
+	│   │   └── MemoryTokenizer.kt       # CJK bigram + English tokenizer
+	│   ├── agent/                       # Multi-agent system
+	│   │   ├── SubAgent.kt              # SubAgent lifecycle
+	│   │   ├── SubAgentApproval.kt      # Approval system (file ops, task delegation)
+	│   │   ├── SubAgentApprovalManager.kt
+	│   │   ├── SubAgentEventBus.kt      # Event bus for agent communication
+	│   │   ├── WorkflowEngine.kt        # Workflow execution engine
+	│   │   ├── WorkflowEventBus.kt      # Workflow event bus
+	│   │   ├── WorkflowTemplates.kt     # Workflow definitions
+	│   │   ├── AgentMessage.kt          # Agent message model
+	│   │   └── AgentPrompts.kt          # System prompt templates
+	│   ├── cloud/                       # Cloud backup
+	│   │   ├── CloudBackupApi.kt        # Retrofit API interface
+	│   │   ├── CloudBackupRepository.kt # Auth + API client management
+	│   │   ├── CloudBackupManager.kt    # Backup/restore operations
+	│   │   ├── CloudBackupViewModel.kt  # Cloud backup ViewModel
+	│   │   └── CloudBackupDiagnosticViewModel.kt
+	│   ├── update/
+	│   │   └── UpdateChecker.kt         # GitHub tag-based version check
+	│   ├── worker/
+	│   │   └── CloudBackupWorker.kt     # WorkManager periodic backup
+	│   ├── util/
+	│   │   ├── DocumentParser.kt        # Document parsing (PDF, DOCX, etc.)
+	│   │   └── SessionLogExporter.kt    # Chat log export
+	│   └── ui/
+	│       ├── screens/                 # Compose screens
+	│       ├── viewmodel/               # ViewModels
+	│       ├── components/              # Reusable components
+	│       ├── theme/                   # Material 3 theme system
+	│       └── performance/             # Refresh rate & animation optimization
+	├── cloudflare-worker/               # Cloud backup backend (CF Workers + R2 + KV)
+	└── docs/                            # Architecture and design documents
 ```
 
 ## Tech Stack
@@ -164,7 +162,7 @@ omnichat/
 |----------|-----------|
 | Language | Kotlin 2.2.10 |
 | UI | Jetpack Compose (Material 3) |
-| Database | Room v2.7.0 (v47, 16 entities) |
+| Database | Room v2.7.0 (v55, 16 entities) |
 | Networking | OkHttp + SSE + Retrofit 2.12.0 |
 | Serialization | Moshi 1.15.2 |
 | Firebase | Firebase BOM 34.12.0 |
@@ -275,7 +273,7 @@ Artifacts are published to [GitHub Releases](https://github.com/yuchen1204/omnic
 ### Code Conventions
 
 - Room migration rule: **only add columns / tables, never delete data**
-- Chinese UI strings are hardcoded in Compose (not `strings.xml`). Keep user-facing text in Chinese.
+- Chinese UI strings use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", R.string.xxx)` pattern with auto-generated `ui_text_keys.json`
 - AI-adjustable decorative strings use `uiText("namespace.key", "默认中文")` pattern
 - Use `CompositionLocal` for theme and config: `LocalUISettings`, `LocalCustomColors`, `LocalSidebarColors`, `LocalUiStrings`, `LocalChatFontScale`
 

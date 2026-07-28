@@ -37,13 +37,13 @@
 │  └────┬─────┘  └─────┬─────┘  └─────┬──────┘  └──────┬───────┘ │
 ├───────┴───────────────┴──────────────┴────────────────┴─────────┤
 │                       ViewModel Layer                            │
-│  ┌──────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │
-│  │ ChatViewModel│  │SettingsViewModel│  │WorkspaceViewModel   │ │
-│  └──────┬───────┘  └───────┬─────────┘  └──────────┬──────────┘ │
+│  ┌──────────────┐  ┌─────────────────┐                           │
+│  │ ChatViewModel│  │SettingsViewModel│                           │
+│  └──────┬───────┘  └───────┬─────────┘                           │
 ├─────────┴──────────────────┴───────────────────────┴────────────┤
 │                   Data / Repository Layer                        │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │         AppRepository (Room DB v47, 16 entities)           │ │
+│  │         AppRepository (Room DB v55, 16 entities)           │ │
 │  └────────────────────────────────────────────────────────────┘ │
 ├────────────────────────────────────────────────────────────────┤
 │                    MCP Runtime Layer                             │
@@ -54,14 +54,14 @@
 └────────────────────────────────────────────────────────────────┘
 ```
 
-单 Activity 架构（`MainActivity`），三个顶层视图：聊天、工作区、设置（含 5 个子标签页：模型配置、MCP工具、长效记忆、Agent 预置、数据管理）。
+单 Activity 架构（`MainActivity`），三个顶层视图：聊天、工作区、设置（含 5 个标签页：模型配置、MCP工具、长效记忆、Agent 预置、数据管理）。
 
 ## 快速开始
 
 ### 环境要求
 
 - Android Studio Hedgehog 或更新版本
-- JDK 17+
+- JDK 21+
 - Android SDK 36
 
 ### 安装步骤
@@ -99,63 +99,61 @@ cd omnichat
 
 ```
 omnichat/
-├── app/src/main/java/com/omnichat/
-│   ├── MainActivity.kt              # 入口 Activity
-│   ├── MyApplication.kt             # Application 类（备份调度）
-│   ├── StreamingForegroundService.kt # LLM 流式响应前台服务
-│   ├── data/                        # 数据层
-│   │   ├── Entities.kt              # 16 个 Room 实体定义
-│   │   ├── Daos.kt                  # DAO 接口
-│   │   ├── AppDatabase.kt           # 数据库配置 (v47, 43 次迁移)
-│   │   ├── Repository.kt            # 数据仓库 (AppRepository)
-│   │   └── OmnifileFormat.kt        # 二进制导出格式 (.omnifile)
-│   ├── network/
-│   │   └── ApiClient.kt            # OpenAI 兼容 API 客户端 (SSE、视觉、Embedding)
-│   ├── mcp/                         # MCP 运行时
-│   │   ├── McpRuntimeManager.kt     # 运行时管理器（34 个内置工具）
-│   │   ├── BuiltinToolHandler.kt    # 内置工具处理
-│   │   ├── McpPermissionManager.kt  # MCP 文件权限管理
-│   │   ├── AskUserManager.kt        # ask_user 工具挂起/恢复
-│   │   ├── TimerManager.kt          # 双轨定时器（AlarmManager + Handler）
-│   │   ├── TimerStorage.kt          # 定时器磁盘持久化
-│   │   ├── ToolSchemaDsl.kt         # JSON Schema DSL 工具定义
-│   │   ├── UiFieldRegistry.kt       # AI 可调整 UI 字段元数据
-│   │   └── McpViewModel.kt          # MCP 配置 ViewModel
-│   ├── memory/                      # 记忆引擎
-│   │   ├── MemoryEngine.kt          # 跨会话记忆（关联图、向量搜索、FTS）
-│   │   └── MemoryTokenizer.kt       # CJK bigram + 英文分词器
-│   ├── workspace/                   # 多智能体工作区
-│   │   ├── TeamManager.kt           # 团队门面
-│   │   ├── AgentRunner.kt           # 每个 Agent 的 LLM 循环
-│   │   ├── AgentTool.kt             # SubAgent 生成
-│   │   ├── AgentDefinition.kt       # Agent 类型注册表
-│   │   ├── ToolOrchestrator.kt      # 工具路由
-│   │   ├── SendMessageTool.kt       # 智能体间消息传递
-│   │   ├── TaskTools.kt             # 任务 CRUD
-│   │   └── WorkspaceModels.kt       # 工作区数据模型
-│   ├── agent/                       # 旧版 subAgent 系统
-│   │   ├── AgentExecutor.kt         # 任务执行引擎
-│   │   ├── AgentPrompts.kt          # 系统提示模板
-│   │   └── AgentTeamManager.kt      # 智能体间消息
-│   ├── cloud/                       # 云备份
-│   │   ├── CloudBackupApi.kt        # Retrofit API 接口
-│   │   ├── CloudBackupRepository.kt # 认证 + API 客户端管理
-│   │   ├── CloudBackupManager.kt    # 备份/恢复操作
-│   │   └── CloudBackupViewModel.kt  # 云备份 ViewModel
-│   ├── update/
-│   │   └── UpdateChecker.kt         # 基于 GitHub Tag 的版本检查
-│   ├── worker/
-│   │   └── CloudBackupWorker.kt     # WorkManager 定时备份
-│   └── ui/
-│       ├── screens/                 # Compose 界面
-│       ├── viewmodel/               # ViewModel 层
-│       ├── components/              # 可复用组件
-│       ├── theme/                   # Material 3 主题系统
-│       └── performance/             # 刷新率 & 动画优化
-├── app/src/main/assets/
-│   └── node/                        # Node.js MCP 脚本
-├── cloudflare-worker/               # 云备份后端（CF Workers + R2 + KV）
-└── scripts/                         # 工具脚本
+	├── app/src/main/java/com/omnichat/
+	│   ├── MainActivity.kt              # 入口 Activity
+	│   ├── MyApplication.kt             # Application 类（备份调度）
+	│   ├── StreamingForegroundService.kt # LLM 流式响应前台服务
+	│   ├── data/                        # 数据层
+	│   │   ├── Entities.kt              # 16 个 Room 实体定义
+	│   │   ├── Daos.kt                  # DAO 接口
+	│   │   ├── AppDatabase.kt           # 数据库配置 (v55, 94 次迁移)
+	│   │   ├── Repository.kt            # 数据仓库 (AppRepository)
+	│   │   └── OmnifileFormat.kt        # 二进制导出格式 (.omnifile)
+	│   ├── network/
+	│   │   └── ApiClient.kt            # OpenAI 兼容 API 客户端 (SSE、视觉、Embedding)
+	│   ├── mcp/                         # MCP 运行时
+	│   │   ├── McpRuntimeManager.kt     # Remote MCP transport and catalog aggregation
+	│   │   ├── McpPermissionManager.kt  # MCP 文件权限管理
+	│   │   ├── AskUserManager.kt        # ask_user 工具挂起/恢复
+	│   │   ├── TimerManager.kt          # 双轨定时器（AlarmManager + Handler）
+	│   │   ├── TimerStorage.kt          # 定时器磁盘持久化
+	│   │   ├── ToolSchemaDsl.kt         # JSON Schema DSL 工具定义
+	│   │   ├── UiFieldRegistry.kt       # AI 可调整 UI 字段元数据
+	│   │   └── McpViewModel.kt          # MCP 配置 ViewModel
+	│   ├── memory/                      # 记忆引擎
+	│   │   ├── MemoryEngine.kt          # 跨会话记忆（关联图、向量搜索、FTS）
+	│   │   └── MemoryTokenizer.kt       # CJK bigram + 英文分词器
+	│   ├── agent/                       # 多智能体系统
+	│   │   ├── SubAgent.kt              # SubAgent 生命周期
+	│   │   ├── SubAgentApproval.kt      # 审批系统（文件操作、任务委派）
+	│   │   ├── SubAgentApprovalManager.kt
+	│   │   ├── SubAgentEventBus.kt      # 智能体通信事件总线
+	│   │   ├── WorkflowEngine.kt        # 工作流执行引擎
+	│   │   ├── WorkflowEventBus.kt      # 工作流事件总线
+	│   │   ├── WorkflowTemplates.kt     # 工作流定义
+	│   │   ├── AgentMessage.kt          # 智能体消息模型
+	│   │   └── AgentPrompts.kt          # 系统提示模板
+	│   ├── cloud/                       # 云备份
+	│   │   ├── CloudBackupApi.kt        # Retrofit API 接口
+	│   │   ├── CloudBackupRepository.kt # 认证 + API 客户端管理
+	│   │   ├── CloudBackupManager.kt    # 备份/恢复操作
+	│   │   ├── CloudBackupViewModel.kt  # 云备份 ViewModel
+	│   │   └── CloudBackupDiagnosticViewModel.kt
+	│   ├── update/
+	│   │   └── UpdateChecker.kt         # 基于 GitHub Tag 的版本检查
+	│   ├── worker/
+	│   │   └── CloudBackupWorker.kt     # WorkManager 定时备份
+	│   ├── util/
+	│   │   ├── DocumentParser.kt        # 文档解析 (PDF, DOCX 等)
+	│   │   └── SessionLogExporter.kt    # 聊天日志导出
+	│   └── ui/
+	│       ├── screens/                 # Compose 界面
+	│       ├── viewmodel/               # ViewModel 层
+	│       ├── components/              # 可复用组件
+	│       ├── theme/                   # Material 3 主题系统
+	│       └── performance/             # 刷新率 & 动画优化
+	├── cloudflare-worker/               # 云备份后端（CF Workers + R2 + KV）
+	└── docs/                            # 架构与设计文档
 ```
 
 ## 技术栈
@@ -164,7 +162,7 @@ omnichat/
 |------|------|
 | 语言 | Kotlin 2.2.10 |
 | UI | Jetpack Compose (Material 3) |
-| 数据库 | Room v2.7.0 (v47, 16 实体) |
+| 数据库 | Room v2.7.0 (v55, 16 实体) |
 | 网络 | OkHttp + SSE + Retrofit 2.12.0 |
 | 序列化 | Moshi 1.15.2 |
 | Firebase | Firebase BOM 34.12.0 |
@@ -275,7 +273,7 @@ git push origin main --tags
 ### 代码规范
 
 - Room 迁移规则：**只加列/加表，绝不删数据**
-- 中文 UI 字符串硬编码在 Compose 中（非 `strings.xml`），用户界面文本保持中文
+- 中文 UI 字符串使用 Android `strings.xml` 进行国际化（英文默认，中文在 `values-zh-rCN`），AI 可调整的装饰性字符串使用 `uiText("namespace.key", R.string.xxx)` 模式，自动生成 `ui_text_keys.json`
 - AI 可调整的装饰性字符串使用 `uiText("namespace.key", "默认中文")` 模式
 - 使用 `CompositionLocal` 传递主题和配置：`LocalUISettings`, `LocalCustomColors`, `LocalSidebarColors`, `LocalUiStrings`, `LocalChatFontScale`
 

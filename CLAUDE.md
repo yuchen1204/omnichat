@@ -9,7 +9,7 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 ## Prerequisites & Requirements
 
 - **Android Studio**: Hedgehog or later
-- **JDK**: 17+
+- **JDK**: 21+ (required for SDK 36 Robolectric tests)
 - **Android SDK**: 36 (compileSdk: 36, targetSdk: 36, minSdk: 26)
 - **Kotlin**: 2.2.10
 
@@ -61,7 +61,7 @@ OmniChat is an Android AI chat app with embedded MCP runtime support, long-term 
 MVVM + Repository pattern, **no DI framework**. Single Activity (`MainActivity`) with three top-level views toggled via `mutableStateOf`:
 - `"chat"` — ChatScreen (main chat interface)
 - `"workspace"` — workspace screen (multi-agent, defined in `MainScreen.kt`)
-- `"settings"` — SettingsView with **5 sub-tabs**: 模型配置, MCP工具, 长效记忆, Agent 预置, 数据管理
+- `"settings"` — SettingsView with **5 tabs**: 模型配置, MCP工具, 长效记忆, Agent 预置, 数据管理
 
 ```
 Compose UI (Screens) → ViewModels → AppRepository → Room Database (v55, 16 entities)
@@ -71,9 +71,9 @@ Compose UI (Screens) → ViewModels → AppRepository → Room Database (v55, 16
                                          └ McpRemoteTool (remote HTTP MCP servers)
 ```
 
-### Major Refactor (current): Tool Interface System
+### Unified Tool Interface System
 
-The built-in tools are being migrated from a monolithic `McpRuntimeManager`/`BuiltinToolHandler` architecture to a clean `Tool` interface-based system:
+Built-in tools use the `Tool` interface system as their only catalog and execution path. `McpRuntimeManager` owns remote MCP transport, server lifecycle, and aggregation of tool metadata; it delegates both built-in and remote execution to `ToolExecutor`.
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
@@ -84,7 +84,7 @@ The built-in tools are being migrated from a monolithic `McpRuntimeManager`/`Bui
 | `McpRemoteTool` | `tool/McpRemoteTool.kt` | Wraps remote MCP server tools in the Tool interface |
 | `ToolInitializer` | `tool/ToolInitializer.kt` | Registers all tools on startup |
 
-The old `McpRuntimeManager`/`BuiltinToolHandler` code still exists and may have overlapping functionality — when adding or modifying tools, **prefer the new `tool/` package** over the `mcp/` package.
+`ToolRegistry` is the source of truth for built-in metadata. Remote tools are registered dynamically as `McpRemoteTool` adapters, and their model-facing names encode the server ID so duplicate tool names across servers cannot be routed ambiguously. Remote adapters are removed when their server stops and are excluded from the built-in catalog.
 
 ### Key Architectural Decisions
 
@@ -92,7 +92,7 @@ The old `McpRuntimeManager`/`BuiltinToolHandler` code still exists and may have 
 - **Dual state management**: `mutableStateOf` for UI state, `StateFlow` for DB-driven reactive data
 - **DB-driven theming**: `SettingsViewModel` synchronously pre-loads `UISettings` on startup to feed `MyApplicationTheme`, preventing theme flash
 - **UI strings** use Android `strings.xml` for i18n (English default, Chinese in `values-zh-rCN`). AI-adjustable decorative strings use the `uiText("namespace.key", "默认中文")` pattern with auto-generated `ui_text_keys.json`
-- **Room database** version 55 with sequential migrations (v4→v55). Versions 1–3 use `fallbackToDestructiveMigrationFrom` for legacy installs only. **Rule: only add columns/tables, never delete data. Never use `fallbackToDestructiveMigration`**
+- **Room database** version 55 with exported schemas and explicit sequential migrations (v4 through v55). **No destructive fallback is permitted**: an unsupported or incompatible migration must fail visibly rather than delete user data.
 - **Foreground service** (`StreamingForegroundService`) keeps the process alive during LLM streaming
 
 ## Package Structure
@@ -102,11 +102,10 @@ The old `McpRuntimeManager`/`BuiltinToolHandler` code still exists and may have 
 | `com.omnichat` | Entry point (`MainActivity.kt` — note lowercase 'm'), `MyApplication` (backup scheduling), `StreamingForegroundService` |
 | `com.omnichat.data` | Room entities (16 types in `Entities.kt`), DAOs (`Daos.kt`), database (`AppDatabase.kt` v55), repository (`Repository.kt`), `OmnifileFormat.kt` for binary export |
 | `com.omnichat.network` | OpenAI-compatible API client with SSE streaming (`ApiClient.kt`), `ModelsDevCache.kt` |
-| `com.omnichat.tool` | **New tool system**: `Tool` interface, `ToolRegistry`, `ToolExecutor`, `ToolInitializer`, `BuiltinTool` (one file per tool in `builtin/`), `McpRemoteTool` |
-| `com.omnichat.mcp` | Legacy MCP runtime: `McpRuntimeManager`, `BuiltinToolHandler`, `McpPermissionManager`, `PermissionReviewManager`, `AskUserManager`, `TimerManager`/`TimerStorage`, `AlarmReceiver`/`BootReceiver`, `ToolSchemaDsl`, `ToolHandler`, `ToolUtils`, `UiFieldRegistry`, `McpViewModel` |
+| `com.omnichat.tool` | **Unified tool system**: `Tool` interface, `ToolRegistry`, `ToolExecutor`, `ToolInitializer`, `BuiltinTool` (one file per tool in `builtin/`), `McpRemoteTool` |
+| `com.omnichat.mcp` | MCP transport/runtime: `McpRuntimeManager`, `McpPermissionManager`, `PermissionReviewManager`, `AskUserManager`, `TimerManager`/`TimerStorage`, `AlarmReceiver`/`BootReceiver`, `ToolSchemaDsl`, `ToolHandler`, `ToolUtils`, `UiFieldRegistry`, `McpViewModel` |
 | `com.omnichat.memory` | Memory engine: `MemoryEngine.kt` (associations, embedding, FTS, BFS traversal), `MemoryTokenizer.kt` (CJK bigram + English) |
-| `com.omnichat.workspace` | Multi-agent workspace: `TeamManager`, `AgentRunner`, `AgentTool`, `AgentDefinition`, `ToolOrchestrator`, `SendMessageTool`, `TaskTools`, `WorkspaceModels` |
-| `com.omnichat.agent` | Legacy subAgent system: `SubAgent`, `SubAgentApproval`, `SubAgentApprovalManager`, `SubAgentEventBus`, `WorkflowEngine`, `WorkflowEventBus`, `WorkflowTemplates`, `AgentMessage` |
+| `com.omnichat.agent` | Multi-agent system: `SubAgent`, `SubAgentApproval`, `SubAgentApprovalManager`, `SubAgentEventBus`, `WorkflowEngine`, `WorkflowEventBus`, `WorkflowTemplates`, `AgentMessage`, `AgentPrompts` |
 | `com.omnichat.cloud` | Cloud backup: `CloudBackupApi` (Retrofit), `CloudBackupRepository`, `CloudBackupManager`, `CloudBackupViewModel`, `CloudBackupDiagnosticViewModel`, `SslTestUtil` |
 | `com.omnichat.ui.screens` | Compose screens: `MainScreen`, `ChatScreen`, `SessionSidebarPanel`, `ModelsConfigScreen`, `McpConfigScreen`, `McpDialogs`, `MemoryAndPromptScreen`, `ExportImportScreen`, `CloudBackupCard`, `AskUserDialog`, `PermissionManagerScreen`, `SubAgentTaskCard`, `WorkflowProgressCard` |
 | `com.omnichat.ui.viewmodel` | `ChatViewModel`, `SettingsViewModel` |
@@ -115,7 +114,7 @@ The old `McpRuntimeManager`/`BuiltinToolHandler` code still exists and may have 
 | `com.omnichat.ui.performance` | Refresh rate & animation optimization: `RefreshRateManager`, `AnimationOptimizer`, `FrameRateMonitor`, etc. |
 | `com.omnichat.update` | `UpdateChecker.kt` — GitHub tag-based version check |
 | `com.omnichat.worker` | `CloudBackupWorker.kt` — WorkManager periodic backup |
-| `com.omnichat.util` | `SessionLogExporter.kt` — export chat logs |
+| `com.omnichat.util` | `DocumentParser.kt` — document parsing (PDF, DOCX, etc.), `SessionLogExporter.kt` — export chat logs |
 | `cloudflare-worker/` | Cloud backup backend (CF Workers + R2 + KV), separate from the Android app |
 
 ## MCP Runtime
@@ -130,12 +129,11 @@ The old `McpRuntimeManager`/`BuiltinToolHandler` code still exists and may have 
 
 - **Add Room entity**: Define in `Entities.kt`, add DAO in `Daos.kt`, update `AppDatabase` with new version + migration, expose in `AppRepository`
 - **Add screen/tab**: Add composable in `ui/screens/`, wire into `MainScreen.kt` — either as top-level view or sub-tab inside `SettingsView`
-- **Add/modify built-in tool (new system)**: Create a class implementing `Tool` in `tool/builtin/`, register it in `ToolInitializer`. No changes needed to `McpRuntimeManager`/`BuiltinToolHandler` unless the old system also needs to know about it.
-- **Add/modify built-in tool (legacy system)**: Add tool schema in `McpRuntimeManager.kt` (`builtinTools`), implement logic in `BuiltinToolHandler.kt` (`handleBuiltinTool`)
+- **Add/modify built-in tool**: Create a `Tool` implementation in `tool/builtin/` and register it in `ToolInitializer`. Do not add schema or execution logic to `McpRuntimeManager`.
 - **Add/modify AI-adjustable UI strings**: Add fields to `UiStrings` in `ui/theme/UiStrings.kt`, update `fromJson`/`toJson`, add tool parameter in `tool/builtin/UiTextTools.kt`, implement in the tool, use `LocalUiStrings.current` in Compose screens
 - **Modify MCP config UI**: `McpConfigScreen.kt` for main list, `McpDialogs.kt` for dialogs/overlays
 - **Modify theming**: `UISettings` entity drives theme; `SettingsViewModel` loads it; `MyApplicationTheme` applies it; `tool/builtin/AdjustUiTool.kt` and `ColorSchemeTool.kt` handle AI adjustments
-- **Modify workspace (multi-agent)**: Edit files in `workspace/` package — `TeamManager.kt` for lifecycle, `AgentRunner.kt` for LLM loop, `AgentTool.kt` for spawning, `TaskTools.kt` for task board
+- **Modify agent system (multi-agent)**: Edit files in `agent/` package — `SubAgent.kt` for lifecycle, `WorkflowEngine.kt` for workflow execution, `WorkflowTemplates.kt` for workflow definitions, `SubAgentEventBus.kt` for agent communication
 
 ## Conventions
 
