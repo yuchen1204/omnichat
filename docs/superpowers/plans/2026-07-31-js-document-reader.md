@@ -54,7 +54,6 @@
 ### Task 1: Runtime and plugin compatibility spike
 
 **Files:**
-- Create: `tools/document-plugins/package.json`
 - Create: `tools/document-plugins/smoke/quickjs-smoke.js`
 - Create: `tools/document-plugins/smoke/README.md`
 - Modify: `gradle/libs.versions.toml` only after the candidate artifact is verified
