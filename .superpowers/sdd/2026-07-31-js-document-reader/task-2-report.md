@@ -608,3 +608,311 @@ Complete output:
 ```text
 (no output; exit code 0)
 ```
+
+## Fix Round 1: Review Findings
+
+Date: 2026-07-31
+Branch: `feat/js-document-reader`
+Base implementation: `9eac9af feat: add sandboxed document JavaScript runtime`
+Status: **DONE_WITH_CONCERNS**
+
+This fix round addresses the review package `review-160f765..9eac9af.diff`. The timeout and close semantics are now explicit and bounded: this implementation still cannot hard-kill a native `evaluate()` that ignores interruption, but such work is retained in an active registry, consumes a bounded orphan budget, and prevents an unbounded stream of new parses. It is not represented as a hard native termination guarantee.
+
+### Fix-round changed files
+
+- `E:\omnichat\app\src\main\java\com\omnichat\util\JsDocumentRuntime.kt`
+  - Replaced one-executor-per-parse lifecycle with one shared, bounded `ThreadPoolExecutor` per facade.
+  - Added `SynchronousQueue`, active task registry, `maxConcurrentTasks`, and `maxOrphanTasks` controls.
+  - Kept timed-out non-cooperative tasks registered until worker `finally` closes the runtime and removes the task.
+  - Made `parse()` registration, closed check, input snapshot, and `close()` task snapshot share one lock.
+  - Moved injectable asset/runtime factories to the internal coordinator; the production facade constructor accepts only `AssetManager`.
+  - Changed default input cap from 20 MiB to 4 MiB because base64, evaluated script/source copies, decoded `Uint8Array`, output, and the 32 MiB QuickJS cap otherwise leave insufficient headroom.
+  - Used primitive global bridge values for name, MIME type, and base64 bytes, with bounded typed-array decoding in JS.
+  - Closed a created QuickJS context if memory/stack configuration fails.
+  - Replaced broad resource-message substring classification with exact normalized QuickJS resource-limit messages.
+  - Fixed actual-device script construction: JavaScript source separators are real newlines and the IIFE explicitly returns `JSON.stringify(...)`.
+- `E:\omnichat\app\src\test\java\com\omnichat\util\JsDocumentRuntimeTest.kt`
+  - Added regression coverage for non-string warning members, non-cooperative timeout/orphan retention and cap rejection, close/parse lifecycle, input snapshot semantics, 4 MiB boundary, exact resource classification, and production-constructor surface.
+  - Added a real warning-member assertion and tests that verify runtime close remains exactly once.
+- `E:\omnichat\app\src\androidTest\assets\document_plugins\runtime.js`
+  - Added a minimal synchronous runtime fixture for the real adapter test.
+- `E:\omnichat\app\src\androidTest\assets\document_plugins\test.js`
+  - Added a synchronous bundled fixture that returns the input name, MIME type, byte length, and byte value.
+- `E:\omnichat\app\src\androidTest\java\com\omnichat\util\BundledQuickJsDocumentRuntimeInstrumentedTest.kt`
+  - Added a real-device test through the production `AssetManager` facade, QuickJS context, base64/`Uint8Array` bridge, JSON validation, and `close()` lifecycle.
+- `E:\omnichat\docs\superpowers\plans\2026-07-31-js-document-reader.md`
+  - Updated the Task 6 example to use `BundledQuickJsDocumentRuntime(context.assets)` instead of the nonexistent `QuickJsDocumentRuntime(context)`. This is a plan/API clarification only; Task 6 implementation remains out of scope.
+- `E:\omnichat\.superpowers\sdd\2026-07-31-js-document-reader\task-2-report.md`
+  - Appended this fix-round report.
+
+The following were not modified: `DocumentParser.kt`, `ChatScreen.kt`, PDF/DOCX parser assets, shared bundle, and build dependency declarations.
+
+### Fix-round interface and lifecycle contract
+
+Production facade:
+
+```kotlin
+class BundledQuickJsDocumentRuntime(assetManager: AssetManager) : AutoCloseable {
+    fun parse(pluginAsset: String, input: JsDocumentInput): DocumentParseResult
+    override fun close()
+}
+```
+
+Test seam/internal coordinator:
+
+```kotlin
+internal class JsDocumentRuntimeCoordinator(
+    assetSource: JsDocumentAssetSource,
+    runtimeFactory: () -> JsDocumentRuntime,
+    maxInputBytes: Int = 4 * 1024 * 1024,
+    maxOutputBytes: Int = 4 * 1024 * 1024,
+    timeoutMillis: Long = 5_000L,
+    maxConcurrentTasks: Int = 1,
+    maxOrphanTasks: Int = 1
+) : AutoCloseable
+```
+
+The production class has no constructor accepting arbitrary source text, `JsDocumentAssetSource`, or runtime factory. The internal coordinator is the JVM-test seam; the production construction path is `AssetManager` only. This is not relying on Kotlin `internal` as a security boundary: production callers simply have no injection parameter on the production facade.
+
+`parse()` copies the input bytes while holding the same lifecycle lock used for closed-state checking and task registration. The caller can mutate its original `ByteArray` after `parse()` begins without changing the registered task's input.
+
+The coordinator uses one shared fixed-size executor with a synchronous handoff. The default active-task limit is one. On timeout or caller interruption, `Future.cancel(true)` is used only as a cooperative interruption request. A task that has started remains in `activeTasks`; it is marked orphan and consumes one orphan slot until the worker's `finally` closes its runtime and removes it. If the orphan cap is exhausted, later `parse()` calls fail with `RuntimeUnavailable` without creating another runtime or executor. `close()` takes the same lock, marks the coordinator closed, snapshots active tasks, requests cancellation, and calls `shutdownNow()`. It does not wait for native code that ignores interruption. After `close()` returns, registration cannot succeed and no new parse can start. A non-cooperative worker may finish later on its daemon thread; this is documented as cooperative cancellation, not hard termination.
+
+### Finding-by-finding disposition
+
+1. **Important: timeout leaked non-cooperative native work and removed it from active tracking — fixed.**
+   - Removed per-parse executor creation and unconditional active-executor removal in the caller's `finally`.
+   - Added shared controlled executor, active task registry, task state, orphan count, and cap.
+   - Added `nonCooperativeTimeoutConsumesOrphanBudgetUntilWorkerFinallyCloses`.
+   - The test proves the first timeout returns `PluginTimeout`, the still-running task prevents a second parse, no replacement runtime is created, and parsing resumes only after the orphan worker releases and closes.
+   - Remaining semantic limitation is explicit: the wrapper exposes no verified hard interrupt for native `evaluate()`, so a native call that ignores interruption can outlive the caller's timeout/close until it returns. It cannot create an unlimited number of orphan workers.
+
+2. **Important: `close()`/`parse()` race — fixed.**
+   - Closed check, validation, defensive byte copy, active-task registration, and executor submission are under `stateLock`.
+   - `close()` uses the same lock before taking its task snapshot and shutting down.
+   - Added `closeReturnsAsCancellationRequestAndPreventsParseAfterClose`.
+   - `close()` is intentionally non-blocking for non-cooperative native work; a parse already in progress can finish later, but parse registration after `close()` returns is rejected.
+
+3. **Important: production facade injection seam — fixed.**
+   - `BundledQuickJsDocumentRuntime` now has only `BundledQuickJsDocumentRuntime(AssetManager)`.
+   - Asset loading remains restricted to the production `AssetManager` path and the existing bundled path policy.
+   - JVM tests inject only the internal coordinator, not the production facade constructor.
+   - Reflection coverage verifies no production constructor accepts `JsDocumentAssetSource` or a function/runtime factory.
+
+4. **Important: Task 6 API mismatch — fixed in the plan, without expanding Task 2.**
+   - The plan no longer points at nonexistent `QuickJsDocumentRuntime(context)`.
+   - The plan now names `BundledQuickJsDocumentRuntime(context.assets)` as the high-level production adapter. Task 6 must adapt its reader/runtime seam to that facade; this fix round does not implement `JsDocumentReader`.
+
+5. **Important: 20 MiB input versus 32 MiB QuickJS/base64/script copies — fixed conservatively.**
+   - Default input is now 4 MiB and output is 4 MiB.
+   - The bridge copies the input once, encodes it as base64 (approximately 5.33 MiB at the 4 MiB boundary), stores primitive bridge values, decodes directly into a bounded `Uint8Array`, and avoids embedding base64 in the generated source string. The 32 MiB QuickJS memory cap and 512 KiB stack cap remain configured.
+   - Added an exact-4-MiB acceptance and 4 MiB-plus-one rejection test.
+   - The 4 MiB value is a conservative adapter default, not a claim that every future PDF/DOCX bundle can use the entire cap; plugin source/output and device-specific native allocations must remain part of later Task 3-5 validation.
+
+6. **Minor: copy bytes before parse — fixed.**
+   - Snapshot happens before task registration under the lifecycle lock, and the runtime bridge makes a second local copy before encoding.
+   - `parseSnapshotsInputBytesBeforeCallerCanMutateThem` verifies the runtime sees the original bytes.
+
+7. **Minor: context configuration failure cleanup — fixed.**
+   - `createConfiguredContext()` closes the newly created `QuickJSContext` if memory or stack configuration throws, attaching a close failure as suppressed.
+
+8. **Minor: arbitrary plugin message substring resource classification — fixed.**
+   - Only exact normalized messages such as `out of memory`, `internalerror: out of memory`, `stack overflow`, and `maximum call stack size exceeded` map to `PluginMemoryLimit`.
+   - An arbitrary `IOException("memory pressure in document")` remains `ParseFailed`.
+
+9. **Minor: warning member test — fixed.**
+   - Added a test for `[7]` in `warnings`, which maps to `MalformedPluginResult` and still closes the runtime once.
+
+10. **Real adapter verification — added and passed in isolation.**
+    - Added `BundledQuickJsDocumentRuntimeInstrumentedTest` using real `QuickJSContext` and test APK assets.
+    - The first device run exposed a real bridge bug (`unexpected token in expression: '\\'`) caused by literal backslash separators in the Kotlin triple-quoted script; that was fixed before the passing rerun.
+    - The second run exposed that the wrapper did not reliably return the final IIFE expression; the script now uses explicit `return JSON.stringify(...)`, and the next isolated run passed.
+
+### TDD/red-green evidence
+
+The fix-round test changes were compiled/run before the final green verification. The first test command caught a test seam return-type mismatch:
+
+```text
+./gradlew :app:testDebugUnitTest --tests "com.omnichat.util.JsDocumentRuntimeTest" --no-configuration-cache
+
+> Task :app:compileDebugUnitTestKotlin FAILED
+e: file:///E:/omnichat/app/src/test/java/com/omnichat/util/JsDocumentRuntimeTest.kt:242:40 Return type mismatch: expected 'BundledQuickJsDocumentRuntime', actual 'JsDocumentRuntimeCoordinator'.
+
+BUILD FAILED
+```
+
+After correcting the helper to return the internal coordinator, the next run exposed the test's accidental `submit(Runnable)` overload and failed as expected at the assertion (`expected DocumentParseResult ... but was null`). The test was corrected to submit an explicit `Callable<DocumentParseResult>`. The final focused test then passed with 21 tests at that intermediate point; the final focused command passed with the complete current `JsDocumentRuntimeTest` class (the Gradle output reports the task result, while the prior test XML recorded 21 completed tests).
+
+The real adapter test also supplied a red-green device loop: the first implementation failed on the device with the QuickJS parser error described above; after fixing the bridge script and adding explicit return, the isolated real adapter run passed.
+
+### Verification commands and complete outputs
+
+#### Final focused JVM runtime test
+
+Command:
+
+```bash
+./gradlew :app:testDebugUnitTest --tests "com.omnichat.util.JsDocumentRuntimeTest" --no-configuration-cache
+```
+
+Complete output:
+
+```text
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Task :app:testDebugUnitTest
+> Task :app:finalizeTestRoborazziDebug SKIPPED
+
+BUILD SUCCESSFUL in 3s
+33 actionable tasks: 1 executed, 32 up-to-date
+```
+
+#### Final utility JVM suite and debug build
+
+Command:
+
+```bash
+./gradlew :app:assembleDebug :app:testDebugUnitTest --tests "com.omnichat.util.*" --no-configuration-cache
+```
+
+Complete output:
+
+```text
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Task :app:assembleDebug UP-TO-DATE
+> Task :app:testDebugUnitTest
+> Task :app:finalizeTestRoborazziDebug SKIPPED
+
+BUILD SUCCESSFUL in 12s
+50 actionable tasks: 3 executed, 47 up-to-date
+```
+
+#### First isolated real adapter run (red, before bridge fix)
+
+Command:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \\
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.BundledQuickJsDocumentRuntimeInstrumentedTest \\
+  --no-configuration-cache
+```
+
+Relevant complete failure chain:
+
+```text
+Starting 1 tests on CPH2695 - 16
+
+com.omnichat.util.BundledQuickJsDocumentRuntimeInstrumentedTest > realQuickJsAdapterEvaluatesBundledSynchronousPluginAndCloses[CPH2695 - 16] FAILED
+com.whl.quickjs.wrapper.QuickJSException: unexpected token in expression: '\\'
+at <input>:4
+at Function (native)
+at <anonymous> (unknown.js:34)
+at <eval> (unknown.js:45)
+
+> Task :app:connectedDebugAndroidTest FAILED
+BUILD FAILED in 36s
+73 actionable tasks: 11 executed, 62 up-to-date
+```
+
+#### Final isolated real adapter run
+
+The three pre-existing sources `ExampleInstrumentedTest.kt`, `AnimationOptimizerTest.kt`, and `RefreshRateManagerTest.kt` were temporarily moved out of the Android test source set and restored by an `EXIT` trap. No existing source was edited.
+
+Command:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \\
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.BundledQuickJsDocumentRuntimeInstrumentedTest \\
+  --no-configuration-cache
+```
+
+Complete output:
+
+```text
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Task :app:compileDebugAndroidTestKotlin UP-TO-DATE
+> Task :app:packageDebugAndroidTest UP-TO-DATE
+Starting 1 tests on CPH2695 - 16
+Finished 1 tests on CPH2695 - 16
+> Task :app:connectedDebugAndroidTest
+
+BUILD SUCCESSFUL in 1m 39s
+73 actionable tasks: 8 executed, 65 up-to-date
+```
+
+#### Ordinary connected Android baseline
+
+Command:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \\
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.BundledQuickJsDocumentRuntimeInstrumentedTest \\
+  --no-configuration-cache
+```
+
+Result: **failed before the runner because of the pre-existing `AnimationOptimizerTest.kt` compile errors**. The new adapter test itself was not the blocker.
+
+Complete compiler output:
+
+```text
+> Task :app:compileDebugAndroidTestKotlin FAILED
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:32:63 No type arguments expected for object Spring : Any.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:39:9 Unresolved reference 'assertNotNull'.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:47:59 No parameter with name 'durationMs' found.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:51:9 Unresolved reference 'assertNotNull'.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:62:17 No parameter with name 'durationMs' found.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:80:17 No parameter with name 'durationMs' found.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:99:9 Unresolved reference 'assertNotNull'.
+e: file:///E:/omnichat/app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:122:33 Unresolved reference 'intValue'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugAndroidTestKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details.
+
+BUILD FAILED in 6s
+65 actionable tasks: 2 executed, 63 up-to-date
+```
+
+#### Diff and API checks
+
+Commands:
+
+```bash
+git diff --check
+grep -RIn --exclude-dir=build -E 'QuickJsDocumentRuntime\\(context\\)|runtimeFactory:.*JsDocumentRuntime|BundledQuickJsDocumentRuntime' docs/superpowers/plans/2026-07-31-js-document-reader.md app/src/main/java app/src/test/java app/src/androidTest/java
+```
+
+Output:
+
+```text
+(no output from git diff --check)
+docs/superpowers/plans/2026-07-31-js-document-reader.md:326:    private val runtimeFactory: () -> BundledQuickJsDocumentRuntime = {
+docs/superpowers/plans/2026-07-31-js-document-reader.md:327:        BundledQuickJsDocumentRuntime(context.assets)
+app/src/main/java\\com\\omnichat\\util\\JsDocumentRuntime.kt:40:class BundledQuickJsDocumentRuntime(
+app/src/main/java\\com\\omnichat\\util\\JsDocumentRuntime.kt:70:internal class JsDocumentRuntimeCoordinator(
+app/src/androidTest/java\\com\\omnichat\\util\\BundledQuickJsDocumentRuntimeInstrumentedTest.kt:11:class BundledQuickJsDocumentRuntimeInstrumentedTest {
+```
+
+### Remaining risks and explicit concerns
+
+1. The selected QuickJS wrapper still has no verified public hard-interrupt API. A native `evaluate()` that ignores interruption can run beyond the caller deadline and beyond non-blocking `close()`, but it remains bounded by one active task and one orphan slot by default. The worker is daemonized, and its runtime is closed in `finally` after it unwinds. This is the reason the status remains `DONE_WITH_CONCERNS`, not a claim of hard termination.
+2. The default 4 MiB input cap is an adapter memory budget chosen to avoid the prior 20 MiB/32 MiB conflict. Final PDF/DOCX plugin source sizes and representative device memory behavior must still be validated in Tasks 3-5 before raising the cap.
+3. `close()` is a cancellation request and lifecycle barrier, not a join. Task 6 should treat a closed facade as unusable and should not expect `close()` to synchronously terminate an uncooperative native call.
+4. Task 6 still needs a reader-level seam around the high-level `BundledQuickJsDocumentRuntime(context.assets)` facade. It must not reintroduce `QuickJsDocumentRuntime(context)` or expose the internal source/runtime factory through the production facade.
+5. The ordinary connected Android suite remains blocked by the unrelated existing `AnimationOptimizerTest.kt` errors above. The isolated real adapter test passed on `CPH2695 - 16`.
+6. No parser bundle, PDF/DOCX parser, ChatScreen integration, legacy parser removal, or dependency cleanup was attempted, per scope.
+
+### Fix-round commit
+
+Fix-round commit: `6a37ac1 fix: harden document runtime lifecycle`

@@ -1,8 +1,11 @@
 package com.omnichat.util
 
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,6 +46,13 @@ class JsDocumentRuntimeTest {
     @Test
     fun nonArrayWarningsIsMalformedPluginResult() {
         val error = parseFailure("""{"format":"txt","text":"hello","warnings":"warning"}""")
+
+        assertEquals(DocumentParseErrorCategory.MalformedPluginResult, error.category)
+    }
+
+    @Test
+    fun nonStringWarningMemberIsMalformedPluginResult() {
+        val error = parseFailure("""{"format":"txt","text":"hello","warnings":[7]}""")
 
         assertEquals(DocumentParseErrorCategory.MalformedPluginResult, error.category)
     }
@@ -103,7 +113,7 @@ class JsDocumentRuntimeTest {
     @Test
     fun inputAboveLimitFailsBeforeRuntimeCreation() {
         val created = AtomicInteger()
-        val adapter = BundledQuickJsDocumentRuntime(
+        val adapter = JsDocumentRuntimeCoordinator(
             assetSource = assetSource(),
             runtimeFactory = {
                 created.incrementAndGet()
@@ -133,7 +143,7 @@ class JsDocumentRuntimeTest {
     @Test
     fun assetLoadFailureMapsToPluginLoadFailedAndStillClosesRuntime() {
         val runtime = RecordingRuntime("""{"format":"txt","text":"unused","warnings":[]}""")
-        val adapter = BundledQuickJsDocumentRuntime(
+        val adapter = JsDocumentRuntimeCoordinator(
             assetSource = JsDocumentAssetSource { throw IllegalArgumentException("missing asset") },
             runtimeFactory = { runtime }
         )
@@ -152,7 +162,7 @@ class JsDocumentRuntimeTest {
     @Test
     fun invalidPluginAssetIsRejectedBeforeRuntimeCreation() {
         val created = AtomicInteger()
-        val adapter = BundledQuickJsDocumentRuntime(
+        val adapter = JsDocumentRuntimeCoordinator(
             assetSource = assetSource(),
             runtimeFactory = {
                 created.incrementAndGet()
@@ -173,7 +183,7 @@ class JsDocumentRuntimeTest {
 
     @Test
     fun runtimeCreationFailureMapsToRuntimeUnavailable() {
-        val adapter = BundledQuickJsDocumentRuntime(
+        val adapter = JsDocumentRuntimeCoordinator(
             assetSource = assetSource(),
             runtimeFactory = { throw IllegalStateException("native unavailable") }
         )
@@ -206,11 +216,160 @@ class JsDocumentRuntimeTest {
     }
 
     @Test
-    fun bundledAdapterDoesNotExposeRawScriptEntryPoint() {
-        val methods = BundledQuickJsDocumentRuntime::class.java.methods.map { it.name }.toSet()
+    fun nonCooperativeTimeoutConsumesOrphanBudgetUntilWorkerFinallyCloses() {
+        val orphan = NonCooperativeRuntime()
+        val replacement = RecordingRuntime("""{"format":"txt","text":"replacement","warnings":[]}""")
+        val created = AtomicInteger()
+        val adapter = JsDocumentRuntimeCoordinator(
+            assetSource = assetSource(),
+            runtimeFactory = {
+                if (created.getAndIncrement() == 0) orphan else replacement
+            },
+            timeoutMillis = 50,
+            maxConcurrentTasks = 1,
+            maxOrphanTasks = 1
+        )
 
-        assertFalse(methods.contains("parseRaw"))
-        assertTrue(methods.contains("parse"))
+        val timeout = try {
+            adapter.parse("document_plugins/test.js", input())
+            throw AssertionError("parse should time out")
+        } catch (exception: DocumentParseException) {
+            exception
+        }
+        assertEquals(DocumentParseErrorCategory.PluginTimeout, timeout.category)
+        assertTrue(orphan.started.await(1, TimeUnit.SECONDS))
+
+        val rejectedWhileOrphaned = try {
+            adapter.parse("document_plugins/test.js", input())
+            throw AssertionError("parse should be rejected while orphan budget is exhausted")
+        } catch (exception: DocumentParseException) {
+            exception
+        }
+        assertEquals(DocumentParseErrorCategory.RuntimeUnavailable, rejectedWhileOrphaned.category)
+        assertEquals(1, created.get())
+
+        orphan.release()
+        assertTrue(orphan.closed.await(1, TimeUnit.SECONDS))
+        assertEquals(
+            DocumentParseResult("replacement"),
+            adapter.parse("document_plugins/test.js", input())
+        )
+        assertEquals(1, orphan.closeCount.get())
+        assertEquals(1, replacement.closeCount.get())
+        adapter.close()
+    }
+
+    @Test
+    fun closeReturnsAsCancellationRequestAndPreventsParseAfterClose() {
+        val runtime = NonCooperativeRuntime()
+        val adapter = bundledAdapter(runtime, timeoutMillis = 5_000)
+        val parseError = AtomicReference<Throwable?>()
+        val caller = Executors.newSingleThreadExecutor()
+        try {
+            val parseFuture = caller.submit {
+                try {
+                    adapter.parse("document_plugins/test.js", input())
+                } catch (error: Throwable) {
+                    parseError.set(error)
+                }
+            }
+            assertTrue(runtime.started.await(1, TimeUnit.SECONDS))
+            adapter.close()
+            runtime.release()
+            parseFuture.get(1, TimeUnit.SECONDS)
+
+            try {
+                adapter.parse("document_plugins/test.js", input())
+                throw AssertionError("parse after close should fail")
+            } catch (error: IllegalStateException) {
+                assertEquals("JavaScript document runtime is closed", error.message)
+            }
+            assertTrue(parseError.get() is DocumentParseException)
+        } finally {
+            runtime.release()
+            assertTrue(runtime.closed.await(1, TimeUnit.SECONDS))
+            caller.shutdownNow()
+        }
+    }
+
+    @Test
+    fun parseSnapshotsInputBytesBeforeCallerCanMutateThem() {
+        val runtime = SnapshotBlockingRuntime()
+        val adapter = bundledAdapter(runtime, timeoutMillis = 5_000)
+        val originalBytes = byteArrayOf(1, 2, 3)
+        val caller = Executors.newSingleThreadExecutor()
+        try {
+            val future = caller.submit<DocumentParseResult> {
+                adapter.parse("document_plugins/test.js", input(bytes = originalBytes))
+            }
+            assertTrue(runtime.started.await(1, TimeUnit.SECONDS))
+            originalBytes[0] = 99
+            runtime.release()
+            assertEquals(DocumentParseResult("snapshot"), future.get(1, TimeUnit.SECONDS))
+            assertArrayEquals(byteArrayOf(1, 2, 3), runtime.seenBytes)
+        } finally {
+            runtime.release()
+            caller.shutdownNow()
+        }
+    }
+
+    @Test
+    fun defaultInputLimitAcceptsFourMiBAndRejectsOneByteOver() {
+        val created = AtomicInteger()
+        val adapter = JsDocumentRuntimeCoordinator(
+            assetSource = assetSource(),
+            runtimeFactory = {
+                created.incrementAndGet()
+                RecordingRuntime("""{"format":"txt","text":"ok","warnings":[]}""")
+            }
+        )
+        val exactLimit = ByteArray(4 * 1024 * 1024)
+        assertEquals(
+            DocumentParseResult("ok"),
+            adapter.parse("document_plugins/test.js", input(bytes = exactLimit))
+        )
+        val tooLarge = try {
+            adapter.parse("document_plugins/test.js", input(bytes = ByteArray(exactLimit.size + 1)))
+            throw AssertionError("input over the default limit should fail")
+        } catch (exception: DocumentParseException) {
+            exception
+        }
+        assertEquals(DocumentParseErrorCategory.FileTooLarge, tooLarge.category)
+        assertEquals(1, created.get())
+    }
+
+    @Test
+    fun resourceWordsInArbitraryPluginMessageRemainParseFailed() {
+        val error = parseFailureWith(
+            IOException("memory pressure in document")
+        )
+
+        assertEquals(DocumentParseErrorCategory.ParseFailed, error.category)
+    }
+
+    @Test
+    fun exactQuickJsResourceLimitMessageMapsToMemoryLimit() {
+        val error = parseFailureWith(IllegalStateException("out of memory"))
+
+        assertEquals(DocumentParseErrorCategory.PluginMemoryLimit, error.category)
+    }
+
+    @Test
+    fun bundledAdapterDoesNotExposeRawScriptEntryPointOrTestSeams() {
+        val publicMethods = BundledQuickJsDocumentRuntime::class.java.methods.map { it.name }.toSet()
+        val constructors = BundledQuickJsDocumentRuntime::class.java.declaredConstructors
+
+        assertFalse(publicMethods.contains("parseRaw"))
+        assertTrue(publicMethods.contains("parse"))
+        assertTrue(constructors.all { constructor ->
+            constructor.parameterTypes.contentEquals(arrayOf(android.content.res.AssetManager::class.java))
+        })
+        assertTrue(constructors.none { constructor ->
+            constructor.parameterTypes.any { parameter ->
+                parameter.name.contains("JsDocumentAssetSource") ||
+                    parameter.name.contains("Function")
+            }
+        })
     }
 
     private fun parseFailure(json: String): DocumentParseException {
@@ -224,11 +383,22 @@ class JsDocumentRuntimeTest {
         }
     }
 
+    private fun parseFailureWith(failure: Throwable): DocumentParseException {
+        val runtime = RecordingRuntime(failure = failure)
+        return try {
+            bundledAdapter(runtime).parse("document_plugins/test.js", input())
+            throw AssertionError("parse should fail")
+        } catch (exception: DocumentParseException) {
+            assertEquals(1, runtime.closeCount.get())
+            exception
+        }
+    }
+
     private fun bundledAdapter(
         runtime: JsDocumentRuntime,
         maxOutputBytes: Int = 1024,
         timeoutMillis: Long = 5_000
-    ): BundledQuickJsDocumentRuntime = BundledQuickJsDocumentRuntime(
+    ): JsDocumentRuntimeCoordinator = JsDocumentRuntimeCoordinator(
         assetSource = assetSource(),
         runtimeFactory = { runtime },
         maxOutputBytes = maxOutputBytes,
@@ -248,6 +418,63 @@ class JsDocumentRuntimeTest {
         mimeType = "text/plain",
         bytes = bytes
     )
+
+    private class NonCooperativeRuntime : JsDocumentRuntime {
+        val started = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        private val releaseLatch = CountDownLatch(1)
+        val closeCount = AtomicInteger()
+
+        override fun parse(
+            pluginSource: String,
+            runtimeSource: String,
+            input: JsDocumentInput
+        ): String {
+            started.countDown()
+            var released = false
+            while (!released) {
+                try {
+                    releaseLatch.await()
+                    released = true
+                } catch (_: InterruptedException) {
+                    // A native evaluate() may ignore Java interruption and keep running.
+                }
+            }
+            return """{"format":"txt","text":"released","warnings":[]}"""
+        }
+
+        fun release() {
+            releaseLatch.countDown()
+        }
+
+        override fun close() {
+            closeCount.incrementAndGet()
+            closed.countDown()
+        }
+    }
+
+    private class SnapshotBlockingRuntime : JsDocumentRuntime {
+        val started = CountDownLatch(1)
+        private val releaseLatch = CountDownLatch(1)
+        var seenBytes: ByteArray = byteArrayOf()
+
+        override fun parse(
+            pluginSource: String,
+            runtimeSource: String,
+            input: JsDocumentInput
+        ): String {
+            seenBytes = input.bytes.copyOf()
+            started.countDown()
+            releaseLatch.await()
+            return """{"format":"txt","text":"snapshot","warnings":[]}"""
+        }
+
+        fun release() {
+            releaseLatch.countDown()
+        }
+
+        override fun close() = Unit
+    }
 
     private class BlockingRuntime : JsDocumentRuntime {
         val interrupted = CountDownLatch(1)

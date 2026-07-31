@@ -323,7 +323,9 @@ git add app/src/main/assets/document_plugins/pdf-reader.js tools/document-plugin
 ```kotlin
 class JsDocumentReader(
     private val context: Context,
-    private val runtimeFactory: () -> JsDocumentRuntime = { QuickJsDocumentRuntime(context) }
+    private val runtimeFactory: () -> BundledQuickJsDocumentRuntime = {
+        BundledQuickJsDocumentRuntime(context.assets)
+    }
 ) {
     suspend fun parse(uri: Uri): DocumentParseResult
     fun getFileName(uri: Uri): String
