@@ -4,12 +4,14 @@
 
 **Goal:** Replace the Android PDF/PPT/TXT parser with an embedded JavaScript runtime and built-in PDF/DOCX plugins that extract正文 and table text, while preserving the existing full-text chat attachment flow.
 
-**Architecture:** `ChatScreen` will call a Kotlin `JsDocumentReader` facade. The facade validates the selected `Uri`, reads bounded bytes, dispatches to an asset-bundled PDF or DOCX plugin, executes it in an isolated QuickJS context, validates a JSON result, and returns parsed full text. The existing `<document_attachment>` message format and `Message.content` persistence remain unchanged; document images are not produced.
+**Architecture:** `ChatScreen` will call a Kotlin `JsDocumentReader` facade. The facade validates the selected `Uri`, reads bounded bytes, dispatches to an asset-bundled PDF or DOCX plugin, executes it in an isolated QuickJS context, validates a JSON result, and returns parsed full text. The PDF path must use a synchronous, runtime-compatible PDF parser core; the complete asynchronous PDF.js implementation must not be a direct implementation dependency. The existing `<document_attachment>` message format and `Message.content` persistence remain unchanged; document images are not produced.
 
-**Tech Stack:** Android/Kotlin/Compose, Gradle version catalog, QuickJS Android wrapper selected by the runtime spike, JavaScript plugin assets, a bundled PDF text-parser core adapted for the selected runtime, JavaScript ZIP/XML helpers for DOCX, JUnit/Robolectric, Node-based plugin fixture tests.
+**Tech Stack:** Android/Kotlin/Compose, Gradle version catalog, QuickJS Android wrapper selected by the runtime spike, JavaScript plugin assets, a synchronous runtime-compatible PDF text-parser core (not the complete asynchronous PDF.js implementation), JavaScript ZIP/XML helpers for DOCX, JUnit/Robolectric, Node-based plugin fixture tests.
 
 ## Global Constraints
 
+- This version requires every document plugin to expose a synchronous entry point.
+- Do not depend on Promise/async/await, Worker, DOM, Canvas, Node APIs, or network access; one plugin invocation must complete in one synchronous `evaluate()` call.
 - Supported document formats in this change are PDF and DOCX only.
 - PDF/DOCX reading must execute through the embedded JavaScript runtime and built-in JavaScript plugins; Kotlin must not call PDFBox or Apache POI for reading.
 - Extract正文 and table text; do not extract document images and do not perform OCR.
@@ -63,6 +65,7 @@
 **Interfaces:**
 - Produces a documented engine choice and a reproducible proof that Android can load the engine, evaluate an asset script, pass a binary buffer, and close the context.
 - Produces a plugin runtime contract: `parseDocument({ name, mimeType, bytes }) -> { format, text, warnings }`.
+- **Verified synchronous constraint:** `wang.harlon.quickjs:wrapper-android:3.2.3` was verified on a real Android smoke path to not drain Promise jobs from `evaluate()` and to expose no public pending-job API. The original smoke record above remains unchanged; this plan records the resulting constraint only: plugins must complete synchronously in the single `evaluate()` call, with no Promise pump.
 
 - [ ] **Step 1: Add a failing compatibility checklist/test script.**
 
@@ -111,6 +114,8 @@ git commit -m "build: validate embedded JavaScript document runtime"
 
 **Interfaces:**
 
+The runtime interface is synchronous: one `parse(...)` call returns the JSON result from the same `evaluate()` invocation. It must not return a Promise, schedule Promise jobs, or implement a Promise/pending-job pump. Preserve the existing error taxonomy below, including timeout and resource-limit categories.
+
 ```kotlin
 data class DocumentParseResult(
     val text: String,
@@ -151,7 +156,7 @@ Keep the protocol testable without native libraries. The fake runtime returns a 
 
 - [ ] **Step 3: Implement the real QuickJS adapter behind the interface.**
 
-Load `runtime.js` and one plugin asset from `AssetManager`, inject only `{name, mimeType, bytes}`, call one exported/global `parseDocument` entry point, stringify the result, and close in `finally`. Use a fresh context per document. If the selected wrapper only accepts primitive bridge values, pass bytes as a bounded base64 string or chunked numeric array and decode to `Uint8Array` inside JS; never pass a filesystem path.
+Load `runtime.js` and one plugin asset from `AssetManager`, inject only `{name, mimeType, bytes}`, call one exported/global `parseDocument` entry point, and consume the JSON string returned synchronously by that same `evaluate()` call before closing in `finally`. Do not return a Promise, schedule Promise jobs, or implement a Promise/pending-job pump. Use a fresh context per document. If the selected wrapper only accepts primitive bridge values, pass bytes as a bounded base64 string or chunked numeric array and decode to `Uint8Array` inside JS; never pass a filesystem path.
 
 - [ ] **Step 4: Add cooperative execution limits.**
 
@@ -181,16 +186,17 @@ git commit -m "feat: add sandboxed document JavaScript runtime"
 - Modify: `app/build.gradle.kts`
 
 **Interfaces:**
-- `runtime.js` provides `parseDocument` registration, bounded string/array helpers, UTF-8 decoding, XML escaping, line normalization, and `result(format, text, warnings)`.
+- `runtime.js` provides synchronous `parseDocument` registration, bounded string/array helpers, UTF-8 decoding, XML escaping, line normalization, and `result(format, text, warnings)`.
 - The build emits deterministic plugin assets under `app/src/main/assets/document_plugins/` before Android asset merging.
+- Every plugin must remain synchronous and must not create or return a Promise; the generated bundle must be runtime-compatible without Promise/async/await, Worker, DOM, Canvas, `node:`, `require`, `process`, or `Buffer`.
 
 - [ ] **Step 1: Add the failing asset build verification.**
 
-Create a Gradle verification task/test that fails if `runtime.js`, `pdf-reader.js`, or `docx-reader.js` is absent, contains Node-only imports (`node:`, `require`, `process`, `Buffer`), or does not expose the protocol entry point.
+Create a Gradle verification task/test that fails if `runtime.js`, `pdf-reader.js`, or `docx-reader.js` is absent, contains `async`, `await`, `Promise`, `Worker`, `DOM`, `Canvas`, or Node-only APIs (`node:`, `require`, `process`, `Buffer`), or does not expose the synchronous protocol entry point.
 
 - [ ] **Step 2: Pin JS tool dependencies and scripts.**
 
-Use a local `package-lock.json`; select only libraries that run without browser globals and Node runtime APIs in the final bundle. The ZIP helper must expose a `Uint8Array`-based reader, and the XML helper must parse strings without DOM globals. If a candidate library cannot be bundled to the selected engine, replace it with a small self-contained helper rather than adding a Node polyfill surface.
+Use a local `package-lock.json`; select only libraries that run synchronously without Promise/async/await, Worker, DOM, Canvas, or Node runtime APIs in the final bundle. The ZIP helper must expose a `Uint8Array`-based reader, and the XML helper must parse strings without DOM globals. If a candidate library cannot be bundled to the selected engine without those APIs, replace it with a small self-contained synchronous helper rather than adding a Node polyfill surface.
 
 - [ ] **Step 3: Implement shared helpers.**
 
@@ -222,8 +228,9 @@ git add tools/document-plugins app/src/main/assets/document_plugins app/build.gr
 - Create: `app/src/test/resources/documents/malformed.docx`
 
 **Interfaces:**
-- Registers `parseDocument` for MIME `application/vnd.openxmlformats-officedocument.wordprocessingml.document` and extension `.docx`.
-- Returns `{ format: "docx", text: string, warnings: string[] }`.
+- Registers a synchronous `parseDocument` for MIME `application/vnd.openxmlformats-officedocument.wordprocessingml.document` and extension `.docx`.
+- Returns `{ format: "docx", text: string, warnings: string[] }` directly from the same `evaluate()` call and never creates or returns a Promise.
+- The DOCX plugin must not use or produce `async`/`await`, Promise, Worker, DOM, Canvas, `node:`, `require`, `process`, or `Buffer`; Task 3's build validation must reject any such generated bundle.
 
 - [ ] **Step 1: Add failing fixture tests.**
 
@@ -268,12 +275,13 @@ git add app/src/main/assets/document_plugins/docx-reader.js tools/document-plugi
 - Create: `app/src/test/resources/documents/malformed.pdf`
 
 **Interfaces:**
-- Registers `parseDocument` for MIME `application/pdf` and extension `.pdf`.
-- Returns `{ format: "pdf", text: string, warnings: string[] }`.
+- Registers a synchronous `parseDocument` for MIME `application/pdf` and extension `.pdf`.
+- Returns `{ format: "pdf", text: string, warnings: string[] }` directly from the same `evaluate()` call and never creates or returns a Promise.
+- The PDF plugin must not use or produce `async`/`await`, Promise, Worker, DOM, Canvas, `node:`, `require`, `process`, or `Buffer`; Task 3's build validation must reject any such generated bundle.
 
 - [ ] **Step 1: Run the parser compatibility spike against the real target engine.**
 
-Before committing to a PDF library, execute the actual bundled `pdf-reader.js` in the Android QuickJS adapter against `text-pages.pdf`. The spike must prove that the parser can decode the cross-reference/object streams and expose text items without `DOM`, `canvas`, `Worker`, `fs`, `Buffer`, or network APIs. If the candidate PDF.js/pdf2json bundle cannot pass this test, stop and adapt a smaller self-contained parser core or revise the runtime choice; do not silently fall back to Kotlin PDFBox.
+Before committing to a PDF library, execute the actual bundled `pdf-reader.js` in the Android QuickJS adapter against `text-pages.pdf`. The spike must prove that the parser is synchronous, completes in the single `evaluate()` call, decodes the cross-reference/object streams, and exposes text items without `async`, `await`, `Promise`, `DOM`, `Canvas`, `Worker`, `fs`, `node:`, `require`, `process`, `Buffer`, or network APIs. If any candidate PDF parser requires async/await or Promise jobs, stop at this Task 5 compatibility gate and do not adopt it or fall back to PDFBox; choose a synchronous runtime-compatible parser core only after an explicit design decision.
 
 - [ ] **Step 2: Add failing PDF fixture tests.**
 
