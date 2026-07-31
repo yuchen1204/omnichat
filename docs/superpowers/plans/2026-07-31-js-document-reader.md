@@ -54,6 +54,7 @@
 ### Task 1: Runtime and plugin compatibility spike
 
 **Files:**
+- Create: `tools/document-plugins/package.json` — declare `{ "type": "module" }` for the Node ESM smoke fixture; Task 1 owns this configuration.
 - Create: `tools/document-plugins/smoke/quickjs-smoke.js`
 - Create: `tools/document-plugins/smoke/README.md`
 - Modify: `gradle/libs.versions.toml` only after the candidate artifact is verified

@@ -296,3 +296,128 @@ Result: passed with no whitespace errors before the implementation commit. The o
 6. **No parser is included.** PDF/DOCX parser behavior, ZIP/XML helpers, plugin bundling, malformed document handling, and result-size limits remain future tasks. PDF parsing was not routed back to PDFBox.
 7. **License notice integration is not complete.** Apache-2.0 compatibility was confirmed, but final app notices/attribution packaging still needs to be handled by the release process.
 8. **The current adapter is a smoke probe, not the final `JsDocumentRuntime`.** It intentionally does not expose a production parser facade or integrate with the existing document flow.
+
+---
+
+# Fix Round 1 Report
+
+Date: 2026-07-31
+
+## Status
+
+**DONE_WITH_CONCERNS**
+
+This round addresses all open review findings without changing the parser, `ChatScreen`, or legacy `DocumentParser`. The binary bridge and context lifecycle remain verified on the connected Android device. The Promise gate is now tested against the real wrapper and records a limitation rather than claiming asynchronous support.
+
+## Changes made
+
+- Added `app/src/main/assets/quickjs_promise_smoke.js`, which runs `Promise.resolve("resolved").then(...)` and returns the callback state immediately.
+- Extended `app/src/androidTest/java/com/omnichat/util/QuickJsSmokeInstrumentedTest.kt` with a real native Promise smoke. It asserts the observed result is `{"callbackResult":"pending"}` after `QuickJSContext.evaluate()`.
+- Added `tools/document-plugins/package.json` with `{ "type": "module" }`, so the Node smoke's `import` syntax is explicit and Task 3 does not need to create this file.
+- Corrected `tools/document-plugins/smoke/README.md`:
+  - replaced the invalid `bytes.length` example with `new Uint8Array(bytes).byteLength`;
+  - replaced the invalid `connectedDebugAndroidTest --tests` invocation with `-Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.QuickJsSmokeInstrumentedTest`;
+  - documented that the full connected suite is blocked by the pre-existing `AnimationOptimizerTest.kt` compilation errors;
+  - documented synchronous wrapper APIs and the Promise result;
+  - separated wrapper Apache-2.0 evidence from unverified embedded native QuickJS provenance and stated that final distribution notices are not yet integrated.
+
+## Promise/job-queue gate
+
+### Source/API investigation
+
+The inspected `wrapper-java-3.2.3-sources.jar` exposes `QuickJSContext.evaluate()`, `evaluateModule()`, and `execute()` as synchronous methods. Its native declarations include evaluation, module evaluation, bytecode execution, GC, and memory controls, but no public `executePendingJobs`, job-loop, or equivalent API. The Android source only provides `QuickJSLoader.init()` and logging helpers.
+
+The AAR native symbol inspection likewise found JNI exports for `evaluate`, `evaluateModule`, and `execute`, but no exposed pending-job/job-loop entry point. This does not prove the underlying QuickJS engine has no internal queue; it proves the selected Java/Android wrapper gives this app no verified way to drain it.
+
+### Real-device smoke
+
+Asset script:
+
+```javascript
+let callbackResult = "pending";
+Promise.resolve("resolved").then(value => {
+  callbackResult = value;
+});
+JSON.stringify({callbackResult});
+```
+
+Command (with the unrelated Android test source temporarily moved out of the source set and restored by a shell trap):
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.QuickJsSmokeInstrumentedTest \
+  --no-configuration-cache
+```
+
+Result:
+
+```text
+Starting 2 tests on CPH2695 - 16
+Finished 2 tests on CPH2695 - 16
+BUILD SUCCESSFUL in 38s
+73 actionable tasks: 6 executed, 67 up-to-date
+```
+
+The initial RED run failed because `quickjs_promise_smoke.js` did not yet exist. After adding the asset, the first implementation run failed with the observed device result `{"callbackResult":"pending"}` while the provisional test expected `resolved`. The test was corrected to assert the actual limitation; the final run passed. This is a real instrumented test against the native wrapper, not a JVM fake.
+
+**Gate conclusion:** `wrapper-android:3.2.3` does not provide verified Promise/job-queue behavior through its public API. The current route is **DONE_WITH_CONCERNS**, not asynchronous-runtime support. Task 2 through Task 5 must not safely assume Promise scheduling or asynchronous parser bundles. They are blocked pending a documented engine/API decision: find a verified job-loop API or select an alternative engine/runtime. Synchronous plugins remain possible only under an explicit synchronous-plugin constraint.
+
+## License and notice verification
+
+- `wrapper-android:3.2.3` and its `wrapper-java:3.2.3` dependency POMs declare The Apache License, Version 2.0.
+- The upstream `quickjs-wrapper` repository `LICENSE` was fetched and is Apache-2.0. This verifies the wrapper Java/Android project licensing evidence.
+- The inspected AAR contains native `.so` files for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`, but contains no `LICENSE`, `NOTICE`, or native source archive. Its POM does not separately identify the embedded QuickJS native component's license/copyright/notice.
+- The wrapper repository declares `native/quickjs` as a separate submodule. Although upstream repositories expose license files, the exact native revision and its corresponding notice were not established from the downloaded AAR. The embedded QuickJS native license/copyright status is therefore **not verified here** and is not inferred from the wrapper Apache-2.0 declaration.
+- Final app distribution notice/attribution integration has not been added. Release compliance must verify the exact native revision and package the required notices before distribution.
+
+## Verification after fixes
+
+Node contract and explicit ESM import:
+
+```bash
+node tools/document-plugins/smoke/quickjs-smoke.js
+node --input-type=module -e 'import("./tools/document-plugins/smoke/quickjs-smoke.js").then(({assertPluginResult}) => { assertPluginResult({format:"pdf", text:"ok", warnings:[]}, "pdf"); console.log("esm import passed") })'
+```
+
+Output:
+
+```text
+plugin contract smoke passed
+esm import passed
+```
+
+Focused Android/JVM build and tests:
+
+```bash
+./gradlew :app:assembleDebug :app:testDebugUnitTest --tests "com.omnichat.util.*" --no-configuration-cache
+```
+
+Output:
+
+```text
+BUILD SUCCESSFUL in 3s
+50 actionable tasks: 3 executed, 47 up-to-date
+```
+
+Whitespace check:
+
+```bash
+git diff --check
+```
+
+Result: passed. Git emitted only the existing Windows LF-to-CRLF normalization warning for modified text files.
+
+Baseline/full-suite findings retained:
+
+- The initial focused Node smoke and JVM smoke passed before this round.
+- The full `:app:connectedDebugAndroidTest` remains blocked by pre-existing compile errors in `app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt`: `Spring` type arguments, `durationMs`, `assertNotNull`, and `intValue`.
+- The isolated QuickJS instrumented command uses the actual runner property above; it is not a workaround that claims the full suite is green.
+
+## Remaining concerns
+
+1. Promise jobs remain un-drained by the selected wrapper, and no public job-loop API is available. Do not proceed with asynchronous parser assumptions.
+2. Only the connected device's ABI was executed. The APK/AAR inspection proves packaging of all four listed ABIs, but no device was available to honestly claim physical execution on each ABI.
+3. No API 26 device/emulator was available for a runtime claim; `minSdk=26` compatibility is limited to project/AAR metadata and the existing build probe.
+4. The exact requested coordinate `wang.harlon.quickjs:wrapper-android:323` remains unavailable; `3.2.3` is the verified replacement.
+5. Final distribution license notices are not wired, and embedded QuickJS native provenance remains to be verified from the exact native revision.
+6. Memory, timeout, cancellation, parser assets, and production runtime policy remain outside this smoke spike.
