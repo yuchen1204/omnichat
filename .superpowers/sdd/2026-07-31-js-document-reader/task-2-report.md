@@ -916,3 +916,96 @@ app/src/androidTest/java\\com\\omnichat\\util\\BundledQuickJsDocumentRuntimeInst
 ### Fix-round commit
 
 Fix-round commit: `6a37ac1 fix: harden document runtime lifecycle`
+
+## Fix Round 2: Shared Executor Handoff Rejection
+
+Date: 2026-07-31
+Branch: `feat/js-document-reader`
+Review package: `E:\omnichat\.superpowers\sdd\2026-07-31-js-document-reader\review-9eac9af..ad8cf9a.diff`
+Status: **DONE_WITH_CONCERNS**
+
+This round addresses the new Important finding: with the prior shared `ThreadPoolExecutor` and `SynchronousQueue`, a normal task could finish `runTask()` and remove its active-registry entry before its worker returned to the executor loop. A back-to-back parse could then observe capacity as available but still receive `AbortPolicy` rejection during that short handoff window, which was incorrectly exposed as `RuntimeUnavailable`.
+
+### Queue strategy
+
+- Replaced `SynchronousQueue` with `ArrayBlockingQueue(maxConcurrentTasks)` in `JsDocumentRuntimeCoordinator`.
+- Kept `corePoolSize == maximumPoolSize == maxConcurrentTasks`, the daemon dedicated worker factory, and `AbortPolicy` as a final shutdown/rejection guard. No unbounded queue or unlimited thread creation was restored.
+- The queue capacity equals the configured active-task budget. The registry check remains the authoritative admission control: no more than `maxConcurrentTasks` tasks can be registered, and the orphan budget still rejects new work while timed-out non-cooperative tasks remain active.
+- The bounded queue absorbs the finite worker handoff window after a successful task has completed but before that worker calls `getTask()` again. It cannot accumulate an unbounded backlog because registry admission is capped and the queue itself is bounded.
+- Cancellation of a task that has not started now removes its `FutureTask` from the queue before removing it from the active registry. This prevents a canceled queued task from consuming queue capacity or delaying later work. Running canceled tasks remain registered as orphans until worker `finally` closes the runtime and removes them, preserving the existing orphan cap and cooperative-cancellation semantics.
+- Shutdown and rejection mappings remain unchanged: `close()` still marks the lifecycle closed, cancels the active snapshot, and calls `shutdownNow()`; post-close parse still fails with the existing closed-state `IllegalStateException`; executor rejection is still mapped to `DocumentParseErrorCategory.RuntimeUnavailable`.
+
+### Regression coverage
+
+Added to `E:\omnichat\app\src\test\java\com\omnichat\util\JsDocumentRuntimeTest.kt`:
+
+1. `repeatedBackToBackParsesDoNotHitTransientRuntimeUnavailable` performs 500 sequential successful parses against one coordinator and asserts every result succeeds and all 500 runtimes are created. This failed before the queue change with `RejectedExecutionException` mapped to `RuntimeUnavailable` at the 49th parse in the first run.
+2. `concurrentSubmissionsWithinConfiguredLimitCompleteWithoutRejection` submits two parses concurrently with `maxConcurrentTasks = 2`, uses latches to prove both workers started, releases them deterministically, and asserts both complete successfully. It uses no sleeps.
+3. Existing `nonCooperativeTimeoutConsumesOrphanBudgetUntilWorkerFinallyCloses` continues to cover timeout, orphan-budget rejection, deterministic release, and a successful parse after the orphan worker closes. Existing close/shutdown, cooperative timeout, runtime creation, plugin load, malformed result, output-limit, and unsupported-format tests remain in the focused class.
+
+### TDD and verification output
+
+The new regression tests were added before the production queue change. The required focused command was run in the pre-fix state:
+
+```text
+./gradlew :app:testDebugUnitTest --tests "com.omnichat.util.JsDocumentRuntimeTest" --no-configuration-cache
+
+> Task :app:testDebugUnitTest FAILED
+23 tests completed, 1 failed
+JsDocumentRuntimeTest > repeatedBackToBackParsesDoNotHitTransientRuntimeUnavailable FAILED
+    com.omnichat.util.DocumentParseException at JsDocumentRuntimeTest.kt:49
+        Caused by: java.util.concurrent.RejectedExecutionException at JsDocumentRuntimeTest.kt:49
+```
+
+After switching to the bounded queue and fixing the queue-removal type, the required focused command passed:
+
+```text
+./gradlew :app:testDebugUnitTest --tests "com.omnichat.util.JsDocumentRuntimeTest" --no-configuration-cache
+
+BUILD SUCCESSFUL in 1m 23s
+33 actionable tasks: 8 executed, 25 up-to-date
+```
+
+The focused class was then repeated five times; all five runs passed. The utility suite and debug build also passed:
+
+```text
+./gradlew :app:assembleDebug :app:testDebugUnitTest --tests "com.omnichat.util.*" --no-configuration-cache
+
+BUILD SUCCESSFUL in 4s
+50 actionable tasks: 4 executed, 46 up-to-date
+```
+
+Whitespace verification passed with `git diff --check`. The isolated real-device adapter check was run without modifying or retaining changes to unrelated Android tests:
+
+```text
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.BundledQuickJsDocumentRuntimeInstrumentedTest \
+  --no-configuration-cache
+
+Starting 1 tests on CPH2695 - 16
+Finished 1 tests on CPH2695 - 16
+BUILD SUCCESSFUL in 34s
+73 actionable tasks: 3 executed, 70 up-to-date
+```
+
+### Changed files and scope
+
+- `E:\omnichat\app\src\main\java\com\omnichat\util\JsDocumentRuntime.kt`
+  - Bounded queue import/configuration, queue-removal support for not-started cancellation, and the corresponding `FutureTask` field type.
+- `E:\omnichat\app\src\test\java\com\omnichat\util\JsDocumentRuntimeTest.kt`
+  - 500-iteration back-to-back regression and deterministic two-worker concurrency regression, plus test runtime fixture.
+- `E:\omnichat\.superpowers\sdd\2026-07-31-js-document-reader\task-2-report.md`
+  - This round-2 report.
+
+No PDF/DOCX parser, parser bundle, `ChatScreen`, `DocumentParser`, `AnimationOptimizerTest`, or build dependency was modified.
+
+### Remaining risks
+
+1. QuickJS native evaluation remains cooperatively cancellable only. A native call that ignores interruption can outlive the caller timeout and non-blocking `close()` until it returns; the active registry and orphan budget still bound replacement work.
+2. `ArrayBlockingQueue(maxConcurrentTasks)` absorbs only the bounded executor handoff window. If future code changes admission accounting or allows queued work beyond the active-task budget, the queue/rejection contract must be revisited; the current coordinator keeps registry admission and queue capacity aligned.
+3. The ordinary connected Android suite remains blocked by the pre-existing `AnimationOptimizerTest.kt` compilation errors documented above. The isolated production QuickJS adapter test passed on the connected device.
+4. The conservative 4 MiB input and 4 MiB output limits, QuickJS memory/stack caps, and parser-bundle compatibility still require later representative PDF/DOCX validation.
+
+### Fix-round 2 commit
+
+`fix: bound document runtime executor handoff`

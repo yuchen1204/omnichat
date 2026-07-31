@@ -4,13 +4,13 @@ import android.content.res.AssetManager
 import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.QuickJSContext
 import java.util.Base64
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
 import java.util.concurrent.FutureTask
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -60,7 +60,8 @@ class BundledQuickJsDocumentRuntime(
  * Internal coordinator used by the Android facade and JVM tests.
  *
  * A single shared, bounded executor is used for all parses owned by this coordinator. The
- * synchronous queue prevents an unbounded backlog. A timed-out task remains registered until its
+ * bounded handoff queue absorbs the short worker handoff window without allowing an unbounded
+ * backlog. A timed-out task remains registered until its
  * worker finally unwinds; if native evaluate ignores interruption, it is an orphan and consumes
  * the configured orphan budget. This is intentionally a cooperative timeout, not a native hard
  * kill.
@@ -84,7 +85,7 @@ internal class JsDocumentRuntimeCoordinator(
         maxConcurrentTasks,
         0L,
         TimeUnit.MILLISECONDS,
-        SynchronousQueue(),
+        ArrayBlockingQueue(maxConcurrentTasks),
         { runnable ->
             Thread(
                 runnable,
@@ -274,6 +275,7 @@ internal class JsDocumentRuntimeCoordinator(
             }
         } else {
             task.cancelledBeforeStart = true
+            executor.remove(task.future)
             finishTaskLocked(task)
         }
     }
@@ -393,7 +395,7 @@ internal class JsDocumentRuntimeCoordinator(
         )
 
     private class ActiveTask {
-        var future: Future<*>? = null
+        var future: FutureTask<*>? = null
         var started = false
         var cancellationRequested = false
         var cancelledBeforeStart = false

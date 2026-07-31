@@ -30,6 +30,68 @@ class JsDocumentRuntimeTest {
     }
 
     @Test
+    fun repeatedBackToBackParsesDoNotHitTransientRuntimeUnavailable() {
+        val created = AtomicInteger()
+        val adapter = JsDocumentRuntimeCoordinator(
+            assetSource = assetSource(),
+            runtimeFactory = {
+                created.incrementAndGet()
+                RecordingRuntime("""{"format":"txt","text":"ok","warnings":[]}""")
+            },
+            maxConcurrentTasks = 1,
+            maxOrphanTasks = 1
+        )
+
+        try {
+            repeat(500) {
+                assertEquals(
+                    DocumentParseResult("ok"),
+                    adapter.parse("document_plugins/test.js", input())
+                )
+            }
+        } finally {
+            adapter.close()
+        }
+
+        assertEquals(500, created.get())
+    }
+
+    @Test
+    fun concurrentSubmissionsWithinConfiguredLimitCompleteWithoutRejection() {
+        val started = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val created = AtomicInteger()
+        val adapter = JsDocumentRuntimeCoordinator(
+            assetSource = assetSource(),
+            runtimeFactory = {
+                created.incrementAndGet()
+                CoordinatedRuntime(started, release)
+            },
+            maxConcurrentTasks = 2,
+            maxOrphanTasks = 1
+        )
+        val callers = Executors.newFixedThreadPool(2)
+
+        try {
+            val parses = (1..2).map {
+                callers.submit<DocumentParseResult> {
+                    adapter.parse("document_plugins/test.js", input())
+                }
+            }
+            assertTrue(started.await(1, TimeUnit.SECONDS))
+            release.countDown()
+            parses.forEach { parse ->
+                assertEquals(DocumentParseResult("concurrent"), parse.get(1, TimeUnit.SECONDS))
+            }
+            assertEquals(2, created.get())
+        } finally {
+            release.countDown()
+            adapter.close()
+            callers.shutdownNow()
+        }
+    }
+
+    @Test
     fun missingFormatIsMalformedPluginResult() {
         val error = parseFailure("""{"text":"hello","warnings":[]}""")
 
@@ -451,6 +513,23 @@ class JsDocumentRuntimeTest {
             closeCount.incrementAndGet()
             closed.countDown()
         }
+    }
+
+    private class CoordinatedRuntime(
+        private val started: CountDownLatch,
+        private val release: CountDownLatch
+    ) : JsDocumentRuntime {
+        override fun parse(
+            pluginSource: String,
+            runtimeSource: String,
+            input: JsDocumentInput
+        ): String {
+            started.countDown()
+            release.await()
+            return """{"format":"txt","text":"concurrent","warnings":[]}"""
+        }
+
+        override fun close() = Unit
     }
 
     private class SnapshotBlockingRuntime : JsDocumentRuntime {
