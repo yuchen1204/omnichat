@@ -44,9 +44,11 @@ desugar_jdk_libs = "2.1.5"
 work = "2.9.0"
 zxing = "4.3.0"
 pdfboxAndroid = "2.0.27.0"
+quickjsAndroid = "3.2.3"
 
 [libraries]
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfboxAndroid" }
+quickjs-android = { group = "wang.harlon.quickjs", name = "wrapper-android", version.ref = "quickjsAndroid" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
