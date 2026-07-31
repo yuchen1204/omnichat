@@ -175,7 +175,7 @@ git commit -m "feat: add sandboxed document JavaScript runtime"
 ### Task 3: Build the shared JavaScript plugin bundle
 
 **Files:**
-- Create: `tools/document-plugins/package.json`
+- Modify: `tools/document-plugins/package.json` — retain the Task 1 `{ "type": "module" }` declaration; add the Task 3 build/test dependencies and scripts without removing that ESM setting.
 - Create: `tools/document-plugins/build.mjs`
 - Create: `app/src/main/assets/document_plugins/runtime.js`
 - Modify: `app/build.gradle.kts`

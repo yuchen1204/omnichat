@@ -421,3 +421,127 @@ Baseline/full-suite findings retained:
 4. The exact requested coordinate `wang.harlon.quickjs:wrapper-android:323` remains unavailable; `3.2.3` is the verified replacement.
 5. Final distribution license notices are not wired, and embedded QuickJS native provenance remains to be verified from the exact native revision.
 6. Memory, timeout, cancellation, parser assets, and production runtime policy remain outside this smoke spike.
+
+---
+
+# Fix Round 2 Report
+
+Date: 2026-07-31
+Branch: `feat/js-document-reader`
+
+## Status
+
+**DONE_WITH_CONCERNS**
+
+This round makes only the requested documentation corrections. No parser, `ChatScreen`, legacy `DocumentParser`, or runtime implementation files were changed.
+
+## Changes made
+
+- Updated `tools/document-plugins/smoke/README.md` to state that the focused `connectedDebugAndroidTest` command on the current checkout still fails during Android-test compilation because of the pre-existing `AnimationOptimizerTest.kt` errors. The README no longer presents that ordinary command as a passing reproduction.
+- Added a reproducible, explicitly isolated device-check procedure that temporarily moves the three pre-existing Android-test sources out of the source set and restores them with a shell `EXIT` trap, including on Gradle failure. It labels the successful result as isolated verification only.
+- Updated Task 3 in `docs/superpowers/plans/2026-07-31-js-document-reader.md` from `Create` to `Modify` for `tools/document-plugins/package.json` and explicitly requires retaining Task 1's `{ "type": "module" }` declaration.
+
+## Verification and command output
+
+### Node smoke
+
+Command:
+
+```bash
+node tools/document-plugins/smoke/quickjs-smoke.js
+```
+
+Output:
+
+```text
+plugin contract smoke passed
+```
+
+### Ordinary focused Android command on the current checkout
+
+Command:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.QuickJsSmokeInstrumentedTest \
+  --no-configuration-cache
+```
+
+Result: **failed as expected before the runner started** at `:app:compileDebugAndroidTestKotlin`.
+
+Relevant compiler output:
+
+```text
+e: .../app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt:32:63 No type arguments expected for object Spring : Any.
+e: .../AnimationOptimizerTest.kt:39:9 Unresolved reference 'assertNotNull'.
+e: .../AnimationOptimizerTest.kt:47:59 No parameter with name 'durationMs' found.
+e: .../AnimationOptimizerTest.kt:51:9 Unresolved reference 'assertNotNull'.
+e: .../AnimationOptimizerTest.kt:62:17 No parameter with name 'durationMs' found.
+e: .../AnimationOptimizerTest.kt:80:17 No parameter with name 'durationMs' found.
+e: .../AnimationOptimizerTest.kt:99:9 Unresolved reference 'assertNotNull'.
+e: .../AnimationOptimizerTest.kt:122:33 Unresolved reference 'intValue'.
+
+Execution failed for task ':app:compileDebugAndroidTestKotlin'.
+BUILD FAILED in 6s
+65 actionable tasks: 1 executed, 1 from cache, 63 up-to-date
+```
+
+The abbreviated `.../AnimationOptimizerTest.kt` paths above refer to the full existing path `app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt`.
+
+### Isolated connected QuickJS verification
+
+The following documented command temporarily moved the three pre-existing Android-test sources and restored them through the shell `EXIT` trap:
+
+```bash
+set -eu
+isolated_dir="$(mktemp -d)"
+isolated_sources=(
+  "app/src/androidTest/java/com/omnichat/ExampleInstrumentedTest.kt"
+  "app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt"
+  "app/src/androidTest/java/com/omnichat/ui/performance/RefreshRateManagerTest.kt"
+)
+restore_sources() {
+  for source in "${isolated_sources[@]}"; do
+    name="${source##*/}"
+    if [ -f "$isolated_dir/$name" ]; then
+      mv "$isolated_dir/$name" "$source"
+    fi
+  done
+  rmdir "$isolated_dir" 2>/dev/null || true
+}
+trap restore_sources EXIT
+for source in "${isolated_sources[@]}"; do
+  mv "$source" "$isolated_dir/${source##*/}"
+done
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.QuickJsSmokeInstrumentedTest \
+  --no-configuration-cache
+```
+
+Output:
+
+```text
+Starting 2 tests on CPH2695 - 16
+Finished 2 tests on CPH2695 - 16
+> Task :app:connectedDebugAndroidTest
+
+BUILD SUCCESSFUL in 26s
+73 actionable tasks: 8 executed, 65 up-to-date
+```
+
+This is an isolated verification result, not a claim that the ordinary current-checkout command or the complete connected suite passes.
+
+### Whitespace check
+
+Command:
+
+```bash
+git diff --check
+```
+
+Result: passed with no whitespace errors. Git emitted only the existing Windows LF-to-CRLF normalization warnings for the two modified documentation files.
+
+## Concerns
+
+- The full connected Android-test suite remains blocked by the pre-existing `AnimationOptimizerTest.kt` compilation errors. The successful connected result is intentionally limited to the temporary source-set isolation procedure.
+- The isolated procedure must be run from the repository root and must not be interrupted in a way that bypasses shell `EXIT` trap handling; the trap restores the moved files on normal exit and command failure.

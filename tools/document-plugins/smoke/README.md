@@ -70,16 +70,49 @@ and always closes the context on the executor thread. The JVM test uses a record
 
 The real-device Promise smoke evaluates `Promise.resolve("resolved").then(...)` and observes `pending` in the returned JSON. This demonstrates that `evaluate()` returns before the pending Promise job runs. No verified job-loop API was found, so this route does not provide Promise/job-queue behavior. Task 2 through Task 5 must not assume asynchronous plugin support; asynchronous parser bundles are blocked pending an engine/API decision.
 
-Run the focused checks:
+Run the Node and JVM-focused checks:
 
 ```bash
 node tools/document-plugins/smoke/quickjs-smoke.js
 ./gradlew :app:assembleDebug :app:testDebugUnitTest --tests "com.omnichat.util.*"
+```
+
+On the current checkout, running the focused instrumentation command directly is expected to fail before the runner starts. The existing `app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt` has compilation errors (`Spring` type arguments, `durationMs`, `assertNotNull`, and `intValue`), so this ordinary command is not a successful reproduction:
+
+```bash
 ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.QuickJsSmokeInstrumentedTest
 ```
 
-The instrumentation command requires an Android device or emulator. `--tests` is a JVM test option and must not be passed to `connectedDebugAndroidTest`; use the instrumentation runner property shown above. The normal Android build packages all four AAR ABIs; the instrumented smoke test exercises the ABI of the connected device. The complete connected suite is currently blocked by pre-existing compilation errors in `app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt` (`Spring` type arguments, `durationMs`, `assertNotNull`, and `intValue`).
+To perform the reported QuickJS device check, use this explicit isolation procedure from the repository root. It temporarily moves the three pre-existing Android-test sources out of the `androidTest` source set and restores every file through the shell `EXIT` trap, including when Gradle fails:
+
+```bash
+set -eu
+isolated_dir="$(mktemp -d)"
+isolated_sources=(
+  "app/src/androidTest/java/com/omnichat/ExampleInstrumentedTest.kt"
+  "app/src/androidTest/java/com/omnichat/ui/performance/AnimationOptimizerTest.kt"
+  "app/src/androidTest/java/com/omnichat/ui/performance/RefreshRateManagerTest.kt"
+)
+restore_sources() {
+  for source in "${isolated_sources[@]}"; do
+    name="${source##*/}"
+    if [ -f "$isolated_dir/$name" ]; then
+      mv "$isolated_dir/$name" "$source"
+    fi
+  done
+  rmdir "$isolated_dir" 2>/dev/null || true
+}
+trap restore_sources EXIT
+for source in "${isolated_sources[@]}"; do
+  mv "$source" "$isolated_dir/${source##*/}"
+done
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.omnichat.util.QuickJsSmokeInstrumentedTest \
+  --no-configuration-cache
+```
+
+The instrumentation command requires an Android device or emulator. `--tests` is a JVM test option and must not be passed to `connectedDebugAndroidTest`; use the instrumentation runner property shown above. The successful device result reported for this command is an **isolated verification only**, not evidence that the ordinary current-checkout command or the complete connected suite passes. The normal Android build packages all four AAR ABIs; the instrumented smoke test exercises the ABI of the connected device. Restore the files and verify the working tree is clean after the check.
 
 ## License and remaining risks
 
