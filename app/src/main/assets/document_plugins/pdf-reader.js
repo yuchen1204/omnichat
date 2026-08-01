@@ -518,238 +518,283 @@ function pdfDocDecode(str) {
   return result;
 }
 
-// ── ToUnicode CMap parser ───────────────────────────────────────────────────
+// -- ToUnicode CMap parser ---------------------------------------------------
 
-/**
- * Parse a ToUnicode CMap stream and build a CID-to-Unicode mapping table.
- *
- * The CMap is a PostScript-like stream that maps character IDs (CIDs) to
- * Unicode code points. The most common format uses:
- *   beginbfrange / endbfrange  — range mappings (srcCodeStart srcCodeEnd dstString)
- *   beginbfchar / endbfchar    — single character mappings (srcCode dstString)
- *
- * dstString is typically a hex string like <4F60> representing UTF-16BE bytes.
- *
- * @param {string} cmapData - raw CMap stream data as Latin-1 string
- * @returns {object|null} - mapping function: function(cid) -> string or null
- */
-function parseToUnicodeCMap(cmapData) {
-  // Split into lines for simple parsing
-  var lines = cmapData.split("\n");
-  var bfrange = []; // [{srcStart, srcEnd, dstStart}]
-  var bfchar = [];  // [{srcCode, dstString}]
-
-  var i = 0;
-  while (i < lines.length) {
-    var line = lines[i].trim();
-    i++;
-
-    // Skip empty lines and comments
-    if (line === "" || line.indexOf("%") === 0) continue;
-
-    if (line === "beginbfrange" || line.indexOf("beginbfrange") >= 0) {
-      // Read range entries until endbfrange
-      while (i < lines.length) {
-        var rline = lines[i].trim();
-        i++;
-        if (rline === "endbfrange") break;
-        if (rline === "" || rline.indexOf("%") === 0) continue;
-        // Format: <srcStart> <srcEnd> <dstString>
-        var parts = parseCmapLine(rline);
-        if (parts && parts.length >= 3) {
-          bfrange.push({
-            srcStart: parts[0],
-            srcEnd: parts[1],
-            dstStart: parts[2]
-          });
-        }
-      }
-    } else if (line === "beginbfchar" || line.indexOf("beginbfchar") >= 0) {
-      // Read char entries until endbfchar
-      while (i < lines.length) {
-        var cline = lines[i].trim();
-        i++;
-        if (cline === "endbfchar") break;
-        if (cline === "" || cline.indexOf("%") === 0) continue;
-        // Format: <srcCode> <dstString>
-        var parts = parseCmapLine(cline);
-        if (parts && parts.length >= 2) {
-          bfchar.push({
-            srcCode: parts[0],
-            dstString: parts[1]
-          });
-        }
-      }
-    }
-  }
-
-  // Build a lookup function
-  return function cmapLookup(cid) {
-    // cid is a number (character code), srcCode/srcStart are hex strings like "4F60"
-    var cidHex = cid.toString(16).toUpperCase();
-    // Pad to at least 4 hex digits
-    while (cidHex.length < 4) cidHex = "0" + cidHex;
-
-    // Check bfchar first (exact match)
-    for (var ci = 0; ci < bfchar.length; ci++) {
-      if (bfchar[ci].srcCode === cidHex) {
-        return bfchar[ci].dstString;
-      }
-    }
-    // Check bfranges
-    for (var ri = 0; ri < bfrange.length; ri++) {
-      var r = bfrange[ri];
-      // Compare as hex strings (padded)
-      if (cidHex >= r.srcStart && cidHex <= r.srcEnd) {
-        var offset = parseInt(cidHex, 16) - parseInt(r.srcStart, 16);
-        var dstVal = r.dstStart;
-        // If dst is a string (not a number range), add offset and decode
-        if (typeof dstVal === "string") {
-          // dstStart is a hex string like <4F60>; offset typically means
-          // increment the last byte of the UTF-16BE representation
-          var dstNum = parseInt(dstVal, 16);
-          var newDstNum = dstNum + offset;
-          var newHex = newDstNum.toString(16).toUpperCase();
-          while (newHex.length < 4) newHex = "0" + newHex;
-          return newHex;
-        }
-        return null;
-      }
-    }
-    return null; // No mapping found
-  };
+/** Normalize a CMap hex token (without angle brackets). */
+function normalizeCMapHex(hex) {
+  return hex.replace(/\s+/g, "").toUpperCase();
 }
 
-/**
- * Parse a line from a CMap bfchar/bfrange section.
- * Extracts hex strings between < and >.
- * @param {string} line
- * @returns {Array<number|string>|null}
- */
-function parseCmapLine(line) {
-  var parts = [];
-  var pos = 0;
-  while (pos < line.length) {
-    // Skip whitespace
-    while (pos < line.length && (line[pos] === " " || line[pos] === "\t")) pos++;
-    if (pos >= line.length) break;
-
-    if (line[pos] === "<") {
-      // Hex string: <XXXX>
-      var end = line.indexOf(">", pos);
-      if (end < 0) break;
-      var hex = line.substring(pos + 1, end);
-      parts.push(hex); // Keep as raw hex string
-      pos = end + 1;
-    } else {
-      // Skip unexpected characters
-      pos++;
-    }
+/** Convert raw PDF string bytes to an uppercase hex key. */
+function pdfBytesToHex(text, offset, length) {
+  var hex = "";
+  for (var i = 0; i < length; i++) {
+    var value = text.charCodeAt(offset + i) & 0xFF;
+    var part = value.toString(16).toUpperCase();
+    if (part.length < 2) part = "0" + part;
+    hex += part;
   }
-  return parts.length > 0 ? parts : null;
+  return hex;
 }
 
-/**
- * Decode a hex string from a CMap mapping into a JavaScript string.
- * The hex string is UTF-16BE encoded (e.g., <4F60> = U+4F60 = 你).
- * @param {string} hexStr - hex string without <>
- * @returns {string}
- */
-function cmapHexToString(hexStr) {
-  if (hexStr.length === 0) return "";
-  // Even-length hex string: pairs of bytes = UTF-16BE code units
+/** Add an integer offset to a big-endian hex byte string without BigInt. */
+function addCMapHexOffset(hex, offset) {
+  var bytes = [];
+  for (var i = 0; i < hex.length; i += 2) {
+    bytes.push(parseInt(hex.substring(i, i + 2), 16));
+  }
+  var carry = offset;
+  for (var bi = bytes.length - 1; bi >= 0 && carry > 0; bi--) {
+    var value = bytes[bi] + (carry % 256);
+    carry = Math.floor(carry / 256) + Math.floor(value / 256);
+    bytes[bi] = value & 0xFF;
+  }
   var result = "";
-  for (var i = 0; i + 1 < hexStr.length; i += 2) {
-    var high = parseInt(hexStr.substring(i, i + 2), 16);
-    if (i + 1 < hexStr.length) {
-      var low = parseInt(hexStr.substring(i + 2, i + 4), 16);
-      var codePoint = (high << 8) | low;
-      result += String.fromCharCode(codePoint);
-      i += 2;
-    } else {
-      result += String.fromCharCode(high);
-      i++;
-    }
+  for (var ri = 0; ri < bytes.length; ri++) {
+    var part = bytes[ri].toString(16).toUpperCase();
+    if (part.length < 2) part = "0" + part;
+    result += part;
+  }
+  return result;
+}
+
+/** Decode a UTF-16BE destination string from a ToUnicode CMap. */
+function cmapHexToString(hexStr) {
+  var hex = normalizeCMapHex(hexStr);
+  if (hex.length === 0) return "";
+  if (hex.length % 4 !== 0) {
+    while (hex.length % 4 !== 0) hex = "0" + hex;
+  }
+  var result = "";
+  for (var i = 0; i + 3 < hex.length; i += 4) {
+    result += String.fromCharCode(parseInt(hex.substring(i, i + 4), 16));
   }
   return result;
 }
 
 /**
- * Build a font map for a page by resolving its Resources/Font dictionary.
- * Each font entry maps a font name (e.g., "F1") to its ToUnicode CMap lookup function.
+ * Parse a ToUnicode CMap and return a decoder for PDF string bytes.
  *
- * @param {object} pageRaw - the resolved page dictionary
- * @param {object} objMap - the object map for resolving references
- * @param {string} src - the raw PDF source
- * @param {string[]} warnings
- * @param {object} globalFontCache - cache of already-parsed CMap data
- * @returns {object|null} - { fontName: cmapLookupFunction, ... }
+ * Handles bfchar, both forms of bfrange, codespacerange, and variable-width
+ * source character codes. Identity-H CJK fonts normally use two-byte source
+ * codes; treating each byte as a separate CID produces garbled PDF text.
  */
+function parseToUnicodeCMap(cmapData) {
+  var directMappings = {};
+  var ranges = [];
+  var codeSpaces = [];
+  var sourceLengths = {};
+
+  function rememberLength(hex) {
+    var byteLength = Math.floor(normalizeCMapHex(hex).length / 2);
+    if (byteLength > 0) sourceLengths[byteLength] = true;
+  }
+
+  var codeSpaceSection = /begincodespacerange([\s\S]*?)endcodespacerange/g;
+  var sectionMatch;
+  while ((sectionMatch = codeSpaceSection.exec(cmapData)) !== null) {
+    var codePair = /<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>/g;
+    var pairMatch;
+    while ((pairMatch = codePair.exec(sectionMatch[1])) !== null) {
+      var codeStart = normalizeCMapHex(pairMatch[1]);
+      var codeEnd = normalizeCMapHex(pairMatch[2]);
+      if (codeStart.length === codeEnd.length && codeStart.length > 0) {
+        var codeLength = codeStart.length / 2;
+        codeSpaces.push({
+          byteLength: codeLength,
+          start: parseInt(codeStart, 16),
+          end: parseInt(codeEnd, 16)
+        });
+        sourceLengths[codeLength] = true;
+      }
+    }
+  }
+
+  var bfcharSection = /beginbfchar([\s\S]*?)endbfchar/g;
+  while ((sectionMatch = bfcharSection.exec(cmapData)) !== null) {
+    var charPair = /<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>/g;
+    var charMatch;
+    while ((charMatch = charPair.exec(sectionMatch[1])) !== null) {
+      var sourceHex = normalizeCMapHex(charMatch[1]);
+      directMappings[sourceHex] = normalizeCMapHex(charMatch[2]);
+      rememberLength(sourceHex);
+    }
+  }
+
+  var bfrangeSection = /beginbfrange([\s\S]*?)endbfrange/g;
+  while ((sectionMatch = bfrangeSection.exec(cmapData)) !== null) {
+    var rangeEntry = /<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>\s*(<([0-9A-Fa-f\s]+)>|\[((?:\s*<[0-9A-Fa-f\s]+>\s*)+)\])/g;
+    var rangeMatch;
+    while ((rangeMatch = rangeEntry.exec(sectionMatch[1])) !== null) {
+      var sourceStartHex = normalizeCMapHex(rangeMatch[1]);
+      var sourceEndHex = normalizeCMapHex(rangeMatch[2]);
+      if (sourceStartHex.length !== sourceEndHex.length || sourceStartHex.length === 0) continue;
+
+      var destinations = null;
+      var destinationStart = null;
+      if (rangeMatch[4] !== undefined) {
+        destinationStart = normalizeCMapHex(rangeMatch[4]);
+      } else {
+        destinations = [];
+        var destinationToken = /<([0-9A-Fa-f\s]+)>/g;
+        var destinationMatch;
+        while ((destinationMatch = destinationToken.exec(rangeMatch[5])) !== null) {
+          destinations.push(normalizeCMapHex(destinationMatch[1]));
+        }
+      }
+
+      ranges.push({
+        byteLength: sourceStartHex.length / 2,
+        start: parseInt(sourceStartHex, 16),
+        end: parseInt(sourceEndHex, 16),
+        destinationStart: destinationStart,
+        destinations: destinations
+      });
+      rememberLength(sourceStartHex);
+    }
+  }
+
+  var lengths = Object.keys(sourceLengths).map(function(value) {
+    return parseInt(value, 10);
+  }).sort(function(a, b) { return a - b; });
+  if (lengths.length === 0) return null;
+
+  function lookupHex(sourceHex) {
+    var normalized = normalizeCMapHex(sourceHex);
+    if (directMappings.hasOwnProperty(normalized)) {
+      return cmapHexToString(directMappings[normalized]);
+    }
+
+    var sourceValue = parseInt(normalized, 16);
+    for (var i = 0; i < ranges.length; i++) {
+      var range = ranges[i];
+      if (range.byteLength !== normalized.length / 2) continue;
+      if (sourceValue < range.start || sourceValue > range.end) continue;
+      var offset = sourceValue - range.start;
+      if (range.destinations) {
+        return offset < range.destinations.length ? cmapHexToString(range.destinations[offset]) : null;
+      }
+      return cmapHexToString(addCMapHexOffset(range.destinationStart, offset));
+    }
+    return null;
+  }
+
+  function isInCodeSpace(sourceHex) {
+    if (codeSpaces.length === 0) return true;
+    var byteLength = sourceHex.length / 2;
+    var sourceValue = parseInt(sourceHex, 16);
+    for (var i = 0; i < codeSpaces.length; i++) {
+      var codeSpace = codeSpaces[i];
+      if (codeSpace.byteLength === byteLength &&
+          sourceValue >= codeSpace.start && sourceValue <= codeSpace.end) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function chooseSourceLength(text, offset) {
+    if (codeSpaces.length > 0) {
+      for (var i = 0; i < lengths.length; i++) {
+        var length = lengths[i];
+        if (offset + length > text.length) continue;
+        var candidate = pdfBytesToHex(text, offset, length);
+        if (isInCodeSpace(candidate)) return length;
+      }
+    }
+
+    for (var ri = lengths.length - 1; ri >= 0; ri--) {
+      var mappedLength = lengths[ri];
+      if (offset + mappedLength > text.length) continue;
+      var mappedCandidate = pdfBytesToHex(text, offset, mappedLength);
+      if (lookupHex(mappedCandidate) !== null) return mappedLength;
+    }
+    return Math.min(lengths[0], text.length - offset);
+  }
+
+  return function decodeCMapString(text) {
+    var decoded = "";
+    var offset = 0;
+    while (offset < text.length) {
+      var sourceLength = chooseSourceLength(text, offset);
+      if (sourceLength <= 0) break;
+      var sourceHex = pdfBytesToHex(text, offset, sourceLength);
+      var mapped = lookupHex(sourceHex);
+      if (mapped !== null && mapped !== undefined) {
+        decoded += mapped;
+      } else if (sourceLength === 1) {
+        decoded += pdfDocDecode(text.substring(offset, offset + 1));
+      } else {
+        decoded += "\uFFFD";
+      }
+      offset += sourceLength;
+    }
+    return decoded;
+  };
+}
+
+/** Resolve one reference while preserving nested references in dictionaries. */
+function resolveDictionary(value, objMap) {
+  var resolved = resolveRef(value, objMap);
+  return resolved && resolved.type === "dictionary" ? resolved : null;
+}
+
+/** Find an inheritable page-tree entry without recursively flattening dictionaries. */
+function findInheritedPageEntry(pageRaw, key, objMap) {
+  var current = pageRaw;
+  var visited = {};
+  while (current && current.type === "dictionary") {
+    if (current.dict[key] !== undefined && current.dict[key] !== null) {
+      return current.dict[key];
+    }
+    var parentRef = current.dict.Parent;
+    if (!parentRef) break;
+    if (parentRef.type === "reference") {
+      var refKey = parentRef.objNum + ":" + parentRef.genNum;
+      if (visited[refKey]) break;
+      visited[refKey] = true;
+    }
+    current = resolveDictionary(parentRef, objMap);
+  }
+  return null;
+}
+
+/** Build a font decoder map while preserving ToUnicode stream references. */
 function buildPageFontMap(pageRaw, objMap, src, warnings, globalFontCache) {
   if (!pageRaw || !pageRaw.dict) return null;
 
-  // Get Resources from page, or inherit from parent Pages
-  var resources = resolveValue(pageRaw.dict.Resources, objMap);
-  if (!resources || !resources.dict || !resources.dict.Font) {
-    // Try parent Pages node
-    var parent = resolveValue(pageRaw.dict.Parent, objMap);
-    if (parent && parent.dict) {
-      var parentRes = resolveValue(parent.dict.Resources, objMap);
-      if (parentRes && parentRes.dict && parentRes.dict.Font) {
-        resources = parentRes;
-      }
-    }
-    if (!resources || !resources.dict || !resources.dict.Font) return null;
-  }
+  var resourcesValue = findInheritedPageEntry(pageRaw, "Resources", objMap);
+  var resources = resolveDictionary(resourcesValue, objMap);
+  if (!resources || !resources.dict.Font) return null;
 
-  var fontDict = resolveValue(resources.dict.Font, objMap);
-  if (!fontDict || !fontDict.dict) return null;
+  var fontDict = resolveDictionary(resources.dict.Font, objMap);
+  if (!fontDict) return null;
 
   var fontMap = {};
   for (var fontName in fontDict.dict) {
     if (!fontDict.dict.hasOwnProperty(fontName)) continue;
-    var fontRef = fontDict.dict[fontName];
-    if (!fontRef) continue;
+    var font = resolveDictionary(fontDict.dict[fontName], objMap);
+    if (!font) continue;
 
-    // Resolve the font dictionary
-    var fontResolved = resolveValue(fontRef, objMap);
-    if (!fontResolved || !fontResolved.dict) continue;
+    var toUnicodeRef = font.dict.ToUnicode;
+    if (!toUnicodeRef) continue;
 
-    // Check for ToUnicode CMap
-    var toUnicodeRef = fontResolved.dict.ToUnicode;
-    if (toUnicodeRef) {
-      // Try cache first
-      var cacheKey = null;
-      if (toUnicodeRef.type === "reference") {
-        cacheKey = toUnicodeRef.objNum + ":" + toUnicodeRef.genNum;
-        if (globalFontCache[cacheKey]) {
-          fontMap[fontName] = globalFontCache[cacheKey];
-          continue;
-        }
-      }
-
-      // Extract the CMap stream data
-      var cmapData = getStreamData(toUnicodeRef, objMap, src, warnings);
-      if (cmapData) {
-        var lookup = parseToUnicodeCMap(cmapData);
-        if (lookup) {
-          // Use an IIFE to capture the current lookup in the closure
-          fontMap[fontName] = (function(cmapLookup) {
-            return function(cid) {
-              var hex = cmapLookup(cid);
-              if (hex === null) return null;
-              return cmapHexToString(hex);
-            };
-          })(lookup);
-          if (cacheKey) {
-            globalFontCache[cacheKey] = fontMap[fontName];
-          }
-        }
+    var cacheKey = null;
+    if (toUnicodeRef.type === "reference") {
+      cacheKey = toUnicodeRef.objNum + ":" + toUnicodeRef.genNum;
+      if (globalFontCache[cacheKey]) {
+        fontMap[fontName] = globalFontCache[cacheKey];
+        continue;
       }
     }
 
-    // If no ToUnicode, check if the font has a /BaseFont or /Subtype that indicates CID
-    // For Identity-H CID fonts without ToUnicode, we can't do much
+    var cmapData = getStreamData(toUnicodeRef, objMap, src, warnings);
+    if (!cmapData) continue;
+    var decoder = parseToUnicodeCMap(cmapData);
+    if (!decoder) continue;
+
+    fontMap[fontName] = decoder;
+    if (cacheKey) globalFontCache[cacheKey] = decoder;
   }
 
   return Object.keys(fontMap).length > 0 ? fontMap : null;
@@ -760,7 +805,7 @@ function buildPageFontMap(pageRaw, objMap, src, warnings, globalFontCache) {
 /**
  * Parse a PDF content stream and extract text items with positions.
  * @param {string} stream - the content stream as a string
- * @param {object|null} fontMap - map of font name -> cmapLookup function, or null
+ * @param {object|null} fontMap - map of font name -> PDF string decoder, or null
  * @returns {Array<{text:string, x:number, y:number}>}
  */
 function parseContentStream(stream, fontMap) {
@@ -789,19 +834,7 @@ function parseContentStream(stream, fontMap) {
     // Decode using CMap if available, otherwise fall back to PDFDocEncoding
     var decoded = null;
     if (fontMap && activeFontName && fontMap[activeFontName]) {
-      // Try to decode each CID using the font's ToUnicode CMap
-      var decodedChars = "";
-      for (var ci = 0; ci < text.length; ci++) {
-        var cid = text.charCodeAt(ci);
-        var mapped = fontMap[activeFontName](cid);
-        if (mapped !== null && mapped !== undefined) {
-          decodedChars += mapped;
-        } else {
-          // Fall back to Latin-1 for unmapped CIDs
-          decodedChars += text[ci];
-        }
-      }
-      decoded = decodedChars;
+      decoded = fontMap[activeFontName](text);
     }
     if (decoded === null || decoded === undefined) {
       decoded = pdfDocDecode(text);
@@ -1035,6 +1068,9 @@ function parseContentStream(stream, fontMap) {
     } else if (token.type === "string") {
       // Push string as operand
       operands.push(token.value);
+    } else if (token.type === "name") {
+      // Preserve /F1 so Tf can select the matching ToUnicode decoder.
+      operands.push({ type: "name", value: token.value });
     } else if (token.type === "integer" || token.type === "real") {
       operands.push({ type: "number", value: token.value });
     } else if (token.type === "number") {

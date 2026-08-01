@@ -53,6 +53,70 @@ function readFixture(name) {
   return new Uint8Array(data);
 }
 
+function pdfStream(data) {
+  return `<< /Length ${Buffer.byteLength(data, "latin1")} >>\nstream\n${data}\nendstream`;
+}
+
+function buildPdf(objects, rootObjectNumber) {
+  const objectNumbers = Object.keys(objects).map(Number).sort((a, b) => a - b);
+  const maxObjectNumber = objectNumbers[objectNumbers.length - 1];
+  let pdf = "%PDF-1.4\n%\xFF\xFF\xFF\xFF\n";
+  const offsets = {};
+
+  for (const objectNumber of objectNumbers) {
+    offsets[objectNumber] = Buffer.byteLength(pdf, "latin1");
+    pdf += `${objectNumber} 0 obj\n${objects[objectNumber]}\nendobj\n`;
+  }
+
+  const xrefOffset = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${maxObjectNumber + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let objectNumber = 1; objectNumber <= maxObjectNumber; objectNumber++) {
+    const offset = offsets[objectNumber];
+    pdf += offset === undefined
+      ? "0000000000 00000 f \n"
+      : `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${maxObjectNumber + 1} /Root ${rootObjectNumber} 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(pdf, "latin1"));
+}
+
+function createIdentityHCjkPdf() {
+  const cmap = `/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+2 beginbfchar
+<0001> <4F60>
+<0002> <597D>
+endbfchar
+1 beginbfrange
+<0003> <0004> [<4E16> <754C>]
+endbfrange
+endcmap
+end
+end`;
+  const content = `BT
+/F1 12 Tf
+1 0 0 1 50 750 Tm
+<0001000200030004> Tj
+ET`;
+
+  return buildPdf({
+    1: "<< /Type /Pages /Kids [3 0 R] /Count 1 /Resources << /Font << /F1 2 0 R >> >> >>",
+    2: "<< /Type /Font /Subtype /Type0 /BaseFont /TestCjk /Encoding /Identity-H /DescendantFonts [7 0 R] /ToUnicode 6 0 R >>",
+    3: "<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>",
+    4: pdfStream(content),
+    5: "<< /Type /Catalog /Pages 1 0 R >>",
+    6: pdfStream(cmap),
+    7: "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /TestCjk >>",
+  }, 5);
+}
+
 // ── Test helpers ───────────────────────────────────────────────────────────
 
 let passed = 0;
@@ -283,8 +347,20 @@ function runTests() {
     assert(!hasFilterWarning, "no warning about unsupported filter");
   }
 
-  // ── Test 9: Synchronous return (no Promise) ──────────────────────────
-  console.log("\nTest 9: Synchronous return");
+  // -- Test 10: Identity-H CJK text with inherited resources ------------
+  console.log("\nTest 10: Identity-H CJK ToUnicode decoding");
+  {
+    const result = runPlugin(createIdentityHCjkPdf(), "cjk.pdf");
+    assertEq(result.format, "pdf", "format is pdf");
+    assertIncludes(result.text, "\u4F60\u597D\u4E16\u754C", "two-byte CIDs decode through ToUnicode CMap");
+    assert(
+      result.text.indexOf("\u0000") < 0 && result.text.indexOf("\uFFFD") < 0,
+      "decoded CJK text contains no raw NUL or replacement characters"
+    );
+  }
+
+  // ── Test 11: Synchronous return (no Promise) ──────────────────────────
+  console.log("\nTest 11: Synchronous return");
   {
     const bytes = readFixture("text-pages.pdf");
     var result;
@@ -302,8 +378,8 @@ function runTests() {
     }
   }
 
-  // ── Test 10: No forbidden APIs in plugin code (comment-stripped check) ─
-  console.log("\nTest 10: No forbidden APIs in plugin source");
+  // ── Test 12: No forbidden APIs in plugin code (comment-stripped check) ─
+  console.log("\nTest 12: No forbidden APIs in plugin source");
   {
     const code = readFileSync(resolve(ASSETS_DIR, "pdf-reader.js"), "utf-8");
     // Strip comments
