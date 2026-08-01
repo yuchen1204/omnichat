@@ -23,7 +23,8 @@
 function createTokenizer(src) {
   var pos = 0;
   var len = src.length;
-  var peeked = null;
+  // Multi-token peek buffer: peekToken() fills this; nextToken() drains it.
+  var peeked = [];
 
   function isWhitespace(ch) {
     return ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f" || ch === "\0";
@@ -161,13 +162,7 @@ function createTokenizer(src) {
     return src.substring(start, pos);
   }
 
-  function nextToken() {
-    if (peeked !== null) {
-      var tok = peeked;
-      peeked = null;
-      return tok;
-    }
-
+  function readToken() {
     skipWhitespace();
     if (pos >= len) return null;
 
@@ -176,7 +171,7 @@ function createTokenizer(src) {
     // Comments
     if (ch === "%") {
       skipComment();
-      return nextToken();
+      return readToken();
     }
 
     // String literals
@@ -305,11 +300,21 @@ function createTokenizer(src) {
     return { type: "keyword", value: token };
   }
 
-  function peekToken() {
-    if (peeked === null) {
-      peeked = nextToken();
+  function nextToken() {
+    if (peeked.length > 0) {
+      return peeked.shift();
     }
-    return peeked;
+    return readToken();
+  }
+
+  function peekToken(offset) {
+    var index = offset || 0;
+    while (peeked.length <= index) {
+      var tok = readToken();
+      if (tok === null) break;
+      peeked.push(tok);
+    }
+    return peeked.length > index ? peeked[index] : null;
   }
 
   /**
@@ -357,29 +362,17 @@ function parseValue(tok) {
       return token.value;
     case "integer":
     case "real":
-      tok.nextToken();
-      // Check if followed by "integer R" (indirect reference)
-      var next = tok.peekToken();
-      if (next && next.type === "integer") {
-        var objNum = token.value;
-        var genNum = next.value;
-        tok.nextToken();
-        var maybeR = tok.peekToken();
-        if (maybeR && maybeR.type === "ref") {
-          tok.nextToken();
-          return { type: "reference", objNum: objNum, genNum: genNum };
-        }
-        // Put back the genNum as peeked - actually we consumed it, so we need to handle this
-        // Actually, since we consumed next, let's back up. But we can't easily.
-        // Instead, let's re-think: when we see an integer, don't consume the next token yet.
-        // Actually, for the reference case, we need to look ahead 2 tokens.
-        // Let me use a different approach - peek ahead.
-        // For now, return the number and handle references in the caller.
-        // Actually, we can pre-check: look at the next two tokens without consuming.
-        // But we already consumed next. Let me restructure.
-        // Actually for simplicity, let me just return the number and check for 'R' in specific contexts.
-        return { type: "number", value: token.value };
+      // Check if followed by "integer R" (indirect reference) without consuming
+      // either lookahead token until the reference is confirmed.
+      var next = tok.peekToken(1);
+      var maybeR = tok.peekToken(2);
+      if (token.type === "integer" && next && maybeR && next.type === "integer" && maybeR.type === "ref") {
+        tok.nextToken(); // consume object number
+        tok.nextToken(); // consume generation number
+        tok.nextToken(); // consume 'R'
+        return { type: "reference", objNum: token.value, genNum: next.value };
       }
+      tok.nextToken();
       return { type: "number", value: token.value };
     case "boolean":
       tok.nextToken();
@@ -1484,13 +1477,24 @@ function findRoot(objMap, warnings) {
 /**
  * Collect all page references from the page tree.
  * Works with raw (unresolved) dictionaries to preserve reference types.
+ * Uses a visited set (keyed by objNum) to detect and break cycles in
+ * malicious or malformed PDFs that have circular Pages/Kids references.
  */
-function collectPages(pagesRef, objMap, pageRefs, warnings) {
+function collectPages(pagesRef, objMap, pageRefs, warnings, visited) {
   if (!pagesRef) return;
 
   // Resolve the reference to get the raw dictionary
   var pagesObj = null;
+  var objKey = null;
   if (pagesRef.type === "reference") {
+    objKey = pagesRef.objNum;
+    // Cycle detection: if we've already visited this object, break the loop.
+    if (visited === undefined) visited = {};
+    if (visited[objKey]) {
+      safeArrayPush(warnings, "Circular Pages/Kids reference detected at object " + objKey + "; stopping traversal", 50);
+      return;
+    }
+    visited[objKey] = true;
     pagesObj = objMap[pagesRef.objNum];
     if (!pagesObj || !pagesObj.value) return;
     pagesObj = pagesObj.value;
@@ -1508,7 +1512,7 @@ function collectPages(pagesRef, objMap, pageRefs, warnings) {
     var kids = dict.Kids;
     if (kids && kids.type === "array") {
       for (var ki = 0; ki < kids.items.length; ki++) {
-        collectPages(kids.items[ki], objMap, pageRefs, warnings);
+        collectPages(kids.items[ki], objMap, pageRefs, warnings, visited);
       }
     }
   } else if (typeName === "Page") {
@@ -1519,7 +1523,7 @@ function collectPages(pagesRef, objMap, pageRefs, warnings) {
     var kids = dict.Kids;
     if (kids && kids.type === "array") {
       for (var ki = 0; ki < kids.items.length; ki++) {
-        collectPages(kids.items[ki], objMap, pageRefs, warnings);
+        collectPages(kids.items[ki], objMap, pageRefs, warnings, visited);
       }
     } else {
       // Assume it's a page

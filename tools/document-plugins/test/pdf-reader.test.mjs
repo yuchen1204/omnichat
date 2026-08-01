@@ -25,6 +25,10 @@ function loadPlugin() {
   return runtime + "\n" + plugin;
 }
 
+function loadPluginApi() {
+  return new Function(loadPlugin() + "\nreturn { collectPages, parseDocument };")();
+}
+
 /**
  * Evaluate the plugin code and call parseDocument on the given bytes.
  * @param {Uint8Array} bytes
@@ -200,8 +204,32 @@ function runTests() {
     assert(hasParseWarning, "warning mentions parse failure or invalid");
   }
 
-  // ── Test 8: FlateDecode (compressed) PDF ──────────────────────────────
-  console.log("\nTest 8: FlateDecode compressed PDF");
+  // ── Test 8: Cyclic Pages tree ────────────────────────────────────────
+  console.log("\nTest 8: Cyclic Pages tree");
+  {
+    const api = loadPluginApi();
+    const cyclicPages = {
+      type: "dictionary",
+      dict: {
+        Type: { type: "name", value: "Pages" },
+        Kids: { type: "array", items: [{ type: "reference", objNum: 1, genNum: 0 }] },
+      },
+    };
+    const objMap = {
+      1: { objNum: 1, genNum: 0, value: cyclicPages },
+    };
+    const pageRefs = [];
+    const warnings = [];
+    api.collectPages({ type: "reference", objNum: 1, genNum: 0 }, objMap, pageRefs, warnings);
+    assertEq(pageRefs.length, 0, "cyclic Pages tree yields no page references");
+    assert(
+      warnings.some((w) => w.toLowerCase().indexOf("circular") >= 0),
+      "warning mentions circular Pages/Kids reference"
+    );
+  }
+
+  // ── Test 9: FlateDecode (compressed) PDF ──────────────────────────────
+  console.log("\nTest 9: FlateDecode compressed PDF");
   {
     // Build a minimal PDF with FlateDecode compressed content streams
     const content = "BT /F1 12 Tf 1 0 0 1 50 750 Tm (FlateDecode works!) Tj ET";

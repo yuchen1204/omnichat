@@ -17,16 +17,6 @@
 // ── ZIP reader (synchronous, no external deps) ──────────────────────────
 
 /**
- * Read a little-endian 16-bit unsigned integer from a Uint8Array.
- * @param {Uint8Array} data
- * @param {number} offset
- * @returns {number}
- */
-function readU16(data, offset) {
-  return data[offset] | (data[offset + 1] << 8);
-}
-
-/**
  * Read a little-endian 32-bit unsigned integer from a Uint8Array.
  * @param {Uint8Array} data
  * @param {number} offset
