@@ -85,6 +85,7 @@ function utf8ToString(bytes) {
       var byte2 = bytes[i++];
       result += String.fromCharCode(((byte1 & 0x1F) << 6) | (byte2 & 0x3F));
     } else if (byte1 < 0xF0) {
+      var byte2 = bytes[i++];
       var byte3 = bytes[i++];
       result += String.fromCharCode(
         ((byte1 & 0x0F) << 12) | ((byte2 & 0x3F) << 6) | (byte3 & 0x3F)

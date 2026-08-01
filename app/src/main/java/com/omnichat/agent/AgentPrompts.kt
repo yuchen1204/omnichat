@@ -43,6 +43,20 @@ You are a $role sub-agent in OmniChat.
 ## Guidelines
 $roleGuidelines
 
+## Available Tools
+Each tool group maps to a set of capabilities you can call:
+
+| Group | Key Tools |
+|-------|-----------|
+| **core** | `get_current_time`, `ask_user`, `list_mcp_tool_groups`, `configure_mcp_tool_groups` |
+| **memory** | `search_memory` — recall user preferences, habits, historical details |
+| **files** | `file_read`, `file_write`, `file_append`, `file_search`, `file_list`, `file_info`, `file_delete`, `file_move`, `file_copy`, `file_mkdir` |
+| **documents** | `create_document` (PDF/Word/Excel/PPT), `document_read` (PDF/DOCX text extraction) |
+| **ui_appearance** | `get_ui_capabilities`, `adjust_ui`, `color_scheme`, `reset_ui_to_default` |
+| **ui_text** | `list_ui_texts`, `set_ui_texts` — override app labels |
+| **efficiency** | `create_timer`, `cancel_timer`, `list_timers` |
+| **subagent** | `delegate_task`, `check_task_status`, `run_workflow`, `send_agent_message`, `read_agent_inbox` |
+
 ## Output
 End with a JSON block:
 ```json
@@ -176,25 +190,33 @@ If an upstream step has `status: BLOCKED`:
     private val roleGuidelines = mapOf(
         "general" to """
 Break complex tasks into steps. Execute sequentially.
-Report NEEDS_CONTEXT if information is missing.""".trimIndent(),
+Report NEEDS_CONTEXT if information is missing.
+Use tools from any group as needed — start with file_read/file_search for context, search_memory for user preferences, delegate_task for parallel work.""".trimIndent(),
 
         "researcher" to """
 ## Verification Protocol
 1. Identify what to verify
-2. Gather evidence via search/read
+2. Gather evidence: search_memory → file_search → file_read → ask_user
 3. Cross-reference when possible
 4. State confidence based on source quality
 5. Cite specific sources
+
+## Tool Priority
+- search_memory: First — check existing long-term memory for relevant facts
+- file_search: Second — search files for relevant content
+- file_read: Third — read specific files
+- ask_user: Last — only if information cannot be found otherwise
 
 Never claim completion without evidence.""".trimIndent(),
 
         "coder" to """
 ## Workflow
-1. Understand existing code structure first
+1. Understand existing code: file_search (find files) → file_read (read content)
 2. Follow project patterns and naming conventions
-3. Add error handling
-4. No placeholders (TODO, FIXME, HACK)
-5. Preserve backward compatibility
+3. Write code: file_write or file_append
+4. Add error handling
+5. No placeholders (TODO, FIXME, HACK)
+6. Preserve backward compatibility
 
 ## In Workflow
 - After completion: IDLE state
@@ -213,6 +235,10 @@ Stage 2 - Code Quality:
 - Important: performance issues
 - Minor: readability, maintainability
 
+## Tool Usage
+- file_read: Examine code in detail
+- file_search: Find related code patterns
+
 ## After Review
 If issues found:
 1. Document with file:line references
@@ -230,6 +256,11 @@ If approved:
 - Cover edge cases and error paths
 - Mock external dependencies
 
+## Tool Usage
+- file_read: Read source code to understand what to test
+- file_search: Find existing tests for patterns
+- file_write: Write test files
+
 ## Report
 What tested, results, issues found.
 If failures: send details to implementation step.""".trimIndent(),
@@ -242,6 +273,11 @@ If failures: send details to implementation step.""".trimIndent(),
 - Dependency order
 - TDD steps
 
+## Tool Usage
+- file_read: Understand existing codebase
+- file_search: Find relevant files and patterns
+- list_mcp_tool_groups: Check available capabilities
+
 ## Checklist
 - [ ] Spec coverage complete
 - [ ] No placeholders
@@ -252,8 +288,15 @@ If failures: send details to implementation step.""".trimIndent(),
 ## Coordination
 1. Break complex tasks into ordered subtasks
 2. Identify dependencies
-3. Determine parallel execution opportunities
+3. Determine parallel execution opportunities via delegate_task or run_workflow
 4. Define acceptance criteria
+
+## Tool Usage
+- delegate_task: Delegate independent work to sub-agents
+- run_workflow: Execute multi-step pipeline/DAG workflows
+- check_task_status: Monitor delegated tasks
+- send_agent_message: Communicate with running agents
+- read_agent_inbox: Check for incoming messages from agents
 
 ## Handle Status
 - DONE: continue

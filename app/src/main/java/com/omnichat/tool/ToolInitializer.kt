@@ -123,7 +123,8 @@ object ToolInitializer {
             // ══════════════════════════════════════════════════════════════
 
             ToolRegistry.registerAll(
-                CreateDocumentTool
+                CreateDocumentTool,
+                DocumentReadTool
             )
 
             initialized = true

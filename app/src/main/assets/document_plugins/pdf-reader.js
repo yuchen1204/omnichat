@@ -487,6 +487,12 @@ function resolveValue(val, objMap, resolvedRefs) {
  * Decode a PDF string using PDFDocEncoding (which is almost identical to
  * Latin-1 / ISO-8859-1, with a few differences in the 0x80-0x9F range).
  * QuickJS doesn't have TextDecoder, so we map byte-by-byte.
+ *
+ * NOTE: PDFs with CJK text typically use CID fonts with Identity-H encoding
+ * and a ToUnicode CMap. The text strings in content streams are byte sequences
+ * that represent CIDs, not Unicode code points, and require font-specific
+ * CMap parsing to decode correctly. This is handled by cmapDecode() when
+ * a ToUnicode CMap is available for the active font.
  */
 function pdfDocDecode(str) {
   // PDFDocEncoding is close to Latin-1. The differences are in the
@@ -512,14 +518,252 @@ function pdfDocDecode(str) {
   return result;
 }
 
+// ── ToUnicode CMap parser ───────────────────────────────────────────────────
+
+/**
+ * Parse a ToUnicode CMap stream and build a CID-to-Unicode mapping table.
+ *
+ * The CMap is a PostScript-like stream that maps character IDs (CIDs) to
+ * Unicode code points. The most common format uses:
+ *   beginbfrange / endbfrange  — range mappings (srcCodeStart srcCodeEnd dstString)
+ *   beginbfchar / endbfchar    — single character mappings (srcCode dstString)
+ *
+ * dstString is typically a hex string like <4F60> representing UTF-16BE bytes.
+ *
+ * @param {string} cmapData - raw CMap stream data as Latin-1 string
+ * @returns {object|null} - mapping function: function(cid) -> string or null
+ */
+function parseToUnicodeCMap(cmapData) {
+  // Split into lines for simple parsing
+  var lines = cmapData.split("\n");
+  var bfrange = []; // [{srcStart, srcEnd, dstStart}]
+  var bfchar = [];  // [{srcCode, dstString}]
+
+  var i = 0;
+  while (i < lines.length) {
+    var line = lines[i].trim();
+    i++;
+
+    // Skip empty lines and comments
+    if (line === "" || line.indexOf("%") === 0) continue;
+
+    if (line === "beginbfrange" || line.indexOf("beginbfrange") >= 0) {
+      // Read range entries until endbfrange
+      while (i < lines.length) {
+        var rline = lines[i].trim();
+        i++;
+        if (rline === "endbfrange") break;
+        if (rline === "" || rline.indexOf("%") === 0) continue;
+        // Format: <srcStart> <srcEnd> <dstString>
+        var parts = parseCmapLine(rline);
+        if (parts && parts.length >= 3) {
+          bfrange.push({
+            srcStart: parts[0],
+            srcEnd: parts[1],
+            dstStart: parts[2]
+          });
+        }
+      }
+    } else if (line === "beginbfchar" || line.indexOf("beginbfchar") >= 0) {
+      // Read char entries until endbfchar
+      while (i < lines.length) {
+        var cline = lines[i].trim();
+        i++;
+        if (cline === "endbfchar") break;
+        if (cline === "" || cline.indexOf("%") === 0) continue;
+        // Format: <srcCode> <dstString>
+        var parts = parseCmapLine(cline);
+        if (parts && parts.length >= 2) {
+          bfchar.push({
+            srcCode: parts[0],
+            dstString: parts[1]
+          });
+        }
+      }
+    }
+  }
+
+  // Build a lookup function
+  return function cmapLookup(cid) {
+    // cid is a number (character code), srcCode/srcStart are hex strings like "4F60"
+    var cidHex = cid.toString(16).toUpperCase();
+    // Pad to at least 4 hex digits
+    while (cidHex.length < 4) cidHex = "0" + cidHex;
+
+    // Check bfchar first (exact match)
+    for (var ci = 0; ci < bfchar.length; ci++) {
+      if (bfchar[ci].srcCode === cidHex) {
+        return bfchar[ci].dstString;
+      }
+    }
+    // Check bfranges
+    for (var ri = 0; ri < bfrange.length; ri++) {
+      var r = bfrange[ri];
+      // Compare as hex strings (padded)
+      if (cidHex >= r.srcStart && cidHex <= r.srcEnd) {
+        var offset = parseInt(cidHex, 16) - parseInt(r.srcStart, 16);
+        var dstVal = r.dstStart;
+        // If dst is a string (not a number range), add offset and decode
+        if (typeof dstVal === "string") {
+          // dstStart is a hex string like <4F60>; offset typically means
+          // increment the last byte of the UTF-16BE representation
+          var dstNum = parseInt(dstVal, 16);
+          var newDstNum = dstNum + offset;
+          var newHex = newDstNum.toString(16).toUpperCase();
+          while (newHex.length < 4) newHex = "0" + newHex;
+          return newHex;
+        }
+        return null;
+      }
+    }
+    return null; // No mapping found
+  };
+}
+
+/**
+ * Parse a line from a CMap bfchar/bfrange section.
+ * Extracts hex strings between < and >.
+ * @param {string} line
+ * @returns {Array<number|string>|null}
+ */
+function parseCmapLine(line) {
+  var parts = [];
+  var pos = 0;
+  while (pos < line.length) {
+    // Skip whitespace
+    while (pos < line.length && (line[pos] === " " || line[pos] === "\t")) pos++;
+    if (pos >= line.length) break;
+
+    if (line[pos] === "<") {
+      // Hex string: <XXXX>
+      var end = line.indexOf(">", pos);
+      if (end < 0) break;
+      var hex = line.substring(pos + 1, end);
+      parts.push(hex); // Keep as raw hex string
+      pos = end + 1;
+    } else {
+      // Skip unexpected characters
+      pos++;
+    }
+  }
+  return parts.length > 0 ? parts : null;
+}
+
+/**
+ * Decode a hex string from a CMap mapping into a JavaScript string.
+ * The hex string is UTF-16BE encoded (e.g., <4F60> = U+4F60 = 你).
+ * @param {string} hexStr - hex string without <>
+ * @returns {string}
+ */
+function cmapHexToString(hexStr) {
+  if (hexStr.length === 0) return "";
+  // Even-length hex string: pairs of bytes = UTF-16BE code units
+  var result = "";
+  for (var i = 0; i + 1 < hexStr.length; i += 2) {
+    var high = parseInt(hexStr.substring(i, i + 2), 16);
+    if (i + 1 < hexStr.length) {
+      var low = parseInt(hexStr.substring(i + 2, i + 4), 16);
+      var codePoint = (high << 8) | low;
+      result += String.fromCharCode(codePoint);
+      i += 2;
+    } else {
+      result += String.fromCharCode(high);
+      i++;
+    }
+  }
+  return result;
+}
+
+/**
+ * Build a font map for a page by resolving its Resources/Font dictionary.
+ * Each font entry maps a font name (e.g., "F1") to its ToUnicode CMap lookup function.
+ *
+ * @param {object} pageRaw - the resolved page dictionary
+ * @param {object} objMap - the object map for resolving references
+ * @param {string} src - the raw PDF source
+ * @param {string[]} warnings
+ * @param {object} globalFontCache - cache of already-parsed CMap data
+ * @returns {object|null} - { fontName: cmapLookupFunction, ... }
+ */
+function buildPageFontMap(pageRaw, objMap, src, warnings, globalFontCache) {
+  if (!pageRaw || !pageRaw.dict) return null;
+
+  // Get Resources from page, or inherit from parent Pages
+  var resources = resolveValue(pageRaw.dict.Resources, objMap);
+  if (!resources || !resources.dict || !resources.dict.Font) {
+    // Try parent Pages node
+    var parent = resolveValue(pageRaw.dict.Parent, objMap);
+    if (parent && parent.dict) {
+      var parentRes = resolveValue(parent.dict.Resources, objMap);
+      if (parentRes && parentRes.dict && parentRes.dict.Font) {
+        resources = parentRes;
+      }
+    }
+    if (!resources || !resources.dict || !resources.dict.Font) return null;
+  }
+
+  var fontDict = resolveValue(resources.dict.Font, objMap);
+  if (!fontDict || !fontDict.dict) return null;
+
+  var fontMap = {};
+  for (var fontName in fontDict.dict) {
+    if (!fontDict.dict.hasOwnProperty(fontName)) continue;
+    var fontRef = fontDict.dict[fontName];
+    if (!fontRef) continue;
+
+    // Resolve the font dictionary
+    var fontResolved = resolveValue(fontRef, objMap);
+    if (!fontResolved || !fontResolved.dict) continue;
+
+    // Check for ToUnicode CMap
+    var toUnicodeRef = fontResolved.dict.ToUnicode;
+    if (toUnicodeRef) {
+      // Try cache first
+      var cacheKey = null;
+      if (toUnicodeRef.type === "reference") {
+        cacheKey = toUnicodeRef.objNum + ":" + toUnicodeRef.genNum;
+        if (globalFontCache[cacheKey]) {
+          fontMap[fontName] = globalFontCache[cacheKey];
+          continue;
+        }
+      }
+
+      // Extract the CMap stream data
+      var cmapData = getStreamData(toUnicodeRef, objMap, src, warnings);
+      if (cmapData) {
+        var lookup = parseToUnicodeCMap(cmapData);
+        if (lookup) {
+          // Use an IIFE to capture the current lookup in the closure
+          fontMap[fontName] = (function(cmapLookup) {
+            return function(cid) {
+              var hex = cmapLookup(cid);
+              if (hex === null) return null;
+              return cmapHexToString(hex);
+            };
+          })(lookup);
+          if (cacheKey) {
+            globalFontCache[cacheKey] = fontMap[fontName];
+          }
+        }
+      }
+    }
+
+    // If no ToUnicode, check if the font has a /BaseFont or /Subtype that indicates CID
+    // For Identity-H CID fonts without ToUnicode, we can't do much
+  }
+
+  return Object.keys(fontMap).length > 0 ? fontMap : null;
+}
+
 // ── Content stream parser ──────────────────────────────────────────────────
 
 /**
  * Parse a PDF content stream and extract text items with positions.
  * @param {string} stream - the content stream as a string
+ * @param {object|null} fontMap - map of font name -> cmapLookup function, or null
  * @returns {Array<{text:string, x:number, y:number}>}
  */
-function parseContentStream(stream) {
+function parseContentStream(stream, fontMap) {
   var tok = createTokenizer(stream);
   var textItems = [];
   var inText = false;
@@ -530,6 +774,7 @@ function parseContentStream(stream) {
   var tlm = [1, 0, 0, 1, 0, 0]; // text line matrix
   var fontSize = 12;
   var leading = 0;
+  var activeFontName = null; // Track the current font (from Tf operator)
 
   // Stack of operands
   var operands = [];
@@ -541,7 +786,26 @@ function parseContentStream(stream) {
 
   function processTextString(text) {
     hasTextOps = true;
-    var decoded = pdfDocDecode(text);
+    // Decode using CMap if available, otherwise fall back to PDFDocEncoding
+    var decoded = null;
+    if (fontMap && activeFontName && fontMap[activeFontName]) {
+      // Try to decode each CID using the font's ToUnicode CMap
+      var decodedChars = "";
+      for (var ci = 0; ci < text.length; ci++) {
+        var cid = text.charCodeAt(ci);
+        var mapped = fontMap[activeFontName](cid);
+        if (mapped !== null && mapped !== undefined) {
+          decodedChars += mapped;
+        } else {
+          // Fall back to Latin-1 for unmapped CIDs
+          decodedChars += text[ci];
+        }
+      }
+      decoded = decodedChars;
+    }
+    if (decoded === null || decoded === undefined) {
+      decoded = pdfDocDecode(text);
+    }
     var x = tm[4];
     var y = tm[5];
     textItems.push({
@@ -692,6 +956,12 @@ function parseContentStream(stream) {
         case "Tf":
           // fontname size Tf
           if (operands.length >= 2) {
+            var fontNameOperand = operands[0];
+            if (typeof fontNameOperand === "string") {
+              activeFontName = fontNameOperand;
+            } else if (fontNameOperand && fontNameOperand.type === "name") {
+              activeFontName = fontNameOperand.value;
+            }
             fontSize = getNumber(operands[operands.length - 1]);
           }
           operands = [];
@@ -882,6 +1152,9 @@ function parsePdf(bytes, warnings) {
   var totalTextItems = 0;
   var maxItems = 10000; // safety limit
 
+  // Font cache shared across all pages (ToUnicode CMap data)
+  var globalFontCache = {};
+
   for (var pi = 0; pi < pageRefs.length; pi++) {
     if (totalTextItems >= maxItems) {
       safeArrayPush(warnings, "Reached text item limit; truncating output", 50);
@@ -933,8 +1206,12 @@ function parsePdf(bytes, warnings) {
     // Parse content streams
     var pageTextItems = [];
     var hasText = false;
+
+    // Build font map for this page (for ToUnicode CMap CJK decoding)
+    var pageFontMap = buildPageFontMap(pageRaw, objMap, src, warnings, globalFontCache);
+
     for (var ci = 0; ci < contentStreams.length; ci++) {
-      var result = parseContentStream(contentStreams[ci]);
+      var result = parseContentStream(contentStreams[ci], pageFontMap);
       if (result.hasTextOps) hasText = true;
       for (var ti = 0; ti < result.items.length; ti++) {
         if (pageTextItems.length < maxItems) {

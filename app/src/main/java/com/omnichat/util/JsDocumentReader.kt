@@ -4,13 +4,15 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Kotlin facade that reads a document from a content URI and dispatches it to the
+ * Kotlin facade that reads a document from a content URI or File and dispatches it to the
  * JavaScript document runtime.
  *
  * Supported formats: PDF (.pdf, application/pdf) and DOCX (.docx,
@@ -34,6 +36,9 @@ class JsDocumentReader(
      * The URI content is read on [ioDispatcher]. The file format is resolved from
      * the display-name extension and the ContentResolver MIME type. Only PDF and DOCX
      * are accepted; all other formats produce [DocumentParseErrorCategory.UnsupportedFormat].
+     *
+     * Supports both [content://] and [file://] URIs. For [file://] URIs the MIME type
+     * is inferred from the file extension.
      */
     suspend fun parse(uri: Uri): DocumentParseResult = withContext(ioDispatcher) {
         val fileName = getFileName(uri)
@@ -41,17 +46,60 @@ class JsDocumentReader(
             context.contentResolver.getType(uri).orEmpty()
         } catch (error: CancellationException) {
             throw error
-        } catch (error: Throwable) {
-            throw DocumentParseException(
-                DocumentParseErrorCategory.UnreadableInput,
-                "Document MIME type could not be resolved",
-                error
-            )
+        } catch (_: Throwable) {
+            // ContentResolver may not resolve file:// URIs; fall back to extension.
+            ""
         }
         val pluginAsset = resolvePluginAsset(fileName, mimeType)
         val bytes = readBytes(uri)
         val input = JsDocumentInput(fileName, mimeType, bytes)
 
+        val runtime = try {
+            runtimeFactory()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.RuntimeUnavailable,
+                "JavaScript document runtime could not be created",
+                error
+            )
+        }
+        try {
+            runtime.parse(pluginAsset, input).also(::validateResult)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: DocumentParseException) {
+            throw error
+        } catch (error: Throwable) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.ParseFailed,
+                "Document parse failed",
+                error
+            )
+        } finally {
+            try {
+                runtime.close()
+            } catch (closeError: Throwable) {
+                // Do not replace the parse result/error with a cleanup failure.
+            }
+        }
+    }
+
+    /**
+     * Read the document at [file] and return its parsed text and warnings.
+     *
+     * This is a convenience overload for [File]-based access, used by tool callers
+     * (e.g., [DocumentReadTool]) that have already resolved a file path. It bypasses
+     * the ContentResolver and reads the file directly.
+     */
+    suspend fun parse(file: File): DocumentParseResult = withContext(ioDispatcher) {
+        val fileName = file.name
+        val mimeType = mimeTypeForExtension(fileName)
+        val pluginAsset = resolvePluginAsset(fileName, mimeType)
+        val bytes = readFileBytes(file)
+
+        val input = JsDocumentInput(fileName, mimeType, bytes)
         val runtime = try {
             runtimeFactory()
         } catch (error: CancellationException) {
@@ -225,6 +273,77 @@ class JsDocumentReader(
                 "Document input could not be read",
                 error
             )
+        }
+    }
+
+    /**
+     * Read at most [MAX_INPUT_BYTES] + 1 bytes from a [File]. The extra probe byte
+     * distinguishes an input exactly at the limit from one that exceeds it.
+     */
+    private fun readFileBytes(file: File): ByteArray {
+        if (!file.exists()) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.UnreadableInput,
+                "Document file does not exist"
+            )
+        }
+        if (file.length() > MAX_INPUT_BYTES) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.FileTooLarge,
+                "Document exceeds the configured input byte limit"
+            )
+        }
+        return try {
+            FileInputStream(file).use { stream ->
+                val buffer = ByteArray(8192)
+                val output = ByteArrayOutputStream(4096)
+                var total = 0
+                var emptyReads = 0
+                val probeLimit = MAX_INPUT_BYTES + 1
+                while (total < probeLimit) {
+                    val requested = minOf(buffer.size, probeLimit - total)
+                    val count = stream.read(buffer, 0, requested)
+                    if (count < 0) break
+                    if (count == 0) {
+                        if (++emptyReads >= MAX_CONSECUTIVE_EMPTY_READS) {
+                            throw DocumentParseException(
+                                DocumentParseErrorCategory.UnreadableInput,
+                                "Document input made no progress while being read"
+                            )
+                        }
+                        continue
+                    }
+                    emptyReads = 0
+                    output.write(buffer, 0, count)
+                    total += count
+                }
+                if (total > MAX_INPUT_BYTES) {
+                    throw DocumentParseException(
+                        DocumentParseErrorCategory.FileTooLarge,
+                        "Document exceeds the configured input byte limit"
+                    )
+                }
+                output.toByteArray()
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: DocumentParseException) {
+            throw error
+        } catch (error: Throwable) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.UnreadableInput,
+                "Document input could not be read",
+                error
+            )
+        }
+    }
+
+    private fun mimeTypeForExtension(fileName: String): String {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "pdf" -> PDF_MIME
+            "docx" -> DOCX_MIME
+            else -> ""
         }
     }
 
