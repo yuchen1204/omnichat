@@ -25,6 +25,17 @@ interface JsDocumentRuntime {
     fun close()
 }
 
+/**
+ * High-level runtime contract used by [JsDocumentReader].
+ *
+ * This is the public interface that production code and test fakes implement.
+ * The production implementation is [BundledQuickJsDocumentRuntime].
+ */
+interface JsDocumentParseRuntime : AutoCloseable {
+    fun parse(pluginAsset: String, input: JsDocumentInput): DocumentParseResult
+    override fun close()
+}
+
 /** Reads only app-bundled JavaScript assets. */
 internal fun interface JsDocumentAssetSource {
     fun read(path: String): String
@@ -39,7 +50,7 @@ internal fun interface JsDocumentAssetSource {
  */
 class BundledQuickJsDocumentRuntime(
     assetManager: AssetManager
-) : AutoCloseable {
+) : AutoCloseable, JsDocumentParseRuntime {
     private val coordinator = JsDocumentRuntimeCoordinator(
         assetSource = JsDocumentAssetSource { path ->
             assetManager.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
@@ -48,7 +59,7 @@ class BundledQuickJsDocumentRuntime(
     )
 
     /** Parse one bundled plugin synchronously and return its validated typed result. */
-    fun parse(pluginAsset: String, input: JsDocumentInput): DocumentParseResult =
+    override fun parse(pluginAsset: String, input: JsDocumentInput): DocumentParseResult =
         coordinator.parse(pluginAsset, input)
 
     override fun close() {
