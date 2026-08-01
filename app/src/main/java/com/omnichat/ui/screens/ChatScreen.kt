@@ -73,6 +73,9 @@ import androidx.compose.ui.res.stringResource
 import com.omnichat.R
 import com.omnichat.ui.theme.uiText
 import com.omnichat.ui.viewmodel.ChatViewModel
+import com.omnichat.util.DocumentParseErrorCategory
+import com.omnichat.util.DocumentParseException
+import com.omnichat.util.JsDocumentReader
 import com.omnichat.ui.presentation.ChatDisplayItem
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -153,25 +156,55 @@ fun ChatView(viewModel: ChatViewModel) {
         if (uri != null) {
             isParsingFile = true
             scope.launch(Dispatchers.IO) {
+                val reader = JsDocumentReader(context)
+                val fileName = reader.getFileName(uri)
                 try {
-                    val result = com.omnichat.util.DocumentParser.parse(
-                        context = context,
-                        uri = uri,
-                        extractImages = currentModelHasVision
-                    )
-                    val fileName = com.omnichat.util.DocumentParser.getFileName(context, uri)
+                    val result = reader.parse(uri)
                     withContext(Dispatchers.Main) {
                         selectedAttachedFiles = selectedAttachedFiles + AttachedFile(
                             name = fileName,
                             text = result.text,
                             path = uri.toString()
                         )
-                        if (result.imagePaths.isNotEmpty()) {
-                            selectedImagePaths = selectedImagePaths + result.imagePaths
+                    }
+                } catch (e: DocumentParseException) {
+                    withContext(Dispatchers.Main) {
+                        val errorMessage = when (e.category) {
+                            DocumentParseErrorCategory.UnsupportedFormat ->
+                                context.getString(R.string.document_error_unsupported_format)
+                            DocumentParseErrorCategory.FileTooLarge ->
+                                context.getString(R.string.document_error_file_too_large)
+                            DocumentParseErrorCategory.UnreadableInput ->
+                                context.getString(R.string.document_error_unreadable)
+                            DocumentParseErrorCategory.RuntimeUnavailable ->
+                                context.getString(R.string.document_error_runtime)
+                            DocumentParseErrorCategory.PluginLoadFailed ->
+                                context.getString(R.string.document_error_plugin_load)
+                            DocumentParseErrorCategory.PluginTimeout ->
+                                context.getString(R.string.document_error_timeout)
+                            DocumentParseErrorCategory.PluginMemoryLimit ->
+                                context.getString(R.string.document_error_memory_limit)
+                            DocumentParseErrorCategory.MalformedPluginResult ->
+                                context.getString(R.string.document_error_parse_failed)
+                            DocumentParseErrorCategory.ParseFailed ->
+                                context.getString(R.string.document_error_parse_failed)
+                            DocumentParseErrorCategory.NoExtractableText ->
+                                context.getString(R.string.document_error_no_text)
                         }
+                        android.widget.Toast.makeText(
+                            context,
+                            "$fileName: $errorMessage",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            context,
+                            context.getString(R.string.document_error_parse_failed),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 } finally {
                     withContext(Dispatchers.Main) {
                         isParsingFile = false
@@ -613,10 +646,8 @@ fun ChatView(viewModel: ChatViewModel) {
                                     .clickable {
                                         documentPickerLauncher.launch(
                                             arrayOf(
-                                                "text/plain",
                                                 "application/pdf",
-                                                "application/vnd.ms-powerpoint",
-                                                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                                             )
                                         )
                                     },

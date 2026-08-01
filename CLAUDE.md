@@ -114,7 +114,7 @@ Built-in tools use the `Tool` interface system as their only catalog and executi
 | `com.omnichat.ui.performance` | Refresh rate & animation optimization: `RefreshRateManager`, `AnimationOptimizer`, `FrameRateMonitor`, etc. |
 | `com.omnichat.update` | `UpdateChecker.kt` — GitHub tag-based version check |
 | `com.omnichat.worker` | `CloudBackupWorker.kt` — WorkManager periodic backup |
-| `com.omnichat.util` | `DocumentParser.kt` — document parsing (PDF, DOCX, etc.), `SessionLogExporter.kt` — export chat logs |
+| `com.omnichat.util` | `JsDocumentReader.kt` — JavaScript-based document reader (PDF/DOCX via QuickJS), `JsDocumentRuntime.kt` — sandboxed QuickJS runtime, `DocumentParseResult.kt` — parse result types, `SessionLogExporter.kt` — export chat logs |
 | `cloudflare-worker/` | Cloud backup backend (CF Workers + R2 + KV), separate from the Android app |
 
 ## MCP Runtime

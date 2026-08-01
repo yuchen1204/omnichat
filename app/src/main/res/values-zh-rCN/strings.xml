@@ -658,6 +658,17 @@
     <string name="collapse">折叠</string>
     <string name="expand">展开</string>
 
+    <!-- ── Document parsing errors (JS document reader) ── -->
+    <string name="document_error_unsupported_format">不支持此文档格式。仅支持 PDF 和 DOCX。</string>
+    <string name="document_error_file_too_large">文档过大。最大支持 4 MB。</string>
+    <string name="document_error_unreadable">无法读取文档。</string>
+    <string name="document_error_runtime">文档解析器不可用。</string>
+    <string name="document_error_plugin_load">文档插件加载失败。</string>
+    <string name="document_error_timeout">文档解析超时。</string>
+    <string name="document_error_memory_limit">文档过于复杂，无法解析。</string>
+    <string name="document_error_parse_failed">文档解析失败。</string>
+    <string name="document_error_no_text">此文档中未找到可提取的文本。</string>
+
     <!-- ExportImportScreen -->
     <string name="collapse_expand">收起/展开</string>
 

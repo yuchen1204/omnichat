@@ -657,6 +657,17 @@
     <string name="collapse">Collapse</string>
     <string name="expand">Expand</string>
 
+    <!-- ── Document parsing errors (JS document reader) ── -->
+    <string name="document_error_unsupported_format">This document format is not supported. Only PDF and DOCX are supported.</string>
+    <string name="document_error_file_too_large">Document is too large. Maximum size is 4 MB.</string>
+    <string name="document_error_unreadable">Cannot read the document.</string>
+    <string name="document_error_runtime">Document parser is not available.</string>
+    <string name="document_error_plugin_load">Document plugin failed to load.</string>
+    <string name="document_error_timeout">Document parsing timed out.</string>
+    <string name="document_error_memory_limit">Document is too complex to parse.</string>
+    <string name="document_error_parse_failed">Failed to parse document.</string>
+    <string name="document_error_no_text">No extractable text found in this document.</string>
+
     <!-- ExportImportScreen -->
     <string name="collapse_expand">Collapse/Expand</string>
 
