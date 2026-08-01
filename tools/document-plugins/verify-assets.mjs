@@ -134,6 +134,8 @@ const REQUIRED_RUNTIME_HELPERS = [
   "normalizeLines",
   "safeSubstring",
   "safeArrayPush",
+  "inflate",
+  "readU16",
 ];
 
 // Plugin files must define a synchronous parseDocument function
