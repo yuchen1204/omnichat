@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
@@ -65,44 +66,75 @@ fun ChunkedStreamingText(
     // and writing state during composition would schedule an extra recomposition.
     val result = remember(text) { cache.parse(text) }
 
-    Column(modifier = modifier) {
-        // 1. Render locked chunks. Their index is stable because chunks are append-only.
-        result.lockedChunks.forEachIndexed { index, chunk ->
-            key(index) {
-                MarkdownText(
-                    markdown = chunk,
-                    style = markdownStyle,
-                    syntaxHighlightColor = highlightBg,
-                    syntaxHighlightTextColor = highlightText,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
+    // Check if the text contains LaTeX math expressions.
+    // If so, use the WebView-based renderer that supports both Markdown and KaTeX.
+    val hasLatex = remember(text) {
+        LatexParser.hasLatex(text)
+    }
+    val hasIncompleteLatex = remember(text) {
+        !hasLatex && LatexParser.hasIncompleteLatex(text)
+    }
 
-        // 2. Render the active chunk. Large / structurally incomplete Markdown is
-        // temporarily plain text; the final persisted message still renders fully
-        // formatted Markdown after streaming ends.
-        if (result.activeChunk.isNotEmpty()) {
-            val usePlainText = remember(result.activeChunk) {
-                result.activeChunk.length > LIVE_MARKDOWN_MAX_CHARS ||
-                    result.activeChunk.contains("```") ||
-                    result.activeChunk.contains("|")
+    if (hasLatex) {
+        // Full text has complete LaTeX — use the combined Markdown+KaTeX renderer
+        LatexMarkdownWebView(
+            markdown = text,
+            textColor = textColor,
+            fontSize = fontSize,
+            lineHeight = lineHeight,
+            fontFamily = "sans-serif",
+            highlightBg = highlightBg,
+            highlightText = highlightText,
+            modifier = modifier
+        )
+    } else if (hasIncompleteLatex) {
+        // LaTeX delimiters are still being streamed — render as plain text
+        // to avoid the WebView flickering on every token update.
+        Text(
+            text = text,
+            style = markdownStyle,
+            modifier = modifier
+        )
+    } else {
+        Column(modifier = modifier) {
+            // 1. Render locked chunks. Their index is stable because chunks are append-only.
+            result.lockedChunks.forEachIndexed { index, chunk ->
+                key(index) {
+                    MarkdownText(
+                        markdown = chunk,
+                        style = markdownStyle,
+                        syntaxHighlightColor = highlightBg,
+                        syntaxHighlightTextColor = highlightText,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
-            if (usePlainText) {
-                Text(
-                    text = result.activeChunk,
-                    style = markdownStyle,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-                MarkdownText(
-                    markdown = result.activeChunk,
-                    style = markdownStyle,
-                    syntaxHighlightColor = highlightBg,
-                    syntaxHighlightTextColor = highlightText,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            // 2. Render the active chunk. Large / structurally incomplete Markdown is
+            // temporarily plain text; the final persisted message still renders fully
+            // formatted Markdown after streaming ends.
+            if (result.activeChunk.isNotEmpty()) {
+                val usePlainText = remember(result.activeChunk) {
+                    result.activeChunk.length > LIVE_MARKDOWN_MAX_CHARS ||
+                        result.activeChunk.contains("```") ||
+                        result.activeChunk.contains("|")
+                }
+
+                if (usePlainText) {
+                    Text(
+                        text = result.activeChunk,
+                        style = markdownStyle,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    MarkdownText(
+                        markdown = result.activeChunk,
+                        style = markdownStyle,
+                        syntaxHighlightColor = highlightBg,
+                        syntaxHighlightTextColor = highlightText,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
