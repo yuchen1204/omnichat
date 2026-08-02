@@ -39,11 +39,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -62,6 +65,8 @@ import coil.compose.AsyncImage
 import com.omnichat.data.MemoryItem
 import com.omnichat.data.ModelConfig
 import com.omnichat.ui.components.ChunkedStreamingText
+import com.omnichat.ui.components.LatexMarkdownWebView
+import com.omnichat.ui.components.SmartMarkdownText
 import com.omnichat.ui.components.ToolGroupCard
 import com.omnichat.ui.theme.LocalWindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -98,7 +103,7 @@ data class AttachedFile(
     val path: String
 )
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatView(viewModel: ChatViewModel) {
     val messages by viewModel.activeMessages.collectAsStateWithLifecycle()
@@ -130,6 +135,43 @@ fun ChatView(viewModel: ChatViewModel) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val composerFocusRequester = remember { FocusRequester() }
+    val density = LocalDensity.current
+    var composerImeWasVisible by remember { mutableStateOf(false) }
+    val composerImeVisible = WindowInsets.ime.getBottom(density) > 0
+    val imeAnimationSourceVisible = WindowInsets.imeAnimationSource.getBottom(density) > 0
+    val imeAnimationTargetVisible = WindowInsets.imeAnimationTarget.getBottom(density) > 0
+    val imeIsAnimating = imeAnimationSourceVisible != imeAnimationTargetVisible
+    // Switch the capsule at the same instant the system IME animation starts, rather
+    // than at focus time or after the IME has already completed its movement.
+    val composerExpandedForIme = if (imeIsAnimating) imeAnimationTargetVisible else composerImeVisible
+
+    // Clear focus before AnimatedContent swaps back to the compact field. If focus is
+    // left on the outgoing expanded field, Android can transfer it to the new field
+    // during the IME closing animation and immediately reopen the keyboard.
+    LaunchedEffect(imeIsAnimating, imeAnimationTargetVisible) {
+        if (imeIsAnimating && !imeAnimationTargetVisible) {
+            focusManager.clearFocus(force = true)
+        }
+    }
+
+    LaunchedEffect(composerImeVisible) {
+        if (composerImeVisible) {
+            composerImeWasVisible = true
+        } else if (composerImeWasVisible) {
+            focusManager.clearFocus(force = true)
+            composerImeWasVisible = false
+        }
+    }
+
+    LaunchedEffect(composerExpandedForIme) {
+        if (composerExpandedForIme) {
+            // AnimatedContent swaps the compact field for the expanded one; restore
+            // focus on the replacement while the IME is in its opening transition.
+            composerFocusRequester.requestFocus()
+        }
+    }
 
     val windowSizeClass = LocalWindowSizeClass.current
     val isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
@@ -137,8 +179,6 @@ fun ChatView(viewModel: ChatViewModel) {
     // 当前模型是否支持视觉
     val currentModelHasVision = viewModel.currentModelHasVision
 
-    // 工具栏展开状态
-    var showToolbar by remember { mutableStateOf(false) }
     // 模型选择器弹窗
     var showModelPicker by remember { mutableStateOf(false) }
 
@@ -148,6 +188,11 @@ fun ChatView(viewModel: ChatViewModel) {
     // 文档选择相关状态
     var selectedAttachedFiles by remember { mutableStateOf<List<AttachedFile>>(emptyList()) }
     var isParsingFile by remember { mutableStateOf(false) }
+
+    // Selecting an attachment also opens the expanded layout so its preview and the
+    // send action remain in the same capsule, even if the IME is not visible.
+    val composerExpanded = composerExpandedForIme ||
+        selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty() || isParsingFile
 
     // 文档选择器 launcher
     val documentPickerLauncher = rememberLauncherForActivityResult(
@@ -501,478 +546,446 @@ fun ChatView(viewModel: ChatViewModel) {
             }
         }
 
-        // Send Area (Material design)
-        val sendAreaShape = if (isExpandedScreen) {
-            RoundedCornerShape(uiSettings.cornerRadiusDp.dp)
-        } else {
-            RoundedCornerShape(topStart = uiSettings.cornerRadiusDp.dp, topEnd = uiSettings.cornerRadiusDp.dp)
-        }
+        // Send area: a floating capsule that expands into a full composer on focus.
         Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-            tonalElevation = 4.dp,
-            shape = sendAreaShape,
+            color = Color.Transparent,
+            tonalElevation = 0.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.5f),
-                    thickness = 0.5.dp
-                )
+                val canSend = textInput.isNotBlank() ||
+                    selectedImagePaths.isNotEmpty() ||
+                    selectedAttachedFiles.isNotEmpty()
 
-                // ── 工具栏（展开时显示）──────────────────────────────
-                AnimatedVisibility(
-                    visible = showToolbar,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(topStart = uiSettings.cornerRadiusDp.dp, topEnd = uiSettings.cornerRadiusDp.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        // 工具按钮行：选择图片、拍照、模式切换 并排
-                        val toolBtnShape = RoundedCornerShape(uiSettings.cornerRadiusDp.coerceIn(6, 16).dp)
-                        val toolBtnBorder = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                        val toolBtnColors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f))
+                fun sendCurrentMessage() {
+                    val toSend = textInput.trim()
+                    val hasImage = selectedImagePaths.isNotEmpty()
+                    val hasDocs = selectedAttachedFiles.isNotEmpty()
+                    if ((toSend.isBlank() && !hasImage && !hasDocs) || isStreaming || subAgentActive) return
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // 图片选择按钮（仅视觉模型可用）
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable(enabled = currentModelHasVision) {
-                                        photoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                shape = toolBtnShape,
-                                border = toolBtnBorder,
-                                colors = if (currentModelHasVision) toolBtnColors
-                                    else CardDefaults.outlinedCardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                        contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Image,
-                                        contentDescription = null,
-                                        tint = if (currentModelHasVision) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = uiText("chat.select.image", R.string.chat_select_image),
-                                        fontSize = (12 * fs).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (currentModelHasVision) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    )
-                                }
+                    if (isEditing) {
+                        viewModel.submitEdit(toSend)
+                    } else {
+                        val finalPrompt = buildString {
+                            selectedAttachedFiles.forEach { file ->
+                                append("<document_attachment name=\"${file.name}\">\n")
+                                append(file.text)
+                                append("\n</document_attachment>\n\n")
                             }
-
-                            // 拍照按钮（仅视觉模型可用）
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable(enabled = currentModelHasVision) {
-                                        if (cameraPermissionState.value) {
-                                            val imagesDir = java.io.File(context.cacheDir, "images")
-                                            imagesDir.mkdirs()
-                                            val tempFile = java.io.File(
-                                                imagesDir,
-                                                "camera_${System.currentTimeMillis()}.jpg"
-                                            )
-                                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.fileprovider",
-                                                tempFile
-                                            )
-                                            tempCameraUri = uri
-                                            cameraLauncher.launch(uri)
-                                        } else {
-                                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                                        }
-                                    },
-                                shape = toolBtnShape,
-                                border = toolBtnBorder,
-                                colors = if (currentModelHasVision) toolBtnColors
-                                    else CardDefaults.outlinedCardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                        contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CameraAlt,
-                                        contentDescription = null,
-                                        tint = if (currentModelHasVision) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = uiText("chat.take.photo", R.string.chat_take_photo),
-                                        fontSize = (12 * fs).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (currentModelHasVision) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                    )
-                                }
-                            }
-
-                            // 上传文件按钮
-                            OutlinedCard(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        documentPickerLauncher.launch(
-                                            arrayOf(
-                                                "application/pdf",
-                                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                            )
-                                        )
-                                    },
-                                shape = toolBtnShape,
-                                border = toolBtnBorder,
-                                colors = toolBtnColors
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AttachFile,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = uiText("chat.upload.file", "上传文件"),
-                                        fontSize = (12 * fs).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-
+                            append(toSend)
                         }
+                        viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
+                    }
+                    textInput = ""
+                    selectedImagePaths = emptyList()
+                    selectedAttachedFiles = emptyList()
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                fun openCamera() {
+                    if (!currentModelHasVision) return
+                    if (cameraPermissionState.value) {
+                        val imagesDir = java.io.File(context.cacheDir, "images")
+                        imagesDir.mkdirs()
+                        val tempFile = java.io.File(imagesDir, "camera_${System.currentTimeMillis()}.jpg")
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            context, "${context.packageName}.fileprovider", tempFile
+                        )
+                        tempCameraUri = uri
+                        cameraLauncher.launch(uri)
+                    } else {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                }
 
-                        // ── Thinking Effort Slider ──
-                        if (activeSessionId != null) {
-                            val efforts = listOf("low", "medium", "high", "max")
-                            val effortLabels = listOf(
-                                uiText("thinking_effort_low", R.string.thinking_effort_low),
-                                uiText("thinking_effort_medium", R.string.thinking_effort_medium),
-                                uiText("thinking_effort_high", R.string.thinking_effort_high),
-                                uiText("thinking_effort_max", R.string.thinking_effort_max)
+                fun openDocumentPicker() {
+                    documentPickerLauncher.launch(
+                        arrayOf(
+                            "application/pdf",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    )
+                }
+
+                @Composable
+                fun ComposerTextField(modifier: Modifier = Modifier) {
+                    OutlinedTextField(
+                        value = textInput,
+                        onValueChange = { textInput = it },
+                        enabled = !isStreaming && !subAgentActive,
+                        placeholder = {
+                            val hint = if (selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty()) {
+                                uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
+                            } else {
+                                uiText("chat.input.hint", R.string.chat_input_hint)
+                            }
+                            Text(
+                                text = hint,
+                                fontSize = (15 * fs).sp,
+                                fontFamily = resolvedFontFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
                             )
-                            // Use local state to avoid "none" fallback issue
-                            val dbEffort = currentSession?.thinkingEffort ?: "none"
-                            val initialIndex = efforts.indexOf(dbEffort).coerceAtLeast(0)
-                            var sliderIndex by remember(activeSessionId) { mutableIntStateOf(initialIndex) }
-                            val currentEffort = efforts[sliderIndex]
-
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                // "Faster" — "Smarter" labels
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                        },
+                        singleLine = !composerExpanded,
+                        maxLines = if (composerExpanded) 4 else 1,
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = (15 * fs).sp,
+                            fontFamily = resolvedFontFamily,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { sendCurrentMessage() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledBorderColor = Color.Transparent
+                        ),
+                        modifier = modifier
+                            .focusRequester(composerFocusRequester)
+                            .onPreviewKeyEvent { event ->
+                                val config = context.resources.configuration
+                                val hasHardwareKeyboard = config.keyboard !=
+                                    android.content.res.Configuration.KEYBOARD_NOKEYS
+                                if (hasHardwareKeyboard && event.type == KeyEventType.KeyDown &&
+                                    event.key == Key.Enter && !event.isShiftPressed
                                 ) {
-                                    Text(
-                                        text = uiText("thinking_effort_faster", R.string.thinking_effort_faster),
-                                        fontSize = (10 * fs).sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                    )
-                                    Text(
-                                        text = uiText("thinking_effort_smarter", R.string.thinking_effort_smarter),
-                                        fontSize = (10 * fs).sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    sendCurrentMessage()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            .testTag("chat_input_field")
+                    )
+                }
+
+                @Composable
+                fun AttachmentActions() {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = {
+                                if (currentModelHasVision) {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
                                 }
+                            },
+                            enabled = currentModelHasVision,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = uiText("chat.select.image", R.string.chat_select_image),
+                                tint = if (currentModelHasVision) MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = ::openCamera,
+                            enabled = currentModelHasVision,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = uiText("chat.take.photo", R.string.chat_take_photo),
+                                tint = if (currentModelHasVision) MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = ::openDocumentPicker,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
+                                contentDescription = uiText("chat.upload.file", "上传文件"),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
 
-                                // Slider
-                                Slider(
-                                    value = sliderIndex.toFloat(),
-                                    onValueChange = { newValue ->
-                                        val idx = newValue.roundToInt().coerceIn(0, efforts.lastIndex)
-                                        sliderIndex = idx
-                                        if (activeSessionId != null) {
-                                            viewModel.setThinkingEffort(activeSessionId!!, efforts[idx])
-                                        }
-                                    },
-                                    valueRange = 0f..efforts.lastIndex.toFloat(),
-                                    steps = efforts.size - 2,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = MaterialTheme.colorScheme.primary,
-                                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                        inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                        activeTickColor = MaterialTheme.colorScheme.primary
-                                    )
-                                )
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    AnimatedContent(
+                        targetState = composerExpanded,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(140, delayMillis = 60)) togetherWith
+                                fadeOut(animationSpec = tween(90))) using
+                                SizeTransform(clip = false) { _, _ ->
+                                    tween(durationMillis = 250, easing = LinearEasing)
+                                }
+                        },
+                        label = "composer_layout"
+                    ) { expanded ->
+                    if (expanded) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            ComposerTextField(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .padding(horizontal = 4.dp)
+                            )
 
-                                // Level labels row
-                                Row(
+                            AnimatedVisibility(
+                                visible = selectedAttachedFiles.isNotEmpty() || isParsingFile,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
                                 ) {
-                                    effortLabels.forEachIndexed { index, label ->
-                                        val isActive = efforts[index] == currentEffort
-                                        val isMax = efforts[index] == "max"
-                                        if (isMax) {
-                                            val infiniteTransition = rememberInfiniteTransition(label = "rainbow")
-                                            val animPhase by infiniteTransition.animateFloat(
-                                                initialValue = 0f,
-                                                targetValue = 360f,
-                                                animationSpec = infiniteRepeatable(
-                                                    animation = tween(2000, easing = LinearEasing),
-                                                    repeatMode = RepeatMode.Restart
-                                                ),
-                                                label = "rainbow_hue"
-                                            )
-                                            val c1 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase % 360f), 1f, 1f)))
-                                            val c2 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 60f) % 360f, 1f, 1f)))
-                                            val c3 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 120f) % 360f, 1f, 1f)))
-                                            val c4 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 180f) % 360f, 1f, 1f)))
-                                            val c5 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 240f) % 360f, 1f, 1f)))
-                                            val c6 = Color(android.graphics.Color.HSVToColor(floatArrayOf((animPhase + 300f) % 360f, 1f, 1f)))
-                                            Text(
-                                                text = label,
-                                                fontSize = (10 * fs).sp,
-                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                                style = TextStyle(
-                                                    brush = Brush.linearGradient(
-                                                        colors = listOf(c1, c2, c3, c4, c5, c6),
-                                                        start = Offset(0f, 0f),
-                                                        end = Offset(60f, 0f)
-                                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = uiText("chat.files.attached", "已添加文件") + " (${selectedAttachedFiles.size})",
+                                            fontSize = (12 * fs).sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        if (selectedAttachedFiles.isNotEmpty()) {
+                                            IconButton(
+                                                onClick = { selectedAttachedFiles = emptyList() },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = uiText("chat.remove.files", "移除所有文件"),
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(18.dp)
                                                 )
-                                            )
-                                        } else {
-                                            Text(
-                                                text = label,
-                                                fontSize = (10 * fs).sp,
-                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isActive) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                            )
+                                            }
+                                        }
+                                    }
+
+                                    if (isParsingFile) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                    }
+
+                                    // 文件网格/列表
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        selectedAttachedFiles.forEachIndexed { index, file ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                                    .border(
+                                                        0.5.dp,
+                                                        MaterialTheme.colorScheme.outlineVariant,
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Description,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = file.name,
+                                                    fontSize = (12 * fs).sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.weight(1f),
+                                                    maxLines = 1
+                                                )
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedAttachedFiles = selectedAttachedFiles.toMutableList().apply {
+                                                            removeAt(index)
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = stringResource(R.string.remove),
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-                    }
-                }
-
-                // ── 已选文件预览 ─────────────────────────────────
-                AnimatedVisibility(
-                    visible = selectedAttachedFiles.isNotEmpty() || isParsingFile,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = uiText("chat.files.attached", "已添加文件") + " (${selectedAttachedFiles.size})",
-                                fontSize = (12 * fs).sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (selectedAttachedFiles.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { selectedAttachedFiles = emptyList() },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = uiText("chat.remove.files", "移除所有文件"),
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        if (isParsingFile) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-
-                        // 文件网格/列表
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            selectedAttachedFiles.forEachIndexed { index, file ->
-                                Row(
+                            // ── 已选图片预览（支持多图） ─────────────────────────────────
+                            AnimatedVisibility(
+                                visible = selectedImagePaths.isNotEmpty(),
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .border(
-                                            0.5.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Description,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = file.name,
-                                        fontSize = (12 * fs).sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            selectedAttachedFiles = selectedAttachedFiles.toMutableList().apply {
-                                                removeAt(index)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = uiText("chat.image.attached", R.string.chat_image_attached)
+                                                + " (${selectedImagePaths.size})",
+                                            fontSize = (12 * fs).sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        // 清除所有图片
+                                        IconButton(
+                                            onClick = { selectedImagePaths = emptyList() },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // 图片缩略图网格
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        selectedImagePaths.forEachIndexed { index, path ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(60.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .border(
+                                                        1.dp,
+                                                        MaterialTheme.colorScheme.outlineVariant,
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                            ) {
+                                                AsyncImage(
+                                                    model = path,
+                                                    contentDescription = stringResource(R.string.image_n, index + 1),
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                // 单张删除按钮
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedImagePaths = selectedImagePaths.toMutableList().apply {
+                                                            removeAt(index)
+                                                        }
+                                                    },
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .size(20.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = stringResource(R.string.remove),
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
                                             }
-                                        },
-                                        modifier = Modifier.size(24.dp)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── 编辑模式指示器 ──────────────────────────────────────
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 8.dp, end = 10.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AttachmentActions()
+                                Spacer(modifier = Modifier.weight(1f))
+                                if (isStreaming || subAgentActive) {
+                                    FilledTonalIconButton(
+                                        onClick = { viewModel.stopStreaming() },
+                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .testTag("chat_stop_button")
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
-                                            contentDescription = stringResource(R.string.remove),
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(14.dp)
+                                            contentDescription = uiText(
+                                                "chat.stop.contentDescription",
+                                                R.string.chat_stop_contentDescription
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = ::sendCurrentMessage,
+                                        enabled = canSend,
+                                        shape = RoundedCornerShape(22.dp),
+                                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
+                                        modifier = Modifier
+                                            .height(44.dp)
+                                            .testTag("chat_send_button")
+                                    ) {
+                                        Text(
+                                            text = uiText("chat.send.button", "发送"),
+                                            fontFamily = resolvedFontFamily,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }
                             }
                         }
-                    }
-                }
-
-                // ── 已选图片预览（支持多图） ─────────────────────────────────
-                AnimatedVisibility(
-                    visible = selectedImagePaths.isNotEmpty(),
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
+                    } else {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 58.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = uiText("chat.image.attached", R.string.chat_image_attached)
-                                    + " (${selectedImagePaths.size})",
-                                fontSize = (12 * fs).sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            ComposerTextField(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 4.dp)
                             )
-                            Spacer(modifier = Modifier.weight(1f))
-                            // 清除所有图片
-                            IconButton(
-                                onClick = { selectedImagePaths = emptyList() },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            AttachmentActions()
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // 图片缩略图网格
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            selectedImagePaths.forEachIndexed { index, path ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(60.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                ) {
-                                    AsyncImage(
-                                        model = path,
-                                        contentDescription = stringResource(R.string.image_n, index + 1),
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    // 单张删除按钮
-                                    IconButton(
-                                        onClick = {
-                                            selectedImagePaths = selectedImagePaths.toMutableList().apply {
-                                                removeAt(index)
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(20.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = stringResource(R.string.remove),
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    }
                     }
                 }
 
-                // ── 编辑模式指示器 ──────────────────────────────────────
                 if (isEditing) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -1039,204 +1052,6 @@ fun ChatView(viewModel: ChatViewModel) {
                         }
                     }
                 }
-
-                // ── 输入行 ────────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // + 按钮
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                if (showToolbar) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .clickable { showToolbar = !showToolbar },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (showToolbar) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (showToolbar) uiText("chat.toolbar.collapse", R.string.chat_toolbar_collapse) else uiText("chat.toolbar.expand", R.string.chat_toolbar_expand),
-                            tint = if (showToolbar) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Material styled text input block
-                    OutlinedTextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        enabled = !isStreaming && !subAgentActive,
-                        placeholder = {
-                            val hint = if (selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty()) {
-                                uiText("chat.input.hint.with.image", R.string.chat_input_hint_with_image)
-                            } else {
-                                uiText("chat.input.hint", R.string.chat_input_hint)
-                            }
-                            Text(hint, fontSize = (15 * fs).sp)
-                        },
-                        maxLines = 4,
-                        textStyle = LocalTextStyle.current.copy(
-                            fontSize = (15 * fs).sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            val toSend = textInput.trim()
-                            val hasImage = selectedImagePaths.isNotEmpty()
-                            val hasDocs = selectedAttachedFiles.isNotEmpty()
-                            if ((toSend.isNotBlank() || hasImage || hasDocs) && !isStreaming && !subAgentActive) {
-                                if (isEditing) {
-                                    viewModel.submitEdit(toSend)
-                                } else {
-                                    val finalPrompt = buildString {
-                                        selectedAttachedFiles.forEach { file ->
-                                            append("<document_attachment name=\"${file.name}\">\n")
-                                            append(file.text)
-                                            append("\n</document_attachment>\n\n")
-                                        }
-                                        append(toSend)
-                                    }
-                                    viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
-                                }
-                                textInput = ""
-                                selectedImagePaths = emptyList()
-                                selectedAttachedFiles = emptyList()
-                                showToolbar = false
-                                keyboardController?.hide()
-                            }
-                        }),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .onPreviewKeyEvent { event ->
-                                // 检测是否有外接键盘
-                                val config = context.resources.configuration
-                                val hasHardwareKeyboard = config.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS
-
-                                if (hasHardwareKeyboard && event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
-                                    if (event.isShiftPressed) {
-                                        // Shift+Enter: 插入换行
-                                        false // 让系统处理，插入换行
-                                    } else {
-                                        // Enter: 发送消息
-                                        val toSend = textInput.trim()
-                                        val hasImage = selectedImagePaths.isNotEmpty()
-                                        val hasDocs = selectedAttachedFiles.isNotEmpty()
-                                        if ((toSend.isNotBlank() || hasImage || hasDocs) && !isStreaming && !subAgentActive) {
-                                            if (isEditing) {
-                                                viewModel.submitEdit(toSend)
-                                            } else {
-                                                val finalPrompt = buildString {
-                                                    selectedAttachedFiles.forEach { file ->
-                                                        append("<document_attachment name=\"${file.name}\">\n")
-                                                        append(file.text)
-                                                        append("\n</document_attachment>\n\n")
-                                                    }
-                                                    append(toSend)
-                                                }
-                                                viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
-                                            }
-                                            textInput = ""
-                                            selectedImagePaths = emptyList()
-                                            selectedAttachedFiles = emptyList()
-                                            showToolbar = false
-                                            keyboardController?.hide()
-                                        }
-                                        true // 消费事件，不插入换行
-                                    }
-                                } else {
-                                    false // 其他事件不处理
-                                }
-                            }
-                            .testTag("chat_input_field")
-                     )
-
-                     Spacer(modifier = Modifier.width(10.dp))
-
-
-
-                     // Send button / Stop button
-                     if (isStreaming || subAgentActive) {
-                         // Stop button — visible only while streaming
-                         Box(
-                             modifier = Modifier
-                                 .size(44.dp)
-                                 .clip(RoundedCornerShape(22.dp))
-                                 .background(MaterialTheme.colorScheme.error)
-                                 .clickable { viewModel.stopStreaming() }
-                                 .testTag("chat_stop_button"),
-                             contentAlignment = Alignment.Center
-                         ) {
-                             Icon(
-                                 imageVector = Icons.Default.Close,
-                                 contentDescription = uiText("chat.stop.contentDescription", R.string.chat_stop_contentDescription),
-                                 tint = MaterialTheme.colorScheme.onError,
-                                 modifier = Modifier.size(20.dp)
-                             )
-                         }
-                     } else {
-                         // Send button
-                         val canSend = textInput.isNotBlank() || selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty()
-                         Box(
-                             modifier = Modifier
-                                 .size(44.dp)
-                                 .clip(RoundedCornerShape(22.dp))
-                                 .background(
-                                     if (canSend) MaterialTheme.colorScheme.primary
-                                     else MaterialTheme.colorScheme.surfaceVariant
-                                 )
-                                 .clickable(enabled = canSend) {
-                                     val toSend = textInput.trim()
-                                     val hasImage = selectedImagePaths.isNotEmpty()
-                                     val hasDocs = selectedAttachedFiles.isNotEmpty()
-                                     if (toSend.isNotBlank() || hasImage || hasDocs) {
-                                         if (isEditing) {
-                                             viewModel.submitEdit(toSend)
-                                         } else {
-                                             val finalPrompt = buildString {
-                                                 selectedAttachedFiles.forEach { file ->
-                                                     append("<document_attachment name=\"${file.name}\">\n")
-                                                     append(file.text)
-                                                     append("\n</document_attachment>\n\n")
-                                                 }
-                                                 append(toSend)
-                                             }
-                                             viewModel.sendMessageWithImage(finalPrompt, selectedImagePaths)
-                                         }
-                                         textInput = ""
-                                         selectedImagePaths = emptyList()
-                                         selectedAttachedFiles = emptyList()
-                                         showToolbar = false
-                                     }
-                                 }
-                                .testTag("chat_send_button"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = uiText("chat.send.contentDescription", R.string.chat_send_contentDescription),
-                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
             }
         }
     }
@@ -1251,7 +1066,6 @@ fun ChatView(viewModel: ChatViewModel) {
             onConfirm = { provider, modelId ->
                 viewModel.setSessionOverrideModel(provider, modelId)
                 showModelPicker = false
-                showToolbar = false
             },
             onDismiss = { showModelPicker = false }
         )
@@ -1464,7 +1278,7 @@ fun ThinkingProcessPanel(
                             fontFamily = resolvedFontFamily
                         )
                     } else {
-                        dev.jeziellago.compose.markdowntext.MarkdownText(
+                        SmartMarkdownText(
                             markdown = thinkingText,
                             style = androidx.compose.ui.text.TextStyle(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -1728,7 +1542,7 @@ fun BubbleMessage(
                                         )
                                     }
                             ) {
-                                dev.jeziellago.compose.markdowntext.MarkdownText(
+                                SmartMarkdownText(
                                     markdown = parsed.mainBody,
                                     style = androidx.compose.ui.text.TextStyle(
                                         color = textColor,
