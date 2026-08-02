@@ -2,7 +2,11 @@ package com.omnichat.ui.components
 
 import android.annotation.SuppressLint
 import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
+import android.view.MotionEvent
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -17,7 +21,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
-import dev.jeziellago.compose.markdowntext.MarkdownText
+import org.json.JSONObject
+import kotlin.math.abs
+import kotlin.math.ceil
 
 /**
  * Represents a LaTeX math expression found in text.
@@ -69,6 +75,19 @@ object LatexParser {
     /** Check if text has complete LaTeX math (both open and close delimiters). */
     fun hasLatex(text: String): Boolean {
         return findBlocks(text).isNotEmpty()
+    }
+
+    /**
+     * Check if text has potential LaTeX math (has $ signs, even if incomplete).
+     * Used for finished messages: if there are $ signs, try the WebView renderer
+     * which handles rendering errors gracefully.
+     */
+    fun hasPotentialLatex(text: String): Boolean {
+        if (text.contains("$$") || text.contains('$')) {
+            // Also check for typical LaTeX patterns after $ signs
+            return true
+        }
+        return false
     }
 
     /**
@@ -249,22 +268,26 @@ object SimpleMarkdownToHtml {
  *
  * The HTML template embeds:
  * - KaTeX CSS/JS for math rendering
- * - A simple markdown-to-HTML converter
+ * - A simple markdown-to-HTML converter (with math block protection)
  * - KaTeX auto-render to process math delimiters
+ *
+ * CRITICAL: The markdown converter must PROTECT math blocks ($...$, $$...$$)
+ * before processing, then restore them, to avoid * and ** patterns inside
+ * LaTeX expressions being corrupted by bold/italic conversion.
  */
 private const val MARKDOWN_LATEX_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="stylesheet" href="katex.min.css">
 <script src="katex.min.js"></script>
 <script src="auto-render.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{background:transparent;min-height:100%}
-body{font-size:__FONT_SIZE__px;color:__TEXT_COLOR__;font-family:__FONT_FAMILY__;line-height:__LINE_HEIGHT__;padding:0;overflow-x:hidden}
+html,body,#content{background:transparent;width:100%;max-width:100%;height:auto;min-height:0}
+body{font-size:__FONT_SIZE__px;color:__TEXT_COLOR__;font-family:__FONT_FAMILY__;line-height:__LINE_HEIGHT__;padding:0;word-wrap:break-word;overflow-wrap:break-word;overflow-x:visible}
 body ::selection{background:__HIGHLIGHT_BG__;color:__HIGHLIGHT_TEXT__}
 p{margin:0.3em 0;line-height:__LINE_HEIGHT__}
 h1{font-size:1.6em;margin:0.5em 0 0.3em}
@@ -272,7 +295,7 @@ h2{font-size:1.4em;margin:0.5em 0 0.3em}
 h3{font-size:1.2em;margin:0.4em 0 0.2em}
 h4{font-size:1.1em;margin:0.4em 0 0.2em}
 h5{font-size:1em;margin:0.3em 0 0.2em}
-pre{background:__CODE_BG__;border-radius:6px;padding:10px;margin:0.5em 0;overflow-x:auto;font-size:0.85em}
+pre{background:__CODE_BG__;border-radius:6px;padding:10px;margin:0.5em 0;overflow-x:auto;font-size:0.85em;max-width:100%}
 code{background:__CODE_BG__;border-radius:3px;padding:1px 4px;font-size:0.85em;font-family:monospace}
 pre code{background:none;padding:0;border-radius:0}
 blockquote{border-left:3px solid __BLOCKQUOTE_COLOR__;padding:0.2em 0 0.2em 1em;margin:0.5em 0;opacity:0.85}
@@ -283,72 +306,324 @@ a{color:__LINK_COLOR__;text-decoration:none}
 a:hover{text-decoration:underline}
 img{max-width:100%;border-radius:4px;margin:0.3em 0}
 .katex{font-size:1.05em}
-.katex-display{margin:0.4em 0}
+/* Keep every display formula at its intended KaTeX size.  The dedicated
+ * scroll content gets an explicit measured width in JavaScript, because the
+ * generated KaTeX node's visual overflow is not always scrollable in Android
+ * WebView by itself. */
+.math-display-scroll{display:block;width:100%;max-width:100%;margin:0.4em 0;overflow-x:scroll;overflow-y:hidden;touch-action:pan-x;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:thin}
+.math-display-content{display:block;min-width:100%}
+.math-display-content .katex-display{display:block;width:100%;max-width:none;margin:0;overflow:visible;text-align:center;padding:0 .15em .35em}
+.math-display-content .katex{white-space:nowrap}
+.math-display-scroll.is-scrollable{border-bottom:1px solid rgba(128,128,128,.28);padding-bottom:.1em}
+.math-display-scroll.is-scrollable::after{content:'\2194\FE0E \5DE6 \53F3 \6ED1 \52A8 \67E5 \770B';display:block;position:sticky;left:0;width:max-content;margin:.1em auto 0;font-size:.72em;opacity:.62;white-space:nowrap}
+/* Normal inline math remains inline.  The fallback wrapper also prevents a
+ * very long inline expression from being clipped by the WebView viewport. */
+.inline-math{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;vertical-align:middle;-webkit-overflow-scrolling:touch}
+.inline-math .katex{white-space:nowrap}
 </style>
 </head>
 <body>
-<div id="content">__CONTENT__</div>
+<div id="content"></div>
 <script>
-var content = __CONTENT_JSON__;
-try {
-  var html = renderMarkdown(content);
-  document.getElementById('content').innerHTML = html;
-  renderMathInElement(document.body, {
-    delimiters: [
-      {left: '$$', right: '$$', display: true},
-      {left: '$', right: '$', display: false}
-    ],
+var contentElement = document.getElementById('content');
+var heightReportPending = false;
+// The Android touch bridge marks a drag that began inside a scrollable formula.
+// This lets the native layer reserve only that horizontal gesture for math while
+// ordinary horizontal swipes remain available to the app drawer.
+var activeMathScrollContainer = null;
+
+function closestMathScrollContainer(node) {
+  while (node && node !== document.body) {
+    if (node.classList && (
+      node.classList.contains('math-display-scroll') ||
+      node.classList.contains('inline-math')
+    )) return node;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function setActiveMathScrollContainer(node) {
+  var container = closestMathScrollContainer(node);
+  var canScroll = container && container.scrollWidth > container.clientWidth + 1;
+  activeMathScrollContainer = canScroll ? container : null;
+  if (window.AndroidMathTouch && window.AndroidMathTouch.setFormulaTouch) {
+    window.AndroidMathTouch.setFormulaTouch(!!activeMathScrollContainer);
+  }
+}
+
+document.addEventListener('touchstart', function(event) {
+  setActiveMathScrollContainer(event.target);
+}, true);
+document.addEventListener('touchend', function() {
+  activeMathScrollContainer = null;
+  if (window.AndroidMathTouch && window.AndroidMathTouch.setFormulaTouch) {
+    window.AndroidMathTouch.setFormulaTouch(false);
+  }
+}, true);
+document.addEventListener('touchcancel', function() {
+  activeMathScrollContainer = null;
+  if (window.AndroidMathTouch && window.AndroidMathTouch.setFormulaTouch) {
+    window.AndroidMathTouch.setFormulaTouch(false);
+  }
+}, true);
+
+// Native WebView touch handling calls this after it has claimed a horizontal
+// formula drag. It is deliberately independent from browser scrolling, which
+// Android WebView can otherwise lose to the surrounding Compose hierarchy.
+window.scrollActiveMath = function(deltaX) {
+  if (!activeMathScrollContainer) return;
+  activeMathScrollContainer.scrollLeft += Number(deltaX) || 0;
+};
+window.clearActiveMathScroll = function() {
+  activeMathScrollContainer = null;
+};
+
+function reportContentHeight() {
+  heightReportPending = false;
+  var cssHeight = Math.max(
+    contentElement.scrollHeight,
+    document.body.scrollHeight,
+    document.documentElement.scrollHeight,
+    1
+  );
+  var devicePixelRatio = window.devicePixelRatio || 1;
+  if (window.AndroidContentHeight && window.AndroidContentHeight.report) {
+    window.AndroidContentHeight.report(cssHeight, devicePixelRatio);
+  }
+}
+
+function scheduleContentHeightReport() {
+  if (heightReportPending) return;
+  heightReportPending = true;
+  requestAnimationFrame(function() {
+    reportContentHeight();
+    // KaTeX and WebView layout can settle one frame after innerHTML changes.
+    setTimeout(reportContentHeight, 32);
+  });
+}
+
+function updateMarkdown(text) {
+  try {
+    contentElement.innerHTML = renderMarkdown(text);
+    // Preserve the intended KaTeX size. Long display expressions receive a
+    // real horizontally scrollable content width instead of being shrunk.
+    requestAnimationFrame(function() {
+      prepareDisplayMathScroll();
+      scheduleContentHeightReport();
+    });
+  } catch(e) {
+    contentElement.textContent = text;
+  }
+  scheduleContentHeightReport();
+}
+
+if (window.ResizeObserver) {
+  new ResizeObserver(scheduleContentHeightReport).observe(contentElement);
+}
+window.updateMarkdown = updateMarkdown;
+updateMarkdown('');
+
+function isEscapedDollar(text, index) {
+  var slashCount = 0;
+  for (var i = index - 1; i >= 0 && text.charAt(i) === '\\'; i--) slashCount++;
+  return (slashCount % 2) === 1;
+}
+
+function isInlineMathOpen(text, index) {
+  var previous = index > 0 ? text.charAt(index - 1) : '';
+  var next = text.charAt(index + 1);
+  // A leading $ followed by a digit is normally currency, not TeX.  Do not
+  // impose a whitespace rule on the preceding character: Chinese prose and
+  // punctuation are valid immediately before inline math.
+  return next && !/\s|\d|\$/.test(next) && !/\d/.test(previous);
+}
+
+function isInlineMathClose(text, index) {
+  var previous = text.charAt(index - 1);
+  var next = index + 1 < text.length ? text.charAt(index + 1) : '';
+  // Do not consume the first $ of $$ or a dollar embedded in a number.
+  return previous && !/\s/.test(previous) && !/[\d$]/.test(next);
+}
+
+function renderMath(expression, displayMode) {
+  var rendered = katex.renderToString(expression, {
+    displayMode: displayMode,
     throwOnError: false,
     errorColor: '#CC0000'
   });
-  // Notify host of content height changes
-  var observer = new ResizeObserver(function() {
-    var h = document.body.scrollHeight;
-    // Android will handle layout via WRAP_CONTENT
-  });
-  observer.observe(document.body);
-} catch(e) {
-  document.getElementById('content').textContent = 'Render error: ' + e.message;
+  return displayMode
+    ? '<span class="math-display-scroll"><span class="math-display-content">' + rendered + '</span></span>'
+    : '<span class="inline-math">' + rendered + '</span>';
+}
+
+function prepareDisplayMathScroll() {
+  var containers = contentElement.querySelectorAll('.math-display-scroll');
+  for (var i = 0; i < containers.length; i++) {
+    var container = containers[i];
+    var content = container.querySelector('.math-display-content');
+    var formula = container.querySelector('.katex');
+    if (!content || !formula || container.clientWidth <= 0) continue;
+
+    // KaTeX visually overflows its parent. Give the direct child its measured
+    // width so Android WebView exposes a genuine horizontal scroll range.
+    var availableWidth = container.clientWidth;
+    var naturalWidth = Math.ceil(formula.getBoundingClientRect().width + 8);
+    var contentWidth = Math.max(availableWidth, naturalWidth);
+    content.style.width = contentWidth + 'px';
+    var canScroll = contentWidth > availableWidth + 1;
+    container.classList.toggle('is-scrollable', canScroll);
+
+    if (!canScroll) continue;
+
+    // WebView can otherwise hand the gesture to the surrounding Compose
+    // vertical list before CSS overflow sees it. Explicitly drag scroll only
+    // when the gesture is horizontal, leaving normal vertical chat scrolling
+    // untouched.
+    (function(target) {
+      var startX = 0;
+      var startY = 0;
+      var startScrollLeft = 0;
+      var horizontalDrag = false;
+      target.ontouchstart = function(event) {
+        var touch = event.touches && event.touches[0];
+        if (!touch) return;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        startScrollLeft = target.scrollLeft;
+        horizontalDrag = false;
+      };
+      target.ontouchmove = function(event) {
+        var touch = event.touches && event.touches[0];
+        if (!touch) return;
+        var dx = touch.clientX - startX;
+        var dy = touch.clientY - startY;
+        if (!horizontalDrag && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+          horizontalDrag = true;
+        }
+        if (horizontalDrag) {
+          target.scrollLeft = startScrollLeft - dx;
+          event.preventDefault();
+        }
+      };
+    })(container);
+  }
+}
+
+function isInsideCode(text, index) {
+  // Do not parse a delimiter inside inline code or a fenced code block.  This
+  // works on the original markdown before it is converted to HTML.
+  var before = text.substring(0, index);
+  var fenceCount = (before.match(/```/g) || []).length;
+  if ((fenceCount % 2) === 1) return true;
+  var lineStart = before.lastIndexOf('\n') + 1;
+  var line = before.substring(lineStart);
+  return ((line.match(/`/g) || []).length % 2) === 1;
+}
+
+function findClosingDelimiter(text, start, delimiter) {
+  for (var cursor = start; cursor < text.length; cursor++) {
+    if (text.charAt(cursor) !== delimiter.charAt(0) || isEscapedDollar(text, cursor)) continue;
+    if (delimiter === '$$') {
+      if (text.charAt(cursor + 1) === '$') return cursor;
+    } else if (delimiter === '$') {
+      if (isInlineMathClose(text, cursor)) return cursor;
+    } else if (text.substr(cursor, delimiter.length) === delimiter) {
+      return cursor;
+    }
+  }
+  return -1;
+}
+
+function protectMath(text) {
+  var placeholders = [];
+  var output = '';
+  var i = 0;
+
+  while (i < text.length) {
+    if (isInsideCode(text, i)) {
+      output += text.charAt(i++);
+      continue;
+    }
+
+    var delimiter = null;
+    var closingDelimiter = null;
+    var isDisplay = false;
+
+    if (text.substr(i, 2) === '$$' && !isEscapedDollar(text, i)) {
+      delimiter = '$$';
+      closingDelimiter = '$$';
+      isDisplay = true;
+    } else if (text.charAt(i) === '$' && !isEscapedDollar(text, i) && isInlineMathOpen(text, i)) {
+      delimiter = '$';
+      closingDelimiter = '$';
+    } else if (text.substr(i, 2) === '\\[') {
+      delimiter = '\\[';
+      closingDelimiter = '\\]';
+      isDisplay = true;
+    } else if (text.substr(i, 2) === '\\(') {
+      delimiter = '\\(';
+      closingDelimiter = '\\)';
+    }
+
+    if (!delimiter) {
+      output += text.charAt(i++);
+      continue;
+    }
+
+    var expressionStart = i + delimiter.length;
+    var end = findClosingDelimiter(text, expressionStart, closingDelimiter);
+    if (end === -1 || (!isDisplay && /[\r\n]/.test(text.substring(expressionStart, end)))) {
+      output += text.charAt(i++);
+      continue;
+    }
+
+    var expression = text.substring(expressionStart, end);
+    var index = placeholders.length;
+    try {
+      placeholders.push(renderMath(expression, isDisplay));
+    } catch (e) {
+      placeholders.push(text.substring(i, end + closingDelimiter.length));
+    }
+    output += '\x00MATH' + index + '\x00';
+    i = end + closingDelimiter.length;
+  }
+
+  return { text: output, placeholders: placeholders };
 }
 
 function renderMarkdown(text) {
-  // Simple markdown to HTML converter
-  var html = text
+  // STEP 1: Tokenize TeX delimiters before Markdown processing. This keeps
+  // Markdown from consuming LaTeX underscores or asterisks and supports
+  // $...$, $$...$$, \(...\), and \[...\].
+  var math = protectMath(text);
+  var placeholders = math.placeholders;
+  var protectedText = math.text;
+
+  // STEP 2: Convert markdown to HTML (safe now - math blocks are protected)
+  var html = protectedText
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
     return '<pre><code' + (lang ? ' class="lang-'+lang+'"' : '') + '>' + code + '</code></pre>';
   });
-
-  // Horizontal rules
   html = html.replace(/^---+$/gm, '<hr>');
-
-  // Headings
   html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
   html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // Blockquotes
   html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-
-  // Images
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
-
-  // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 
-  // Bold+italic, bold, italic
+  // Bold+italic, bold, italic - safe because math blocks are placeholders
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
-  // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  // Ordered lists
   html = html.replace(/(?:^\d+\.\s.*\n?)+/gm, function(match) {
     var items = match.trim().split('\n');
     var lis = items.map(function(item) {
@@ -357,7 +632,6 @@ function renderMarkdown(text) {
     return '<ol>\n' + lis + '\n</ol>';
   });
 
-  // Unordered lists
   html = html.replace(/(?:^[-*]\s.*\n?)+/gm, function(match) {
     var items = match.trim().split('\n');
     var lis = items.map(function(item) {
@@ -389,7 +663,14 @@ function renderMarkdown(text) {
   }
   if (inP) result.push('</p>');
 
-  return result.join('\n');
+  html = result.join('\n');
+
+  // STEP 3: Restore the KaTeX HTML after Markdown conversion.
+  html = html.replace(/\x00MATH(\d+)\x00/g, function(_, idx) {
+    return placeholders[parseInt(idx, 10)];
+  });
+
+  return html;
 }
 </script>
 </body>
@@ -397,13 +678,38 @@ function renderMarkdown(text) {
 """
 
 /**
- * Composable that renders Markdown text with LaTeX math support using
- * a WebView with KaTeX.
+ * Composable that renders Markdown and LaTeX in one persistent WebView.
  *
- * This is used as a fallback renderer when the text contains LaTeX
- * expressions. For plain markdown (no LaTeX), the existing MarkdownText
- * composable is used for better performance.
+ * The document is loaded once, then streaming updates call JavaScript directly
+ * so Markdown and KaTeX can be re-rendered without a blank page between tokens.
  */
+private class MarkdownHeightBridge(
+    private val onHeightChanged: (Int) -> Unit
+) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastHeightPx = 0
+
+    @JavascriptInterface
+    fun report(cssHeight: Double, devicePixelRatio: Double) {
+        val heightPx = ceil((cssHeight * devicePixelRatio).coerceAtLeast(1.0)).toInt()
+        if (heightPx == lastHeightPx) return
+        lastHeightPx = heightPx
+        mainHandler.post { onHeightChanged(heightPx) }
+    }
+}
+
+/** Receives the DOM hit-test result for the gesture that just began. */
+private class MarkdownMathTouchBridge(
+    private val onFormulaTouchChanged: (Boolean) -> Unit
+) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @JavascriptInterface
+    fun setFormulaTouch(isScrollableFormula: Boolean) {
+        mainHandler.post { onFormulaTouchChanged(isScrollableFormula) }
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun LatexMarkdownWebView(
@@ -419,9 +725,12 @@ fun LatexMarkdownWebView(
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    val fontSizePx = with(density) { fontSize.toPx() }
-    val lineHeightVal = with(density) { lineHeight.toPx() }
-    val lineHeightRatio = if (fontSizePx > 0) lineHeightVal / fontSizePx else 1.5
+    // WebView CSS pixels are already density-independent. Compose's toPx() returns
+    // physical pixels, which inflated every WebView-rendered assistant message by
+    // the device density. Use SP values and retain only the accessibility font scale.
+    val fontSizeCssPx = if (fontSize.isSpecified) fontSize.value * density.fontScale else 15f
+    val lineHeightCssPx = if (lineHeight.isSpecified) lineHeight.value * density.fontScale else 22f
+    val lineHeightRatio = if (fontSizeCssPx > 0f) lineHeightCssPx / fontSizeCssPx else 1.5f
 
     val colorHex = colorToHex(textColor)
     val highlightBgHex = colorToHex(highlightBg)
@@ -431,15 +740,28 @@ fun LatexMarkdownWebView(
     val hrColor = colorToHex(textColor.copy(alpha = 0.2f))
     val linkColor = if (textColor == Color.Unspecified) "#1565C0" else colorToHex(textColor)
 
+    // Keep one WebView document alive during streaming. Reloading the whole HTML
+    // document for every token causes a blank/old measured height while KaTeX and
+    // the page are loading again.
     val contentJson = remember(markdown) {
-        LatexParser.escapeForJs(markdown)
+        JSONObject.quote(markdown)
     }
+    val latestContentJson by rememberUpdatedState(contentJson)
 
-    val html = remember(contentJson, fontSizePx, colorHex, lineHeightRatio) {
+    val html = remember(
+        fontSizeCssPx,
+        colorHex,
+        lineHeightRatio,
+        fontFamily,
+        highlightBgHex,
+        highlightTextHex,
+        codeBgHex,
+        blockquoteColor,
+        hrColor,
+        linkColor
+    ) {
         MARKDOWN_LATEX_HTML
-            .replace("__CONTENT__", contentJson)
-            .replace("__CONTENT_JSON__", "\"" + contentJson + "\"")
-            .replace("__FONT_SIZE__", fontSizePx.toInt().coerceAtLeast(8).toString())
+            .replace("__FONT_SIZE__", fontSizeCssPx.toInt().coerceAtLeast(8).toString())
             .replace("__LINE_HEIGHT__", lineHeightRatio.toString())
             .replace("__TEXT_COLOR__", colorHex)
             .replace("__FONT_FAMILY__", fontFamily)
@@ -451,42 +773,145 @@ fun LatexMarkdownWebView(
             .replace("__LINK_COLOR__", linkColor)
     }
 
-    AndroidView(
-        factory = { ctx ->
-            WebView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                setBackgroundColor(AndroidColor.TRANSPARENT)
-                settings.javaScriptEnabled = true
-                settings.allowFileAccess = true
-                settings.apply {
-                    builtInZoomControls = false
-                    displayZoomControls = false
-                    loadWithOverviewMode = true
-                    useWideViewPort = true
-                    domStorageEnabled = true
-                }
-                setInitialScale(100)
-                isVerticalScrollBarEnabled = false
-                isHorizontalScrollBarEnabled = false
-                webViewClient = object : WebViewClient() {
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        // Re-adjust WebView height after content renders
+    key(html) {
+        var pageReady by remember { mutableStateOf(false) }
+        var contentHeightPx by remember { mutableIntStateOf(1) }
+        val latestHeightHandler = rememberUpdatedState<(Int) -> Unit> { heightPx ->
+            if (heightPx != contentHeightPx) contentHeightPx = heightPx
+        }
+        val heightBridge = remember {
+            MarkdownHeightBridge { heightPx -> latestHeightHandler.value(heightPx) }
+        }
+        val contentHeight = with(density) { contentHeightPx.toDp() }
+
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                    setBackgroundColor(AndroidColor.TRANSPARENT)
+                    settings.javaScriptEnabled = true
+                    settings.allowFileAccess = true
+                    settings.apply {
+                        builtInZoomControls = false
+                        displayZoomControls = false
+                        domStorageEnabled = true
+                        textZoom = 100
+                        loadWithOverviewMode = false
+                        useWideViewPort = false
                     }
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
+                    // Gesture regions are intentionally separated:
+                    // * Horizontal drags that BEGIN on a scrollable formula stay in this
+                    //   WebView and scroll only that formula.
+                    // * Horizontal drags elsewhere are left to ModalNavigationDrawer.
+                    // * Vertical drags are always returned to the chat list.
+                    var downX = 0f
+                    var downY = 0f
+                    var lastX = 0f
+                    var gestureDirectionResolved = false
+                    var formulaTouchStarted = false
+                    var handlingFormulaHorizontalDrag = false
+                    fun requestParentTouchOwnership(disallow: Boolean) {
+                        var currentParent = parent
+                        while (currentParent != null) {
+                            currentParent.requestDisallowInterceptTouchEvent(disallow)
+                            currentParent = currentParent.parent
+                        }
+                    }
+                    val mathTouchBridge = MarkdownMathTouchBridge { startedInScrollableFormula ->
+                        formulaTouchStarted = startedInScrollableFormula
+                        // The browser supplies this immediately after ACTION_DOWN. Reserve
+                        // only a genuine formula touch before the drawer sees ACTION_MOVE.
+                        if (startedInScrollableFormula && !gestureDirectionResolved) {
+                            requestParentTouchOwnership(true)
+                        }
+                    }
+                    setOnTouchListener { view, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                downX = event.x
+                                downY = event.y
+                                lastX = event.x
+                                gestureDirectionResolved = false
+                                formulaTouchStarted = false
+                                handlingFormulaHorizontalDrag = false
+                                // Do not block the drawer for normal message text.
+                                requestParentTouchOwnership(false)
+                                false
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                val dx = event.x - downX
+                                val dy = event.y - downY
+                                if (!gestureDirectionResolved && (abs(dx) > 8f || abs(dy) > 8f)) {
+                                    gestureDirectionResolved = true
+                                    handlingFormulaHorizontalDrag =
+                                        formulaTouchStarted && abs(dx) > abs(dy)
+                                    // A vertical formula drag belongs to the chat. A horizontal
+                                    // non-formula drag belongs to the app's sidebar drawer.
+                                    requestParentTouchOwnership(handlingFormulaHorizontalDrag)
+                                }
+                                if (handlingFormulaHorizontalDrag) {
+                                    val deltaX = lastX - event.x
+                                    if (deltaX != 0f) {
+                                        (view as WebView).evaluateJavascript(
+                                            "window.scrollActiveMath(${deltaX.toDouble()});",
+                                            null
+                                        )
+                                    }
+                                    lastX = event.x
+                                    // Consume only the selected formula's horizontal drag so it
+                                    // cannot open/close the sidebar at the same time.
+                                    true
+                                } else {
+                                    lastX = event.x
+                                    false
+                                }
+                            }
+                            MotionEvent.ACTION_UP,
+                            MotionEvent.ACTION_CANCEL -> {
+                                (view as WebView).evaluateJavascript("window.clearActiveMathScroll();", null)
+                                requestParentTouchOwnership(false)
+                                false
+                            }
+                            else -> false
+                        }
+                    }
+                    addJavascriptInterface(heightBridge, "AndroidContentHeight")
+                    addJavascriptInterface(mathTouchBridge, "AndroidMathTouch")
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            pageReady = true
+                            view?.evaluateJavascript(
+                                "window.updateMarkdown($latestContentJson);",
+                                null
+                            )
+                        }
+                    }
+                    loadDataWithBaseURL(
+                        "file:///android_asset/katex/",
+                        html,
+                        "text/html",
+                        "UTF-8",
+                        null
+                    )
                 }
-                loadDataWithBaseURL(
-                    "file:///android_asset/katex/",
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
-            }
-        },
-        modifier = modifier
-    )
+            },
+            update = { view ->
+                if (pageReady) {
+                    // Update only the document body; keep KaTeX/CSS/WebView alive.
+                    (view as WebView).evaluateJavascript(
+                        "window.updateMarkdown($contentJson);",
+                        null
+                    )
+                }
+            },
+            modifier = modifier.height(contentHeight)
+        )
+    }
 }
 
 /**
@@ -506,10 +931,17 @@ private fun colorToHex(color: Color): String {
 }
 
 /**
- * Smart composable that renders Markdown text, using the WebView+KaTeX renderer
- * when LaTeX is detected, and the standard MarkdownText composable otherwise.
+ * Smart composable that renders Markdown text using a WebView with KaTeX
+ * for LaTeX math rendering and Markdown formatting.
  *
- * This is the main entry point for rendering finished (non-streaming) messages.
+ * Unlike the previous version that conditionally switched between MarkdownText
+ * and LatexMarkdownWebView, this now always uses the WebView renderer.
+ * This ensures consistent rendering regardless of whether the text contains
+ * LaTeX math, eliminating size discrepancies between the two renderers.
+ *
+ * The WebView's renderMarkdown() JavaScript function handles all standard
+ * Markdown features, and KaTeX auto-render processes any LaTeX math found
+ * within $...$ or $$...$$ delimiters.
  */
 @Composable
 fun SmartMarkdownText(
@@ -519,30 +951,16 @@ fun SmartMarkdownText(
     syntaxHighlightTextColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val hasLatex = remember(markdown) {
-        LatexParser.hasLatex(markdown)
-    }
-
-    if (hasLatex) {
-        LatexMarkdownWebView(
-            markdown = markdown,
-            textColor = style.color ?: Color.Unspecified,
-            fontSize = style.fontSize,
-            lineHeight = style.lineHeight,
-            fontFamily = "sans-serif",
-            highlightBg = syntaxHighlightColor,
-            highlightText = syntaxHighlightTextColor,
-            modifier = modifier
-        )
-    } else {
-        MarkdownText(
-            markdown = markdown,
-            style = style,
-            syntaxHighlightColor = syntaxHighlightColor,
-            syntaxHighlightTextColor = syntaxHighlightTextColor,
-            modifier = modifier
-        )
-    }
+    LatexMarkdownWebView(
+        markdown = markdown,
+        textColor = style.color ?: Color.Unspecified,
+        fontSize = style.fontSize,
+        lineHeight = style.lineHeight,
+        fontFamily = "sans-serif",
+        highlightBg = syntaxHighlightColor,
+        highlightText = syntaxHighlightTextColor,
+        modifier = modifier.fillMaxWidth()
+    )
 }
 
 /**
@@ -566,12 +984,15 @@ fun LatexView(
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    val fontSizePx = with(density) { fontSize.toPx() }
+    // CSS px are density-independent in Android WebView. Passing Compose's physical
+    // pixel value here multiplies the rendered text by the screen density (e.g. 3x
+    // on xxhdpi devices), so keep the SP value and apply only the user's font scale.
+    val fontSizeCssPx = if (fontSize.isSpecified) fontSize.value * density.fontScale else 15f
     val colorHex = colorToHex(textColor)
 
     val escapedExpr = remember(expression) { LatexParser.escapeForJs(expression) }
 
-    val html = remember(escapedExpr, isDisplay, fontSizePx, colorHex) {
+    val html = remember(escapedExpr, isDisplay, fontSizeCssPx, colorHex) {
         """
         <!DOCTYPE html>
         <html>
@@ -583,7 +1004,7 @@ fun LatexView(
         <style>
         *{margin:0;padding:0;box-sizing:border-box}
         html,body{background:transparent;display:inline-flex;align-items:center;justify-content:flex-start;min-height:1.2em}
-        body{font-size:${fontSizePx.toInt().coerceAtLeast(8)}px;color:$colorHex}
+        body{font-size:${fontSizeCssPx.toInt().coerceAtLeast(8)}px;color:$colorHex}
         .katex{font-size:1em}
         </style>
         </head>
@@ -611,8 +1032,8 @@ fun LatexView(
                 settings.apply {
                     builtInZoomControls = false
                     displayZoomControls = false
+                    textZoom = 100
                 }
-                setInitialScale(100)
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
                 webViewClient = object : WebViewClient() {

@@ -68,15 +68,22 @@ fun ChunkedStreamingText(
 
     // Check if the text contains LaTeX math expressions.
     // If so, use the WebView-based renderer that supports both Markdown and KaTeX.
+    // Once any $ sign appears, we commit to WebView for the rest of streaming
+    // to avoid jarring size/rendering switches between MarkdownText and WebView.
     val hasLatex = remember(text) {
         LatexParser.hasLatex(text)
     }
     val hasIncompleteLatex = remember(text) {
         !hasLatex && LatexParser.hasIncompleteLatex(text)
     }
+    val shouldUseWebView = remember(text) {
+        hasLatex || hasIncompleteLatex || text.contains('$')
+    }
 
-    if (hasLatex) {
-        // Full text has complete LaTeX — use the combined Markdown+KaTeX renderer
+    if (shouldUseWebView) {
+        // Use the combined Markdown+KaTeX WebView renderer for all text
+        // that contains or may contain LaTeX. This ensures consistent sizing
+        // and typography throughout streaming, even as delimiters come and go.
         LatexMarkdownWebView(
             markdown = text,
             textColor = textColor,
@@ -85,15 +92,7 @@ fun ChunkedStreamingText(
             fontFamily = "sans-serif",
             highlightBg = highlightBg,
             highlightText = highlightText,
-            modifier = modifier
-        )
-    } else if (hasIncompleteLatex) {
-        // LaTeX delimiters are still being streamed — render as plain text
-        // to avoid the WebView flickering on every token update.
-        Text(
-            text = text,
-            style = markdownStyle,
-            modifier = modifier
+            modifier = Modifier.fillMaxWidth()
         )
     } else {
         Column(modifier = modifier) {

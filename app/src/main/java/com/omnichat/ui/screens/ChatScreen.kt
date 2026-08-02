@@ -145,7 +145,16 @@ fun ChatView(viewModel: ChatViewModel) {
     val imeIsAnimating = imeAnimationSourceVisible != imeAnimationTargetVisible
     // Switch the capsule at the same instant the system IME animation starts, rather
     // than at focus time or after the IME has already completed its movement.
-    val composerExpanded = if (imeIsAnimating) imeAnimationTargetVisible else composerImeVisible
+    val composerExpandedForIme = if (imeIsAnimating) imeAnimationTargetVisible else composerImeVisible
+
+    // Clear focus before AnimatedContent swaps back to the compact field. If focus is
+    // left on the outgoing expanded field, Android can transfer it to the new field
+    // during the IME closing animation and immediately reopen the keyboard.
+    LaunchedEffect(imeIsAnimating, imeAnimationTargetVisible) {
+        if (imeIsAnimating && !imeAnimationTargetVisible) {
+            focusManager.clearFocus(force = true)
+        }
+    }
 
     LaunchedEffect(composerImeVisible) {
         if (composerImeVisible) {
@@ -156,8 +165,8 @@ fun ChatView(viewModel: ChatViewModel) {
         }
     }
 
-    LaunchedEffect(composerExpanded) {
-        if (composerExpanded) {
+    LaunchedEffect(composerExpandedForIme) {
+        if (composerExpandedForIme) {
             // AnimatedContent swaps the compact field for the expanded one; restore
             // focus on the replacement while the IME is in its opening transition.
             composerFocusRequester.requestFocus()
@@ -179,6 +188,11 @@ fun ChatView(viewModel: ChatViewModel) {
     // 文档选择相关状态
     var selectedAttachedFiles by remember { mutableStateOf<List<AttachedFile>>(emptyList()) }
     var isParsingFile by remember { mutableStateOf(false) }
+
+    // Selecting an attachment also opens the expanded layout so its preview and the
+    // send action remain in the same capsule, even if the IME is not visible.
+    val composerExpanded = composerExpandedForIme ||
+        selectedImagePaths.isNotEmpty() || selectedAttachedFiles.isNotEmpty() || isParsingFile
 
     // 文档选择器 launcher
     val documentPickerLauncher = rememberLauncherForActivityResult(
@@ -728,6 +742,185 @@ fun ChatView(viewModel: ChatViewModel) {
                                     .heightIn(min = 56.dp)
                                     .padding(horizontal = 4.dp)
                             )
+
+                            AnimatedVisibility(
+                                visible = selectedAttachedFiles.isNotEmpty() || isParsingFile,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = uiText("chat.files.attached", "已添加文件") + " (${selectedAttachedFiles.size})",
+                                            fontSize = (12 * fs).sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        if (selectedAttachedFiles.isNotEmpty()) {
+                                            IconButton(
+                                                onClick = { selectedAttachedFiles = emptyList() },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = uiText("chat.remove.files", "移除所有文件"),
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (isParsingFile) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                    }
+
+                                    // 文件网格/列表
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        selectedAttachedFiles.forEachIndexed { index, file ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                                    .border(
+                                                        0.5.dp,
+                                                        MaterialTheme.colorScheme.outlineVariant,
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Description,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = file.name,
+                                                    fontSize = (12 * fs).sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.weight(1f),
+                                                    maxLines = 1
+                                                )
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedAttachedFiles = selectedAttachedFiles.toMutableList().apply {
+                                                            removeAt(index)
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = stringResource(R.string.remove),
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── 已选图片预览（支持多图） ─────────────────────────────────
+                            AnimatedVisibility(
+                                visible = selectedImagePaths.isNotEmpty(),
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = uiText("chat.image.attached", R.string.chat_image_attached)
+                                                + " (${selectedImagePaths.size})",
+                                            fontSize = (12 * fs).sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        // 清除所有图片
+                                        IconButton(
+                                            onClick = { selectedImagePaths = emptyList() },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // 图片缩略图网格
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        selectedImagePaths.forEachIndexed { index, path ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(60.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .border(
+                                                        1.dp,
+                                                        MaterialTheme.colorScheme.outlineVariant,
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                            ) {
+                                                AsyncImage(
+                                                    model = path,
+                                                    contentDescription = stringResource(R.string.image_n, index + 1),
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                // 单张删除按钮
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedImagePaths = selectedImagePaths.toMutableList().apply {
+                                                            removeAt(index)
+                                                        }
+                                                    },
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .size(20.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = stringResource(R.string.remove),
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── 编辑模式指示器 ──────────────────────────────────────
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -793,184 +986,6 @@ fun ChatView(viewModel: ChatViewModel) {
                     }
                 }
 
-                AnimatedVisibility(
-                    visible = selectedAttachedFiles.isNotEmpty() || isParsingFile,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = uiText("chat.files.attached", "已添加文件") + " (${selectedAttachedFiles.size})",
-                                fontSize = (12 * fs).sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (selectedAttachedFiles.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { selectedAttachedFiles = emptyList() },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = uiText("chat.remove.files", "移除所有文件"),
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        if (isParsingFile) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-
-                        // 文件网格/列表
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            selectedAttachedFiles.forEachIndexed { index, file ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .border(
-                                            0.5.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Description,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = file.name,
-                                        fontSize = (12 * fs).sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            selectedAttachedFiles = selectedAttachedFiles.toMutableList().apply {
-                                                removeAt(index)
-                                            }
-                                        },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = stringResource(R.string.remove),
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 已选图片预览（支持多图） ─────────────────────────────────
-                AnimatedVisibility(
-                    visible = selectedImagePaths.isNotEmpty(),
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = uiText("chat.image.attached", R.string.chat_image_attached)
-                                    + " (${selectedImagePaths.size})",
-                                fontSize = (12 * fs).sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            // 清除所有图片
-                            IconButton(
-                                onClick = { selectedImagePaths = emptyList() },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = uiText("chat.remove.image", R.string.chat_remove_image),
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // 图片缩略图网格
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            selectedImagePaths.forEachIndexed { index, path ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(60.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                ) {
-                                    AsyncImage(
-                                        model = path,
-                                        contentDescription = stringResource(R.string.image_n, index + 1),
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    // 单张删除按钮
-                                    IconButton(
-                                        onClick = {
-                                            selectedImagePaths = selectedImagePaths.toMutableList().apply {
-                                                removeAt(index)
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(20.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = stringResource(R.string.remove),
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 编辑模式指示器 ──────────────────────────────────────
                 if (isEditing) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
