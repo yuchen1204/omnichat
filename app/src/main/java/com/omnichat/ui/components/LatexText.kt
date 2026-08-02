@@ -22,6 +22,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
+import java.util.LinkedHashMap
 import kotlin.math.abs
 import kotlin.math.ceil
 
@@ -710,6 +711,27 @@ private class MarkdownMathTouchBridge(
     }
 }
 
+/**
+ * LazyColumn disposes off-screen AndroidViews. Remember the most recently
+ * measured height for finished messages so a returning WebView does not start
+ * at a 1 px height while KaTeX reloads.
+ */
+private object MarkdownWebViewHeightCache {
+    private const val MAX_ENTRIES = 100
+    private val heights = object : LinkedHashMap<String, Int>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int>?): Boolean =
+            size > MAX_ENTRIES
+    }
+
+    @Synchronized
+    fun get(key: String): Int? = heights[key]
+
+    @Synchronized
+    fun put(key: String, heightPx: Int) {
+        heights[key] = heightPx
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun LatexMarkdownWebView(
@@ -720,6 +742,8 @@ fun LatexMarkdownWebView(
     fontFamily: String = "sans-serif",
     highlightBg: Color = Color(0x1A000000),
     highlightText: Color = Color.Unspecified,
+    /** Stable identifier for a finished message that can leave/re-enter LazyColumn. */
+    heightCacheKey: String? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -775,9 +799,21 @@ fun LatexMarkdownWebView(
 
     key(html) {
         var pageReady by remember { mutableStateOf(false) }
-        var contentHeightPx by remember { mutableIntStateOf(1) }
+        // WebView reports physical pixels, while the initial fallback is one
+        // line of CSS height converted to physical pixels. The cache prevents
+        // an already rendered historical message from collapsing when it is
+        // recreated after leaving the LazyColumn viewport.
+        val fallbackHeightPx = remember(lineHeightCssPx, density.density) {
+            ceil(lineHeightCssPx * density.density).toInt().coerceAtLeast(1)
+        }
+        var contentHeightPx by remember(heightCacheKey, fallbackHeightPx) {
+            mutableIntStateOf(
+                heightCacheKey?.let(MarkdownWebViewHeightCache::get) ?: fallbackHeightPx
+            )
+        }
         val latestHeightHandler = rememberUpdatedState<(Int) -> Unit> { heightPx ->
             if (heightPx != contentHeightPx) contentHeightPx = heightPx
+            heightCacheKey?.let { MarkdownWebViewHeightCache.put(it, heightPx) }
         }
         val heightBridge = remember {
             MarkdownHeightBridge { heightPx -> latestHeightHandler.value(heightPx) }
@@ -949,6 +985,8 @@ fun SmartMarkdownText(
     style: TextStyle,
     syntaxHighlightColor: Color,
     syntaxHighlightTextColor: Color,
+    /** Stable key for cached WebView height when this is a persisted message. */
+    heightCacheKey: String? = null,
     modifier: Modifier = Modifier
 ) {
     LatexMarkdownWebView(
@@ -959,6 +997,7 @@ fun SmartMarkdownText(
         fontFamily = "sans-serif",
         highlightBg = syntaxHighlightColor,
         highlightText = syntaxHighlightTextColor,
+        heightCacheKey = heightCacheKey,
         modifier = modifier.fillMaxWidth()
     )
 }

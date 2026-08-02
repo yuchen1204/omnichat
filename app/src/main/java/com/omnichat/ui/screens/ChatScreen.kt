@@ -1552,6 +1552,9 @@ fun BubbleMessage(
                                     ),
                                     syntaxHighlightColor = MaterialTheme.colorScheme.surfaceVariant,
                                     syntaxHighlightTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    // Persist the measured WebView height while this message is
+                                    // off-screen, so scrolling back does not require a second render.
+                                    heightCacheKey = "message_${message.id}_${message.content.hashCode()}",
                                     modifier = Modifier.padding(14.dp, 10.dp)
                                 )
                             }
