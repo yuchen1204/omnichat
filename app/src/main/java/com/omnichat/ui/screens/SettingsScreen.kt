@@ -1,14 +1,14 @@
 package com.omnichat.ui.screens
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,81 +30,93 @@ import com.omnichat.ui.viewmodel.ChatViewModel
 import com.omnichat.ui.viewmodel.SettingsViewModel
 
 /**
- * 设置项标签定义
+ * 设置卡片数据
  */
-private data class SettingsTab(
+private data class SettingsCard(
+    val id: String,
     val label: String,
     val icon: ImageVector,
-    val contentDescription: String
+    val description: String
+)
+
+private val SETTINGS_CARDS = listOf(
+    SettingsCard("models", "模型配置", Icons.Default.Memory, "管理 AI 提供者、模型和 API 密钥"),
+    SettingsCard("mcp", "MCP 工具", Icons.Default.Hub, "配置 MCP 服务器和工具"),
+    SettingsCard("memory", "长效记忆", Icons.Default.Bookmark, "管理记忆、提示词模板"),
+    SettingsCard("skills", "Skill", Icons.Default.Extension, "安装和管理 Skill 扩展"),
+    SettingsCard("permissions", "权限管理", Icons.Default.Lock, "查看和管理文件访问权限"),
+    SettingsCard("data", "数据管理", Icons.Default.Folder, "导入/导出数据、云备份")
 )
 
 /**
- * 所有设置标签
- */
-private val SETTINGS_TABS = listOf(
-    SettingsTab("模型配置", Icons.Default.Memory, "模型配置"),
-    SettingsTab("MCP 工具", Icons.Default.Hub, "MCP 工具"),
-    SettingsTab("长效记忆", Icons.Default.Bookmark, "长效记忆"),
-    SettingsTab("数据管理", Icons.Default.Folder, "数据管理"),
-    SettingsTab("权限管理", Icons.Default.Lock, "权限管理"),
-    SettingsTab("Skill", Icons.Default.Extension, "Skill")
-)
-
-/**
- * 重设计后的设置页面。
+ * 设置页面。
  *
- * 采用 iOS 风格的分段控制标签栏，每个标签带图标和文字，
- * 内容区域保持原有子页面功能完整。
+ * 主页显示卡片列表，点击卡片进入对应的子页面。
+ * 子页面顶部有返回按钮，可回到设置主页。
  */
 @Composable
 fun SettingsView(
     viewModel: ChatViewModel,
     mcpViewModel: McpViewModel
 ) {
-    var selectedSubTab by remember { mutableStateOf(0) }
+    var selectedSubPage by remember { mutableStateOf<String?>(null) }
     val settingsViewModel: SettingsViewModel = viewModel()
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
     val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val cornerRadius = uiSettings.cornerRadiusDp.dp
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // ── iOS 风格分段标签栏 ────────────────────────────────────────
-        SettingsTabBar(
-            tabs = SETTINGS_TABS,
-            selectedIndex = selectedSubTab,
-            onTabSelected = { selectedSubTab = it },
+    if (selectedSubPage == null) {
+        // ── 设置主页：卡片列表 ────────────────────────────────────
+        SettingsHomePage(
+            settingsCards = SETTINGS_CARDS,
             fs = fs,
-            fontFamily = resolvedFontFamily
+            resolvedFontFamily = resolvedFontFamily,
+            cornerRadius = cornerRadius,
+            onCardClick = { selectedSubPage = it }
         )
-
-        // ── 内容区域 ───────────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            // 使用 AnimatedContent 实现平滑切换
-            AnimatedContent(
-                targetState = selectedSubTab,
-                transitionSpec = {
-                    val direction = if (targetState > initialState) 1 else -1
-                    slideInHorizontally(
-                        animationSpec = tween(250),
-                        initialOffsetX = { fullWidth -> direction * fullWidth / 4 }
-                    ) + fadeIn(animationSpec = tween(200)) togetherWith
-                    slideOutHorizontally(
-                        animationSpec = tween(200),
-                        targetOffsetX = { fullWidth -> -direction * fullWidth / 4 }
-                    ) + fadeOut(animationSpec = tween(150))
-                },
-                label = "settings_tab_content"
-            ) { tabIndex ->
-                when (tabIndex) {
-                    0 -> ModelsConfigView(viewModel)
-                    1 -> McpConfigScreen(mcpViewModel = mcpViewModel)
-                    2 -> MemoryAndPromptView(viewModel)
-                    3 -> ExportImportView(settingsViewModel = settingsViewModel)
-                    4 -> {
+    } else {
+        // ── 子页面 ────────────────────────────────────────────────
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 顶部导航栏
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { selectedSubPage = null }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = SETTINGS_CARDS.firstOrNull { it.id == selectedSubPage }?.label ?: "",
+                        fontSize = (18 * fs).sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = resolvedFontFamily,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                thickness = 0.5.dp
+            )
+            // 子页面内容
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                when (selectedSubPage) {
+                    "models" -> ModelsConfigView(viewModel)
+                    "mcp" -> McpConfigScreen(mcpViewModel = mcpViewModel, settingsViewModel = settingsViewModel)
+                    "memory" -> MemoryAndPromptView(viewModel)
+                    "skills" -> SkillsView(viewModel = viewModel)
+                    "permissions" -> {
                         val permissions by settingsViewModel.filePermissions.collectAsStateWithLifecycle()
                         PermissionManagerScreen(
                             permissions = permissions,
@@ -114,7 +125,7 @@ fun SettingsView(
                             onDeleteAllowed = { settingsViewModel.deleteAllowedPermissions() }
                         )
                     }
-                    5 -> SkillsView(viewModel = viewModel)
+                    "data" -> ExportImportView(settingsViewModel = settingsViewModel)
                 }
             }
         }
@@ -122,106 +133,127 @@ fun SettingsView(
 }
 
 /**
- * iOS 风格的分段控制标签栏。
- *
- * 每个标签包含图标和文字，选中时标签有高亮背景和下划线指示器。
- * 采用 Apple 风格的设计：圆角背景、柔和阴影、明确的选中态。
+ * 设置主页：显示所有设置的卡片入口。
  */
 @Composable
-private fun SettingsTabBar(
-    tabs: List<SettingsTab>,
-    selectedIndex: Int,
-    onTabSelected: (Int) -> Unit,
+private fun SettingsHomePage(
+    settingsCards: List<SettingsCard>,
     fs: Float,
-    fontFamily: androidx.compose.ui.text.font.FontFamily?
+    resolvedFontFamily: androidx.compose.ui.text.font.FontFamily?,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+    onCardClick: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // 顶部标题
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        ) {
+            Text(
+                text = "设置",
+                fontSize = (22 * fs).sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = resolvedFontFamily,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            thickness = 0.5.dp
+        )
+
+        // 卡片列表
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            settingsCards.forEach { card ->
+                SettingsCardItem(
+                    card = card,
+                    fs = fs,
+                    resolvedFontFamily = resolvedFontFamily,
+                    cornerRadius = cornerRadius,
+                    onClick = { onCardClick(card.id) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 单个设置卡片。
+ */
+@Composable
+private fun SettingsCardItem(
+    card: SettingsCard,
+    fs: Float,
+    resolvedFontFamily: androidx.compose.ui.text.font.FontFamily?,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit
 ) {
     val customColors = LocalCustomColors.current
 
     Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(cornerRadius.coerceIn(8.dp, 20.dp)),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 0.dp
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp
     ) {
-        Column {
-            // 标签行
-            LazyRow(
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 图标容器
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp)
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
             ) {
-                items(tabs.size) { index ->
-                    val isSelected = selectedIndex == index
-                    SettingsTabItem(
-                        tab = tabs[index],
-                        isSelected = isSelected,
-                        onClick = { onTabSelected(index) },
-                        fs = fs,
-                        fontFamily = fontFamily,
-                        selectedColor = MaterialTheme.colorScheme.primary,
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                    )
-                }
+                Icon(
+                    imageVector = card.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
             }
-
-            // 底部细分隔线
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                thickness = 0.5.dp
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = card.label,
+                    fontSize = (15 * fs).sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = resolvedFontFamily,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = card.description,
+                    fontSize = (12 * fs).sp,
+                    fontFamily = resolvedFontFamily,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(20.dp)
             )
         }
-    }
-}
-
-/**
- * 单个标签项。
- *
- * 选中态：主色背景 + 主色文字 + 底部指示条
- * 非选中态：浅灰背景 + 灰色文字
- */
-@Composable
-private fun SettingsTabItem(
-    tab: SettingsTab,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    fs: Float,
-    fontFamily: androidx.compose.ui.text.font.FontFamily?,
-    selectedColor: androidx.compose.ui.graphics.Color,
-    selectedContainerColor: androidx.compose.ui.graphics.Color,
-    unselectedColor: androidx.compose.ui.graphics.Color,
-    unselectedContainerColor: androidx.compose.ui.graphics.Color
-) {
-    val bgColor = if (isSelected) selectedContainerColor else unselectedContainerColor
-    val contentColor = if (isSelected) selectedColor else unselectedColor
-    val cornerRadius = LocalUISettings.current.cornerRadiusDp
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .widthIn(min = 56.dp)
-            .clip(RoundedCornerShape(cornerRadius.dp))
-            .background(bgColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-    ) {
-        // 图标
-        Icon(
-            imageVector = tab.icon,
-            contentDescription = tab.contentDescription,
-            tint = contentColor,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        // 标签文字
-        Text(
-            text = tab.label,
-            fontSize = (10.5 * fs).sp,
-            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-            color = contentColor,
-            fontFamily = fontFamily,
-            maxLines = 1
-        )
     }
 }

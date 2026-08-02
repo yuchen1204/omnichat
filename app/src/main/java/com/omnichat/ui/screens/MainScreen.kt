@@ -350,15 +350,6 @@ fun MainTopAppBar(
         CenterAlignedTopAppBar(
             title = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = titleText,
-                        fontSize = (17 * fs).sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = resolvedFontFamily,
-                        letterSpacing = (-0.4).sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2
-                    )
                     if (currentTab == "chat" && defaultProvider != null) {
                         val subtitleColor = uiSettings.topbarSubtitleColor.toComposeColor()
                             .let { if (it != androidx.compose.ui.graphics.Color.Unspecified) it else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) }
@@ -387,6 +378,16 @@ fun MainTopAppBar(
                                 )
                             }
                         }
+                    } else {
+                        Text(
+                            text = titleText,
+                            fontSize = (17 * fs).sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = resolvedFontFamily,
+                            letterSpacing = (-0.4).sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2
+                        )
                     }
                 }
             },

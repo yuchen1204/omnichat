@@ -70,7 +70,6 @@ fun SessionSidebarPanel(
     var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
     var renameTargetSession by remember { mutableStateOf<Session?>(null) }
     var renameText by remember { mutableStateOf("") }
-    var showModelPicker by remember { mutableStateOf(false) }
 
     // 搜索状态
     var searchQuery by remember { mutableStateOf("") }
@@ -126,70 +125,6 @@ fun SessionSidebarPanel(
             .width(280.dp)
             .background(sidebarColors.background)
     ) {
-        // ── 搜索栏 ───────────────────────────────────────────────
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            color = sidebarColors.activeBackground.copy(alpha = 0.12f),
-            shape = RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    tint = sidebarColors.onBackground.copy(alpha = 0.45f),
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                androidx.compose.foundation.text.BasicTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = (13 * fs).sp,
-                        fontFamily = resolvedFontFamily,
-                        color = sidebarColors.onBackground
-                    ),
-                    singleLine = true,
-                    cursorBrush = Brush.verticalGradient(
-                        colors = listOf(sidebarColors.onBackground, sidebarColors.onBackground)
-                    ),
-                    decorationBox = { innerTextField ->
-                        Box {
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = uiText("sidebar.search.placeholder", R.string.sidebar_search_placeholder),
-                                    fontSize = (13 * fs).sp,
-                                    fontFamily = resolvedFontFamily,
-                                    color = sidebarColors.onBackground.copy(alpha = 0.35f)
-                                )
-                            }
-                            innerTextField()
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(
-                        onClick = { searchQuery = "" },
-                        modifier = Modifier.size(18.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = null,
-                            tint = sidebarColors.onBackground.copy(alpha = 0.45f),
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                }
-            }
-        }
-
         // ── 版本更新提示条 ──────────────────────────────────────────────
         latestVersion?.let { version ->
             UpdateBanner(
@@ -289,8 +224,9 @@ fun SessionSidebarPanel(
             resolvedFontFamily = resolvedFontFamily,
             sidebarColors = sidebarColors,
             cornerRadius = cornerRadius,
+            searchQuery = searchQuery,
+            onSearchQueryChange = { searchQuery = it },
             onSettingsClick = onSettingsClick,
-            onModelPickerClick = { showModelPicker = true },
             onNewSession = {
                 viewModel.createNewSession(newSessionDefaultTitle)
                 onSessionSelected()
@@ -363,24 +299,9 @@ fun SessionSidebarPanel(
         )
     }
 
-    // ── 模型选择器弹窗 ─────────────────────────────────────────────────
-    if (showModelPicker) {
-        val defaultProvider = modelConfigs.find { it.isDefaultProvider }
-        ProviderModelPicker(
-            allConfigs = modelConfigs,
-            allModelsFlow = { viewModel.getModelsByProviderFlow(it) },
-            currentProviderId = defaultProvider?.id ?: 0L,
-            currentModelId = defaultProvider?.selectedModelId ?: "",
-            onConfirm = { provider, modelId ->
-                viewModel.setSessionOverrideModel(provider, modelId)
-                showModelPicker = false
-            },
-            onDismiss = { showModelPicker = false }
-        )
     }
-}
 
-// ── 顶部 Header ──────────────────────────────────────────────────────────────
+    // ── 顶部 Header ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun SidebarHeader(
@@ -803,78 +724,88 @@ private fun SidebarFooter(
     resolvedFontFamily: androidx.compose.ui.text.font.FontFamily,
     sidebarColors: com.omnichat.ui.theme.SidebarColors,
     cornerRadius: androidx.compose.ui.unit.Dp,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onSettingsClick: () -> Unit,
-    onModelPickerClick: () -> Unit,
     onNewSession: () -> Unit,
     context: android.content.Context
 ) {
-    val customColors = LocalCustomColors.current
-    val defaultProvider = modelConfigs.find { it.isDefaultProvider }
-    val coroutineScope = rememberCoroutineScope()
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        HorizontalDivider(
-            color = sidebarColors.onBackground.copy(alpha = 0.07f),
-            thickness = 0.5.dp,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        // 模型状态卡片（点击切换模型）
+        // 搜索栏 — 顶部留白，搜索框在底部
+        Spacer(Modifier.height(8.dp))
         Surface(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)))
-                .clickable { onModelPickerClick() },
+                .fillMaxWidth(),
             color = sidebarColors.activeBackground.copy(alpha = 0.12f),
             shape = RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp))
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 状态点
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (defaultProvider != null) customColors.success
-                            else MaterialTheme.colorScheme.error
-                        )
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = sidebarColors.onBackground.copy(alpha = 0.45f),
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = defaultProvider?.name ?: uiText("sidebar.not.set", R.string.sidebar_not_set),
-                        fontSize = (12 * fs).sp,
-                        fontWeight = FontWeight.Medium,
+                Spacer(Modifier.width(6.dp))
+                androidx.compose.foundation.text.BasicTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = (13 * fs).sp,
                         fontFamily = resolvedFontFamily,
-                        color = sidebarColors.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (defaultProvider != null) {
-                        Text(
-                            text = defaultProvider.selectedModelId.ifEmpty { uiText("sidebar.no.model.selected", R.string.sidebar_no_model_selected) },
-                            fontSize = (10 * fs).sp,
-                            color = sidebarColors.onBackground.copy(alpha = 0.55f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                        color = sidebarColors.onBackground
+                    ),
+                    singleLine = true,
+                    cursorBrush = Brush.verticalGradient(
+                        colors = listOf(sidebarColors.onBackground, sidebarColors.onBackground)
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = uiText("sidebar.search.placeholder", R.string.sidebar_search_placeholder),
+                                    fontSize = (13 * fs).sp,
+                                    fontFamily = resolvedFontFamily,
+                                    color = sidebarColors.onBackground.copy(alpha = 0.35f)
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(
+                        onClick = { onSearchQueryChange("") },
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = null,
+                            tint = sidebarColors.onBackground.copy(alpha = 0.45f),
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(6.dp))
+        HorizontalDivider(
+            color = sidebarColors.onBackground.copy(alpha = 0.07f),
+            thickness = 0.5.dp,
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+        )
 
-        // 底部按钮行：设置 + 恢复 UI
+        // 底部按钮行：设置 + 新建会话
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)

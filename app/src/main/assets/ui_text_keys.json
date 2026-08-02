@@ -264,7 +264,6 @@
   "sidebar.date.yesterday": "Yesterday",
   "sidebar.date.2days": "2 days ago",
   "sidebar.date.3days": "3 days ago",
-  "sidebar.search.placeholder": "Search sessions…",
   "sidebar.no.results": "No matching sessions",
   "sidebar.no.sessions": "No chats yet. Tap + to create",
   "sidebar.new.session.default": "New Session",
@@ -283,7 +282,6 @@
   "sidebar.update_dismiss": "Dismiss",
   "sidebar.286eb70c": "Rename",
   "sidebar.7c7e3e24": "Delete",
-  "sidebar.not.set": "No model configured",
-  "sidebar.no.model.selected": "No model selected",
+  "sidebar.search.placeholder": "Search sessions…",
   "sidebar.settings": "Settings"
 }
