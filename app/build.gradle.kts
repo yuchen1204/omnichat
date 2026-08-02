@@ -176,22 +176,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
     dependsOn(generateUiTextKeys)
 }
 
-// ── 文档插件 JavaScript 资产构建 ──────────────────────────────────────────
-// 验证 app/src/main/assets/document_plugins/ 下的 runtime.js、pdf-reader.js、
-// docx-reader.js 符合同步约束，并在构建时运行检查。
-val buildDocumentPlugins by tasks.registering(Exec::class) {
-    description = "Build and verify document plugin JavaScript assets"
-    group = "build"
-    workingDir = rootProject.projectDir
-    commandLine("node", "tools/document-plugins/build.mjs")
-}
-
-// 文档插件资产构建也依赖合并 assets 之前的步骤
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
-    dependsOn(buildDocumentPlugins)
-}
-
-// Lint 任务也依赖 generateUiTextKeys（读取了 assets 目录的输出）
+// ── 文档插件 JavaScript 资产构建（已移除） ──────────────────────────────────────
 tasks.matching { it.name.contains("Lint") || it.name.contains("lint") }.configureEach {
     dependsOn(generateUiTextKeys)
 }

@@ -273,7 +273,7 @@ fun MainScreen(
                 exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut()
             ) {
                 Surface(
-                    modifier = Modifier.width(280.dp).fillMaxHeight(),
+                    modifier = Modifier.width(280.dp).fillMaxHeight().imePadding(),
                     color = sidebarColors.background
                 ) {
                     SidebarContent(
@@ -294,7 +294,8 @@ fun MainScreen(
             drawerContent = {
                 ModalDrawerSheet(
                     drawerContainerColor = sidebarColors.background,
-                    drawerShape = RoundedCornerShape(topEnd = uiSettings.cornerRadiusDp.dp, bottomEnd = uiSettings.cornerRadiusDp.dp)
+                    drawerShape = RoundedCornerShape(topEnd = uiSettings.cornerRadiusDp.dp, bottomEnd = uiSettings.cornerRadiusDp.dp),
+                    modifier = Modifier.imePadding()
                 ) {
                     SidebarContent(
                         onSessionSelected = {

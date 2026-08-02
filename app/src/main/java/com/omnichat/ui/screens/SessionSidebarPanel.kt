@@ -124,6 +124,7 @@ fun SessionSidebarPanel(
             .fillMaxHeight()
             .width(280.dp)
             .background(sidebarColors.background)
+            .imePadding()
     ) {
         // ── 版本更新提示条 ──────────────────────────────────────────────
         latestVersion?.let { version ->
