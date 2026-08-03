@@ -427,3 +427,60 @@ interface SkillDao {
     @Query("SELECT COUNT(*) FROM skills")
     suspend fun getCount(): Int
 }
+
+@Dao
+interface ProjectDao {
+    @Query("SELECT * FROM projects ORDER BY updatedAt DESC")
+    fun getAllProjectsFlow(): Flow<List<Project>>
+
+    @Query("SELECT * FROM projects ORDER BY updatedAt DESC")
+    suspend fun getAllProjects(): List<Project>
+
+    @Query("SELECT * FROM projects WHERE id = :id LIMIT 1")
+    suspend fun getProjectById(id: Long): Project?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProject(project: Project): Long
+
+    @Update
+    suspend fun updateProject(project: Project)
+
+    @Query("DELETE FROM projects WHERE id = :id")
+    suspend fun deleteProjectById(id: Long)
+
+    @Query("UPDATE projects SET name = :name, description = :description, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateProjectDetails(id: Long, name: String, description: String, updatedAt: Long)
+
+    @Query("UPDATE projects SET updatedAt = :updatedAt WHERE id = :id")
+    suspend fun touchProject(id: Long, updatedAt: Long)
+
+    @Query("SELECT disabledMcpServerIds FROM projects WHERE id = :projectId LIMIT 1")
+    suspend fun getProjectMcpDisabledIds(projectId: Long): String?
+
+    @Query("UPDATE projects SET disabledMcpServerIds = :json, updatedAt = :updatedAt WHERE id = :projectId")
+    suspend fun updateProjectMcpDisabledIds(projectId: Long, json: String, updatedAt: Long)
+}
+
+@Dao
+interface ProjectKnowledgeDao {
+    @Query("SELECT * FROM project_knowledge WHERE projectId = :projectId ORDER BY createdAt DESC")
+    fun getKnowledgeByProjectFlow(projectId: Long): Flow<List<ProjectKnowledge>>
+
+    @Query("SELECT * FROM project_knowledge WHERE projectId = :projectId ORDER BY createdAt DESC")
+    suspend fun getKnowledgeByProject(projectId: Long): List<ProjectKnowledge>
+
+    @Query("SELECT * FROM project_knowledge WHERE id = :id LIMIT 1")
+    suspend fun getKnowledgeById(id: Long): ProjectKnowledge?
+
+    @Query("SELECT * FROM project_knowledge WHERE id = :id AND projectId = :projectId LIMIT 1")
+    suspend fun getKnowledgeByIdForProject(id: Long, projectId: Long): ProjectKnowledge?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKnowledge(knowledge: ProjectKnowledge): Long
+
+    @Delete
+    suspend fun deleteKnowledge(knowledge: ProjectKnowledge)
+
+    @Query("DELETE FROM project_knowledge WHERE projectId = :projectId")
+    suspend fun deleteKnowledgeByProject(projectId: Long)
+}

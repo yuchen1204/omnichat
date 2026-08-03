@@ -28,8 +28,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CloudBackupRecord::class,
         // 技能系统
         SkillEntity::class,
+        // 项目系统
+        Project::class,
+        ProjectKnowledge::class,
     ],
-    version = 57,
+    version = 60,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -53,6 +56,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cloudBackupDao(): CloudBackupDao
     // 技能系统 DAO
     abstract fun skillDao(): SkillDao
+
+    // 项目系统 DAO
+    abstract fun projectDao(): ProjectDao
+    abstract fun projectKnowledgeDao(): ProjectKnowledgeDao
 
     companion object {
         @Volatile
@@ -957,9 +964,53 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         * 清除单例实例（用于数据库恢复后重新初始化）。
-         */
+        /** v57 to v58: add a covering index for session message queries. */
+        private val MIGRATION_57_58 = object : Migration(57, 58) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_messages_sessionId")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_sessionId_timestamp ON messages(sessionId, timestamp)")
+            }
+        }
+
+        /** v58→v59: 新增项目系统 — projects 表、project_knowledge 表、sessions 加 projectId 列 */
+        private val MIGRATION_58_59 = object : Migration(58, 59) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        updatedAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS project_knowledge (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        projectId INTEGER NOT NULL,
+                        fileName TEXT NOT NULL,
+                        fileType TEXT NOT NULL,
+                        fileSize INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_project_knowledge_projectId ON project_knowledge(projectId)")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN projectId INTEGER DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_projectId ON sessions(projectId)")
+            }
+        }
+
+        /** v59→v60: 固化项目资产来源、稳定本地文件名和 MCP 禁用列表 */
+        private val MIGRATION_59_60 = object : Migration(59, 60) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE projects ADD COLUMN disabledMcpServerIds TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE project_knowledge ADD COLUMN localFileName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE project_knowledge ADD COLUMN source TEXT NOT NULL DEFAULT 'USER_UPLOAD'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_project_knowledge_projectId_id ON project_knowledge(projectId, id)")
+            }
+        }
+
+
         fun clearInstance() {
             INSTANCE = null
         }
@@ -1020,7 +1071,10 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_53_54,
                         MIGRATION_54_55,
                         MIGRATION_55_56,
-                        MIGRATION_56_57
+                        MIGRATION_56_57,
+                        MIGRATION_57_58,
+                        MIGRATION_58_59,
+                        MIGRATION_59_60
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常旧的安装版本）。

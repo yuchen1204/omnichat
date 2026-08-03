@@ -515,3 +515,48 @@ data class SkillEntity(
         } catch (_: Exception) { emptyList() }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Project 实体
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Project 项目实体。
+ *
+ * 项目是独立的会话空间，与长效记忆隔离。
+ * 每个项目有一个自动生成的 Project Memory 文件，Agent 可通过工具修改。
+ * 用户可以上传 Project Knowledge 文件（图片、docs、pdf、md、txt）。
+ */
+@Entity(tableName = "projects")
+data class Project(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val description: String = "",
+    @ColumnInfo(defaultValue = "'[]'")
+    val disabledMcpServerIds: String = "[]",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Project Knowledge 文件实体。
+ *
+ * 记录用户上传到项目的文件信息。
+ * 实际文件存储在 projects/{projectId}/knowledge/ 目录下。
+ */
+@Entity(
+    tableName = "project_knowledge",
+    indices = [Index(value = ["projectId"]), Index(value = ["projectId", "id"])]
+)
+data class ProjectKnowledge(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val projectId: Long,
+    val fileName: String,
+    val fileType: String,
+    val fileSize: Long = 0,
+    @ColumnInfo(defaultValue = "''")
+    val localFileName: String = "",
+    @ColumnInfo(defaultValue = "'USER_UPLOAD'")
+    val source: String = "USER_UPLOAD",
+    val createdAt: Long = System.currentTimeMillis()
+)
