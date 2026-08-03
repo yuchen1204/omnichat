@@ -29,6 +29,7 @@ class AppRepository(private val db: AppDatabase) {
     private val memoryAssociationDao = db.memoryAssociationDao()
     private val memoryAuditDao = db.memoryAuditDao()
     private val cloudBackupDao = db.cloudBackupDao()
+    private val projectKnowledgeDao = db.projectKnowledgeDao()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -233,4 +234,127 @@ class AppRepository(private val db: AppDatabase) {
 
     suspend fun getCloudBackupCount(userId: String): Int =
         cloudBackupDao.getBackupCount(userId)
+
+    // Projects (stubs for prototype compatibility)
+    val allProjects: Flow<List<Project>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    val recentSessions: Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    val nonProjectSessions: Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    suspend fun getProjectById(id: Long): Project? = null
+    suspend fun insertProject(project: Project): Long = -1L
+    suspend fun deleteProject(id: Long) {}
+    suspend fun deleteSessionsByProject(projectId: Long) {}
+    suspend fun deleteKnowledgeByProject(projectId: Long) {}
+    fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
+    // ═════════════════════════════════════════════════════════════════
+    // Project File Asset Lifecycle (Task 2)
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * 复制 Uri 内容到项目私有目录并插入知识元数据。
+     * 失败时清理临时文件和已插入的元数据行。
+     */
+    suspend fun createProjectAssetFromUri(
+        context: android.content.Context,
+        projectId: Long,
+        sourceUri: android.net.Uri,
+        originalName: String,
+        source: String = "USER_UPLOAD"
+    ): ProjectKnowledge {
+        val tmp = ProjectFileStore.copyIntoProject(context, projectId, sourceUri, originalName, source)
+        return try {
+            val fileType = classifyFileType(originalName)
+            val initialRow = ProjectKnowledge(
+                projectId = projectId,
+                fileName = originalName,
+                fileType = fileType,
+                fileSize = tmp.length(),
+                localFileName = "",
+                source = source
+            )
+            val assetId = projectKnowledgeDao.insertKnowledge(initialRow)
+            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, originalName)
+            val finalRow = initialRow.copy(
+                id = assetId,
+                localFileName = finalFile.name,
+                fileSize = finalFile.length()
+            )
+            projectKnowledgeDao.insertKnowledge(finalRow)
+            finalRow
+        } catch (e: Exception) {
+            tmp.delete()
+            throw e
+        }
+    }
+
+    /**
+     * Agent 直接写入字节到项目私有目录。
+     * 不接受外部路径，只接受原始内容。
+     */
+    suspend fun createAgentProjectAsset(
+        projectId: Long,
+        fileName: String,
+        content: ByteArray,
+        fileType: String,
+        source: String = "AGENT_CREATED"
+    ): ProjectKnowledge {
+        val tmp = ProjectFileStore.copyIntoProject(null, projectId, null, fileName, source)
+        return try {
+            tmp.writeBytes(content)
+            val initialRow = ProjectKnowledge(
+                projectId = projectId,
+                fileName = fileName,
+                fileType = fileType,
+                fileSize = tmp.length(),
+                localFileName = "",
+                source = source
+            )
+            val assetId = projectKnowledgeDao.insertKnowledge(initialRow)
+            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, fileName)
+            val finalRow = initialRow.copy(
+                id = assetId,
+                localFileName = finalFile.name,
+                fileSize = finalFile.length()
+            )
+            projectKnowledgeDao.insertKnowledge(finalRow)
+            finalRow
+        } catch (e: Exception) {
+            tmp.delete()
+            throw e
+        }
+    }
+
+    /** 读取项目资产文件。 */
+    fun readProjectAssetFile(asset: ProjectKnowledge): java.io.File =
+        ProjectFileStore.assetFile(asset.projectId, asset.id, asset.fileName)
+
+    /** 删除项目资产（数据库行 + 文件）。 */
+    suspend fun deleteUserProjectAsset(asset: ProjectKnowledge) {
+        ProjectFileStore.deleteAsset(asset)
+        projectKnowledgeDao.deleteKnowledge(asset)
+    }
+
+    /** 读取项目记忆内容（不存在时返回空字符串）。 */
+    fun readProjectMemory(projectId: Long): String =
+        ProjectFileStore.readMemory(projectId)
+
+    /** 原子更新项目记忆内容。 */
+    suspend fun updateProjectMemory(projectId: Long, content: String) {
+        ProjectFileStore.writeMemory(projectId, content)
+    }
+
+    private fun classifyFileType(fileName: String): String {
+        val lower = fileName.lowercase()
+        return when {
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+                lower.endsWith(".png") || lower.endsWith(".gif") ||
+                lower.endsWith(".bmp") || lower.endsWith(".webp") -> "image"
+            lower.endsWith(".pdf") -> "pdf"
+            lower.endsWith(".docx") -> "docx"
+            lower.endsWith(".md") -> "md"
+            lower.endsWith(".txt") -> "txt"
+            lower.endsWith(".doc") -> "doc"
+            else -> "other"
+        }
+    }
 }
