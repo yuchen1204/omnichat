@@ -29,6 +29,7 @@ class AppRepository(private val db: AppDatabase) {
     private val memoryAssociationDao = db.memoryAssociationDao()
     private val memoryAuditDao = db.memoryAuditDao()
     private val cloudBackupDao = db.cloudBackupDao()
+    private val projectDao = db.projectDao()
     private val projectKnowledgeDao = db.projectKnowledgeDao()
 
     // Model Configs
@@ -236,14 +237,23 @@ class AppRepository(private val db: AppDatabase) {
         cloudBackupDao.getBackupCount(userId)
 
     // Projects (stubs for prototype compatibility)
-    val allProjects: Flow<List<Project>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    val allProjects: Flow<List<Project>> = projectDao.getAllProjectsFlow()
     val recentSessions: Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
     val nonProjectSessions: Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
-    suspend fun getProjectById(id: Long): Project? = null
-    suspend fun insertProject(project: Project): Long = -1L
-    suspend fun deleteProject(id: Long) {}
+    suspend fun getProjectById(id: Long): Project? = projectDao.getProjectById(id)
+    suspend fun insertProject(project: Project): Long = projectDao.insertProject(project)
+    suspend fun deleteProject(id: Long) {
+        // 1. 删除项目下的会话
+        deleteSessionsByProject(id)
+        // 2. 删除项目知识文件记录
+        deleteKnowledgeByProject(id)
+        // 3. 删除项目目录（文件）
+        ProjectFileStore.deleteProjectDirectory(id)
+        // 4. 删除项目
+        projectDao.deleteProjectById(id)
+    }
     suspend fun deleteSessionsByProject(projectId: Long) {}
-    suspend fun deleteKnowledgeByProject(projectId: Long) {}
+    suspend fun deleteKnowledgeByProject(projectId: Long) = projectKnowledgeDao.deleteKnowledgeByProject(projectId)
     fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
 
     // ═════════════════════════════════════════════════════════════════
@@ -253,6 +263,9 @@ class AppRepository(private val db: AppDatabase) {
     /**
      * 复制 Uri 内容到项目私有目录并插入知识元数据。
      * 失败时清理临时文件和已插入的元数据行。
+     *
+     * 流程：先完成所有文件操作，文件操作成功后再插入数据库。
+     * 若任何步骤失败，清理临时文件，不留下数据库孤儿行。
      */
     suspend fun createProjectAssetFromUri(
         context: android.content.Context,
@@ -261,28 +274,41 @@ class AppRepository(private val db: AppDatabase) {
         originalName: String,
         source: String = "USER_UPLOAD"
     ): ProjectKnowledge {
+        // 步骤 1：复制到临时文件（验证扩展名）
         val tmp = ProjectFileStore.copyIntoProject(context, projectId, sourceUri, originalName, source)
+        var assetId: Long = -1L
         return try {
-            val fileType = classifyFileType(originalName)
-            val initialRow = ProjectKnowledge(
+            // 步骤 2：重命名为最终文件路径
+            val insertedId = projectKnowledgeDao.insertKnowledge(
+                ProjectKnowledge(
+                    projectId = projectId,
+                    fileName = sanitizeFileName(originalName),
+                    fileType = classifyFileType(originalName),
+                    fileSize = tmp.length(),
+                    localFileName = "",
+                    source = source
+                )
+            )
+            assetId = insertedId
+            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, originalName)
+            val finalRow = ProjectKnowledge(
+                id = assetId,
                 projectId = projectId,
-                fileName = originalName,
-                fileType = fileType,
-                fileSize = tmp.length(),
-                localFileName = "",
+                fileName = sanitizeFileName(originalName),
+                fileType = classifyFileType(originalName),
+                fileSize = finalFile.length(),
+                localFileName = finalFile.name,
                 source = source
             )
-            val assetId = projectKnowledgeDao.insertKnowledge(initialRow)
-            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, originalName)
-            val finalRow = initialRow.copy(
-                id = assetId,
-                localFileName = finalFile.name,
-                fileSize = finalFile.length()
-            )
+            // 步骤 3：更新数据库行（localFileName + fileSize）
             projectKnowledgeDao.insertKnowledge(finalRow)
             finalRow
         } catch (e: Exception) {
+            // 清理：删除临时文件、最终文件和孤儿数据库行
             tmp.delete()
+            if (assetId != -1L) {
+                projectKnowledgeDao.deleteKnowledgeById(assetId)
+            }
             throw e
         }
     }
@@ -290,6 +316,11 @@ class AppRepository(private val db: AppDatabase) {
     /**
      * Agent 直接写入字节到项目私有目录。
      * 不接受外部路径，只接受原始内容。
+     *
+     * 流程：先完成所有文件操作，文件操作成功后再插入数据库。
+     * 若任何步骤失败，清理临时文件，不留下数据库孤儿行。
+     *
+     * 禁止覆盖已有同名文件；若存在同名文件则抛出异常。
      */
     suspend fun createAgentProjectAsset(
         projectId: Long,
@@ -298,28 +329,50 @@ class AppRepository(private val db: AppDatabase) {
         fileType: String,
         source: String = "AGENT_CREATED"
     ): ProjectKnowledge {
+        // 检查是否已有同名文件
+        val existing = projectKnowledgeDao.getKnowledgeByProject(projectId)
+            .find { it.fileName == sanitizeFileName(fileName) }
+        if (existing != null) {
+            throw IllegalStateException("Asset with name '${sanitizeFileName(fileName)}' already exists in project $projectId")
+        }
+
+        // 步骤 1：创建临时文件并写入内容
         val tmp = ProjectFileStore.copyIntoProject(null, projectId, null, fileName, source)
+        var assetId: Long = -1L
         return try {
             tmp.writeBytes(content)
-            val initialRow = ProjectKnowledge(
+            // 步骤 2：插入数据库占位行
+            val insertedId = projectKnowledgeDao.insertKnowledge(
+                ProjectKnowledge(
+                    projectId = projectId,
+                    fileName = sanitizeFileName(fileName),
+                    fileType = fileType,
+                    fileSize = tmp.length(),
+                    localFileName = "",
+                    source = source
+                )
+            )
+            assetId = insertedId
+            // 步骤 3：重命名为最终文件路径
+            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, fileName)
+            val finalRow = ProjectKnowledge(
+                id = assetId,
                 projectId = projectId,
-                fileName = fileName,
+                fileName = sanitizeFileName(fileName),
                 fileType = fileType,
-                fileSize = tmp.length(),
-                localFileName = "",
+                fileSize = finalFile.length(),
+                localFileName = finalFile.name,
                 source = source
             )
-            val assetId = projectKnowledgeDao.insertKnowledge(initialRow)
-            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, fileName)
-            val finalRow = initialRow.copy(
-                id = assetId,
-                localFileName = finalFile.name,
-                fileSize = finalFile.length()
-            )
+            // 步骤 4：更新数据库行（localFileName + fileSize）
             projectKnowledgeDao.insertKnowledge(finalRow)
             finalRow
         } catch (e: Exception) {
+            // 清理：删除临时文件、最终文件和孤儿数据库行
             tmp.delete()
+            if (assetId != -1L) {
+                projectKnowledgeDao.deleteKnowledgeById(assetId)
+            }
             throw e
         }
     }
@@ -328,10 +381,10 @@ class AppRepository(private val db: AppDatabase) {
     fun readProjectAssetFile(asset: ProjectKnowledge): java.io.File =
         ProjectFileStore.assetFile(asset.projectId, asset.id, asset.fileName)
 
-    /** 删除项目资产（数据库行 + 文件）。 */
+    /** 删除项目资产（数据库行 + 文件）。先删 DB 再删文件。 */
     suspend fun deleteUserProjectAsset(asset: ProjectKnowledge) {
-        ProjectFileStore.deleteAsset(asset)
         projectKnowledgeDao.deleteKnowledge(asset)
+        ProjectFileStore.deleteAsset(asset)
     }
 
     /** 读取项目记忆内容（不存在时返回空字符串）。 */
@@ -341,6 +394,39 @@ class AppRepository(private val db: AppDatabase) {
     /** 原子更新项目记忆内容。 */
     suspend fun updateProjectMemory(projectId: Long, content: String) {
         ProjectFileStore.writeMemory(projectId, content)
+    }
+
+    /** 追加内容到项目记忆末尾。 */
+    suspend fun appendProjectMemory(projectId: Long, content: String) {
+        val current = readProjectMemory(projectId)
+        val newContent = if (current.isNotBlank()) "$current\n\n$content" else content
+        ProjectFileStore.writeMemory(projectId, newContent)
+    }
+
+    /** 按内容范围替换项目记忆（将 oldText 替换为 newText）。 */
+    suspend fun replaceProjectMemoryRange(projectId: Long, oldText: String, newText: String) {
+        val current = readProjectMemory(projectId)
+        if (oldText.isEmpty()) {
+            throw IllegalArgumentException("oldText cannot be empty")
+        }
+        if (!current.contains(oldText)) {
+            throw IllegalArgumentException("oldText not found in project memory")
+        }
+        val updated = current.replace(oldText, newText)
+        ProjectFileStore.writeMemory(projectId, updated)
+    }
+
+    /** 删除项目记忆中包含指定文本的段落。 */
+    suspend fun deleteProjectMemorySection(projectId: Long, sectionText: String) {
+        val current = readProjectMemory(projectId)
+        if (sectionText.isEmpty()) {
+            throw IllegalArgumentException("sectionText cannot be empty")
+        }
+        if (!current.contains(sectionText)) {
+            throw IllegalArgumentException("sectionText not found in project memory")
+        }
+        val updated = current.replace(sectionText, "").replace(Regex("\n{3,}"), "\n\n").trim()
+        ProjectFileStore.writeMemory(projectId, updated)
     }
 
     private fun classifyFileType(fileName: String): String {
@@ -356,5 +442,10 @@ class AppRepository(private val db: AppDatabase) {
             lower.endsWith(".doc") -> "doc"
             else -> "other"
         }
+    }
+
+    /** 清理文件名中的路径分隔符和路径遍历字符。 */
+    private fun sanitizeFileName(originalName: String): String {
+        return originalName.replace(Regex("[\\\\/<>|?*]"), "_").replace(Regex("\\.{2,}"), "_")
     }
 }

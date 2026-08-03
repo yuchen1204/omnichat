@@ -126,6 +126,9 @@ object ProjectFileStore {
     /**
      * 从 sourceUri 复制内容到项目目录临时文件，返回临时文件。
      * 复制失败时删除临时文件并抛出异常。
+     *
+     * 当 context 为 null 时，不允许通过 URI 路径访问文件。
+     * 仅允许在 context != null 时使用 ContentResolver 访问 URI。
      */
     fun copyIntoProject(
         context: Context?,
@@ -152,8 +155,7 @@ object ProjectFileStore {
                     } ?: throw IOException("Failed to open input stream for $sourceUri")
                 }
                 sourceUri != null -> {
-                    val sourceFile = File(sourceUri.path ?: throw IOException("Invalid URI path"))
-                    sourceFile.copyTo(tmpFile, overwrite = true)
+                    throw IllegalArgumentException("Context is required to access URI-based files")
                 }
                 else -> {
                     tmpFile.createNewFile()

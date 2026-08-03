@@ -119,7 +119,9 @@ class ProjectFileStoreTest {
         val sourceFile = File(root, "source.txt")
         sourceFile.writeText("hello world")
 
-        val tmp = ProjectFileStore.copyIntoProject(null, 3L, android.net.Uri.fromFile(sourceFile), "source.txt", "USER_UPLOAD")
+        // 使用 mock Context 测试 URI 复制
+        val mockContext = org.robolectric.RuntimeEnvironment.getApplication()
+        val tmp = ProjectFileStore.copyIntoProject(mockContext, 3L, android.net.Uri.fromFile(sourceFile), "source.txt", "USER_UPLOAD")
         assertTrue(tmp.exists())
         assertEquals("hello world", tmp.readText())
         tmp.delete()
@@ -134,10 +136,23 @@ class ProjectFileStoreTest {
     }
 
     @Test
+    fun copyIntoProjectRejectsUriWithoutContext() {
+        val sourceFile = File(root, "source.txt")
+        sourceFile.writeText("hello world")
+        try {
+            ProjectFileStore.copyIntoProject(null, 3L, android.net.Uri.fromFile(sourceFile), "source.txt", "USER_UPLOAD")
+            fail("Expected IllegalArgumentException when context is null but URI is provided")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("Context is required"))
+        }
+    }
+
+    @Test
     fun renameToFinalMovesFileToAssetLocation() {
         val sourceFile = File(root, "src.txt")
         sourceFile.writeText("content")
-        val tmp = ProjectFileStore.copyIntoProject(null, 4L, android.net.Uri.fromFile(sourceFile), "test.txt", "USER_UPLOAD")
+        val mockContext = org.robolectric.RuntimeEnvironment.getApplication()
+        val tmp = ProjectFileStore.copyIntoProject(mockContext, 4L, android.net.Uri.fromFile(sourceFile), "test.txt", "USER_UPLOAD")
 
         val final = ProjectFileStore.renameToFinal(tmp, 4L, 42L, "test.txt")
         assertEquals("asset_42.txt", final.name)

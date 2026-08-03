@@ -481,6 +481,9 @@ interface ProjectKnowledgeDao {
     @Delete
     suspend fun deleteKnowledge(knowledge: ProjectKnowledge)
 
+    @Query("DELETE FROM project_knowledge WHERE id = :id")
+    suspend fun deleteKnowledgeById(id: Long)
+
     @Query("DELETE FROM project_knowledge WHERE projectId = :projectId")
     suspend fun deleteKnowledgeByProject(projectId: Long)
 }
