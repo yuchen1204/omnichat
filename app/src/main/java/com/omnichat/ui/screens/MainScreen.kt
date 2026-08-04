@@ -253,11 +253,69 @@ fun MainScreen(
     // 侧边栏内容，共享给两种布局模式
     @Composable
     fun SidebarContent(onSessionSelected: () -> Unit, onSettingsClick: () -> Unit) {
-        SessionSidebarPanel(
-            viewModel = viewModel,
-            onSessionSelected = onSessionSelected,
-            onSettingsClick = onSettingsClick
-        )
+        var showProjectSidebar by remember { mutableStateOf(false) }
+        var selectedProject by remember { mutableStateOf<com.omnichat.data.Project?>(null) }
+        var showProjectKnowledge by remember { mutableStateOf(false) }
+        var showProjectMemory by remember { mutableStateOf(false) }
+        var showProjectMcpSettings by remember { mutableStateOf(false) }
+
+        when {
+            selectedProject != null && showProjectKnowledge -> {
+                ProjectKnowledgeScreen(
+                    project = selectedProject!!,
+                    viewModel = viewModel,
+                    onBack = { showProjectKnowledge = false }
+                )
+            }
+            selectedProject != null && showProjectMemory -> {
+                ProjectMemoryScreen(
+                    project = selectedProject!!,
+                    viewModel = viewModel,
+                    onBack = { showProjectMemory = false }
+                )
+            }
+            selectedProject != null && showProjectMcpSettings -> {
+                ProjectMcpSettingsScreen(
+                    project = selectedProject!!,
+                    viewModel = viewModel,
+                    onBack = { showProjectMcpSettings = false }
+                )
+            }
+            selectedProject != null -> {
+                ProjectDetailScreen(
+                    project = selectedProject!!,
+                    viewModel = viewModel,
+                    onBack = { selectedProject = null },
+                    onKnowledge = { showProjectKnowledge = true },
+                    onMemory = { showProjectMemory = true },
+                    onMcpSettings = { showProjectMcpSettings = true },
+                    onCreateProjectSession = {
+                        viewModel.createProjectSession(selectedProject!!.id, "新会话")
+                        onSessionSelected()
+                    },
+                    onSessionSelected = onSessionSelected
+                )
+            }
+            showProjectSidebar -> {
+                ProjectSidebarPanel(
+                    viewModel = viewModel,
+                    onSessionSelected = onSessionSelected,
+                    onClose = { showProjectSidebar = false },
+                    onProjectDetail = {
+                        viewModel.selectProject(it.id)
+                        selectedProject = it
+                    }
+                )
+            }
+            else -> {
+                SessionSidebarPanel(
+                    viewModel = viewModel,
+                    onSessionSelected = onSessionSelected,
+                    onSettingsClick = onSettingsClick,
+                    onOpenProjects = { showProjectSidebar = true }
+                )
+            }
+        }
     }
 
     if (isExpandedScreen) {
