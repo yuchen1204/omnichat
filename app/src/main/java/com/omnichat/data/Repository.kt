@@ -271,6 +271,61 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun updateProjectDetails(id: Long, name: String, description: String) = projectDao.updateProjectDetails(id, name, description, System.currentTimeMillis())
 
     /**
+     * Returns the set of MCP server IDs the project has explicitly disabled.
+     *
+     * The list is stored as a JSON array of integers on [Project.disabledMcpServerIds].
+     * Invalid JSON and non-integer entries are tolerated: they produce an empty set
+     * (or filter out the offending entry respectively), never an exception.
+     *
+     * The set is read fresh from the database each call so changes propagate
+     * without requiring process restart.
+     */
+    suspend fun getProjectDisabledMcpServerIds(projectId: Long): Set<Long> {
+        val raw = projectDao.getProjectMcpDisabledIds(projectId) ?: return emptySet()
+        return parseDisabledMcpServerIdsJson(raw)
+    }
+
+    /**
+     * Persists the project's disabled MCP server IDs.
+     *
+     * The IDs are normalized (deduplicated) and serialized as a compact JSON
+     * array of integers. An empty set clears the project's disabled list
+     * (server is then free to inherit any globally enabled server).
+     */
+    suspend fun setProjectDisabledMcpServerIds(projectId: Long, ids: Set<Long>) {
+        val canonical = canonicalizeDisabledMcpServerIdsJson(ids)
+        projectDao.updateProjectMcpDisabledIds(projectId, canonical, System.currentTimeMillis())
+    }
+
+    private fun parseDisabledMcpServerIdsJson(raw: String): Set<Long> {
+        if (raw.isBlank()) return emptySet()
+        return try {
+            val arr = org.json.JSONArray(raw)
+            val result = linkedSetOf<Long>()
+            for (i in 0 until arr.length()) {
+                val v = arr.opt(i)
+                // Accept only integer values; skip strings, doubles, nulls, etc.
+                if (v is Int || v is Long) {
+                    result.add(v.toLong())
+                }
+            }
+            result
+        } catch (_: Exception) {
+            // Defensive: invalid JSON must not crash callers. Returning empty
+            // is the safe default — the project then inherits all globally
+            // enabled servers until a valid value is written.
+            emptySet()
+        }
+    }
+
+    private fun canonicalizeDisabledMcpServerIdsJson(ids: Set<Long>): String {
+        val arr = org.json.JSONArray()
+        // Sort for stable on-disk representation (helps with diffs and tests).
+        ids.toSortedSet().forEach { arr.put(it) }
+        return arr.toString()
+    }
+
+    /**
      * 复制 Uri 内容到项目私有目录并插入知识元数据。
      * 失败时清理临时文件和已插入的元数据行。
      *

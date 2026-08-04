@@ -19,6 +19,7 @@ import java.util.Locale
 import java.util.UUID
 import com.omnichat.R
 import com.omnichat.tool.McpRemoteTool
+import com.omnichat.tool.Tool
 import com.omnichat.tool.ToolExecutor
 import com.omnichat.tool.ToolInitializer
 import com.omnichat.tool.ToolRegistry
@@ -502,16 +503,17 @@ class McpRuntimeManager private constructor(private val context: Context) {
         ToolRegistry.changes
     ) { settings, _ ->
         val enabledGroups = settings?.enabledMcpGroups?.split(",")?.filter { it.isNotBlank() }?.toSet()
-            ?: setOf("core", "ui_appearance", "efficiency", "memory", "subagent")
+            ?: setOf("core", "ui_appearance", "efficiency", "memory", "subagent", "project")
         currentBuiltinTools().filter { tool ->
             val group = builtinToolGroups[tool.name] ?: "core"
-            group == "core" || group in enabledGroups
+            group == "core" || group == "project" || group in enabledGroups
         }
     }.stateIn(
         scope,
         SharingStarted.Eagerly,
         currentBuiltinTools().filter {
-            builtinToolGroups[it.name] == "core" || builtinToolGroups[it.name] in listOf("ui_appearance", "efficiency", "memory")
+            val g = builtinToolGroups[it.name] ?: "core"
+            g == "core" || g == "project" || g in listOf("ui_appearance", "efficiency", "memory")
         }
     )
 
@@ -659,6 +661,54 @@ class McpRuntimeManager private constructor(private val context: Context) {
      */
     fun findServerIdForTool(toolName: String): Long? {
         return allTools.value.firstOrNull { it.name == toolName }?.serverId
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // 项目作用域（Task 4）：项目 MCP 继承与服务器筛选
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * Computes the effective set of MCP server IDs available to a project.
+     *
+     * Contract: effective = (globally enabled servers) ∖ (project disabled IDs).
+     * - Globally disabled servers are never included — a project cannot
+     *   re-enable a server the user has globally disabled.
+     * - Project-level disabled IDs are subtracted from the global set.
+     * - The result is recomputed from current database state on every call,
+     *   so global enable/disable and project-level disable changes take
+     *   effect immediately without requiring a restart.
+     *
+     * This method is a pure query against the database; it does not depend
+     * on the in-memory [serverStates] flow, so it is safe to call before
+     * auto-start completes.
+     */
+    suspend fun enabledServerIdsForProject(projectId: Long): Set<Long> {
+        val dao = AppDatabase.getDatabase(context).mcpServerDao()
+        val globallyEnabled: Set<Long> = dao.getEnabledServers().map { it.id }.toSet()
+        if (globallyEnabled.isEmpty()) return emptySet()
+        val projectDisabled: Set<Long> = com.omnichat.data.AppRepository(
+            AppDatabase.getDatabase(context)
+        ).getProjectDisabledMcpServerIds(projectId)
+        return globallyEnabled - projectDisabled
+    }
+
+    /**
+     * Returns the list of remote MCP tools visible to a project session.
+     *
+     * The list is derived from [ToolRegistry] (the source of truth for live
+     * adapters) intersected with the project's effective server set. Built-in
+     * tools are never included here — project tools have their own whitelist
+     * mechanism in [com.omnichat.tool.ProjectToolScope.ALLOWED_PROJECT_TOOLS].
+     *
+     * Returned order is unspecified; callers that need deterministic output
+     * should sort.
+     */
+    suspend fun getProjectEnabledTools(projectId: Long): List<Tool> {
+        val effective = enabledServerIdsForProject(projectId)
+        if (effective.isEmpty()) return emptyList()
+        return ToolRegistry.getAll()
+            .filterIsInstance<McpRemoteTool>()
+            .filter { it.serverId in effective }
     }
 
     suspend fun callTool(serverId: Long, toolName: String, arguments: JSONObject, sessionId: Long? = null): JSONObject? {
