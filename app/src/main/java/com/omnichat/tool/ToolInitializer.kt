@@ -3,6 +3,7 @@ package com.omnichat.tool
 import android.content.Context
 import android.util.Log
 import com.omnichat.tool.builtin.*
+import com.omnichat.tool.builtin.ConsolidateMemoryTool
 
 /**
  * 工具初始化器。
@@ -82,7 +83,8 @@ object ToolInitializer {
 
             ToolRegistry.registerAll(
                 SearchMemoryTool,
-                MarkRemindedTool
+                MarkRemindedTool,
+                ConsolidateMemoryTool
             )
 
             // ══════════════════════════════════════════════════════════════
@@ -125,6 +127,18 @@ object ToolInitializer {
             ToolRegistry.registerAll(
                 CreateDocumentTool,
                 DocumentReadTool
+            )
+
+            // ══════════════════════════════════════════════════════════════
+            // 注册项目工具
+            // ══════════════════════════════════════════════════════════════
+
+            ToolRegistry.registerAll(
+                ProjectListKnowledgeTool,
+                ProjectReadKnowledgeTool,
+                ProjectCreateKnowledgeTool,
+                ProjectReadMemoryTool,
+                ProjectUpdateMemoryTool
             )
 
             initialized = true

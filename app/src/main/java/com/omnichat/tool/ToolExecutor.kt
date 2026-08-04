@@ -44,19 +44,34 @@ object ToolExecutor {
      * @param toolName 工具名称（支持别名）
      * @param arguments 工具参数
      * @param sessionId 会话 ID（可选）
+     * @param projectScope 项目会话作用域（可选）。当提供时，只允许白名单中的项目工具。
      * @return 执行结果
      */
     suspend fun execute(
         context: Context,
         toolName: String,
         arguments: JSONObject,
-        sessionId: Long? = null
+        sessionId: Long? = null,
+        projectScope: ProjectToolScope? = null
     ): JSONObject {
         // 1. 查找工具
         val tool = ToolRegistry.get(toolName)
             ?: return errorResponse("Unknown tool: $toolName")
 
-        return executeTool(context, tool, arguments, sessionId)
+        // 1b. 项目会话作用域检查
+        if (projectScope != null) {
+            if (toolName !in ProjectToolScope.ALLOWED_PROJECT_TOOLS && tool.group != "mcp_remote") {
+                return errorResponse("Tool '$toolName' is not available in project sessions")
+            }
+            if (tool.group == "mcp_remote") {
+                val mcpTool = tool as? McpRemoteTool
+                if (mcpTool == null || mcpTool.serverId !in projectScope.allowedMcpServerIds) {
+                    return errorResponse("MCP tool '$toolName' is not available in this project session")
+                }
+            }
+        }
+
+        return executeTool(context, tool, arguments, sessionId, projectScope)
     }
 
     /**
@@ -66,7 +81,8 @@ object ToolExecutor {
         context: Context,
         tool: Tool,
         arguments: JSONObject,
-        sessionId: Long? = null
+        sessionId: Long? = null,
+        projectScope: ProjectToolScope? = null
     ): JSONObject {
         val startTime = System.currentTimeMillis()
 

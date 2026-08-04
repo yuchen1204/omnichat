@@ -260,6 +260,16 @@ class AppRepository(private val db: AppDatabase) {
     // Project File Asset Lifecycle (Task 2)
     // ═════════════════════════════════════════════════════════════════
 
+    // Project query methods
+    suspend fun getAllProjects(): List<Project> = projectDao.getAllProjects()
+    suspend fun getKnowledgeByProject(projectId: Long): List<ProjectKnowledge> = projectKnowledgeDao.getKnowledgeByProject(projectId)
+    fun getKnowledgeByProjectFlow(projectId: Long): Flow<List<ProjectKnowledge>> = projectKnowledgeDao.getKnowledgeByProjectFlow(projectId)
+    suspend fun getKnowledgeById(id: Long): ProjectKnowledge? = projectKnowledgeDao.getKnowledgeById(id)
+    suspend fun insertKnowledge(knowledge: ProjectKnowledge): Long = projectKnowledgeDao.insertKnowledge(knowledge)
+    suspend fun deleteKnowledge(knowledge: ProjectKnowledge) = projectKnowledgeDao.deleteKnowledge(knowledge)
+    suspend fun touchProject(projectId: Long) = projectDao.touchProject(projectId, System.currentTimeMillis())
+    suspend fun updateProjectDetails(id: Long, name: String, description: String) = projectDao.updateProjectDetails(id, name, description, System.currentTimeMillis())
+
     /**
      * 复制 Uri 内容到项目私有目录并插入知识元数据。
      * 失败时清理临时文件和已插入的元数据行。

@@ -119,6 +119,26 @@ object ToolRegistry {
     fun getAll(): List<Tool> = tools.values.distinctBy { it.name }
 
     /**
+     * 按项目会话作用域获取工具。
+     * 当 [scope] 为 null 时，返回所有已注册工具（普通会话行为）。
+     * 当 [scope] 不为 null 时，只返回白名单中的项目工具和允许的 MCP 远程工具。
+     * 非项目工具（如 files、memory、subagent 等）在项目会话中被拒绝。
+     */
+    fun toolsForSession(scope: ProjectToolScope?): List<Tool> {
+        if (scope == null) return getAll()
+        return tools.values.distinctBy { it.name }.filter { tool ->
+            when {
+                tool.name in ProjectToolScope.ALLOWED_PROJECT_TOOLS -> true
+                tool.group == "mcp_remote" -> {
+                    val mcpTool = tool as? McpRemoteTool
+                    mcpTool != null && mcpTool.serverId in scope.allowedMcpServerIds
+                }
+                else -> false
+            }
+        }
+    }
+
+    /**
      * 按分组获取工具。
      */
     fun getByGroup(group: String): List<Tool> =

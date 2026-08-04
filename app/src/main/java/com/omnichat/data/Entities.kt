@@ -37,7 +37,8 @@ data class Session(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val thinkingEffort: String = "low"
+    val thinkingEffort: String = "low",
+    val projectId: Long? = null
 )
 
 @Entity(
