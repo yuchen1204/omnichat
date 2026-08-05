@@ -239,7 +239,7 @@ class AppRepository(private val db: AppDatabase) {
     // Projects (stubs for prototype compatibility)
     val allProjects: Flow<List<Project>> = projectDao.getAllProjectsFlow()
     val recentSessions: Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
-    val nonProjectSessions: Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    val nonProjectSessions: Flow<List<Session>> = sessionDao.getNonProjectSessionsFlow()
     suspend fun getProjectById(id: Long): Project? = projectDao.getProjectById(id)
     suspend fun insertProject(project: Project): Long = projectDao.insertProject(project)
     suspend fun deleteProject(id: Long) {
@@ -254,7 +254,7 @@ class AppRepository(private val db: AppDatabase) {
     }
     suspend fun deleteSessionsByProject(projectId: Long) {}
     suspend fun deleteKnowledgeByProject(projectId: Long) = projectKnowledgeDao.deleteKnowledgeByProject(projectId)
-    fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>> = sessionDao.getSessionsByProjectFlow(projectId)
 
     // ═════════════════════════════════════════════════════════════════
     // Project File Asset Lifecycle (Task 2)

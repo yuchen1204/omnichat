@@ -53,6 +53,12 @@ interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY createdAt DESC")
     fun getAllSessionsFlow(): Flow<List<Session>>
 
+    @Query("SELECT * FROM sessions WHERE projectId IS NULL ORDER BY createdAt DESC")
+    fun getNonProjectSessionsFlow(): Flow<List<Session>>
+
+    @Query("SELECT * FROM sessions WHERE projectId = :projectId ORDER BY createdAt DESC")
+    fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: Session): Long
 

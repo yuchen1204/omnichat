@@ -37,11 +37,15 @@ import com.omnichat.agent.WorkflowStepStatus
 import com.omnichat.agent.WorkflowStepUiState
 import com.omnichat.agent.WorkflowUiState
 import com.omnichat.skill.SkillManager
+import com.omnichat.tool.ProjectToolScope
+import com.omnichat.tool.Tool
+import com.omnichat.tool.ToolRegistry
 import com.omnichat.ui.screens.SubAgentTaskUiState
 import com.omnichat.ui.screens.TaskStatus
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
+import java.io.File
 
 private const val STREAMING_UI_UPDATE_INTERVAL_MS = 50L
 
@@ -52,12 +56,39 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val memoryEngine = com.omnichat.memory.MemoryEngine(repository, ApiClient)
     val skillManager = SkillManager(application)
 
+    // ── 项目系统 ────────────────────────────────────────────────────────
+    private val _selectedProjectId = MutableStateFlow<Long?>(null)
+    val selectedProjectId: StateFlow<Long?> = _selectedProjectId.asStateFlow()
+
+    val projects: StateFlow<List<Project>> = repository.allProjects
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Project sessions flow
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val projectSessions: StateFlow<List<Session>> = _selectedProjectId
+        .flatMapLatest { projectId ->
+            if (projectId != null) {
+                repository.getSessionsByProjectFlow(projectId)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 非项目会话（普通会话）
+    val nonProjectSessions: StateFlow<List<Session>> = repository.nonProjectSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Active session selection state
     private val _selectedSessionId = MutableStateFlow<Long?>(null)
     val selectedSessionId: StateFlow<Long?> = _selectedSessionId.asStateFlow()
 
     // Sessions flow
     val sessions: StateFlow<List<Session>> = repository.allSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 最近10条历史会话（懒加载，侧边栏初始显示用）
+    val recentSessions: StateFlow<List<Session>> = repository.recentSessions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Active chat messages flow
@@ -141,6 +172,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isBackfillingTags by mutableStateOf(false)
         private set
 
+    /** 是否正在执行记忆整合优化 */
+    var isConsolidating by mutableStateOf(false)
+        private set
+
+    /** 上一次整合的结果摘要 */
+    var lastConsolidationSummary by mutableStateOf<String?>(null)
+        private set
+
     /** Active SubAgent tasks for current session — drives in-chat status cards */
     val activeTasks = mutableStateMapOf<String, SubAgentTaskUiState>()
 
@@ -193,13 +232,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // Check and Seed Database Safely off the main thread
             seedDatabaseIfNeeded()
 
-            // Automatically select the first session if available
-            repository.allSessions.firstOrNull()?.firstOrNull()?.let { firstSession ->
-                _selectedSessionId.value = firstSession.id
-            } ?: run {
-                // Pre-create an initial default session
-                createNewSession(getApplication<Application>().getString(R.string.default_session_title_display))
-            }
+            // 默认打开新的会话，不加载历史会话
+            createNewSession(getApplication<Application>().getString(R.string.default_session_title_display))
+
+            // 后台懒加载最近10条历史会话（通过 Room Flow 异步加载，侧边栏自动收到数据）
+            // 当用户打开侧边栏时，历史会话已就绪，无需重新加载
 
             // 加载已有模型数据并刷新视觉能力状态
             fetchedModels = repository.getAllFetchedModels()
@@ -310,6 +347,114 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ── 项目系统方法 ─────────────────────────────────────────────────────
+
+    fun selectProject(projectId: Long?) {
+        _selectedProjectId.value = projectId
+        if (projectId == null) {
+            // 切换到普通会话模式，选择第一个非项目会话
+            viewModelScope.launch {
+                val sessions = repository.nonProjectSessions.first()
+                val first = sessions.firstOrNull()
+                if (first != null) {
+                    _selectedSessionId.value = first.id
+                } else {
+                    createNewSession(getApplication<Application>().getString(R.string.default_session_title))
+                }
+            }
+        } else {
+            // 切换到项目模式，选择项目中的第一个会话（不自动创建）
+            viewModelScope.launch {
+                val sessions = repository.getSessionsByProjectFlow(projectId).first()
+                val first = sessions.firstOrNull()
+                if (first != null) {
+                    _selectedSessionId.value = first.id
+                }
+                // 不自动创建会话，由用户在项目详情页手动创建
+            }
+        }
+    }
+
+    fun createProject(name: String, description: String = "") {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val projectId = repository.insertProject(
+                Project(name = name, description = description, createdAt = now, updatedAt = now)
+            )
+            // 创建项目 Memory 文件
+            val memoryFile = File(getApplication<Application>().filesDir, "projects/$projectId/project_memory.md")
+            memoryFile.parentFile?.mkdirs()
+            memoryFile.writeText("""# Project: $name
+
+$description
+
+## Project Memory
+
+This file stores persistent project context, guidelines, and notes.
+You can read and modify this file using project_read_memory and project_update_memory tools.
+""")
+            // 自动切换到项目并创建第一个会话
+            selectProject(projectId)
+        }
+    }
+
+    fun deleteProject(projectId: Long) {
+        viewModelScope.launch {
+            val project = repository.getProjectById(projectId) ?: return@launch
+
+            // 删除项目会话
+            repository.deleteSessionsByProject(projectId)
+
+            // 删除知识文件记录
+            repository.deleteKnowledgeByProject(projectId)
+
+            // 删除项目文件
+            val projectDir = File(getApplication<Application>().filesDir, "projects/$projectId")
+            if (projectDir.exists()) {
+                projectDir.deleteRecursively()
+            }
+
+            // 删除项目
+            repository.deleteProject(projectId)
+
+            // 如果当前选中了该项目的会话，切回普通模式
+            if (_selectedProjectId.value == projectId) {
+                selectProject(null)
+            }
+        }
+    }
+
+    fun createProjectSession(projectId: Long, title: String) {
+        viewModelScope.launch {
+            val newSessionId = repository.insertSession(
+                Session(title = title, projectId = projectId)
+            )
+            _selectedSessionId.value = newSessionId
+        }
+    }
+
+    /**
+     * 为指定会话构建项目工具作用域。
+     * 如果会话不是项目会话，返回 null。
+     */
+    suspend fun projectScopeForSession(sessionId: Long): ProjectToolScope? {
+        val session = repository.getSessionById(sessionId) ?: return null
+        val projectId = session.projectId ?: return null
+        val allowedMcpServerIds = runtimeManager.enabledServerIdsForProject(projectId)
+        return ProjectToolScope(
+            sessionId = sessionId,
+            projectId = projectId,
+            allowedMcpServerIds = allowedMcpServerIds
+        )
+    }
+
+    /**
+     * 为当前选中的会话构建项目工具作用域。
+     */
+    private suspend fun buildProjectToolScope(sessionId: Long): ProjectToolScope? {
+        return projectScopeForSession(sessionId)
+    }
+
     fun setThinkingEffort(sessionId: Long, effort: String) {
         viewModelScope.launch {
             repository.updateSessionThinkingEffort(sessionId, effort)
@@ -390,9 +535,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, text)
 
+            // 构建项目作用域（如果当前会话是项目会话）
+            val projectScope = buildProjectToolScope(sessionId)
+
             // Launch streaming in a separate coroutine so we can cancel it via stopStreaming()
             streamingJob = viewModelScope.launch(Dispatchers.Default) {
-                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt, projectScope = projectScope)
             }
         }
     }
@@ -542,7 +690,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, reviewPrompt)
 
         // 触发 LLM 回复
-        startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+        val projectScope = buildProjectToolScope(sessionId)
+        startAssistantResponse(sessionId, providerConfig, finalSystemPrompt, projectScope = projectScope)
 
         // 等待 LLM 回复完成后，解析最后一条 assistant 消息获取决策
         // 通过监听 activeMessages 等待新的 assistant 消息出现
@@ -643,9 +792,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
                             runtimeManager.waitForStartingServersToFinish()
                             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, "")
+                            val projectScope = buildProjectToolScope(sessionId)
 
                             streamingJob = viewModelScope.launch(Dispatchers.Default) {
-                                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+                                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt, projectScope = projectScope)
                             }
                         }
                     }
@@ -687,9 +837,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
                             runtimeManager.waitForStartingServersToFinish()
                             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, "")
+                            val projectScope = buildProjectToolScope(sessionId)
 
                             streamingJob = viewModelScope.launch(Dispatchers.Default) {
-                                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+                                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt, projectScope = projectScope)
                             }
                         }
                     }
@@ -931,6 +1082,109 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun generateSystemPrompt(customSystemPrompt: String, userMessage: String = ""): String {
+        val currentSessionId = _selectedSessionId.value
+        val currentProjectId = currentSessionId?.let { repository.getSessionById(it)?.projectId }
+
+        // 如果是项目会话：注入 Project Memory，跳过全局长效记忆
+        if (currentProjectId != null) {
+            val project = repository.getProjectById(currentProjectId)
+            val projectName = project?.name ?: "Project #$currentProjectId"
+
+            // 读取 Project Memory 文件
+            val memoryFile = java.io.File(getApplication<Application>().filesDir, "projects/$currentProjectId/project_memory.md")
+            val projectMemory = if (memoryFile.exists()) memoryFile.readText() else ""
+
+            // 列出项目知识文件
+            val knowledgeFiles = repository.getKnowledgeByProject(currentProjectId)
+
+            // 构建项目上下文
+            val projectContext = buildString {
+                appendLine("[PROJECT CONTEXT]")
+                appendLine("Current Project: $projectName")
+                if (project?.description?.isNotBlank() == true) {
+                    appendLine("Project Description: ${project.description}")
+                }
+                appendLine()
+
+                // 注入 Project Memory
+                if (projectMemory.isNotBlank()) {
+                    appendLine("[Project Memory]:")
+                    appendLine(projectMemory)
+                    appendLine()
+                }
+
+                // 列出知识文件
+                if (knowledgeFiles.isNotEmpty()) {
+                    appendLine("[Project Knowledge Files]:")
+                    knowledgeFiles.forEach { file ->
+                        val sizeStr = when {
+                            file.fileSize < 1024 -> "${file.fileSize} B"
+                            file.fileSize < 1024 * 1024 -> "${file.fileSize / 1024} KB"
+                            else -> "${file.fileSize / (1024 * 1024)} MB"
+                        }
+                        appendLine("- [${file.id}] ${file.fileName} (${fileTypeIcon(file.fileType)}, $sizeStr)")
+                    }
+                    appendLine()
+                }
+                appendLine("[/PROJECT CONTEXT]")
+                appendLine()
+                appendLine("CRITICAL: You are in a PROJECT-ISOLATED session.")
+                appendLine("You MUST follow these rules:")
+                appendLine("1. When the user asks a question, FIRST use project_read_knowledge to read the relevant knowledge files, then answer based on their content.")
+                appendLine("2. You MUST ONLY use project_* tools to access project data (project_read_knowledge, project_list_knowledge, project_create_knowledge, project_read_memory, project_update_memory).")
+                appendLine("3. You MUST NOT use document_read, file_read, file_search, file_list, file_info, file_write, file_append, or search_memory — these tools access the device filesystem or global memory, not the project.")
+                appendLine("4. To read a PDF or DOCX file in the project, use project_read_knowledge with the file's knowledge_id — it supports PDF and DOCX text extraction.")
+                appendLine("5. The project knowledge base is the ONLY source of files. Do not look for files on the device storage.")
+                appendLine("6. You may ONLY use the MCP tools explicitly listed below. Any other tool is unavailable in this project session.")
+            }
+
+            var finalSystemPrompt = if (customSystemPrompt.contains("[PROJECT_CONTEXT]")) {
+                customSystemPrompt.replace("[PROJECT_CONTEXT]", projectContext)
+            } else {
+                customSystemPrompt + "\n\n$projectContext"
+            }
+
+            // Inject scoped MCP tools for project session
+            val projectScope = buildProjectToolScope(currentSessionId ?: return "")
+            val scopedTools = ToolRegistry.toolsForSession(projectScope)
+            val mcpToolsText = if (scopedTools.isEmpty()) {
+                "无可用 MCP 工具 (No MCP tools available)"
+            } else {
+                scopedTools.joinToString("\n\n") { tool ->
+                    "工具名: ${tool.name}\n分组: ${tool.group}\n描述: ${tool.description}\n参数架构: ${tool.inputSchema.toString(2)}"
+                }
+            }
+            finalSystemPrompt = if (finalSystemPrompt.contains("[MCP_TOOLS]")) {
+                finalSystemPrompt.replace("[MCP_TOOLS]", mcpToolsText)
+            } else {
+                finalSystemPrompt + "\n\n[Available MCP Tools]:\n$mcpToolsText"
+            }
+
+            // Inject matched Skill prompts
+            val matchedSkills = skillManager.matchByIntent(userMessage)
+            if (matchedSkills.isNotEmpty()) {
+                val skillsText = matchedSkills.joinToString("\n\n") { skill ->
+                    """[Activated Skill: ${skill.name}]
+${skill.systemPrompt}"""
+                }
+                finalSystemPrompt += "\n\n[Activated Skills]:\n$skillsText"
+            }
+
+            // Inject current date/time
+            val now = ZonedDateTime.now()
+            val dateTimeStr = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm (EEEE, z)", Locale.getDefault()))
+            finalSystemPrompt += "\n\n<!-- SYSTEM TIME: " + getApplication<Application>().getString(R.string.ai_time_instruction, dateTimeStr) + " -->"
+
+            // Formatting instruction
+            finalSystemPrompt += "\n\n<!-- FORMATTING RULE: You MUST always format your responses using Markdown. Use headers, bold, italic, code blocks, lists, tables, and other Markdown elements as appropriate to make your response clear and well-structured. Never reply with plain unformatted text. -->"
+
+            // SubAgent delegation preference
+            finalSystemPrompt += "\n\n<!-- DELEGATION PRIORITY: For complex tasks (research, coding, multi-step operations), prefer delegating to SubAgents via delegate_task or run_workflow tools. SubAgents have focused context and can execute tasks independently. Only handle tasks yourself if: (1) the task is simple and quick, (2) SubAgent failed and you need to recover, or (3) user explicitly wants your direct response. -->"
+
+            return finalSystemPrompt
+        }
+
+        // 非项目会话：使用原有逻辑，注入全局长效记忆
         // 3. Fetch relevant memories via MemoryEngine (embedding-based ranking when available)
         val localMemories = memoryEngine.selectRelevantMemories(userMessage)
         val memoriesText = if (localMemories.isEmpty()) {
@@ -998,6 +1252,15 @@ ${skill.systemPrompt}"""
         }
 
         return finalSystemPrompt
+    }
+
+    private fun fileTypeIcon(type: String): String = when (type) {
+        "image" -> "🖼️"
+        "pdf" -> "📄"
+        "docx" -> "📝"
+        "md" -> "📋"
+        "txt" -> "📃"
+        else -> "📎"
     }
 
     /**
@@ -1077,9 +1340,10 @@ ${skill.systemPrompt}"""
             runtimeManager.waitForStartingServersToFinish()
 
             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, newContent)
+            val projectScope = buildProjectToolScope(sessionId)
 
             streamingJob = viewModelScope.launch(Dispatchers.Default) {
-                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt)
+                startAssistantResponse(sessionId, providerConfig, finalSystemPrompt, projectScope = projectScope)
             }
         }
     }
@@ -1110,9 +1374,10 @@ ${skill.systemPrompt}"""
             runtimeManager.waitForStartingServersToFinish()
 
             val finalSystemPrompt = generateSystemPrompt(customSystemPrompt, message.content)
+            val projectScope = buildProjectToolScope(message.sessionId)
 
             // 3. Re-trigger assistant response
-            startAssistantResponse(message.sessionId, providerConfig, finalSystemPrompt)
+            startAssistantResponse(message.sessionId, providerConfig, finalSystemPrompt, projectScope = projectScope)
         }
         streamingJob = job
     }
@@ -1215,9 +1480,24 @@ Output the title now."""
         }
     }
 
-    private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0) {
+    private suspend fun startAssistantResponse(sessionId: Long, config: ModelConfig, systemPrompt: String, toolCallDepth: Int = 0, projectScope: ProjectToolScope? = null) {
         val messageHistory = repository.getMessagesBySession(sessionId)
-        val openAiTools = runtimeManager.getAllToolsAsOpenAiFormat()
+        val openAiTools = if (projectScope != null) {
+            org.json.JSONArray().apply {
+                ToolRegistry.toolsForSession(projectScope).forEach { tool ->
+                    put(org.json.JSONObject().apply {
+                        put("type", "function")
+                        put("function", org.json.JSONObject().apply {
+                            put("name", tool.name)
+                            put("description", tool.description)
+                            put("parameters", tool.inputSchema)
+                        })
+                    })
+                }
+            }
+        } else {
+            runtimeManager.getAllToolsAsOpenAiFormat()
+        }
         val sessionThinkingEffort = repository.getSessionById(sessionId)?.thinkingEffort
 
         isStreaming = true
@@ -1234,8 +1514,8 @@ Output the title now."""
 
         // BUG-015: 使用 try/finally 确保 isStreaming 在所有路径（包括异常）上都被重置
         try {
-        var accumulatedText = ""
-        var accumulatedReasoningContent = ""
+        val accumulatedText = StringBuilder()
+        val accumulatedReasoningContent = StringBuilder()
         var lastUiUpdateTime = 0L
         val accumulatedToolCalls = mutableMapOf<Int, org.json.JSONObject>()
         var errorReceived = false
@@ -1275,11 +1555,11 @@ Output the title now."""
             // Providers that emit dedicated reasoning deltas previously bypassed
             // the text throttle. Apply the same cadence to both output channels.
             if (accumulatedReasoningContent.isNotEmpty()) {
-                currentStreamingThinking = accumulatedReasoningContent
-                currentStreamingBody = accumulatedText
+                currentStreamingThinking = accumulatedReasoningContent.toString()
+                currentStreamingBody = accumulatedText.toString()
                 isThinkingFinished = false
             } else {
-                updateStreamingStates(accumulatedText)
+                updateStreamingStates(accumulatedText.toString())
             }
             lastUiUpdateTime = now
         }
@@ -1288,15 +1568,15 @@ Output the title now."""
             .collect { chunk ->
                 if (errorReceived) return@collect
                 if (chunk.startsWith("ERROR:")) {
-                    accumulatedText += "\n$chunk"
+                    accumulatedText.append("\n").append(chunk)
                     publishStreamingStates(force = true)
                     errorReceived = true
                 } else if (chunk.startsWith("INFO:")) {
-                    accumulatedText += "\n$chunk"
+                    accumulatedText.append("\n").append(chunk)
                     publishStreamingStates(force = true)
                 } else if (chunk == "RETRY_RESET:") {
-                    accumulatedText = ""
-                    accumulatedReasoningContent = ""
+                    accumulatedText.clear()
+                    accumulatedReasoningContent.clear()
                     accumulatedToolCalls.clear()
                     publishStreamingStates(force = true)
                 } else if (chunk.startsWith("TOOL_CALL_DELTA:")) {
@@ -1369,11 +1649,11 @@ Output the title now."""
                         tc.put("thought_signature", currentSig + sig)
                     }
                 } else if (chunk.startsWith("REASONING:")) {
-                    accumulatedReasoningContent += chunk.substringAfter("REASONING:")
+                    accumulatedReasoningContent.append(chunk.substringAfter("REASONING:"))
                     publishStreamingStates()
                 } else {
                     if (chunk != "null") {
-                        accumulatedText += chunk
+                        accumulatedText.append(chunk)
                         publishStreamingStates()
                     }
                 }
@@ -1381,9 +1661,9 @@ Output the title now."""
 
         // 最后一次同步更新（将 reasoning_content 合并为 <think> 标签，确保持久化后 parseMessageContent 可正确解析）
         val finalAccumulatedText = if (accumulatedReasoningContent.isNotEmpty()) {
-            "<think>${accumulatedReasoningContent}</think>$accumulatedText"
+            "<think>${accumulatedReasoningContent}</think>${accumulatedText}"
         } else {
-            accumulatedText
+            accumulatedText.toString()
         }
         // Always publish the completed value, even if the final delta arrived
         // within the throttle window.
@@ -1436,7 +1716,13 @@ Output the title now."""
                 if (serverId != null) {
                     try {
                         val argsJson = org.json.JSONObject(argsStr)
-                        val result = runtimeManager.callTool(serverId, name, argsJson, sessionId)
+                        val result = if (projectScope != null) {
+                            com.omnichat.tool.ToolExecutor.execute(
+                                getApplication(), name, argsJson, sessionId, projectScope
+                            )
+                        } else {
+                            runtimeManager.callTool(serverId, name, argsJson, sessionId)
+                        }
 
                         repository.insertMessage(
                             Message(
@@ -1461,7 +1747,7 @@ Output the title now."""
                 // Trigger the follow-up turn with depth limit to prevent infinite loops
                 if (toolCallDepth < MAX_TOOL_CALL_DEPTH) {
                     followUpTriggered = true
-                    startAssistantResponse(sessionId, config, systemPrompt, toolCallDepth + 1)
+                    startAssistantResponse(sessionId, config, systemPrompt, toolCallDepth + 1, projectScope = projectScope)
                 } else {
                     repository.insertMessage(
                         Message(sessionId = sessionId, role = "assistant", content = "⚠️ " + getApplication<Application>().getString(R.string.error_tool_depth_exceeded, MAX_TOOL_CALL_DEPTH))
@@ -1476,7 +1762,8 @@ Output the title now."""
             streamingSessionId = null
         }
 
-        if (!wasOnlyToolCalls && finalContent.isNotEmpty()) {
+        // 项目会话不触发全局记忆同步
+        if (projectScope == null && !wasOnlyToolCalls && finalContent.isNotEmpty()) {
             triggerMemorySync()
         }
         } catch (e: CancellationException) {
@@ -1523,8 +1810,13 @@ Output the title now."""
      */
     fun triggerMemorySync(force: Boolean = false) {
         // CONFLATED Channel 自动合并并发请求，后台消费者协程串行处理，无需 Mutex
-        if (_selectedSessionId.value == null) return
-        memorySyncChannel.trySend(force)
+        val sessionId = _selectedSessionId.value ?: return
+        // 项目会话跳过全局记忆同步
+        viewModelScope.launch {
+            val session = repository.getSessionById(sessionId) ?: return@launch
+            if (session.projectId != null) return@launch
+            memorySyncChannel.trySend(force)
+        }
     }
 
     /**
@@ -1904,6 +2196,29 @@ Only output the JSON array, nothing else."""
                 }
             } finally {
                 isBackfillingTags = false
+            }
+        }
+    }
+
+    /**
+     * 执行记忆整合优化：使用副模型对所有记忆进行全量分析、去重、合并、分类、打置信分。
+     * 避免记忆条目过多导致 Agent 记忆错乱。
+     */
+    fun consolidateMemories() {
+        if (isConsolidating) return
+        viewModelScope.launch {
+            isConsolidating = true
+            lastConsolidationSummary = null
+            try {
+                val result = memoryEngine.consolidateMemories(force = false)
+                lastConsolidationSummary = result.summary
+                Log.i("ChatViewModel", "Memory consolidation: ${result.summary}")
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e("ChatViewModel", "Memory consolidation failed: ${e.message}")
+                lastConsolidationSummary = "Error: ${e.message}"
+            } finally {
+                isConsolidating = false
             }
         }
     }

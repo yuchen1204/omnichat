@@ -49,6 +49,7 @@ Each tool group maps to a set of capabilities you can call:
 | Group | Key Tools |
 |-------|-----------|
 | **core** | `get_current_time`, `ask_user`, `list_mcp_tool_groups`, `configure_mcp_tool_groups` |
+| **project** | `create_project`, `list_projects`, `project_read_memory`, `project_update_memory`, `project_list_knowledge`, `project_read_knowledge`, `project_create_knowledge` — isolated project workspaces with knowledge files |
 | **memory** | `search_memory` — recall user preferences, habits, historical details |
 | **files** | `file_read`, `file_write`, `file_append`, `file_search`, `file_list`, `file_info`, `file_delete`, `file_move`, `file_copy`, `file_mkdir` |
 | **documents** | `create_document` (PDF/Word/Excel/PPT), `document_read` (PDF/DOCX text extraction) |
