@@ -239,6 +239,8 @@ dependencies {
   implementation(libs.zxing.embedded)
   // WorkManager for periodic background tasks
   implementation(libs.work.runtime)
+  testImplementation("androidx.arch.core:core-testing:2.2.0")
+  testImplementation("androidx.work:work-testing:2.9.0")
   testImplementation("org.json:json:20231013")
   testImplementation("org.mockito:mockito-core:5.11.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)

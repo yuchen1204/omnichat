@@ -49,9 +49,10 @@ import kotlinx.coroutines.launch
 fun SessionSidebarPanel(
     viewModel: ChatViewModel,
     onSessionSelected: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onOpenProjects: () -> Unit = {}
 ) {
-    val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+    val nonProjectSessions by viewModel.nonProjectSessions.collectAsStateWithLifecycle()
     val activeSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
     val modelConfigs by viewModel.modelConfigs.collectAsStateWithLifecycle()
     val latestVersion = viewModel.latestVersion
@@ -73,9 +74,13 @@ fun SessionSidebarPanel(
 
     // 搜索状态
     var searchQuery by remember { mutableStateOf("") }
-    val filteredSessions = remember(sessions, searchQuery) {
-        if (searchQuery.isBlank()) sessions
-        else sessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    // 常规会话侧边栏始终只显示非项目会话，包括搜索结果。
+    val filteredSessions = remember(nonProjectSessions, searchQuery) {
+        if (searchQuery.isNotBlank()) {
+            nonProjectSessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        } else {
+            nonProjectSessions
+        }
     }
 
     // 预计算日期标签（避免在 remember 中调用 @Composable 函数）
@@ -232,6 +237,7 @@ fun SessionSidebarPanel(
                 viewModel.createNewSession(newSessionDefaultTitle)
                 onSessionSelected()
             },
+            onOpenProjects = onOpenProjects,
             context = context
         )
     }
@@ -729,6 +735,7 @@ private fun SidebarFooter(
     onSearchQueryChange: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onNewSession: () -> Unit,
+    onOpenProjects: () -> Unit = {},
     context: android.content.Context
 ) {
     Column(
@@ -806,12 +813,12 @@ private fun SidebarFooter(
             modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
         )
 
-        // 底部按钮行：设置 + 新建会话
+        // 底部按钮行：设置 + 项目 + 新建会话
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // 设置按钮（主要）
+            // 设置按钮
             Surface(
                 onClick = onSettingsClick,
                 shape = RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)),
@@ -831,6 +838,33 @@ private fun SidebarFooter(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = uiText("sidebar.settings", R.string.sidebar_settings),
+                        fontSize = (13 * fs).sp,
+                        fontFamily = resolvedFontFamily,
+                        color = sidebarColors.onBackground.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            // 项目按钮
+            Surface(
+                onClick = onOpenProjects,
+                shape = RoundedCornerShape(cornerRadius.coerceIn(6.dp, 14.dp)),
+                color = sidebarColors.activeBackground.copy(alpha = 0.12f),
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "项目",
+                        tint = sidebarColors.onBackground.copy(alpha = 0.75f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "项目",
                         fontSize = (13 * fs).sp,
                         fontFamily = resolvedFontFamily,
                         color = sidebarColors.onBackground.copy(alpha = 0.85f)

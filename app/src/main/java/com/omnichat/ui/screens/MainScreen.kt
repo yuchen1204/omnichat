@@ -253,6 +253,7 @@ fun MainScreen(
     // 侧边栏内容，共享给两种布局模式
     @Composable
     fun SidebarContent(onSessionSelected: () -> Unit, onSettingsClick: () -> Unit) {
+        val sidebarScope = rememberCoroutineScope()
         var showProjectSidebar by remember { mutableStateOf(false) }
         var selectedProject by remember { mutableStateOf<com.omnichat.data.Project?>(null) }
         var showProjectKnowledge by remember { mutableStateOf(false) }
@@ -290,8 +291,10 @@ fun MainScreen(
                     onMemory = { showProjectMemory = true },
                     onMcpSettings = { showProjectMcpSettings = true },
                     onCreateProjectSession = {
-                        viewModel.createProjectSession(selectedProject!!.id, "新会话")
-                        onSessionSelected()
+                        sidebarScope.launch {
+                            viewModel.createProjectSession(selectedProject!!.id, "新会话")
+                            onSessionSelected()
+                        }
                     },
                     onSessionSelected = onSessionSelected
                 )

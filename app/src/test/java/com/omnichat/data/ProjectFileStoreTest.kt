@@ -11,7 +11,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = android.app.Application::class)
 class ProjectFileStoreTest {
 
     private lateinit var root: File
@@ -30,6 +30,8 @@ class ProjectFileStoreTest {
     fun setUp() {
         root = tempDir()
         ProjectFileStore.initForTest(root)
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(context)
     }
 
     @After

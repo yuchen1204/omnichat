@@ -56,7 +56,7 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun updateSessionThinkingEffort(id: Long, effort: String) = sessionDao.updateThinkingEffort(id, effort)
 
     suspend fun getSessionById(id: Long): Session? {
-        return sessionDao.getAllSessionsFlow().first().find { it.id == id }
+        return sessionDao.getSessionById(id)
     }
 
     // Messages

@@ -59,6 +59,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE projectId = :projectId ORDER BY createdAt DESC")
     fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>>
 
+    @Query("SELECT * FROM sessions WHERE id = :id LIMIT 1")
+    suspend fun getSessionById(id: Long): Session?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: Session): Long
 

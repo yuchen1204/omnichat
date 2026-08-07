@@ -39,6 +39,7 @@ import com.omnichat.agent.WorkflowUiState
 import com.omnichat.skill.SkillManager
 import com.omnichat.tool.ProjectToolScope
 import com.omnichat.tool.Tool
+import com.omnichat.tool.ToolExecutor
 import com.omnichat.tool.ToolRegistry
 import com.omnichat.ui.screens.SubAgentTaskUiState
 import com.omnichat.ui.screens.TaskStatus
@@ -398,6 +399,25 @@ You can read and modify this file using project_read_memory and project_update_m
         }
     }
 
+    suspend fun createProjectAndWait(name: String, description: String = ""): Long {
+        val now = System.currentTimeMillis()
+        val projectId = repository.insertProject(
+            Project(name = name, description = description, createdAt = now, updatedAt = now)
+        )
+        val memoryFile = File(getApplication<Application>().filesDir, "projects/$projectId/project_memory.md")
+        memoryFile.parentFile?.mkdirs()
+        memoryFile.writeText("""# Project: $name
+
+$description
+
+## Project Memory
+
+This file stores persistent project context, guidelines, and notes.
+You can read and modify this file using project_read_memory and project_update_memory tools.
+""")
+        return projectId
+    }
+
     fun deleteProject(projectId: Long) {
         viewModelScope.launch {
             val project = repository.getProjectById(projectId) ?: return@launch
@@ -424,13 +444,20 @@ You can read and modify this file using project_read_memory and project_update_m
         }
     }
 
-    fun createProjectSession(projectId: Long, title: String) {
-        viewModelScope.launch {
-            val newSessionId = repository.insertSession(
-                Session(title = title, projectId = projectId)
-            )
-            _selectedSessionId.value = newSessionId
-        }
+    suspend fun createProjectSession(projectId: Long, title: String): Long {
+        val newSessionId = repository.insertSession(
+            Session(title = title, projectId = projectId)
+        )
+        _selectedSessionId.value = newSessionId
+        return newSessionId
+    }
+
+    suspend fun createProjectSessionAndWait(projectId: Long, title: String): Long = createProjectSession(projectId, title)
+
+    suspend fun buildPromptForSession(sessionId: Long): String {
+        val activeTemplate = repository.getActiveTemplate()
+        val customSystemPrompt = activeTemplate?.templateText ?: "You are a helpful assistant."
+        return generateSystemPrompt(customSystemPrompt, "", sessionIdOverride = sessionId)
     }
 
     /**
@@ -1081,8 +1108,8 @@ You can read and modify this file using project_read_memory and project_update_m
         }
     }
 
-    private suspend fun generateSystemPrompt(customSystemPrompt: String, userMessage: String = ""): String {
-        val currentSessionId = _selectedSessionId.value
+    private suspend fun generateSystemPrompt(customSystemPrompt: String, userMessage: String = "", sessionIdOverride: Long? = null): String {
+        val currentSessionId = sessionIdOverride ?: _selectedSessionId.value
         val currentProjectId = currentSessionId?.let { repository.getSessionById(it)?.projectId }
 
         // 如果是项目会话：注入 Project Memory，跳过全局长效记忆
@@ -1143,6 +1170,10 @@ You can read and modify this file using project_read_memory and project_update_m
             } else {
                 customSystemPrompt + "\n\n$projectContext"
             }
+
+            // Project sessions don't use global cross-session memory
+            finalSystemPrompt = finalSystemPrompt.replace("[CROSS_SESSION_MEMORY]",
+                "（项目会话不使用全局长效记忆 / Project sessions do not use global cross-session memory）")
 
             // Inject scoped MCP tools for project session
             val projectScope = buildProjectToolScope(currentSessionId ?: return "")
@@ -1716,13 +1747,7 @@ Output the title now."""
                 if (serverId != null) {
                     try {
                         val argsJson = org.json.JSONObject(argsStr)
-                        val result = if (projectScope != null) {
-                            com.omnichat.tool.ToolExecutor.execute(
-                                getApplication(), name, argsJson, sessionId, projectScope
-                            )
-                        } else {
-                            runtimeManager.callTool(serverId, name, argsJson, sessionId)
-                        }
+                        val result = runtimeManager.callTool(serverId, name, argsJson, sessionId)
 
                         repository.insertMessage(
                             Message(
@@ -1738,8 +1763,26 @@ Output the title now."""
                         hasNewResults = true
                     }
                 } else {
-                    repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Tool not found", toolCallId = callId))
-                    hasNewResults = true
+                    // 非 MCP 工具（内置工具，包括项目工具）：通过 ToolExecutor 执行
+                    try {
+                        val argsJson = org.json.JSONObject(argsStr)
+                        val result = ToolExecutor.execute(
+                            getApplication(), name, argsJson, sessionId, projectScope
+                        )
+
+                        repository.insertMessage(
+                            Message(
+                                sessionId = sessionId,
+                                role = "tool",
+                                content = result?.toString() ?: "No result",
+                                toolCallId = callId
+                            )
+                        )
+                        hasNewResults = true
+                    } catch (e: Exception) {
+                        repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Error: ${e.message}", toolCallId = callId))
+                        hasNewResults = true
+                    }
                 }
             }
 
