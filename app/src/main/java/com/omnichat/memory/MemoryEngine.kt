@@ -3,6 +3,7 @@ package com.omnichat.memory
 import android.util.Log
 import com.omnichat.data.*
 import com.omnichat.network.ApiClient
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
 /**
@@ -808,6 +809,345 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
 
     // ── 审计日志 ────────────────────────────────────────────────────────
 
+    // ── 记忆整合优化 ────────────────────────────────────────────────────
+
+    /**
+     * 记忆整合优化：使用副模型对所有记忆进行全量分析、分类、合并、去重、打置信分。
+     *
+     * 流程：
+     * 1. 读取所有非 pinned 记忆
+     * 2. 分批调用副模型（每批最多 50 条），让 LLM 分析并产生整合操作
+     * 3. 支持的操作：KEEP（保留）、DELETE（删除冗余/矛盾）、MERGE（合并多条）、
+     *    ADD_CATEGORY（创建分类摘要条目）、UPDATE_CONFIDENCE（调整置信分）
+     * 4. 事务性 apply 所有操作
+     * 5. 生成整合报告
+     *
+     * @param force 是否强制整合（即使记忆数量较少）
+     * @return 整合结果报告
+     */
+    suspend fun consolidateMemories(force: Boolean = false): ConsolidationResult {
+        val allMemories = try {
+            repository.getAllMemories()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "Failed to load memories for consolidation: ${e.message}")
+            return ConsolidationResult(0, 0, 0, 0, 0, "Error: ${e.message}")
+        }
+
+        val totalBefore = allMemories.size
+        val pinned = allMemories.filter { it.pinned }
+        val unpinned = allMemories.filter { !it.pinned }
+
+        // 记忆太少时除非强制，否则跳过
+        if (unpinned.size < 3 && !force) {
+            return ConsolidationResult(
+                totalBefore = totalBefore,
+                totalAfter = totalBefore,
+                addedCount = 0,
+                updatedCount = 0,
+                deletedCount = 0,
+                summary = "Skipped: only ${unpinned.size} unpinned memories (minimum 3 required)."
+            )
+        }
+
+        val config = getMemoryModelConfig() ?: run {
+            Log.w(TAG, "Consolidation skipped: no memory model configured")
+            return ConsolidationResult(
+                totalBefore = totalBefore, totalAfter = totalBefore,
+                0, 0, 0, "No memory model configured."
+            )
+        }
+
+        val now = System.currentTimeMillis()
+        var totalAdded = 0
+        var totalUpdated = 0
+        var totalDeleted = 0
+        val allErrors = mutableListOf<String>()
+
+        // 分批处理，每批最多 50 条
+        for (batch in unpinned.chunked(50)) {
+            try {
+                val result = consolidateBatch(batch, pinned, config, now)
+                totalAdded += result.addedCount
+                totalUpdated += result.updatedCount
+                totalDeleted += result.deletedCount
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Consolidation batch failed: ${e.message}")
+                allErrors.add(e.message ?: "unknown error")
+            }
+        }
+
+        // 重新计算整合后的记忆总数
+        val totalAfter = try {
+            repository.getMemoryCount()
+        } catch (e: Exception) {
+            totalBefore - totalDeleted
+        }
+
+        val summary = buildString {
+            append("Consolidation complete: $totalBefore → $totalAfter memories")
+            if (totalAdded > 0) append(", +$totalAdded added")
+            if (totalUpdated > 0) append(", $totalUpdated updated")
+            if (totalDeleted > 0) append(", -$totalDeleted deleted")
+            if (allErrors.isNotEmpty()) append(", ${allErrors.size} batch errors")
+        }
+
+        Log.i(TAG, summary)
+        return ConsolidationResult(
+            totalBefore = totalBefore,
+            totalAfter = totalAfter,
+            addedCount = totalAdded,
+            updatedCount = totalUpdated,
+            deletedCount = totalDeleted,
+            summary = summary
+        )
+    }
+
+    /**
+     * 处理一批记忆的整合优化。
+     */
+    private suspend fun consolidateBatch(
+        batch: List<MemoryItem>,
+        pinned: List<MemoryItem>,
+        config: ModelConfig,
+        now: Long
+    ): ConsolidationResult {
+        val batchFormatted = batch.joinToString("\n") { mem ->
+            "${mem.id}. (confidence=${mem.confidence}, tags=[${mem.tags}]) ${mem.content}"
+        }
+        val pinnedFormatted = if (pinned.isNotEmpty()) {
+            pinned.joinToString("\n") { mem ->
+                "${mem.id}. [PINNED] (confidence=${mem.confidence}) ${mem.content}"
+            }
+        } else {
+            "None"
+        }
+
+        val systemPrompt = """
+You are a long-term memory consolidation expert. Your task is to analyze, categorize, and optimize the user's long-term memory store.
+
+You will receive a batch of memory items and a list of pinned (protected) items.
+
+For each memory item, evaluate:
+1. **Redundancy**: Does this memory duplicate another? If so, which one is better?
+2. **Relevance**: Is this a durable, cross-session fact worth keeping?
+3. **Specificity**: Is it specific enough to be useful, or too vague?
+4. **Confidence**: How confident are you this fact is still true and important? (1-10 scale)
+5. **Category**: What semantic category does it belong to?
+
+Output a JSON object with a "consolidate" array. Each element is one operation:
+
+**KEEP** — keep an existing memory, optionally with updated confidence and tags:
+  {"op": "KEEP", "id": <id>, "confidence": <new_confidence_1_to_10>, "tags": ["tag1", "tag2"]}
+
+**DELETE** — delete a redundant, contradictory, or irrelevant memory:
+  {"op": "DELETE", "id": <id>, "reason": "why it should be deleted"}
+
+**MERGE** — merge multiple memories into one consolidated entry, then delete the originals:
+  {"op": "MERGE", "ids": [<id1>, <id2>, ...], "content": "Consolidated single fact...", "tags": ["tag1"], "confidence": <1_to_10>}
+
+**ADD_CATEGORY** — create a category/summary entry that groups related facts:
+  {"op": "ADD_CATEGORY", "content": "Summary: the user has these related preferences...", "tags": ["category"], "confidence": <1_to_10>, "relatedIds": [<id1>, <id2>, ...]}
+
+Rules:
+- PINNED items must NOT be deleted, merged, or modified.
+- Confidence scores: 10 = absolutely certain, bedrock fact. 1 = speculative, barely remembered.
+- For KEEP operations, always set a confidence score (1-10).
+- Prefer MERGE over DELETE when multiple memories cover the same topic — merge them into one concise fact.
+- ADD_CATEGORY entries get confidence = max(confidence of related items).
+- Delete memories that are: clearly outdated, contradictory to newer info, too vague to be useful, or one-off transient observations.
+- Aim for quality over quantity: consolidated memories should be more useful per-entry.
+- Tags should be short: English ≤10 chars, Chinese ≤5 chars.
+- Return ONLY the raw JSON, no markdown fences, no commentary.
+""".trimIndent()
+
+        val userQuery = """
+Pinned memories (protected — do not modify):
+$pinnedFormatted
+
+Batch to consolidate:
+$batchFormatted
+
+Output consolidation JSON now.
+""".trim()
+
+        val response = ApiClient.executeCompletion(config, systemPrompt, userQuery)?.trim() ?: return ConsolidationResult(0, 0, 0, 0, 0, "API returned null")
+
+        return applyConsolidationOps(response, batch, pinned, now)
+    }
+
+    /**
+     * 解析并 apply 整合操作 JSON。
+     */
+    private suspend fun applyConsolidationOps(
+        json: String,
+        batch: List<MemoryItem>,
+        pinned: List<MemoryItem>,
+        now: Long
+    ): ConsolidationResult {
+        val batchById = batch.associateBy { it.id }
+        val pinnedIds = pinned.map { it.id }.toSet()
+        var added = 0
+        var updated = 0
+        var deleted = 0
+
+        try {
+            val cleaned = json
+                .removePrefix("```json").removePrefix("```")
+                .removeSuffix("```").trim()
+
+            val root = JSONObject(cleaned)
+            val ops = root.optJSONArray("consolidate") ?: return ConsolidationResult(0, 0, 0, 0, 0, "No consolidate array in response")
+
+            // 先收集所有操作，再按顺序执行
+            for (i in 0 until ops.length()) {
+                try {
+                    val op = ops.optJSONObject(i) ?: continue
+                    val opType = op.optString("op").uppercase()
+
+                    when (opType) {
+                        "KEEP" -> {
+                            val id = op.optLong("id", -1L)
+                            if (id <= 0 || id in pinnedIds) continue
+                            val existing = batchById[id] ?: continue
+                            val newConfidence = op.optInt("confidence", existing.confidence).coerceIn(1, 10)
+                            val tags = parseTagsFromJson(op.optJSONArray("tags"))
+                            if (newConfidence != existing.confidence || (tags.isNotBlank() && tags != existing.tags)) {
+                                repository.updateMemory(existing.copy(
+                                    confidence = newConfidence,
+                                    tags = tags.ifBlank { existing.tags },
+                                    updatedAt = now
+                                ))
+                                logAudit(id, "UPDATE", existing.content, "consolidate", existing.confidence, newConfidence, now)
+                                updated++
+                            }
+                        }
+                        "DELETE" -> {
+                            val id = op.optLong("id", -1L)
+                            if (id <= 0 || id in pinnedIds) continue
+                            val existing = batchById[id] ?: continue
+                            logAudit(id, "DELETE", existing.content, "consolidate", existing.confidence, null, now)
+                            repository.deleteMemoryById(id)
+                            deleted++
+                        }
+                        "MERGE" -> {
+                            val ids = mutableListOf<Long>()
+                            val idsArray = op.optJSONArray("ids")
+                            if (idsArray != null) {
+                                for (j in 0 until idsArray.length()) {
+                                    val id = idsArray.optLong(j, -1L)
+                                    if (id > 0 && id !in pinnedIds) ids.add(id)
+                                }
+                            }
+                            if (ids.size < 2) continue
+                            val content = op.optString("content").trim()
+                            if (content.isBlank()) continue
+                            val tags = parseTagsFromJson(op.optJSONArray("tags"))
+                            val confidence = op.optInt("confidence", 5).coerceIn(1, 10)
+
+                            // 检查合并后的内容是否与已有记忆重复
+                            val existingMemories = repository.getAllMemories()
+                            val duplicate = existingMemories.firstOrNull { existing ->
+                                existing.id !in ids && MemoryTokenizer.jaccardSimilarity(content, existing.content) >= DEDUP_SIMILARITY_THRESHOLD
+                            }
+                            if (duplicate != null) {
+                                // 如果已有重复，只删除原条目，强化已有条目
+                                for (id in ids) {
+                                    val existing = batchById[id] ?: continue
+                                    logAudit(id, "DELETE", existing.content, "consolidate", existing.confidence, null, now)
+                                    repository.deleteMemoryById(id)
+                                    deleted++
+                                }
+                                repository.reinforceMemory(duplicate.id, duplicate.content, now)
+                                logAudit(duplicate.id, "REINFORCE", duplicate.content, "consolidate", duplicate.confidence, duplicate.confidence + 1, now)
+                                updated++
+                            } else {
+                                // 创建合并后的新条目
+                                val newId = repository.insertMemory(MemoryItem(
+                                    content = content,
+                                    createdAt = now,
+                                    updatedAt = now,
+                                    confidence = confidence,
+                                    tags = tags
+                                ))
+                                if (newId > 0) {
+                                    added++
+                                    logAudit(newId, "ADD", content, "consolidate", null, confidence, now)
+                                    // 删除原条目
+                                    for (id in ids) {
+                                        val existing = batchById[id] ?: continue
+                                        logAudit(id, "DELETE", existing.content, "consolidate", existing.confidence, null, now)
+                                        repository.deleteMemoryById(id)
+                                        deleted++
+                                    }
+                                    // 为新条目创建 embedding
+                                    try {
+                                        computeAndStoreEmbedding(newId, content)
+                                    } catch (_: Exception) {}
+                                    // 为新条目创建关联
+                                    try {
+                                        createImmediateAssociations(newId, content, existingMemories)
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                        "ADD_CATEGORY" -> {
+                            val content = op.optString("content").trim()
+                            if (content.isBlank()) continue
+                            val tags = parseTagsFromJson(op.optJSONArray("tags"))
+                            val confidence = op.optInt("confidence", 5).coerceIn(1, 10)
+
+                            // 检查重复
+                            val existingMemories = repository.getAllMemories()
+                            val duplicate = existingMemories.firstOrNull { existing ->
+                                MemoryTokenizer.jaccardSimilarity(content, existing.content) >= DEDUP_SIMILARITY_THRESHOLD
+                            }
+                            if (duplicate != null) {
+                                repository.reinforceMemory(duplicate.id, duplicate.content, now)
+                                logAudit(duplicate.id, "REINFORCE", duplicate.content, "consolidate", duplicate.confidence, duplicate.confidence + 1, now)
+                                updated++
+                            } else {
+                                val newId = repository.insertMemory(MemoryItem(
+                                    content = content,
+                                    createdAt = now,
+                                    updatedAt = now,
+                                    confidence = confidence,
+                                    tags = tags
+                                ))
+                                if (newId > 0) {
+                                    added++
+                                    logAudit(newId, "ADD", content, "consolidate", null, confidence, now)
+                                    try {
+                                        computeAndStoreEmbedding(newId, content)
+                                    } catch (_: Exception) {}
+                                    try {
+                                        createImmediateAssociations(newId, content, existingMemories)
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "Consolidation op at index $i failed: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "applyConsolidationOps failed: ${e.message}", e)
+        }
+
+        return ConsolidationResult(
+            totalBefore = batch.size,
+            totalAfter = batch.size - deleted + added,
+            addedCount = added,
+            updatedCount = updated,
+            deletedCount = deleted,
+            summary = "Batch: +$added added, $updated updated, -$deleted deleted"
+        )
+    }
+
     // ── 即时关联发现 ────────────────────────────────────────────────────
 
     /**
@@ -921,8 +1261,17 @@ Return ONLY the raw JSON object, no markdown fences, no commentary.
 }
 
 /**
- * 记忆搜索结果。
+ * 记忆整合优化结果。
  */
+data class ConsolidationResult(
+    val totalBefore: Int,
+    val totalAfter: Int,
+    val addedCount: Int,
+    val updatedCount: Int,
+    val deletedCount: Int,
+    val summary: String
+)
+
 data class MemorySearchResult(
     val scored: List<ScoredMemoryItem>,
     val expandedMemories: List<Triple<MemoryItem, String, Int>>,

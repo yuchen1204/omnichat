@@ -193,6 +193,35 @@ fun MemoryAndPromptView(viewModel: ChatViewModel) {
                                     )
                                 }
                             }
+                            if (memories.size >= 3) {
+                                TextButton(
+                                    onClick = { viewModel.consolidateMemories() },
+                                    enabled = !viewModel.isConsolidating
+                                ) {
+                                    if (viewModel.isConsolidating) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text(
+                                        text = if (viewModel.isConsolidating) "整合中..." else "整合优化",
+                                        fontSize = (12 * fs).sp,
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                            }
+                            viewModel.lastConsolidationSummary?.let { summary ->
+                                if (summary.isNotBlank()) {
+                                    Text(
+                                        text = summary,
+                                        fontSize = (10 * fs).sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                            }
                             if (memories.isNotEmpty()) {
                                 TextButton(
                                     onClick = { viewModel.clearAllMemories() },

@@ -260,6 +260,7 @@
   "permission_write": "Read/Write",
   "permission_read": "Read",
   "permission_delete": "Revoke",
+  "sidebar.project.title": "OmniChat",
   "sidebar.date.today": "Today",
   "sidebar.date.yesterday": "Yesterday",
   "sidebar.date.2days": "2 days ago",

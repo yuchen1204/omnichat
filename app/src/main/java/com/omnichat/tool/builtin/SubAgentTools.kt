@@ -219,7 +219,7 @@ object ReadAgentInboxTool : BuiltinTool(
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
         // 默认读取 "main" 的 inbox
-        val messages = MessageBus.readInbox("main")
+        val messages = MessageBus.readAndClearInbox("main")
 
         if (messages.isEmpty()) {
             return successResponse("No pending messages in inbox.")

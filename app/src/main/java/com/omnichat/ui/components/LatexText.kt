@@ -688,14 +688,115 @@ private class MarkdownHeightBridge(
     private val onHeightChanged: (Int) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var lastHeightPx = 0
+    private var lastReportedHeightPx = 0
+    private var pendingHeightPx: Int? = null
+    private var deliveryScheduled = false
+    private val deliveryRunnable = Runnable {
+        val heightPx = synchronized(this) {
+            deliveryScheduled = false
+            val value = pendingHeightPx
+            pendingHeightPx = null
+            value
+        }
+        heightPx?.let(onHeightChanged)
+    }
 
     @JavascriptInterface
     fun report(cssHeight: Double, devicePixelRatio: Double) {
         val heightPx = ceil((cssHeight * devicePixelRatio).coerceAtLeast(1.0)).toInt()
-        if (heightPx == lastHeightPx) return
-        lastHeightPx = heightPx
-        mainHandler.post { onHeightChanged(heightPx) }
+        synchronized(this) {
+            if (heightPx == lastReportedHeightPx) return
+            lastReportedHeightPx = heightPx
+            pendingHeightPx = heightPx
+            if (deliveryScheduled) return
+            deliveryScheduled = true
+        }
+        // KaTeX/layout can report several intermediate heights in one render pass.
+        // Deliver only the latest value instead of enqueueing one Compose update per report.
+        mainHandler.post(deliveryRunnable)
+    }
+
+    fun dispose() {
+        mainHandler.removeCallbacks(deliveryRunnable)
+        synchronized(this) {
+            pendingHeightPx = null
+            deliveryScheduled = false
+        }
+    }
+}
+
+/** Coalesces streaming WebView updates so only the latest markdown is rendered. */
+private class MarkdownWebViewUpdateScheduler {
+    private companion object {
+        const val UPDATE_DELAY_MS = 100L
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingView: WebView? = null
+    private var pendingContentJson: String? = null
+    private var lastSentView: WebView? = null
+    private var lastSentContentJson: String? = null
+    private var updateScheduled = false
+    private var disposed = false
+    private val updateRunnable = Runnable {
+        val update = synchronized(this) {
+            updateScheduled = false
+            val view = pendingView
+            val contentJson = pendingContentJson
+            pendingView = null
+            pendingContentJson = null
+            if (view != null && contentJson != null) {
+                lastSentView = view
+                lastSentContentJson = contentJson
+            }
+            view to contentJson
+        }
+        val view = update.first
+        val contentJson = update.second
+        if (view != null && contentJson != null && view.isAttachedToWindow) {
+            view.evaluateJavascript("window.updateMarkdown($contentJson);", null)
+        }
+    }
+
+    fun schedule(view: WebView, contentJson: String) {
+        synchronized(this) {
+            if (disposed) return
+            if (view === lastSentView && contentJson == lastSentContentJson && pendingView == null) {
+                return
+            }
+            pendingView = view
+            pendingContentJson = contentJson
+            if (updateScheduled) return
+            updateScheduled = true
+        }
+        mainHandler.postDelayed(updateRunnable, UPDATE_DELAY_MS)
+    }
+
+    fun flush(view: WebView, contentJson: String) {
+        synchronized(this) {
+            if (disposed) return
+            mainHandler.removeCallbacks(updateRunnable)
+            updateScheduled = false
+            pendingView = null
+            pendingContentJson = null
+            lastSentView = view
+            lastSentContentJson = contentJson
+        }
+        if (view.isAttachedToWindow) {
+            view.evaluateJavascript("window.updateMarkdown($contentJson);", null)
+        }
+    }
+
+    fun dispose() {
+        mainHandler.removeCallbacks(updateRunnable)
+        synchronized(this) {
+            disposed = true
+            updateScheduled = false
+            pendingView = null
+            pendingContentJson = null
+            lastSentView = null
+            lastSentContentJson = null
+        }
     }
 }
 
@@ -818,6 +919,13 @@ fun LatexMarkdownWebView(
         val heightBridge = remember {
             MarkdownHeightBridge { heightPx -> latestHeightHandler.value(heightPx) }
         }
+        val updateScheduler = remember { MarkdownWebViewUpdateScheduler() }
+        DisposableEffect(heightBridge, updateScheduler) {
+            onDispose {
+                heightBridge.dispose()
+                updateScheduler.dispose()
+            }
+        }
         val contentHeight = with(density) { contentHeightPx.toDp() }
 
         AndroidView(
@@ -921,10 +1029,7 @@ fun LatexMarkdownWebView(
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             pageReady = true
-                            view?.evaluateJavascript(
-                                "window.updateMarkdown($latestContentJson);",
-                                null
-                            )
+                            view?.let { updateScheduler.flush(it, latestContentJson) }
                         }
                     }
                     loadDataWithBaseURL(
@@ -939,10 +1044,8 @@ fun LatexMarkdownWebView(
             update = { view ->
                 if (pageReady) {
                     // Update only the document body; keep KaTeX/CSS/WebView alive.
-                    (view as WebView).evaluateJavascript(
-                        "window.updateMarkdown($contentJson);",
-                        null
-                    )
+                    // Coalesce rapid streaming recompositions to at most ~10 renders/sec.
+                    updateScheduler.schedule(view as WebView, contentJson)
                 }
             },
             modifier = modifier.height(contentHeight)

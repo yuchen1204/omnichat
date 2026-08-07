@@ -128,3 +128,45 @@ object MarkRemindedTool : BuiltinTool(
         return successResponse("Memory $memoryId marked as reminded.")
     }
 }
+
+/**
+ * 记忆整合优化工具。
+ *
+ * 使用副模型对所有记忆进行全量分析、去重、合并、分类、打置信分。
+ * 避免因记忆条目过多导致 Agent 记忆错乱。
+ */
+object ConsolidateMemoryTool : BuiltinTool(
+    name = "consolidate_memory",
+    description = """Analyze, deduplicate, merge, categorize, and re-score all long-term memories using the memory model. This reduces memory clutter and prevents the agent from getting confused by too many redundant or contradictory entries. Pinned memories are protected. Call this when memory count is high or the agent seems to be acting on stale/conflicting information.""",
+    group = "memory",
+    isReadOnly = false,
+    isConcurrencySafe = true,
+    searchHint = "consolidate and optimize long-term memory"
+) {
+
+    override val inputSchema = schema {
+        prop("force", "boolean", "Force consolidation even if memory count is low. Default: false.")
+    }
+
+    override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        val force = arguments.optBoolean("force", false)
+
+        val repository = AppRepository(AppDatabase.getDatabase(context))
+        val memoryEngine = MemoryEngine(repository, ApiClient)
+
+        val result = memoryEngine.consolidateMemories(force = force)
+
+        val text = buildString {
+            appendLine("Memory consolidation result:")
+            appendLine("  Before: ${result.totalBefore} memories")
+            appendLine("  After:  ${result.totalAfter} memories")
+            if (result.addedCount > 0) appendLine("  + Added: ${result.addedCount} (categories/merged entries)")
+            if (result.updatedCount > 0) appendLine("  ~ Updated: ${result.updatedCount} (confidence/tags)")
+            if (result.deletedCount > 0) appendLine("  - Deleted: ${result.deletedCount} (redundant/outdated)")
+            appendLine()
+            appendLine(result.summary)
+        }
+
+        return successResponse(text.trimEnd())
+    }
+}
