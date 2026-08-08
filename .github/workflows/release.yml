@@ -58,9 +58,9 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew --no-configuration-cache assembleRelease
         env:
-          KEYSTORE_PATH: app/my-upload-key.jks
+          KEYSTORE_PATH: my-upload-key.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           VERSION_NAME: ${{ steps.version.outputs.version }}
