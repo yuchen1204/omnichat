@@ -1,13 +1,21 @@
 package com.omnichat.cloud
 
+import android.app.AlarmManager
 import android.app.Application
+import android.app.PendingIntent
+import android.content.ComponentName
+import android.content.Intent
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
+import com.omnichat.MainActivity
 import androidx.lifecycle.viewModelScope
 import com.omnichat.R
 import com.omnichat.data.AppDatabase
 import com.omnichat.worker.CloudBackupWorker
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+
+private const val COLD_RESTART_DELAY_MS = 100L
 
 data class CloudBackupUiState(
     val isBound: Boolean = false,
@@ -302,8 +310,19 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
             }
             result.fold(
                 onSuccess = {
-                    _uiState.update {
-                        it.copy(isRestoring = false, success = getApplication<Application>().getString(R.string.cloud_restore_success))
+                    try {
+                        scheduleColdRestart()
+                        _uiState.update {
+                            it.copy(
+                                isRestoring = false,
+                                success = getApplication<Application>().getString(R.string.cloud_restore_success)
+                            )
+                        }
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                    } catch (e: Exception) {
+                        _uiState.update {
+                            it.copy(isRestoring = false, error = e.message)
+                        }
                     }
                 },
                 onFailure = { e ->
@@ -313,6 +332,27 @@ class CloudBackupViewModel(application: Application) : AndroidViewModel(applicat
                 }
             )
         }
+    }
+
+    private fun scheduleColdRestart() {
+        val application = getApplication<Application>()
+        val restartIntent = Intent.makeRestartActivityTask(
+            ComponentName(application, MainActivity::class.java)
+        )
+        val restartPendingIntent = PendingIntent.getActivity(
+            application,
+            0,
+            restartIntent,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = application.getSystemService(AlarmManager::class.java)
+            ?: throw IllegalStateException("AlarmManager unavailable")
+
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.ELAPSED_REALTIME,
+            SystemClock.elapsedRealtime() + COLD_RESTART_DELAY_MS,
+            restartPendingIntent
+        )
     }
 
     fun deleteBackup(backup: BackupMeta) {

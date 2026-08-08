@@ -22,6 +22,8 @@ data class ProjectToolScope(
             "project_list_knowledge",
             "project_read_knowledge",
             "project_create_knowledge",
+            "project_append_knowledge",
+            "project_edit_knowledge",
             "project_read_memory",
             "project_update_memory"
         )

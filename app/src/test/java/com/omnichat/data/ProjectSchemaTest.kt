@@ -1,7 +1,14 @@
 package com.omnichat.data
 
-import androidx.sqlite.db.SupportSQLiteDatabase
+import android.content.Context
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -98,5 +105,158 @@ class ProjectSchemaTest {
 
         db.close()
         dbFile.delete()
+    }
+
+    @Test
+    fun migration58to60_sessionsMatchRoomSchemaWithoutDefaultsOrProjectIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "session_migration_${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(databaseName)
+                .callback(object : SupportSQLiteOpenHelper.Callback(1) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE sessions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                                title TEXT NOT NULL,
+                                createdAt INTEGER NOT NULL,
+                                thinkingEffort TEXT NOT NULL
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            CREATE TABLE messages (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                                sessionId INTEGER NOT NULL,
+                                role TEXT NOT NULL,
+                                content TEXT NOT NULL,
+                                timestamp INTEGER NOT NULL,
+                                images TEXT NOT NULL,
+                                isThinking INTEGER NOT NULL,
+                                thinkingContent TEXT NOT NULL,
+                                toolCalls TEXT NOT NULL,
+                                toolCallId TEXT NOT NULL,
+                                toolName TEXT NOT NULL,
+                                attachments TEXT NOT NULL
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL("INSERT INTO sessions (id, title, createdAt, thinkingEffort) VALUES (1, 'Existing', 1000, 'low')")
+                    }
+
+                    override fun onUpgrade(
+                        db: androidx.sqlite.db.SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int
+                    ) = Unit
+                })
+                .build()
+        )
+
+        try {
+            val db = helper.writableDatabase
+            migration("MIGRATION_58_59").migrate(db)
+            migration("MIGRATION_59_60").migrate(db)
+
+            db.query("SELECT thinkingEffort, projectId FROM sessions WHERE id = 1").use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals("low", cursor.getString(0))
+                assertNull(cursor.getString(1))
+            }
+
+            db.query("PRAGMA table_info(sessions)").use { cursor ->
+                var foundThinkingEffort = false
+                var foundProjectId = false
+                while (cursor.moveToNext()) {
+                    when (cursor.getString(cursor.getColumnIndexOrThrow("name"))) {
+                        "thinkingEffort" -> {
+                            foundThinkingEffort = true
+                            assertNull(cursor.getString(cursor.getColumnIndexOrThrow("dflt_value")))
+                        }
+                        "projectId" -> {
+                            foundProjectId = true
+                            assertNull(cursor.getString(cursor.getColumnIndexOrThrow("dflt_value")))
+                        }
+                    }
+                }
+                assertEquals(true, foundThinkingEffort)
+                assertEquals(true, foundProjectId)
+            }
+
+            db.query("PRAGMA index_list(sessions)").use { cursor ->
+                while (cursor.moveToNext()) {
+                    assertFalse(cursor.getString(cursor.getColumnIndexOrThrow("name")) == "index_sessions_projectId")
+                }
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun migration60to61_addsProjectSessionIndexAndRetainsData() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "session_index_migration_${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(databaseName)
+                .callback(object : SupportSQLiteOpenHelper.Callback(1) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE sessions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                                title TEXT NOT NULL,
+                                createdAt INTEGER NOT NULL,
+                                thinkingEffort TEXT NOT NULL,
+                                projectId INTEGER
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL("INSERT INTO sessions (id, title, createdAt, thinkingEffort, projectId) VALUES (1, 'Existing', 1000, 'low', 42)")
+                    }
+
+                    override fun onUpgrade(
+                        db: androidx.sqlite.db.SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int
+                    ) = Unit
+                })
+                .build()
+        )
+
+        try {
+            val db = helper.writableDatabase
+            migration("MIGRATION_60_61").migrate(db)
+
+            db.query("SELECT projectId FROM sessions WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(42L, cursor.getLong(0))
+            }
+
+            db.query("PRAGMA index_list(sessions)").use { cursor ->
+                var foundProjectIndex = false
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "index_sessions_projectId") {
+                        foundProjectIndex = true
+                    }
+                }
+                assertTrue(foundProjectIndex)
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    private fun migration(name: String): Migration {
+        return AppDatabase::class.java.getDeclaredField(name).let { field ->
+            field.isAccessible = true
+            field.get(null) as Migration
+        }
     }
 }

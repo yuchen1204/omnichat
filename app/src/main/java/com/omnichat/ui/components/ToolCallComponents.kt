@@ -1,11 +1,11 @@
 package com.omnichat.ui.components
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -21,7 +21,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -154,242 +153,186 @@ fun ToolGroupCard(
 ) {
     val uiSettings = LocalUISettings.current
     val fs = uiSettings.fontSizeScale
-    val spacingMultiplier = uiSettings.spacingMultiplier
-    val resolvedFontFamily = resolveFontFamily(uiSettings.fontFamily)
+    val spacing = uiSettings.spacingMultiplier
+    val fontFamily = resolveFontFamily(uiSettings.fontFamily)
     val context = LocalContext.current
-
     val totalCount = messages.size
-    
+    val firstMessage = messages.firstOrNull()
+    val firstInfo = firstMessage?.toolCallId?.let(lookup::get)
+    val collapsedSummary = firstInfo?.let {
+        formatToolCallSummary(context, it.name, it.arguments)
+    } ?: context.getString(R.string.tool_call_tool_id, firstMessage?.toolCallId?.take(8) ?: "unknown")
     var isExpanded by remember { mutableStateOf(false) }
+    val outerShape = RoundedCornerShape(uiSettings.cornerRadiusDp.dp)
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        shape = RoundedCornerShape(uiSettings.cornerRadiusDp.dp),
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        tonalElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isExpanded) 0.35f else 0.55f),
+        shape = outerShape,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+        tonalElevation = if (isExpanded) 1.dp else 0.dp,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp * spacingMultiplier)
+            .then(if (isExpanded) Modifier.fillMaxWidth() else Modifier.wrapContentWidth().widthIn(max = 360.dp))
+            .padding(vertical = 3.dp * spacing)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp * spacingMultiplier)
-        ) {
-            // Header Row
+        Column(modifier = Modifier.padding((if (isExpanded) 12.dp else 8.dp) * spacing)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { isExpanded = !isExpanded }
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = if (isExpanded) 2.dp else 0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Build,
+                    imageVector = firstInfo?.let { getToolIcon(it.name) } ?: Icons.Default.Build,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(if (isExpanded) 17.dp else 16.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (totalCount > 1) {
-                        uiText("chat.tools_used_count", "Used %d tools").format(totalCount)
-                    } else {
-                        uiText("chat.tool_used", "Tool used")
-                    },
-                    fontSize = (13 * fs).sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            // Summaries list (visible when collapsed or expanded, but in different details)
-            AnimatedVisibility(
-                visible = !isExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Column(
-                    modifier = Modifier.padding(top = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    messages.forEach { msg ->
-                        val info = lookup[msg.toolCallId]
-                        val name = info?.name ?: "unknown"
-                        val summaryText = if (info != null) {
-                            formatToolCallSummary(context, info.name, info.arguments)
-                        } else {
-                            context.getString(R.string.tool_call_tool_id, msg.toolCallId?.take(8) ?: "unknown")
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 4.dp)
+                Spacer(modifier = Modifier.width(7.dp * spacing))
+                if (isExpanded) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (totalCount > 1) {
+                                uiText("chat.tools_used_count", "Used %d tools").format(totalCount)
+                            } else {
+                                uiText("chat.tool_used", "Tool used")
+                            },
+                            fontSize = (13f * fs).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = fontFamily
+                        )
+                        Text(
+                            text = collapsedSummary,
+                            fontSize = (10.5f * fs).sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontFamily = fontFamily
+                        )
+                    }
+                } else {
+                    Text(
+                        text = collapsedSummary,
+                        fontSize = (11.5f * fs).sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontFamily = fontFamily,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (totalCount > 1) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.padding(start = 6.dp)
                         ) {
-                            Icon(
-                                imageVector = getToolIcon(name),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = context.getString(R.string.tool_call_called_tool, name, summaryText),
-                                fontSize = (11.5f * fs).sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontFamily = resolvedFontFamily
+                                text = totalCount.toString(),
+                                fontSize = (10f * fs).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                     }
                 }
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    modifier = Modifier.size(18.dp)
+                )
             }
 
-            // Detailed view when expanded
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
+            if (isExpanded) {
                 Column(
-                    modifier = Modifier.padding(top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp * spacingMultiplier)
+                    modifier = Modifier.padding(top = 10.dp * spacing),
+                    verticalArrangement = Arrangement.spacedBy(8.dp * spacing)
                 ) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 0.5.dp)
-
-                    messages.forEachIndexed { index, msg ->
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f), thickness = 0.5.dp)
+                    messages.forEach { msg ->
                         val info = lookup[msg.toolCallId]
                         val name = info?.name ?: "unknown"
-                        val summaryText = if (info != null) {
-                            formatToolCallSummary(context, info.name, info.arguments)
-                        } else {
-                            context.getString(R.string.tool_call_tool_id, msg.toolCallId ?: "unknown")
-                        }
+                        val summary = info?.let { formatToolCallSummary(context, it.name, it.arguments) }
+                            ?: context.getString(R.string.tool_call_tool_id, msg.toolCallId ?: "unknown")
+                        var showArgs by remember(msg.toolCallId) { mutableStateOf(false) }
+                        var showResult by remember(msg.toolCallId) { mutableStateOf(false) }
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape((uiSettings.cornerRadiusDp - 4).coerceAtLeast(4).dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
-                                .padding(10.dp)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+                            shape = RoundedCornerShape((uiSettings.cornerRadiusDp - 4).coerceAtLeast(4).dp),
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            // Single Tool Header
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = getToolIcon(name),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = context.getString(R.string.tool_call_tool_name, name),
-                                    fontSize = (12.5f * fs).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = "ID: ${msg.toolCallId?.take(8) ?: "unknown"}",
-                                    fontSize = (9 * fs).sp,
-                                    color = MaterialTheme.colorScheme.outline,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = summaryText,
-                                fontSize = (12 * fs).sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontFamily = resolvedFontFamily
-                            )
-
-                            // Collapsible Args
-                            if (info != null && info.arguments.length() > 0) {
-                                var showArgs by remember { mutableStateOf(false) }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(
-                                    modifier = Modifier
-                                        .clickable { showArgs = !showArgs }
-                                        .padding(vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = if (showArgs) context.getString(R.string.tool_call_collapse_args) else context.getString(R.string.tool_call_expand_args),
-                                        fontSize = (10.5f * fs).sp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                            Column(modifier = Modifier.padding(10.dp * spacing)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = if (showArgs) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        imageVector = getToolIcon(name),
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = context.getString(R.string.tool_call_tool_name, name),
+                                        fontSize = (12.5f * fs).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = msg.toolCallId?.take(8) ?: "unknown",
+                                        fontSize = (9f * fs).sp,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        fontFamily = FontFamily.Monospace
                                     )
                                 }
-                                AnimatedVisibility(visible = showArgs) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                        shape = RoundedCornerShape(6.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 4.dp)
-                                    ) {
-                                        Text(
+                                Spacer(modifier = Modifier.height(4.dp * spacing))
+                                Text(
+                                    text = summary,
+                                    fontSize = (11.5f * fs).sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontFamily = fontFamily
+                                )
+
+                                if (info != null && info.arguments.length() > 0) {
+                                    Spacer(modifier = Modifier.height(6.dp * spacing))
+                                    ToolDetailAction(
+                                        label = if (showArgs) context.getString(R.string.tool_call_collapse_args) else context.getString(R.string.tool_call_expand_args),
+                                        expanded = showArgs,
+                                        fontSize = fs,
+                                        onClick = { showArgs = !showArgs }
+                                    )
+                                    if (showArgs) {
+                                        DetailText(
                                             text = info.arguments.toString(2),
-                                            fontSize = (10.5f * fs).sp,
+                                            fontSize = fs,
                                             fontFamily = FontFamily.Monospace,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(8.dp)
+                                            maxHeight = 150.dp
                                         )
                                     }
                                 }
-                            }
 
-                            // Collapsible Results
-                            var showResults by remember { mutableStateOf(false) }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier
-                                    .clickable { showResults = !showResults }
-                                    .padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (showResults) context.getString(R.string.tool_call_collapse_result) else context.getString(R.string.tool_call_expand_result),
-                                    fontSize = (10.5f * fs).sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium
+                                Spacer(modifier = Modifier.height(6.dp * spacing))
+                                ToolDetailAction(
+                                    label = if (showResult) context.getString(R.string.tool_call_collapse_result) else context.getString(R.string.tool_call_expand_result),
+                                    expanded = showResult,
+                                    fontSize = fs,
+                                    onClick = { showResult = !showResult }
                                 )
-                                Icon(
-                                    imageVector = if (showResults) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                            AnimatedVisibility(visible = showResults) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp)
-                                ) {
-                                    Text(
+                                if (showResult) {
+                                    DetailText(
                                         text = msg.content,
-                                        fontSize = (10.5f * fs).sp,
+                                        fontSize = fs,
                                         fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(8.dp)
+                                        maxHeight = 180.dp
                                     )
                                 }
                             }
@@ -398,5 +341,66 @@ fun ToolGroupCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ToolDetailAction(
+    label: String,
+    expanded: Boolean,
+    fontSize: Float,
+    onClick: () -> Unit
+) {
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(0.7.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                fontSize = (10.5f * fontSize).sp,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DetailText(
+    text: String,
+    fontSize: Float,
+    fontFamily: FontFamily,
+    maxHeight: androidx.compose.ui.unit.Dp
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 5.dp)
+            .heightIn(max = maxHeight)
+    ) {
+        Text(
+            text = text,
+            fontSize = (10.5f * fontSize).sp,
+            fontFamily = fontFamily,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(8.dp)
+                .verticalScroll(rememberScrollState())
+        )
     }
 }

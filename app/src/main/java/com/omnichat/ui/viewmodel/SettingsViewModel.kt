@@ -20,6 +20,7 @@ import com.omnichat.data.PromptTemplate
 import com.omnichat.data.UISettings
 import com.omnichat.data.OmnifileFormat
 import java.io.BufferedInputStream
+import java.io.IOException
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -381,43 +382,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     // ── 数据库备份/恢复 ─────────────────────────────────────────────────
 
-    /**
-     * Export data as omnifile format.
-     * @param sections Sections to include. Empty = full export (all sections).
-     */
+    /** Export a database backup together with the private project file tree. */
     fun exportOmnifile(context: Context, uri: Uri, sections: List<String>) {
         viewModelScope.launch(Dispatchers.IO) {
             exportImportStatus = ExportImportStatus.Loading
             try {
                 val database = AppDatabase.getDatabase(context)
-                // Checkpoint WAL before reading database
                 database.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
-
-                val dbFile = context.getDatabasePath("ai_chat_memory_db")
-                val databaseBytes = dbFile.readBytes()
-
-                val exportType = if (sections.isEmpty()) {
-                    OmnifileFormat.ExportType.FULL
-                } else {
-                    OmnifileFormat.ExportType.SELECTIVE
-                }
-
-                val metadata = OmnifileFormat.OmnifileMetadata(
-                    exportType = exportType,
-                    includedSections = if (sections.isEmpty()) {
-                        OmnifileFormat.CATEGORY_PROVIDER_MCP +
-                        OmnifileFormat.CATEGORY_MEMORY_PROMPTS +
-                        OmnifileFormat.CATEGORY_THEME_UI +
-                        OmnifileFormat.CATEGORY_CHAT_HISTORY
-                    } else {
-                        sections
-                    }
-                )
-
+                val databaseBytes = context.getDatabasePath("ai_chat_memory_db").readBytes()
+                val exportType = if (sections.isEmpty()) OmnifileFormat.ExportType.FULL else OmnifileFormat.ExportType.SELECTIVE
+                val includedSections = if (sections.isEmpty()) {
+                    OmnifileFormat.CATEGORY_PROVIDER_MCP + OmnifileFormat.CATEGORY_MEMORY_PROMPTS +
+                        OmnifileFormat.CATEGORY_THEME_UI + OmnifileFormat.CATEGORY_CHAT_HISTORY
+                } else sections
+                val projectsZip = OmnifileFormat.zipProjectsDirectory(java.io.File(context.filesDir, "projects"))
                 context.contentResolver.openOutputStream(uri)?.use { output ->
-                    OmnifileFormat.writeOmnifile(output, metadata, databaseBytes)
-                }
-
+                    OmnifileFormat.writeOmnifile(
+                        output,
+                        OmnifileFormat.OmnifileMetadata(exportType = exportType, includedSections = includedSections),
+                        databaseBytes,
+                        projectsZip
+                    )
+                } ?: throw IllegalArgumentException("Cannot open output file")
                 exportImportStatus = ExportImportStatus.Success("Export complete")
             } catch (e: Exception) {
                 exportImportStatus = ExportImportStatus.Error("Export failed: ${e.message}")
@@ -425,10 +411,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     * Import from any supported format (omnifile, omnidb, omniconfig).
-     * Auto-detects format and delegates to the appropriate handler.
-     */
+    /** Import from any supported format (omnifile, omnidb, omniconfig). */
     fun importAutoDetect(
         context: Context,
         uri: Uri,
@@ -441,75 +424,77 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch(Dispatchers.IO) {
             exportImportStatus = ExportImportStatus.Loading
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                    ?: throw IllegalArgumentException("Cannot open file")
-
-                val bufferedStream = BufferedInputStream(inputStream)
-                bufferedStream.mark(1024)
-
-                val format = OmnifileFormat.detectFormat(bufferedStream)
-                bufferedStream.reset()
-
-                when (format) {
-                    OmnifileFormat.FileFormat.OMNIFILE -> {
-                        importOmnifile(context, bufferedStream, replaceExisting)
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val bufferedStream = BufferedInputStream(inputStream)
+                    bufferedStream.mark(1024)
+                    when (OmnifileFormat.detectFormat(bufferedStream)) {
+                        OmnifileFormat.FileFormat.OMNIFILE -> {
+                            bufferedStream.reset()
+                            importOmnifile(context, bufferedStream)
+                        }
+                        OmnifileFormat.FileFormat.OMNIDB -> {
+                            bufferedStream.close()
+                            importDatabaseBackup(context, uri)
+                            return@launch
+                        }
+                        OmnifileFormat.FileFormat.OMNICONFIG -> {
+                            bufferedStream.close()
+                            importFromUri(context, uri, importProviders, importMcp,
+                                importMemory, importColorSchemes, replaceExisting)
+                            return@launch
+                        }
+                        OmnifileFormat.FileFormat.UNKNOWN -> {
+                            exportImportStatus = ExportImportStatus.Error("Unrecognized file format")
+                        }
                     }
-                    OmnifileFormat.FileFormat.OMNIDB -> {
-                        bufferedStream.close()
-                        importDatabaseBackup(context, uri)
-                        return@launch // importDatabaseBackup handles status
-                    }
-                    OmnifileFormat.FileFormat.OMNICONFIG -> {
-                        bufferedStream.close()
-                        importFromUri(context, uri, importProviders, importMcp,
-                            importMemory, importColorSchemes, replaceExisting)
-                        return@launch // importFromUri handles status
-                    }
-                    OmnifileFormat.FileFormat.UNKNOWN -> {
-                        bufferedStream.close()
-                        exportImportStatus = ExportImportStatus.Error("Unrecognized file format")
-                    }
-                }
+                } ?: throw IllegalArgumentException("Cannot open file")
             } catch (e: Exception) {
                 exportImportStatus = ExportImportStatus.Error("Import failed: ${e.message}")
             }
         }
     }
 
-    private suspend fun importOmnifile(
-        context: Context,
-        inputStream: InputStream,
-        replaceExisting: Boolean
-    ) {
+    private suspend fun importOmnifile(context: Context, inputStream: InputStream) {
+        var stagedProjects: java.io.File? = null
+        var previousProjects: java.io.File? = null
         try {
-            val (metadata, databaseBytes) = OmnifileFormat.readOmnifile(inputStream)
-
-            // Close existing database before replacing
+            val payload = OmnifileFormat.readOmnifile(inputStream)
+            val sqliteHeader = "SQLite format 3\u0000".toByteArray(Charsets.UTF_8)
+            if (payload.databaseBytes.size < 100 || !payload.databaseBytes.copyOfRange(0, sqliteHeader.size).contentEquals(sqliteHeader)) {
+                throw IllegalArgumentException("Omnifile payload is not a SQLite database")
+            }
+            stagedProjects = payload.projectsZip?.let { OmnifileFormat.extractProjectsZip(it, context.filesDir) }
             val database = AppDatabase.getDatabase(context)
             database.close()
-
+            AppDatabase.clearInstance()
             val dbFile = context.getDatabasePath("ai_chat_memory_db")
-            val dbWalFile = context.getDatabasePath("ai_chat_memory_db-wal")
-            val dbShmFile = context.getDatabasePath("ai_chat_memory_db-shm")
+            if (dbFile.exists()) dbFile.copyTo(java.io.File(dbFile.absolutePath + ".backup"), overwrite = true)
+            dbFile.writeBytes(payload.databaseBytes)
+            java.io.File(dbFile.path + "-wal").delete()
+            java.io.File(dbFile.path + "-shm").delete()
 
-            // Backup current database
-            val backupFile = java.io.File(dbFile.absolutePath + ".backup")
-            if (dbFile.exists()) {
-                dbFile.copyTo(backupFile, overwrite = true)
+            if (stagedProjects != null) {
+                val projectsDir = java.io.File(context.filesDir, "projects")
+                if (projectsDir.exists()) {
+                    previousProjects = java.io.File(context.filesDir, "projects.import-backup-${System.nanoTime()}")
+                    if (!projectsDir.renameTo(previousProjects)) throw IOException("Unable to stage existing project files")
+                }
+                if (!stagedProjects.renameTo(projectsDir)) throw IOException("Unable to restore project files")
+                stagedProjects = null
+                previousProjects?.deleteRecursively()
+                previousProjects = null
             }
-
-            // Write new database
-            dbFile.writeBytes(databaseBytes)
-
-            // Delete WAL and SHM files
-            if (dbWalFile.exists()) dbWalFile.delete()
-            if (dbShmFile.exists()) dbShmFile.delete()
-
             exportImportStatus = ExportImportStatus.Success(
-                "Import complete (${metadata.exportType}, ${metadata.includedSections.size} sections)"
+                "Import complete (${payload.metadata.exportType}, ${payload.metadata.includedSections.size} sections)"
             )
         } catch (e: Exception) {
+            previousProjects?.let { backup ->
+                java.io.File(context.filesDir, "projects").deleteRecursively()
+                backup.renameTo(java.io.File(context.filesDir, "projects"))
+            }
             exportImportStatus = ExportImportStatus.Error("Omnifile import failed: ${e.message}")
+        } finally {
+            stagedProjects?.deleteRecursively()
         }
     }
 

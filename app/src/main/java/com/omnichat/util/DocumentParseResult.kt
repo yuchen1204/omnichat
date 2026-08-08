@@ -31,3 +31,20 @@ data class JsDocumentInput(
     val mimeType: String,
     val bytes: ByteArray
 )
+
+/** A synchronous, validated document edit request. */
+data class JsDocumentEditInput(
+    val name: String,
+    val mimeType: String,
+    val bytes: ByteArray,
+    val operation: JsDocumentEditOperation,
+    val oldText: String? = null,
+    val content: String
+)
+
+enum class JsDocumentEditOperation { Append, Replace }
+
+data class DocumentEditResult(
+    val bytes: ByteArray,
+    val warnings: List<String> = emptyList()
+)

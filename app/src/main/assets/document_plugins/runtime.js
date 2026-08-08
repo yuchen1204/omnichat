@@ -255,6 +255,42 @@ function getParser(format) {
   return parseDocumentRegistry[format];
 }
 
+// ── Minimal ZIP package helpers for synchronous editors ────────────────
+function readU32(data, offset) {
+  return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
+}
+
+function readZipEntries(data) {
+  var eocd = -1;
+  for (var i = data.length - 22; i >= Math.max(0, data.length - 65557); i--) {
+    if (readU32(data, i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("Invalid ZIP package");
+  var count = readU16(data, eocd + 8), pos = readU32(data, eocd + 16), entries = [];
+  for (var n = 0; n < count; n++) {
+    if (readU32(data, pos) !== 0x02014b50) throw new Error("Invalid ZIP central directory");
+    var fn = readU16(data, pos + 28), ex = readU16(data, pos + 30), cm = readU16(data, pos + 32);
+    var name = ""; for (var j = 0; j < fn; j++) name += String.fromCharCode(data[pos + 46 + j]);
+    var method = readU16(data, pos + 10), comp = readU32(data, pos + 20), uncomp = readU32(data, pos + 24), local = readU32(data, pos + 42);
+    var lf = readU16(data, local + 26), le = readU16(data, local + 28), start = local + 30 + lf + le;
+    var packed = data.slice(start, start + comp);
+    entries.push({name:name, bytes: method === 0 ? packed : inflate(packed, uncomp)});
+    pos += 46 + fn + ex + cm;
+  }
+  return entries;
+}
+function writeU16(out, value) { out.push(value & 255, (value >>> 8) & 255); }
+function writeU32(out, value) { out.push(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255); }
+function zipCrc32(bytes) { var crc = 0xFFFFFFFF; for (var i=0;i<bytes.length;i++) { crc ^= bytes[i]; for (var j=0;j<8;j++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1)); } return (crc ^ 0xFFFFFFFF) >>> 0; }
+function writeZipEntries(entries) {
+  var out = [], central = [], offset = 0;
+  for (var i=0;i<entries.length;i++) { var e=entries[i], name=e.name, bytes=e.bytes, nb=[]; for(var j=0;j<name.length;j++) nb.push(name.charCodeAt(j)&255); var crc=zipCrc32(bytes);
+    var local=[]; writeU32(local,0x04034b50); writeU16(local,20); writeU16(local,0); writeU16(local,0); writeU16(local,0); writeU16(local,0); writeU32(local,crc); writeU32(local,bytes.length); writeU32(local,bytes.length); writeU16(local,nb.length); writeU16(local,0); local=local.concat(nb,Array.prototype.slice.call(bytes)); out=out.concat(local);
+    var c=[]; writeU32(c,0x02014b50); writeU16(c,20); writeU16(c,20); writeU16(c,0); writeU16(c,0); writeU16(c,0); writeU16(c,0); writeU32(c,crc); writeU32(c,bytes.length); writeU32(c,bytes.length); writeU16(c,nb.length); writeU16(c,0); writeU16(c,0); writeU16(c,0); writeU16(c,0); writeU32(c,0); writeU32(c,offset); central=central.concat(c,nb); offset=out.length;
+  }
+  var cdOffset=out.length, cdSize=central.length; out=out.concat(central); writeU32(out,0x06054b50); writeU16(out,0); writeU16(out,0); writeU16(out,entries.length); writeU16(out,entries.length); writeU32(out,cdSize); writeU32(out,cdOffset); writeU16(out,0); return new Uint8Array(out);
+}
+
 // ── Little-endian byte readers (used by inflate for ZIP/PDF) ──────────────
 
 /**

@@ -3,6 +3,7 @@ package com.omnichat.tool.builtin
 import android.content.Context
 import com.omnichat.data.AppDatabase
 import com.omnichat.data.AppRepository
+import com.omnichat.data.ProjectContentLimits
 import com.omnichat.data.ProjectFileStore
 import com.omnichat.mcp.ToolSchemaDsl.schema
 import com.omnichat.tool.BuiltinTool
@@ -36,7 +37,7 @@ object ProjectListKnowledgeTool : BuiltinTool(
     override val inputSchema = schema {}
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val repository = AppRepository(AppDatabase.getDatabase(context))
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
         val projectId = resolveProjectId(repository, sessionId)
             ?: return errorResponse("Current session is not associated with a project")
 
@@ -94,7 +95,7 @@ object ProjectReadKnowledgeTool : BuiltinTool(
     }
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val repository = AppRepository(AppDatabase.getDatabase(context))
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
         val projectId = resolveProjectId(repository, sessionId)
             ?: return errorResponse("Current session is not associated with a project")
 
@@ -107,13 +108,16 @@ object ProjectReadKnowledgeTool : BuiltinTool(
             return errorResponse("Knowledge file does not belong to the current project")
         }
 
-        // 通过 ProjectFileStore 解析文件路径
-        val file = ProjectFileStore.assetFile(knowledge.projectId, knowledge.id, knowledge.fileName)
+        // 通过 ProjectFileStore 解析文件路径（优先使用 localFileName 或回退到旧规则）
+        val file = ProjectFileStore.assetFile(knowledge)
         if (!file.exists()) {
             return errorResponse("Actual file not found on disk for: ${knowledge.fileName}")
         }
 
         if (knowledge.fileType == "image") {
+            if (file.length() > ProjectContentLimits.MAX_IMAGE_DATA_URL_BYTES) {
+                return errorResponse(ProjectContentLimits.imageDataUrlLimitError())
+            }
             // 返回 data URL 而不是文件系统路径
             val dataUrl = buildImageDataUrl(file, knowledge.fileType)
             return successResponse("Image file: ${knowledge.fileName}\n\n$dataUrl")
@@ -134,7 +138,7 @@ object ProjectReadKnowledgeTool : BuiltinTool(
                         result.warnings.forEach { appendLine("  - $it") }
                     }
                 }
-                successResponse(summary.trimEnd())
+                successResponse(ProjectContentLimits.truncateToolText(summary.trimEnd()))
             } catch (e: Exception) {
                 errorResponse("Failed to parse document: ${e.localizedMessage}")
             }
@@ -143,7 +147,7 @@ object ProjectReadKnowledgeTool : BuiltinTool(
         // 读取文本文件
         return try {
             val content = file.readText()
-            successResponse("File: ${knowledge.fileName}\n\n$content")
+            successResponse(ProjectContentLimits.truncateToolText("File: ${knowledge.fileName}\n\n$content"))
         } catch (e: Exception) {
             successResponse("File: ${knowledge.fileName}\n\n(Binary file, cannot display as text)")
         }
@@ -167,12 +171,12 @@ object ProjectReadKnowledgeTool : BuiltinTool(
  * 创建项目知识文件工具。
  *
  * Agent 通过此工具在项目知识库中创建新的知识文件。
- * 支持 TXT、MD、DOC、DOCX 格式，文件内容由 Agent 直接提供。
+ * 支持 TXT、MD、DOC 格式，DOCX 仅支持上传后编辑，避免生成无效 OOXML。
  * 创建的资产标记为 [AGENT_CREATED] 来源。
  */
 object ProjectCreateKnowledgeTool : BuiltinTool(
     name = "project_create_knowledge",
-    description = "Create a new knowledge file in the current project. Supported formats: txt, md, doc, docx. The file content is provided directly by the agent. Use this to save analysis results, summaries, or reference documents to the project knowledge base.",
+    description = "Create a new knowledge file in the current project. Supported formats: txt, md, doc. DOCX files must be uploaded first, then edited with project_append_knowledge or project_edit_knowledge. The file content is provided directly by the agent." ,
     group = "project",
     isReadOnly = false,
     isConcurrencySafe = false,
@@ -183,7 +187,7 @@ object ProjectCreateKnowledgeTool : BuiltinTool(
         prop("file_name", "string", "The file name with extension, e.g. 'analysis.md', 'summary.txt'.")
         prop("content", "string", "The text content of the file. For TXT and MD files, content is saved as UTF-8 text.")
         prop("file_type", "string", "File type.") {
-            enum("txt", "md", "doc", "docx")
+            enum("txt", "md", "doc")
         }
         required("file_name", "content", "file_type")
     }
@@ -192,20 +196,20 @@ object ProjectCreateKnowledgeTool : BuiltinTool(
         val fileName = arguments.optString("file_name").trim()
         if (fileName.isEmpty()) return "file_name is required"
         val ext = fileName.substringAfterLast('.', "").lowercase()
-        if (ext !in setOf("txt", "md", "doc", "docx")) {
-            return "Unsupported file extension: .$ext. Supported: .txt, .md, .doc, .docx"
+        if (ext !in setOf("txt", "md", "doc")) {
+            return "Unsupported file extension: .$ext. Supported: .txt, .md, .doc"
         }
         val content = arguments.optString("content").trim()
         if (content.isEmpty()) return "content is required"
         val fileType = arguments.optString("file_type").trim()
-        if (fileType !in setOf("txt", "md", "doc", "docx")) {
-            return "Unsupported file_type: $fileType. Supported: txt, md, doc, docx"
+        if (fileType !in setOf("txt", "md", "doc")) {
+            return "Unsupported file_type: $fileType. Supported: txt, md, doc"
         }
         return null
     }
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val repository = AppRepository(AppDatabase.getDatabase(context))
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
         val projectId = resolveProjectId(repository, sessionId)
             ?: return errorResponse("Current session is not associated with a project")
 
@@ -233,6 +237,83 @@ object ProjectCreateKnowledgeTool : BuiltinTool(
     }
 }
 
+abstract class ProjectKnowledgeTextTool(
+    name: String,
+    description: String
+) : BuiltinTool(
+    name = name,
+    description = description,
+    group = "project",
+    isReadOnly = false,
+    isConcurrencySafe = false,
+    requiresSession = true,
+    searchHint = "edit project knowledge file"
+) {
+    override val inputSchema = schema {
+        prop("knowledge_id", "integer", "The ID of an existing text knowledge file.")
+        prop("content", "string", "The text to append or the replacement text.")
+        required("knowledge_id", "content")
+    }
+
+    override fun validateInput(arguments: JSONObject): String? {
+        if (arguments.optLong("knowledge_id", -1L) <= 0) return "Valid knowledge_id is required"
+        if (arguments.optString("content").isEmpty()) return "content is required"
+        return null
+    }
+}
+
+object ProjectAppendKnowledgeTool : ProjectKnowledgeTextTool(
+    "project_append_knowledge",
+    "Append content to an existing txt, md, or docx knowledge file in the current project."
+) {
+    override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
+        val projectId = resolveProjectId(repository, sessionId)
+            ?: return errorResponse("Current session is not associated with a project")
+        return try {
+            repository.appendProjectKnowledge(arguments.optLong("knowledge_id"), projectId, arguments.optString("content"))
+            successResponse("Knowledge file updated")
+        } catch (e: IllegalArgumentException) {
+            errorResponse(e.message ?: "Append failed")
+        } catch (e: IllegalStateException) {
+            errorResponse(e.message ?: "Append failed")
+        }
+    }
+}
+
+object ProjectEditKnowledgeTool : ProjectKnowledgeTextTool(
+    "project_edit_knowledge",
+    "Replace old_text in an existing txt, md, or docx knowledge file in the current project."
+) {
+    override val inputSchema = schema {
+        prop("knowledge_id", "integer", "The ID of an existing text knowledge file.")
+        prop("content", "string", "Replacement text.")
+        prop("old_text", "string", "Text to replace.")
+        required("knowledge_id", "content", "old_text")
+    }
+
+    override fun validateInput(arguments: JSONObject): String? {
+        val base = super.validateInput(arguments)
+        if (base != null) return base
+        if (arguments.optString("old_text").isEmpty()) return "old_text is required"
+        return null
+    }
+
+    override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
+        val projectId = resolveProjectId(repository, sessionId)
+            ?: return errorResponse("Current session is not associated with a project")
+        return try {
+            repository.editProjectKnowledge(arguments.optLong("knowledge_id"), projectId, arguments.optString("old_text"), arguments.optString("content"))
+            successResponse("Knowledge file updated")
+        } catch (e: IllegalArgumentException) {
+            errorResponse(e.message ?: "Edit failed")
+        } catch (e: IllegalStateException) {
+            errorResponse(e.message ?: "Edit failed")
+        }
+    }
+}
+
 /**
  * 读取项目 Memory 文件工具。
  *
@@ -251,7 +332,7 @@ object ProjectReadMemoryTool : BuiltinTool(
     override val inputSchema = schema {}
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val repository = AppRepository(AppDatabase.getDatabase(context))
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
         val projectId = resolveProjectId(repository, sessionId)
             ?: return errorResponse("Current session is not associated with a project")
 
@@ -321,7 +402,7 @@ object ProjectUpdateMemoryTool : BuiltinTool(
     }
 
     override suspend fun doExecute(context: Context, arguments: JSONObject, sessionId: Long?): JSONObject {
-        val repository = AppRepository(AppDatabase.getDatabase(context))
+        val repository = AppRepository(AppDatabase.getDatabase(context), context)
         val projectId = resolveProjectId(repository, sessionId)
             ?: return errorResponse("Current session is not associated with a project")
 

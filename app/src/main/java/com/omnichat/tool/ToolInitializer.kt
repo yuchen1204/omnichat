@@ -137,6 +137,8 @@ object ToolInitializer {
                 ProjectListKnowledgeTool,
                 ProjectReadKnowledgeTool,
                 ProjectCreateKnowledgeTool,
+                ProjectAppendKnowledgeTool,
+                ProjectEditKnowledgeTool,
                 ProjectReadMemoryTool,
                 ProjectUpdateMemoryTool
             )

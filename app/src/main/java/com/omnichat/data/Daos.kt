@@ -59,6 +59,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE projectId = :projectId ORDER BY createdAt DESC")
     fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>>
 
+    @Query("SELECT * FROM sessions WHERE projectId = :projectId")
+    suspend fun getSessionsByProject(projectId: Long): List<Session>
+
     @Query("SELECT * FROM sessions WHERE id = :id LIMIT 1")
     suspend fun getSessionById(id: Long): Session?
 
@@ -489,6 +492,9 @@ interface ProjectKnowledgeDao {
 
     @Delete
     suspend fun deleteKnowledge(knowledge: ProjectKnowledge)
+
+    @Query("UPDATE project_knowledge SET fileSize = :fileSize WHERE id = :id")
+    suspend fun updateKnowledgeFileSize(id: Long, fileSize: Long)
 
     @Query("DELETE FROM project_knowledge WHERE id = :id")
     suspend fun deleteKnowledgeById(id: Long)

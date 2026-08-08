@@ -31,7 +31,10 @@ data class ModelConfig(
     val embeddingModelId: String = ""
 )
 
-@Entity(tableName = "sessions")
+@Entity(
+    tableName = "sessions",
+    indices = [Index(value = ["projectId"])]
+)
 @Immutable
 data class Session(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

@@ -22,6 +22,8 @@ import org.json.JSONObject
 /** Synchronous host boundary used by bundled document plugins. */
 interface JsDocumentRuntime {
     fun parse(pluginSource: String, runtimeSource: String, input: JsDocumentInput): String
+    fun editDocument(pluginSource: String, runtimeSource: String, input: JsDocumentEditInput): String =
+        throw UnsupportedOperationException("Document runtime does not support edits")
     fun close()
 }
 
@@ -33,6 +35,13 @@ interface JsDocumentRuntime {
  */
 interface JsDocumentParseRuntime : AutoCloseable {
     fun parse(pluginAsset: String, input: JsDocumentInput): DocumentParseResult
+    fun editDocument(pluginAsset: String, input: JsDocumentEditInput): DocumentEditResult =
+        throw UnsupportedOperationException("Document runtime does not support edits")
+    fun edit(
+        pluginAsset: String,
+        input: JsDocumentEditInput,
+        operation: JsDocumentEditOperation = input.operation
+    ): DocumentEditResult = editDocument(pluginAsset, input.copy(operation = operation))
     override fun close()
 }
 
@@ -61,6 +70,9 @@ class BundledQuickJsDocumentRuntime(
     /** Parse one bundled plugin synchronously and return its validated typed result. */
     override fun parse(pluginAsset: String, input: JsDocumentInput): DocumentParseResult =
         coordinator.parse(pluginAsset, input)
+
+    override fun editDocument(pluginAsset: String, input: JsDocumentEditInput): DocumentEditResult =
+        coordinator.editDocument(pluginAsset, input)
 
     override fun close() {
         coordinator.close()
@@ -112,6 +124,49 @@ internal class JsDocumentRuntimeCoordinator(
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         require(maxConcurrentTasks > 0) { "maxConcurrentTasks must be positive" }
         require(maxOrphanTasks >= 0) { "maxOrphanTasks must not be negative" }
+    }
+
+    /** Edit one selected bundled plugin synchronously, sharing parse lifecycle and limits. */
+    fun editDocument(pluginAsset: String, input: JsDocumentEditInput): DocumentEditResult {
+        val inputSnapshot = input.copy(bytes = input.bytes.copyOf())
+        val task: ActiveTask
+        val future: Future<DocumentEditResult>
+        synchronized(stateLock) {
+            check(!closed.get()) { "JavaScript document runtime is closed" }
+            validateAssetPath(pluginAsset)
+            validateEditInput(inputSnapshot)
+            if (orphanTaskCount > 0 && (maxOrphanTasks == 0 || orphanTaskCount >= maxOrphanTasks)) {
+                throw temporarilyUnavailable("A previous timed-out document plugin is still unwinding")
+            }
+            if (activeTasks.size >= maxConcurrentTasks) {
+                throw temporarilyUnavailable("The document JavaScript runtime has reached its active task limit")
+            }
+            task = ActiveTask()
+            activeTasks += task
+            future = try {
+                FutureTask(Callable { runEditTask(task, pluginAsset, inputSnapshot) }).also {
+                    task.future = it
+                    executor.execute(it)
+                }
+            } catch (error: Throwable) {
+                activeTasks.remove(task)
+                throw temporarilyUnavailable("The document JavaScript runtime could not accept another task", error)
+            }
+        }
+        return try {
+            future.get(timeoutMillis, TimeUnit.MILLISECONDS)
+        } catch (error: TimeoutException) {
+            requestCancellation(task)
+            throw DocumentParseException(DocumentParseErrorCategory.PluginTimeout, "Document plugin exceeded the ${timeoutMillis}ms deadline", error)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            requestCancellation(task)
+            throw DocumentParseException(DocumentParseErrorCategory.PluginTimeout, "Document plugin execution was interrupted", error)
+        } catch (error: CancellationException) {
+            throw DocumentParseException(DocumentParseErrorCategory.PluginTimeout, "Document plugin execution was cancelled", error)
+        } catch (error: ExecutionException) {
+            throw unwrapExecutionException(error)
+        }
     }
 
     /**
@@ -210,6 +265,51 @@ internal class JsDocumentRuntimeCoordinator(
             val tasks = activeTasks.toList()
             tasks.forEach { requestCancellationLocked(it) }
             executor.shutdownNow()
+        }
+    }
+
+    private fun runEditTask(
+        task: ActiveTask,
+        pluginAsset: String,
+        input: JsDocumentEditInput
+    ): DocumentEditResult {
+        synchronized(stateLock) { if (task.cancelledBeforeStart) { finishTaskLocked(task); throw CancellationException() }; task.started = true }
+        var runtime: JsDocumentRuntime? = null
+        return try {
+            runtime = try {
+                runtimeFactory()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                throw DocumentParseException(
+                    DocumentParseErrorCategory.RuntimeUnavailable,
+                    "JavaScript runtime could not be created",
+                    error
+                )
+            }
+            try {
+                val json = runtime.editDocument(loadAsset(pluginAsset), loadAsset(RUNTIME_ASSET), input)
+                validateOutputSize(json)
+                parseEditResult(json)
+            } catch (error: DocumentParseException) {
+                throw error
+            } catch (error: CancellationException) {
+                throw DocumentParseException(
+                    DocumentParseErrorCategory.PluginTimeout,
+                    "Document plugin execution was cancelled",
+                    error
+                )
+            } catch (error: Throwable) {
+                throw classifyRuntimeFailure(error)
+            }
+        } catch (error: DocumentParseException) {
+            throw error
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            throw classifyRuntimeFailure(error)
+        } finally {
+            try { runtime?.close() } finally { synchronized(stateLock) { finishTaskLocked(task) } }
         }
     }
 
@@ -319,6 +419,14 @@ internal class JsDocumentRuntimeCoordinator(
         }
     }
 
+    private fun validateEditInput(input: JsDocumentEditInput) {
+        validateInput(JsDocumentInput(input.name, input.mimeType, input.bytes))
+        if (input.content.isEmpty()) throw malformed("Document edit content must not be empty")
+        if (input.operation == JsDocumentEditOperation.Replace && input.oldText.isNullOrEmpty()) {
+            throw malformed("Document replace oldText must not be empty")
+        }
+    }
+
     private fun validateOutputSize(json: String) {
         if (json.toByteArray(Charsets.UTF_8).size > maxOutputBytes) {
             throw DocumentParseException(
@@ -326,6 +434,33 @@ internal class JsDocumentRuntimeCoordinator(
                 "Document plugin output exceeds the configured byte limit"
             )
         }
+    }
+
+    private fun parseEditResult(json: String): DocumentEditResult {
+        val root = try { JSONObject(json) } catch (error: Throwable) {
+            throw malformed("Document edit plugin did not return a JSON object")
+        }
+        if (root.opt("format") != "docx") throw malformed("Document edit result format must be docx")
+        val encoded = root.opt("bytesBase64")
+        if (encoded !is String || encoded.isBlank()) throw malformed("Document edit result bytesBase64 must be a non-empty string")
+        val warningsJson = root.opt("warnings")
+        if (warningsJson !is JSONArray) throw malformed("Document edit result warnings must be an array")
+        val warnings = ArrayList<String>(warningsJson.length())
+        for (index in 0 until warningsJson.length()) {
+            if (warningsJson.opt(index) !is String) throw malformed("Document edit result warnings must contain only strings")
+            warnings += warningsJson.getString(index)
+        }
+        val bytes = try { Base64.getDecoder().decode(encoded) } catch (error: Throwable) {
+            throw malformed("Document edit result bytesBase64 is invalid")
+        }
+        if (bytes.isEmpty()) throw malformed("Document edit result bytes must not be empty")
+        if (bytes.size > maxOutputBytes) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.PluginMemoryLimit,
+                "Document edit result bytes exceed the configured byte limit"
+            )
+        }
+        return DocumentEditResult(bytes, warnings)
     }
 
     private fun parsePluginResult(json: String): DocumentParseResult {
@@ -469,8 +604,39 @@ private class AndroidQuickJsDocumentRuntime : JsDocumentRuntime {
             ?: throw IllegalStateException("Document plugin did not return a JSON string")
     }
 
+    override fun editDocument(
+        pluginSource: String,
+        runtimeSource: String,
+        input: JsDocumentEditInput
+    ): String {
+        val encodedBytes = Base64.getEncoder().encodeToString(input.bytes.copyOf())
+        context.getGlobalObject().setProperty("__documentName", input.name)
+        context.getGlobalObject().setProperty("__documentMimeType", input.mimeType)
+        context.getGlobalObject().setProperty("__documentBase64", encodedBytes)
+        context.getGlobalObject().setProperty("__documentOperation", input.operation.name.lowercase())
+        context.getGlobalObject().setProperty("__documentOldText", input.oldText ?: "")
+        context.getGlobalObject().setProperty("__documentContent", input.content)
+        return context.evaluate(buildEditEvaluationScript(runtimeSource, pluginSource)) as? String
+            ?: throw IllegalStateException("Document edit plugin did not return a JSON string")
+    }
+
     override fun close() {
         context.close()
+    }
+
+    private fun buildEditEvaluationScript(runtimeSource: String, pluginSource: String): String {
+        val runtimeLiteral = JSONObject.quote(runtimeSource)
+        val pluginLiteral = JSONObject.quote(pluginSource)
+        return """
+            (function() {
+              const factory = new Function($runtimeLiteral + "\\n" + $pluginLiteral + "\\nif (typeof editDocument !== 'function') throw new Error('bundled plugin must define synchronous editDocument');\\nreturn editDocument;");
+              const edit = factory();
+              const value = edit({name:globalThis.__documentName,mimeType:globalThis.__documentMimeType,bytes:decodeBase64(globalThis.__documentBase64)}, {operation:globalThis.__documentOperation,oldText:globalThis.__documentOldText,content:globalThis.__documentContent});
+              if (value && typeof value.then === 'function') throw new Error('document edit plugin must return synchronously, not a Promise');
+              delete globalThis.__documentName; delete globalThis.__documentMimeType; delete globalThis.__documentBase64; delete globalThis.__documentOperation; delete globalThis.__documentOldText; delete globalThis.__documentContent;
+              return JSON.stringify(value);
+            })()
+        """.trimIndent()
     }
 
     private fun buildEvaluationScript(

@@ -5,7 +5,10 @@ import com.omnichat.data.AppDatabase
 import com.omnichat.data.OmnifileFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 class CloudBackupManager(private val context: Context) {
 
@@ -14,149 +17,140 @@ class CloudBackupManager(private val context: Context) {
     val isBound: Boolean get() = repository.isBound
     val userId: String? get() = repository.userId
 
-    // --- Binding ---
+    suspend fun bindTotp(): Result<BindTotpResponse> = repository.bindTotp()
+    suspend fun verifyAndBind(totpSecret: String, totpCode: String): Result<VerifyResponse> = repository.verifyAndBind(totpSecret, totpCode)
+    suspend fun verifyForRecovery(totpSecret: String, totpCode: String): Result<VerifyResponse> = repository.verifyForRecovery(totpSecret, totpCode)
+    suspend fun recover(totpCode: String): Result<RecoverResponse> = repository.recover(totpCode)
+    fun unbind() = repository.unbind()
 
-    suspend fun bindTotp(): Result<BindTotpResponse> {
-        return repository.bindTotp()
-    }
-
-    suspend fun verifyAndBind(totpSecret: String, totpCode: String): Result<VerifyResponse> {
-        return repository.verifyAndBind(totpSecret, totpCode)
-    }
-
-    suspend fun verifyForRecovery(totpSecret: String, totpCode: String): Result<VerifyResponse> {
-        return repository.verifyForRecovery(totpSecret, totpCode)
-    }
-
-    suspend fun recover(totpCode: String): Result<RecoverResponse> {
-        return repository.recover(totpCode)
-    }
-
-    fun unbind() {
-        repository.unbind()
-    }
-
-    // --- Backup ---
-
-    /**
-     * Upload a single omnifile backup containing selected sections.
-     */
-    suspend fun uploadOmnifileBackup(
-        sections: List<String> = emptyList()
-    ): Result<String> = withContext(Dispatchers.IO) {
+    /** Uploads the database and, for a full backup, the private project file tree. */
+    suspend fun uploadOmnifileBackup(sections: List<String> = emptyList()): Result<String> = withContext(Dispatchers.IO) {
         try {
             val database = AppDatabase.getDatabase(context)
             database.query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
-
-            val dbFile = context.getDatabasePath("ai_chat_memory_db")
-            val databaseBytes = dbFile.readBytes()
-
-            val exportType = if (sections.isEmpty()) {
-                OmnifileFormat.ExportType.FULL
-            } else {
-                OmnifileFormat.ExportType.SELECTIVE
+            val databaseBytes = context.getDatabasePath("ai_chat_memory_db").readBytes()
+            val exportType = if (sections.isEmpty()) OmnifileFormat.ExportType.FULL else OmnifileFormat.ExportType.SELECTIVE
+            val includedSections = if (sections.isEmpty()) {
+                OmnifileFormat.CATEGORY_PROVIDER_MCP + OmnifileFormat.CATEGORY_MEMORY_PROMPTS +
+                    OmnifileFormat.CATEGORY_THEME_UI + OmnifileFormat.CATEGORY_CHAT_HISTORY
+            } else sections
+            val projectsZip = if (sections.isEmpty()) {
+                OmnifileFormat.zipProjectsDirectory(File(context.filesDir, "projects"))
+            } else null
+            val bytes = java.io.ByteArrayOutputStream().use { output ->
+                OmnifileFormat.writeOmnifile(
+                    output,
+                    OmnifileFormat.OmnifileMetadata(exportType = exportType, includedSections = includedSections),
+                    databaseBytes,
+                    projectsZip
+                )
+                output.toByteArray()
             }
-
-            val metadata = OmnifileFormat.OmnifileMetadata(
-                exportType = exportType,
-                includedSections = if (sections.isEmpty()) {
-                    OmnifileFormat.CATEGORY_PROVIDER_MCP +
-                    OmnifileFormat.CATEGORY_MEMORY_PROMPTS +
-                    OmnifileFormat.CATEGORY_THEME_UI +
-                    OmnifileFormat.CATEGORY_CHAT_HISTORY
-                } else {
-                    sections
-                }
-            )
-
-            val baos = java.io.ByteArrayOutputStream()
-            OmnifileFormat.writeOmnifile(baos, metadata, databaseBytes)
-            val data = baos.toByteArray()
-
-            val timestamp = java.text.SimpleDateFormat(
-                "yyyyMMdd_HHmmss", java.util.Locale.getDefault()
-            ).format(java.util.Date())
-            val filename = "omnichat_backup_$timestamp.omnifile"
-
-            val result = repository.uploadBackup(data, filename)
-            result.map { it.backupId }
+            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+            repository.uploadBackup(bytes, "omnichat_backup_$timestamp.omnifile").map { it.backupId }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    // --- Restore ---
-
-    suspend fun listBackups(): Result<List<BackupMeta>> {
-        return repository.listBackups()
-    }
-
-    suspend fun deleteBackup(backupId: String): Result<Unit> {
-        return repository.deleteBackup(backupId)
-    }
+    suspend fun listBackups(): Result<List<BackupMeta>> = repository.listBackups()
+    suspend fun deleteBackup(backupId: String): Result<Unit> = repository.deleteBackup(backupId)
 
     suspend fun restoreOmnifileBackup(backupId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val dbPath = context.getDatabasePath("ai_chat_memory_db")
+        val projectsPath = File(context.filesDir, "projects")
+        val hadOriginalDb = dbPath.exists()
+        var stagedDb: File? = null
+        var originalDb: File? = null
+        var stagedProjects: File? = null
+        var originalProjects: File? = null
+        var restoredDb: AppDatabase? = null
+
+        fun deleteDatabaseFiles(file: File) {
+            file.delete()
+            File(file.path + "-wal").delete()
+            File(file.path + "-shm").delete()
+        }
+        fun move(source: File, destination: File) {
+            if (!source.renameTo(destination)) throw IOException("Unable to move ${source.name}")
+        }
+
         try {
-            val data = repository.downloadBackup(backupId).getOrThrow()
-
-            // Validate header
-            val headerStr = String(data, 0, minOf(10, data.size), Charsets.UTF_8)
-            if (!headerStr.startsWith("OMNIFILE1")) {
-                return@withContext Result.failure(Exception("Invalid omnifile header"))
+            val payload = ByteArrayInputStream(repository.downloadBackup(backupId).getOrThrow()).use(OmnifileFormat::readOmnifile)
+            val sqliteHeader = "SQLite format 3\u0000".toByteArray(Charsets.UTF_8)
+            if (payload.databaseBytes.size < 100 || !payload.databaseBytes.copyOfRange(0, sqliteHeader.size).contentEquals(sqliteHeader)) {
+                throw IOException("Omnifile payload is not a SQLite database")
             }
-
-            // Parse omnifile: skip 10-byte header, read metadata length, metadata, then database payload
-            val headerSize = "OMNIFILE1\n".toByteArray().size
-            val metadataLength = java.nio.ByteBuffer.wrap(data, headerSize, 4)
-                .order(java.nio.ByteOrder.BIG_ENDIAN).int
-            val metadataStart = headerSize + 4
-            val databaseStart = metadataStart + metadataLength
-
-            if (databaseStart >= data.size) {
-                return@withContext Result.failure(Exception("Omnifile contains no database payload"))
+            stagedDb = File.createTempFile("${dbPath.name}.restore-", ".tmp", dbPath.parentFile)
+            FileOutputStream(stagedDb).use { output -> output.write(payload.databaseBytes); output.fd.sync() }
+            AppDatabase.createDatabase(context, stagedDb.name).apply {
+                try {
+                    openHelper.writableDatabase
+                } finally {
+                    close()
+                }
             }
+            File(stagedDb.path + "-wal").delete()
+            File(stagedDb.path + "-shm").delete()
+            payload.projectsZip?.let { stagedProjects = OmnifileFormat.extractProjectsZip(it, context.filesDir) }
 
-            val dbData = data.copyOfRange(databaseStart, data.size)
-
-            // Close database, replace file, restart app
-            val db = AppDatabase.getDatabase(context)
-            db.close()
-            AppDatabase.clearInstance()
-
-            val dbPath = context.getDatabasePath("ai_chat_memory_db")
-            dbPath.writeBytes(dbData)
-
-            // Delete WAL/SHM
-            File(dbPath.path + "-wal").delete()
-            File(dbPath.path + "-shm").delete()
-
-            // Verify the restored database can be opened; if not, delete and let Room recreate
-            try {
-                val testDb = AppDatabase.getDatabase(context)
-                testDb.openHelper.readableDatabase
-                testDb.close()
+            if (hadOriginalDb) {
+                AppDatabase.getDatabase(context).apply {
+                    query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)")).close()
+                    close()
+                }
                 AppDatabase.clearInstance()
-            } catch (e: Exception) {
-                // Restored DB schema is incompatible — delete and recreate fresh
-                AppDatabase.clearInstance()
-                dbPath.delete()
                 File(dbPath.path + "-wal").delete()
                 File(dbPath.path + "-shm").delete()
+                originalDb = File.createTempFile("${dbPath.name}.restore-backup-", ".bak", dbPath.parentFile).also {
+                    if (!it.delete()) throw IOException("Unable to prepare database backup")
+                    move(dbPath, it)
+                }
+            }
+            move(stagedDb, dbPath)
+            stagedDb = null
+
+            if (stagedProjects != null) {
+                if (projectsPath.exists()) {
+                    originalProjects = File(context.filesDir, "projects.restore-backup-${System.nanoTime()}")
+                    move(projectsPath, originalProjects!!)
+                }
+                move(stagedProjects!!, projectsPath)
+                stagedProjects = null
             }
 
+            restoredDb = AppDatabase.getDatabase(context)
+            restoredDb!!.openHelper.writableDatabase
+            restoredDb!!.close()
+            restoredDb = null
+            AppDatabase.clearInstance()
+            originalDb?.let(::deleteDatabaseFiles)
+            originalDb = null
+            originalProjects?.deleteRecursively()
+            originalProjects = null
             Result.success(Unit)
         } catch (e: Exception) {
+            val rollbackError = runCatching {
+                restoredDb?.close()
+                AppDatabase.clearInstance()
+                if (originalDb != null) {
+                    deleteDatabaseFiles(dbPath)
+                    move(originalDb!!, dbPath)
+                    originalDb = null
+                } else if (!hadOriginalDb) deleteDatabaseFiles(dbPath)
+                if (originalProjects != null) {
+                    projectsPath.deleteRecursively()
+                    move(originalProjects!!, projectsPath)
+                    originalProjects = null
+                }
+            }.exceptionOrNull()
+            stagedDb?.let(::deleteDatabaseFiles)
+            stagedProjects?.deleteRecursively()
+            rollbackError?.let(e::addSuppressed)
             Result.failure(e)
         }
     }
 
-    // --- Settings ---
-
-    fun setWorkersUrl(url: String) {
-        repository.setWorkersUrl(url)
-    }
-
-    fun getWorkersUrl(): String {
-        return repository.getWorkersUrl()
-    }
+    fun setWorkersUrl(url: String) = repository.setWorkersUrl(url)
+    fun getWorkersUrl(): String = repository.getWorkersUrl()
 }

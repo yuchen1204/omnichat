@@ -3,6 +3,10 @@ package com.omnichat.data
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import java.util.concurrent.ConcurrentHashMap
+import com.omnichat.util.JsDocumentEditOperation
+import com.omnichat.util.JsDocumentReader
 
 /**
  * 记忆关联展开结果：包含关联的记忆条目、关系标签和方向。
@@ -14,7 +18,7 @@ data class RelatedMemoryInfo(
     val direction: String
 )
 
-class AppRepository(private val db: AppDatabase) {
+class AppRepository(private val db: AppDatabase, private val context: android.content.Context? = null) {
     private val modelConfigDao = db.modelConfigDao()
     private val sessionDao = db.sessionDao()
     private val messageDao = db.messageDao()
@@ -31,6 +35,7 @@ class AppRepository(private val db: AppDatabase) {
     private val cloudBackupDao = db.cloudBackupDao()
     private val projectDao = db.projectDao()
     private val projectKnowledgeDao = db.projectKnowledgeDao()
+    private val projectKnowledgeEditMutexes = ConcurrentHashMap<Long, Mutex>()
 
     // Model Configs
     val allConfigs: Flow<List<ModelConfig>> = modelConfigDao.getAllConfigsFlow()
@@ -252,7 +257,11 @@ class AppRepository(private val db: AppDatabase) {
         // 4. 删除项目
         projectDao.deleteProjectById(id)
     }
-    suspend fun deleteSessionsByProject(projectId: Long) {}
+    suspend fun deleteSessionsByProject(projectId: Long) = db.withTransaction {
+        sessionDao.getSessionsByProject(projectId).forEach { session ->
+            deleteSession(session.id)
+        }
+    }
     suspend fun deleteKnowledgeByProject(projectId: Long) = projectKnowledgeDao.deleteKnowledgeByProject(projectId)
     fun getSessionsByProjectFlow(projectId: Long): Flow<List<Session>> = sessionDao.getSessionsByProjectFlow(projectId)
 
@@ -339,11 +348,18 @@ class AppRepository(private val db: AppDatabase) {
         originalName: String,
         source: String = "USER_UPLOAD"
     ): ProjectKnowledge {
-        // 步骤 1：复制到临时文件（验证扩展名）
-        val tmp = ProjectFileStore.copyIntoProject(context, projectId, sourceUri, originalName, source)
+        val remainingBytes = remainingProjectKnowledgeBytes(projectId)
+        val tmp = ProjectFileStore.copyIntoProject(
+            context = context,
+            projectId = projectId,
+            sourceUri = sourceUri,
+            originalName = originalName,
+            source = source,
+            maxBytes = remainingBytes
+        )
         var assetId: Long = -1L
+        var finalFile: java.io.File? = null
         return try {
-            // 步骤 2：重命名为最终文件路径
             val insertedId = projectKnowledgeDao.insertKnowledge(
                 ProjectKnowledge(
                     projectId = projectId,
@@ -355,7 +371,7 @@ class AppRepository(private val db: AppDatabase) {
                 )
             )
             assetId = insertedId
-            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, originalName)
+            finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, originalName)
             val finalRow = ProjectKnowledge(
                 id = assetId,
                 projectId = projectId,
@@ -365,11 +381,10 @@ class AppRepository(private val db: AppDatabase) {
                 localFileName = finalFile.name,
                 source = source
             )
-            // 步骤 3：更新数据库行（localFileName + fileSize）
             projectKnowledgeDao.insertKnowledge(finalRow)
             finalRow
         } catch (e: Exception) {
-            // 清理：删除临时文件、最终文件和孤儿数据库行
+            finalFile?.delete()
             tmp.delete()
             if (assetId != -1L) {
                 projectKnowledgeDao.deleteKnowledgeById(assetId)
@@ -394,19 +409,22 @@ class AppRepository(private val db: AppDatabase) {
         fileType: String,
         source: String = "AGENT_CREATED"
     ): ProjectKnowledge {
-        // 检查是否已有同名文件
         val existing = projectKnowledgeDao.getKnowledgeByProject(projectId)
             .find { it.fileName == sanitizeFileName(fileName) }
         if (existing != null) {
             throw IllegalStateException("Asset with name '${sanitizeFileName(fileName)}' already exists in project $projectId")
         }
 
-        // 步骤 1：创建临时文件并写入内容
+        val remainingBytes = remainingProjectKnowledgeBytes(projectId)
+        if (content.size.toLong() > remainingBytes) {
+            throw IllegalStateException(ProjectContentLimits.knowledgeLimitError(remainingBytes))
+        }
+
         val tmp = ProjectFileStore.copyIntoProject(null, projectId, null, fileName, source)
         var assetId: Long = -1L
+        var finalFile: java.io.File? = null
         return try {
             tmp.writeBytes(content)
-            // 步骤 2：插入数据库占位行
             val insertedId = projectKnowledgeDao.insertKnowledge(
                 ProjectKnowledge(
                     projectId = projectId,
@@ -418,8 +436,7 @@ class AppRepository(private val db: AppDatabase) {
                 )
             )
             assetId = insertedId
-            // 步骤 3：重命名为最终文件路径
-            val finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, fileName)
+            finalFile = ProjectFileStore.renameToFinal(tmp, projectId, assetId, fileName)
             val finalRow = ProjectKnowledge(
                 id = assetId,
                 projectId = projectId,
@@ -429,11 +446,10 @@ class AppRepository(private val db: AppDatabase) {
                 localFileName = finalFile.name,
                 source = source
             )
-            // 步骤 4：更新数据库行（localFileName + fileSize）
             projectKnowledgeDao.insertKnowledge(finalRow)
             finalRow
         } catch (e: Exception) {
-            // 清理：删除临时文件、最终文件和孤儿数据库行
+            finalFile?.delete()
             tmp.delete()
             if (assetId != -1L) {
                 projectKnowledgeDao.deleteKnowledgeById(assetId)
@@ -444,7 +460,82 @@ class AppRepository(private val db: AppDatabase) {
 
     /** 读取项目资产文件。 */
     fun readProjectAssetFile(asset: ProjectKnowledge): java.io.File =
-        ProjectFileStore.assetFile(asset.projectId, asset.id, asset.fileName)
+        ProjectFileStore.assetFile(asset)
+
+    /** 追加文本内容到项目资产，并同步数据库文件大小。 */
+    suspend fun appendProjectKnowledge(assetId: Long, projectId: Long, content: String) =
+        withKnowledgeEditLock(assetId) {
+            val asset = projectKnowledgeDao.getKnowledgeById(assetId)
+                ?: throw IllegalArgumentException("Knowledge asset not found: $assetId")
+            if (asset.projectId != projectId) throw IllegalArgumentException("Knowledge asset does not belong to project $projectId")
+            if (asset.fileType == "docx") {
+                val appContext = context ?: throw IllegalStateException("DOCX editing requires an application context")
+                val file = ProjectFileStore.assetFile(asset)
+                val edited = JsDocumentReader(appContext).edit(file, JsDocumentEditOperation.Append, content = content)
+                ensureKnowledgeSize(projectId, asset.id, edited.bytes)
+                ProjectFileStore.writeBinaryAsset(asset, edited.bytes)
+                projectKnowledgeDao.updateKnowledgeFileSize(asset.id, edited.bytes.size.toLong())
+                return@withKnowledgeEditLock
+            }
+            val current = ProjectFileStore.readTextAsset(asset)
+            val updated = if (current.isEmpty()) content else "$current\n\n$content"
+            ensureKnowledgeSize(projectId, asset.id, updated)
+            ProjectFileStore.writeTextAsset(asset, updated)
+            projectKnowledgeDao.updateKnowledgeFileSize(asset.id, updated.toByteArray(Charsets.UTF_8).size.toLong())
+        }
+
+    /** 按 oldText 替换项目资产中的文本，并同步数据库文件大小。 */
+    suspend fun editProjectKnowledge(assetId: Long, projectId: Long, oldText: String, content: String) =
+        withKnowledgeEditLock(assetId) {
+            if (oldText.isEmpty()) throw IllegalArgumentException("oldText cannot be empty")
+            val asset = projectKnowledgeDao.getKnowledgeById(assetId)
+                ?: throw IllegalArgumentException("Knowledge asset not found: $assetId")
+            if (asset.projectId != projectId) throw IllegalArgumentException("Knowledge asset does not belong to project $projectId")
+            if (asset.fileType == "docx") {
+                val appContext = context ?: throw IllegalStateException("DOCX editing requires an application context")
+                val file = ProjectFileStore.assetFile(asset)
+                val edited = JsDocumentReader(appContext).edit(file, JsDocumentEditOperation.Replace, oldText, content)
+                ensureKnowledgeSize(projectId, asset.id, edited.bytes)
+                ProjectFileStore.writeBinaryAsset(asset, edited.bytes)
+                projectKnowledgeDao.updateKnowledgeFileSize(asset.id, edited.bytes.size.toLong())
+                return@withKnowledgeEditLock
+            }
+            val current = ProjectFileStore.readTextAsset(asset)
+            if (!current.contains(oldText)) throw IllegalArgumentException("oldText not found in knowledge asset")
+            val updated = current.replace(oldText, content)
+            ensureKnowledgeSize(projectId, asset.id, updated)
+            ProjectFileStore.writeTextAsset(asset, updated)
+            projectKnowledgeDao.updateKnowledgeFileSize(asset.id, updated.toByteArray(Charsets.UTF_8).size.toLong())
+        }
+
+    private suspend fun <T> withKnowledgeEditLock(assetId: Long, block: suspend () -> T): T {
+        val mutex = projectKnowledgeEditMutexes.getOrPut(assetId) { Mutex() }
+        mutex.lock()
+        return try { block() } finally { mutex.unlock() }
+    }
+
+    private suspend fun ensureKnowledgeSize(projectId: Long, assetId: Long, bytes: ByteArray) {
+        val assets = projectKnowledgeDao.getKnowledgeByProject(projectId)
+        val current = assets.sumOf { it.fileSize.coerceAtLeast(0) }
+        val oldSize = assets.firstOrNull { it.id == assetId }?.fileSize ?: 0L
+        if (current - oldSize + bytes.size > ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT) {
+            throw IllegalStateException(ProjectContentLimits.knowledgeLimitError(
+                ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT - (current - oldSize)
+            ))
+        }
+    }
+
+    private suspend fun ensureKnowledgeSize(projectId: Long, assetId: Long, content: String) {
+        val assets = projectKnowledgeDao.getKnowledgeByProject(projectId)
+        val current = assets.sumOf { it.fileSize.coerceAtLeast(0) }
+        val oldSize = assets.firstOrNull { it.id == assetId }?.fileSize ?: 0L
+        val newSize = content.toByteArray(Charsets.UTF_8).size.toLong()
+        if (current - oldSize + newSize > ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT) {
+            throw IllegalStateException(ProjectContentLimits.knowledgeLimitError(
+                ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT - (current - oldSize)
+            ))
+        }
+    }
 
     /** 删除项目资产（数据库行 + 文件）。先删 DB 再删文件。 */
     suspend fun deleteUserProjectAsset(asset: ProjectKnowledge) {
@@ -463,6 +554,7 @@ class AppRepository(private val db: AppDatabase) {
 
     /** 追加内容到项目记忆末尾。 */
     suspend fun appendProjectMemory(projectId: Long, content: String) {
+        requireMemoryCanBeModified(projectId)
         val current = readProjectMemory(projectId)
         val newContent = if (current.isNotBlank()) "$current\n\n$content" else content
         ProjectFileStore.writeMemory(projectId, newContent)
@@ -470,6 +562,7 @@ class AppRepository(private val db: AppDatabase) {
 
     /** 按内容范围替换项目记忆（将 oldText 替换为 newText）。 */
     suspend fun replaceProjectMemoryRange(projectId: Long, oldText: String, newText: String) {
+        requireMemoryCanBeModified(projectId)
         val current = readProjectMemory(projectId)
         if (oldText.isEmpty()) {
             throw IllegalArgumentException("oldText cannot be empty")
@@ -483,6 +576,7 @@ class AppRepository(private val db: AppDatabase) {
 
     /** 删除项目记忆中包含指定文本的段落。 */
     suspend fun deleteProjectMemorySection(projectId: Long, sectionText: String) {
+        requireMemoryCanBeModified(projectId)
         val current = readProjectMemory(projectId)
         if (sectionText.isEmpty()) {
             throw IllegalArgumentException("sectionText cannot be empty")
@@ -492,6 +586,18 @@ class AppRepository(private val db: AppDatabase) {
         }
         val updated = current.replace(sectionText, "").replace(Regex("\n{3,}"), "\n\n").trim()
         ProjectFileStore.writeMemory(projectId, updated)
+    }
+
+    private suspend fun remainingProjectKnowledgeBytes(projectId: Long): Long {
+        val usedBytes = projectKnowledgeDao.getKnowledgeByProject(projectId)
+            .fold(0L) { total, asset -> total + asset.fileSize.coerceAtLeast(0) }
+        return (ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT - usedBytes).coerceAtLeast(0)
+    }
+
+    private fun requireMemoryCanBeModified(projectId: Long) {
+        require(ProjectFileStore.isMemoryWithinLimit(projectId)) {
+            "Project memory is larger than 128 KiB and was read only partially; refusing this edit to preserve existing content."
+        }
     }
 
     private fun classifyFileType(fileName: String): String {

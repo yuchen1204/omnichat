@@ -106,7 +106,7 @@ fun ProjectMemoryScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
                             Text(
-                                text = "Agent 可以通过 project_write_memory 工具写入内容",
+                                text = "Agent 可以通过 project_update_memory 工具写入内容",
                                 fontSize = (12 * fs).sp,
                                 fontFamily = resolvedFontFamily,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)

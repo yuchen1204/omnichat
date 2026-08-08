@@ -43,6 +43,7 @@
     <string name="chat_input_hint">Type a message…</string>
     <string name="chat_send_contentDescription">Send</string>
     <string name="chat_stop_contentDescription">Stop</string>
+    <string name="chat_terminate">Terminate</string>
     <string name="chat_edit_message">Edit</string>
     <string name="chat_editing_message">Editing message…</string>
     <string name="chat_cancel_edit">Cancel edit</string>

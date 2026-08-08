@@ -1,5 +1,9 @@
 package com.omnichat.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,6 +52,8 @@ fun ProjectDetailScreen(
 
     val projectSessions by viewModel.projectSessions.collectAsStateWithLifecycle()
     val selectedSessionId by viewModel.selectedSessionId.collectAsStateWithLifecycle()
+
+    var deleteTargetSession by remember { mutableStateOf<Session?>(null) }
 
     Scaffold(
         topBar = {
@@ -185,11 +191,46 @@ fun ProjectDetailScreen(
                         onClick = {
                             viewModel.selectSession(session.id)
                             onSessionSelected()
-                        }
+                        },
+                        onLongClick = { deleteTargetSession = session }
                     )
                 }
             }
         }
+    }
+
+    deleteTargetSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = { deleteTargetSession = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(cornerRadius),
+            icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("删除会话", fontFamily = resolvedFontFamily) },
+            text = {
+                Text(
+                    text = "确定要删除「${session.title}」吗？\n该会话的所有消息记录将被永久清除，无法恢复。",
+                    fontSize = (14 * fs).sp,
+                    lineHeight = (20 * fs).sp,
+                    fontFamily = resolvedFontFamily
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteProjectSession(project.id, session.id)
+                        deleteTargetSession = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text("删除", fontFamily = resolvedFontFamily) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { deleteTargetSession = null },
+                    shape = RoundedCornerShape((cornerRadius.value - 2).coerceAtLeast(0f).dp)
+                ) { Text("取消", fontFamily = resolvedFontFamily) }
+            }
+        )
     }
 }
 
@@ -249,6 +290,7 @@ private fun EntryCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRow(
     session: Session,
@@ -256,16 +298,22 @@ private fun SessionRow(
     fs: Float,
     resolvedFontFamily: androidx.compose.ui.text.font.FontFamily,
     cornerRadius: androidx.compose.ui.unit.Dp,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
 ) {
+    val bgColor by animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        animationSpec = tween(200),
+        label = "sessionRowBg"
+    )
+
     Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(cornerRadius),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        colors = CardDefaults.cardColors(containerColor = bgColor)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),

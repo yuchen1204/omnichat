@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.omnichat.data.AppDatabase
 import com.omnichat.data.AppRepository
+import com.omnichat.data.ProjectContentLimits
 import com.omnichat.data.ProjectFileStore
 import com.omnichat.data.ProjectKnowledge
 import com.omnichat.data.Session
@@ -11,6 +12,8 @@ import com.omnichat.mcp.McpRuntimeManager
 import com.omnichat.tool.builtin.ProjectListKnowledgeTool
 import com.omnichat.tool.builtin.ProjectReadKnowledgeTool
 import com.omnichat.tool.builtin.ProjectCreateKnowledgeTool
+import com.omnichat.tool.builtin.ProjectAppendKnowledgeTool
+import com.omnichat.tool.builtin.ProjectEditKnowledgeTool
 import com.omnichat.tool.builtin.ProjectReadMemoryTool
 import com.omnichat.tool.builtin.ProjectUpdateMemoryTool
 import kotlinx.coroutines.runBlocking
@@ -38,6 +41,8 @@ class ProjectToolScopeTest {
             "project_list_knowledge",
             "project_read_knowledge",
             "project_create_knowledge",
+            "project_append_knowledge",
+            "project_edit_knowledge",
             "project_read_memory",
             "project_update_memory"
         )
@@ -78,6 +83,8 @@ class ProjectToolScopeTest {
                 "project_list_knowledge",
                 "project_read_knowledge",
                 "project_create_knowledge",
+                "project_append_knowledge",
+                "project_edit_knowledge",
                 "project_read_memory",
                 "project_update_memory"
             ),
@@ -118,6 +125,8 @@ class ProjectToolScopeTest {
         assertTrue(allNames.contains("project_list_knowledge"))
         assertTrue(allNames.contains("project_read_knowledge"))
         assertTrue(allNames.contains("project_create_knowledge"))
+        assertTrue(allNames.contains("project_append_knowledge"))
+        assertTrue(allNames.contains("project_edit_knowledge"))
         assertTrue(allNames.contains("project_read_memory"))
         assertTrue(allNames.contains("project_update_memory"))
     }
@@ -403,6 +412,73 @@ class ProjectToolScopeTest {
     }
 
     @Test
+    fun projectCreateKnowledgeRejectsAssetPastProjectBudget() = runBlocking {
+        val projectId = repository.insertProject(com.omnichat.data.Project(name = "Budget Test"))
+        val sessionId = repository.insertSession(Session(title = "Session", projectId = projectId))
+        repository.insertKnowledge(
+            ProjectKnowledge(
+                projectId = projectId,
+                fileName = "existing.md",
+                fileType = "md",
+                fileSize = ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT
+            )
+        )
+
+        val result = ProjectCreateKnowledgeTool.call(
+            context,
+            JSONObject().apply {
+                put("file_name", "new.md")
+                put("content", "new content")
+                put("file_type", "md")
+            },
+            sessionId
+        )
+
+        assertTrue(result.toString().contains("knowledge asset limit"))
+        assertEquals(1, repository.getKnowledgeByProject(projectId).size)
+    }
+
+    @Test
+    fun projectReadKnowledgeTruncatesTextOutput() = runBlocking {
+        val projectId = repository.insertProject(com.omnichat.data.Project(name = "Read Limit Test"))
+        val sessionId = repository.insertSession(Session(title = "Session", projectId = projectId))
+        val asset = repository.createAgentProjectAsset(
+            projectId = projectId,
+            fileName = "large.txt",
+            content = "x".repeat(ProjectContentLimits.MAX_TOOL_TEXT_CHARS + 100).toByteArray(),
+            fileType = "txt"
+        )
+
+        val result = ProjectReadKnowledgeTool.call(
+            context,
+            JSONObject().put("knowledge_id", asset.id),
+            sessionId
+        )
+
+        assertTrue(result.optString("content").contains("Output truncated"))
+    }
+
+    @Test
+    fun projectReadKnowledgeRejectsImageOverDataUrlLimit() = runBlocking {
+        val projectId = repository.insertProject(com.omnichat.data.Project(name = "Image Limit Test"))
+        val sessionId = repository.insertSession(Session(title = "Session", projectId = projectId))
+        val asset = repository.createAgentProjectAsset(
+            projectId = projectId,
+            fileName = "large.png",
+            content = ByteArray(ProjectContentLimits.MAX_IMAGE_DATA_URL_BYTES.toInt() + 1),
+            fileType = "image"
+        )
+
+        val result = ProjectReadKnowledgeTool.call(
+            context,
+            JSONObject().put("knowledge_id", asset.id),
+            sessionId
+        )
+
+        assertTrue(result.toString().contains("maximum 5 MiB"))
+    }
+
+    @Test
     fun projectCreateKnowledgeRejectsDuplicateName() = runBlocking {
         val projectId = repository.insertProject(
             com.omnichat.data.Project(name = "Duplicate Test")
@@ -506,6 +582,57 @@ class ProjectToolScopeTest {
         val memory = repository.readProjectMemory(projectId)
         assertTrue(memory.contains("Keep"))
         assertFalse(memory.contains("Remove"))
+    }
+
+    @Test
+    fun projectKnowledgeAppendAndEditSynchronizeFileSize() = runBlocking {
+        val projectId = repository.insertProject(com.omnichat.data.Project(name = "Text Edit Test"))
+        val sessionId = repository.insertSession(Session(title = "Session", projectId = projectId))
+        val asset = repository.createAgentProjectAsset(projectId, "notes.md", "before".toByteArray(), "md")
+
+        val append = ProjectAppendKnowledgeTool.call(context, JSONObject()
+            .put("knowledge_id", asset.id).put("content", "after"), sessionId)
+        assertFalse(append.optBoolean("isError"))
+        assertEquals("before\n\nafter".toByteArray().size.toLong(), repository.getKnowledgeById(asset.id)!!.fileSize)
+
+        val edit = ProjectEditKnowledgeTool.call(context, JSONObject()
+            .put("knowledge_id", asset.id).put("old_text", "before").put("content", "changed"), sessionId)
+        assertFalse(edit.optBoolean("isError"))
+        assertEquals("changed\n\nafter", ProjectFileStore.readTextAsset(repository.getKnowledgeById(asset.id)!!))
+        assertEquals("changed\n\nafter".toByteArray().size.toLong(), repository.getKnowledgeById(asset.id)!!.fileSize)
+    }
+
+    @Test
+    fun projectKnowledgeRejectsNonTextAndMissingOldText() = runBlocking {
+        val projectId = repository.insertProject(com.omnichat.data.Project(name = "Reject Test"))
+        val sessionId = repository.insertSession(Session(title = "Session", projectId = projectId))
+        val image = repository.createAgentProjectAsset(projectId, "image.png", ByteArray(1), "image")
+        val text = repository.createAgentProjectAsset(projectId, "notes.txt", "hello".toByteArray(), "txt")
+
+        val imageResult = ProjectAppendKnowledgeTool.call(context, JSONObject()
+            .put("knowledge_id", image.id).put("content", "x"), sessionId)
+        assertTrue(imageResult.toString().contains("not a text file"))
+        val missingResult = ProjectEditKnowledgeTool.call(context, JSONObject()
+            .put("knowledge_id", text.id).put("old_text", "missing").put("content", "x"), sessionId)
+        assertTrue(missingResult.toString().contains("oldText not found"))
+    }
+
+    @Test
+    fun projectKnowledgeRejectsAppendPastProjectBudget() = runBlocking {
+        val projectId = repository.insertProject(com.omnichat.data.Project(name = "Budget Edit Test"))
+        val sessionId = repository.insertSession(Session(title = "Session", projectId = projectId))
+        val asset = repository.createAgentProjectAsset(projectId, "notes.txt", "small".toByteArray(), "txt")
+        repository.insertKnowledge(ProjectKnowledge(
+            projectId = projectId,
+            fileName = "full.bin",
+            fileType = "other",
+            fileSize = ProjectContentLimits.MAX_KNOWLEDGE_BYTES_PER_PROJECT
+        ))
+
+        val result = ProjectAppendKnowledgeTool.call(context, JSONObject()
+            .put("knowledge_id", asset.id).put("content", "too much"), sessionId)
+        assertTrue(result.toString().contains("knowledge asset limit"))
+        assertEquals("small", ProjectFileStore.readTextAsset(repository.getKnowledgeById(asset.id)!!))
     }
 
     @Test

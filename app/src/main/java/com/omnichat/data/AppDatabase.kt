@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Project::class,
         ProjectKnowledge::class,
     ],
-    version = 60,
+    version = 61,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1007,21 +1007,47 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE project_knowledge ADD COLUMN localFileName TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE project_knowledge ADD COLUMN source TEXT NOT NULL DEFAULT 'USER_UPLOAD'")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_project_knowledge_projectId_id ON project_knowledge(projectId, id)")
+
+                db.execSQL("DROP INDEX IF EXISTS index_messages_sessionId_timestamp")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_sessionId ON messages(sessionId)")
+
+                // v58→v59 added SQL defaults and an index that the Session entity does not declare.
+                // Rebuild the table so Room's post-migration schema validation matches the entity.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sessions_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        thinkingEffort TEXT NOT NULL,
+                        projectId INTEGER
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO sessions_new (id, title, createdAt, thinkingEffort, projectId)
+                    SELECT id, title, createdAt, thinkingEffort, projectId FROM sessions
+                """.trimIndent())
+                db.execSQL("DROP TABLE sessions")
+                db.execSQL("ALTER TABLE sessions_new RENAME TO sessions")
             }
         }
 
+        /** v60→61: 在 sessions 表上创建 projectId 索引（由 Session 实体声明） */
+        private val MIGRATION_60_61 = object : Migration(60, 61) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_projectId ON sessions(projectId)")
+            }
+        }
 
         fun clearInstance() {
             INSTANCE = null
         }
 
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "ai_chat_memory_db"
-                )
+        fun createDatabase(context: Context, databaseName: String): AppDatabase {
+            return Room.databaseBuilder(
+                context.applicationContext,
+                AppDatabase::class.java,
+                databaseName
+            )
                     .addMigrations(
                         MIGRATION_4_5,
                         MIGRATION_5_6,
@@ -1074,17 +1100,21 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_56_57,
                         MIGRATION_57_58,
                         MIGRATION_58_59,
-                        MIGRATION_59_60
+                        MIGRATION_59_60,
+                        MIGRATION_60_61
                     )
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     // 兜底：v1-v3 使用破坏性迁移（非常旧的安装版本）。
                     // v4+ 均有显式迁移脚本（含中间版本的破坏性迁移 MIGRATION_19_22/23_25/30_32）。
                     .fallbackToDestructiveMigrationFrom(dropAllTables = true, *(1..3).toList().toIntArray())
                     // 全局兜底：恢复备份等场景下数据库版本可能不匹配，允许 destructive migration
-                    .fallbackToDestructiveMigration()
-                    .build()
-                INSTANCE = instance
-                instance
+                .fallbackToDestructiveMigration()
+                .build()
+        }
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: createDatabase(context, "ai_chat_memory_db").also { INSTANCE = it }
             }
         }
     }

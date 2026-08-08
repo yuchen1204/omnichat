@@ -3,6 +3,7 @@ package com.omnichat.data
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.sync.Mutex
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -24,6 +25,7 @@ object ProjectFileStore {
     )
 
     private val memoryMutexes = ConcurrentHashMap<Long, Mutex>()
+    private val assetMutexes = ConcurrentHashMap<Long, Mutex>()
 
     @Volatile
     private var rootDir: File? = null
@@ -68,29 +70,142 @@ object ProjectFileStore {
         return File(dir, "asset_$assetId.$ext")
     }
 
+    /**
+     * 获取资产文件路径。新资产使用持久化的内部文件名，旧资产回退到原始命名规则。
+     */
+    fun assetFile(asset: ProjectKnowledge): File {
+        if (asset.localFileName.isBlank()) {
+            return assetFile(asset.projectId, asset.id, asset.fileName)
+        }
+
+        val match = Regex("asset_${asset.id}\\.([a-z0-9]+)").matchEntire(asset.localFileName)
+            ?: throw IllegalArgumentException("Invalid local asset file name: ${asset.localFileName}")
+        require(match.groupValues[1] in ALLOWED_EXTENSIONS) {
+            "Unsupported file extension: ${match.groupValues[1]}"
+        }
+        val dir = File(projectDir(asset.projectId), "knowledge")
+        if (!dir.exists()) dir.mkdirs()
+        return File(dir, asset.localFileName)
+    }
+
     /** 获取项目记忆文件。 */
     fun memoryFile(projectId: Long): File {
         val dir = projectDir(projectId)
         return File(dir, "project_memory.md")
     }
 
-    /** 读取项目记忆内容（不存在时返回空字符串）。 */
+    /**
+     * 读取项目记忆内容（不存在时返回空字符串）。旧版超限文件仅读取前 128 KiB，
+     * 从而保持原文件不变且避免将无限内容带入上下文。
+     */
     fun readMemory(projectId: Long): String {
         val file = memoryFile(projectId)
-        return if (file.exists()) file.readText() else ""
+        if (!file.exists()) return ""
+
+        val bytes = file.inputStream().use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var remaining = ProjectContentLimits.MAX_PROJECT_MEMORY_BYTES
+            while (remaining > 0) {
+                val read = input.read(buffer, 0, minOf(buffer.size, remaining.toInt()))
+                if (read < 0) break
+                output.write(buffer, 0, read)
+                remaining -= read
+            }
+            output.toByteArray()
+        }
+        val content = bytes.toString(Charsets.UTF_8)
+        return if (file.length() > ProjectContentLimits.MAX_PROJECT_MEMORY_BYTES) {
+            content + ProjectContentLimits.MEMORY_TRUNCATION_NOTICE
+        } else {
+            content
+        }
     }
+
+    /** True when a Memory file can safely be read-modified-written in full. */
+    fun isMemoryWithinLimit(projectId: Long): Boolean =
+        memoryFile(projectId).let { !it.exists() || it.length() <= ProjectContentLimits.MAX_PROJECT_MEMORY_BYTES }
 
     /** 原子替换项目记忆内容（写入 .tmp 后重命名）。 */
     suspend fun writeMemory(projectId: Long, content: String) {
+        requireMemoryWithinLimit(content)
         val mutex = memoryMutexes.getOrPut(projectId) { Mutex() }
         mutex.lock()
         try {
-            val target = memoryFile(projectId)
-            target.parentFile?.mkdirs()
+            writeMemoryAtomically(projectId, content)
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    /** 测试中直接同步替换（不原子，但简单）。 */
+    fun writeMemoryBlocking(projectId: Long, content: String) {
+        requireMemoryWithinLimit(content)
+        writeMemoryAtomically(projectId, content)
+    }
+
+    private fun requireMemoryWithinLimit(content: String) {
+        require(content.toByteArray(Charsets.UTF_8).size.toLong() <= ProjectContentLimits.MAX_PROJECT_MEMORY_BYTES) {
+            ProjectContentLimits.memoryLimitError()
+        }
+    }
+
+    private fun writeMemoryAtomically(projectId: Long, content: String) {
+        val target = memoryFile(projectId)
+        target.parentFile?.mkdirs()
+        val tmp = File(target.parentFile, "${target.name}.tmp")
+        tmp.writeText(content)
+        if (!tmp.renameTo(target)) {
+            // renameTo 在某些 Android 文件系统上跨挂载可能失败，回退到 copy+delete
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+        }
+    }
+
+    /** 读取文本资产，不允许调用方提供外部路径。 */
+    fun readTextAsset(asset: ProjectKnowledge): String {
+        require(asset.fileType == "txt" || asset.fileType == "md") {
+            "Knowledge asset is not a text file: ${asset.fileType}"
+        }
+        val file = assetFile(asset)
+        if (!file.exists()) throw IllegalStateException("Knowledge asset file does not exist: ${asset.id}")
+        return file.readText(Charsets.UTF_8)
+    }
+
+    /** 原子写入文本资产，按资产 ID 串行化并复用安全资产路径校验。 */
+    suspend fun writeTextAsset(asset: ProjectKnowledge, content: String) {
+        require(asset.fileType == "txt" || asset.fileType == "md") {
+            "Knowledge asset is not a text file: ${asset.fileType}"
+        }
+        writeAssetBytes(asset, content.toByteArray(Charsets.UTF_8))
+    }
+
+    /** 读取二进制资产（例如 DOCX），不允许调用方提供外部路径。 */
+    fun readBinaryAsset(asset: ProjectKnowledge): ByteArray {
+        require(asset.fileType == "docx") {
+            "Knowledge asset is not a DOCX file: ${asset.fileType}"
+        }
+        val file = assetFile(asset)
+        if (!file.exists()) throw IllegalStateException("Knowledge asset file does not exist: ${asset.id}")
+        return file.readBytes()
+    }
+
+    /** 原子写入二进制资产，按资产 ID 串行化。 */
+    suspend fun writeBinaryAsset(asset: ProjectKnowledge, bytes: ByteArray) {
+        require(asset.fileType == "docx") {
+            "Knowledge asset is not a DOCX file: ${asset.fileType}"
+        }
+        writeAssetBytes(asset, bytes)
+    }
+
+    private suspend fun writeAssetBytes(asset: ProjectKnowledge, bytes: ByteArray) {
+        val mutex = assetMutexes.getOrPut(asset.id) { Mutex() }
+        mutex.lock()
+        try {
+            val target = assetFile(asset)
             val tmp = File(target.parentFile, "${target.name}.tmp")
-            tmp.writeText(content)
+            tmp.writeBytes(bytes)
             if (!tmp.renameTo(target)) {
-                // renameTo 在某些 Android 文件系统上跨挂载可能失败，回退到 copy+delete
                 tmp.copyTo(target, overwrite = true)
                 tmp.delete()
             }
@@ -99,21 +214,9 @@ object ProjectFileStore {
         }
     }
 
-    /** 测试中直接同步替换（不原子，但简单）。 */
-    fun writeMemoryBlocking(projectId: Long, content: String) {
-        val target = memoryFile(projectId)
-        target.parentFile?.mkdirs()
-        val tmp = File(target.parentFile, "${target.name}.tmp")
-        tmp.writeText(content)
-        if (!tmp.renameTo(target)) {
-            tmp.copyTo(target, overwrite = true)
-            tmp.delete()
-        }
-    }
-
     /** 删除资产文件。 */
     fun deleteAsset(asset: ProjectKnowledge) {
-        val file = assetFile(asset.projectId, asset.id, asset.fileName)
+        val file = assetFile(asset)
         if (file.exists()) file.delete()
     }
 
@@ -135,8 +238,10 @@ object ProjectFileStore {
         projectId: Long,
         sourceUri: Uri?,
         originalName: String,
-        source: String
+        source: String,
+        maxBytes: Long = Long.MAX_VALUE
     ): File {
+        require(maxBytes >= 0) { "maxBytes must not be negative" }
         val ext = extractExtension(originalName)
         require(ext in ALLOWED_EXTENSIONS) {
             "Unsupported file extension: $ext"
@@ -150,7 +255,7 @@ object ProjectFileStore {
                 sourceUri != null && context != null -> {
                     context.contentResolver.openInputStream(sourceUri)?.use { input ->
                         tmpFile.outputStream().use { output ->
-                            input.copyTo(output)
+                            copyWithLimit(input, output, maxBytes)
                         }
                     } ?: throw IOException("Failed to open input stream for $sourceUri")
                 }
@@ -165,6 +270,20 @@ object ProjectFileStore {
         } catch (e: Exception) {
             tmpFile.delete()
             throw e
+        }
+    }
+
+    private fun copyWithLimit(input: java.io.InputStream, output: java.io.OutputStream, maxBytes: Long) {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var copied = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) return
+            if (copied + read > maxBytes) {
+                throw IOException(ProjectContentLimits.knowledgeLimitError(maxBytes - copied))
+            }
+            output.write(buffer, 0, read)
+            copied += read
         }
     }
 

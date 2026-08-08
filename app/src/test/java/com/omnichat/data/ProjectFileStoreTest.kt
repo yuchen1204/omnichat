@@ -9,6 +9,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = android.app.Application::class)
@@ -68,6 +69,49 @@ class ProjectFileStoreTest {
     }
 
     @Test
+    fun stableLocalFileNameTakesPrecedenceOverOriginalName() {
+        val asset = ProjectKnowledge(
+            id = 9L,
+            projectId = 4L,
+            fileName = "original.md",
+            fileType = "md",
+            localFileName = "asset_9.txt"
+        )
+
+        assertEquals("asset_9.txt", ProjectFileStore.assetFile(asset).name)
+    }
+
+    @Test
+    fun emptyLocalFileNameUsesLegacyAssetPath() {
+        val asset = ProjectKnowledge(
+            id = 9L,
+            projectId = 4L,
+            fileName = "original.md",
+            fileType = "md"
+        )
+
+        assertEquals("asset_9.md", ProjectFileStore.assetFile(asset).name)
+    }
+
+    @Test
+    fun invalidStableLocalFileNameIsRejected() {
+        val asset = ProjectKnowledge(
+            id = 9L,
+            projectId = 4L,
+            fileName = "original.md",
+            fileType = "md",
+            localFileName = "../secret.md"
+        )
+
+        try {
+            ProjectFileStore.assetFile(asset)
+            fail("Expected IllegalArgumentException for invalid local file name")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("Invalid local asset"))
+        }
+    }
+
+    @Test
     fun memoryUpdateUsesAtomicReplacementAndPreservesContentOnFailure() = runTest {
         ProjectFileStore.writeMemory(4L, "old")
         ProjectFileStore.writeMemory(4L, "new")
@@ -83,6 +127,32 @@ class ProjectFileStoreTest {
     fun writeMemoryCreatesParentDirectories() = runTest {
         ProjectFileStore.writeMemory(7L, "hello")
         assertEquals("hello", ProjectFileStore.readMemory(7L))
+    }
+
+    @Test
+    fun writeMemoryRejectsContentOverLimit() = runTest {
+        val oversized = "x".repeat(ProjectContentLimits.MAX_PROJECT_MEMORY_BYTES.toInt() + 1)
+
+        try {
+            ProjectFileStore.writeMemory(8L, oversized)
+            fail("Expected oversized memory to be rejected")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("128 KiB"))
+        }
+        assertFalse(ProjectFileStore.memoryFile(8L).exists())
+    }
+
+    @Test
+    fun readMemoryTruncatesLegacyOversizedFileWithoutChangingIt() {
+        val legacy = "x".repeat(ProjectContentLimits.MAX_PROJECT_MEMORY_BYTES.toInt() + 20)
+        val file = ProjectFileStore.memoryFile(8L)
+        file.writeText(legacy)
+
+        val read = ProjectFileStore.readMemory(8L)
+
+        assertTrue(read.endsWith(ProjectContentLimits.MEMORY_TRUNCATION_NOTICE))
+        assertEquals(legacy.length.toLong(), file.length())
+        assertFalse(ProjectFileStore.isMemoryWithinLimit(8L))
     }
 
     @Test
@@ -127,6 +197,30 @@ class ProjectFileStoreTest {
         assertTrue(tmp.exists())
         assertEquals("hello world", tmp.readText())
         tmp.delete()
+    }
+
+    @Test
+    fun copyIntoProjectRejectsUriOverBudgetAndRemovesTemporaryFile() {
+        val sourceFile = File(root, "oversized.txt")
+        sourceFile.writeText("x".repeat(1_025))
+        val mockContext = org.robolectric.RuntimeEnvironment.getApplication()
+
+        try {
+            ProjectFileStore.copyIntoProject(
+                mockContext,
+                3L,
+                android.net.Uri.fromFile(sourceFile),
+                "oversized.txt",
+                "USER_UPLOAD",
+                maxBytes = 1_024
+            )
+            fail("Expected oversized URI import to be rejected")
+        } catch (e: IOException) {
+            assertTrue(e.message!!.contains("knowledge asset limit"))
+        }
+
+        val knowledgeDir = File(projectRoot(3L), "knowledge")
+        assertTrue(knowledgeDir.listFiles().orEmpty().none { it.name.startsWith("tmp_") })
     }
 
     @Test

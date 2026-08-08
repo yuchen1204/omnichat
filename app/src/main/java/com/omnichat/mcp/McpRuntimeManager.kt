@@ -24,6 +24,7 @@ import com.omnichat.tool.ToolExecutor
 import com.omnichat.tool.ToolInitializer
 import com.omnichat.tool.ToolRegistry
 private const val TAG = "McpRuntimeManager"
+private const val EXA_MCP_URL = "https://mcp.exa.ai/mcp"
 
 // ── 公开数据类 ────────────────────────────────────────────────────────────
 
@@ -335,6 +336,9 @@ class McpRuntimeManager private constructor(private val context: Context) {
                 .filterNot { it is McpRemoteTool }
                 .associate { tool -> tool.name to tool.group }
 
+        internal fun hasExaUrlConflict(servers: List<McpServer>): Boolean =
+            servers.any { it.command.trim() == EXA_MCP_URL }
+
         fun getInstance(context: Context): McpRuntimeManager {
             val instance = INSTANCE ?: synchronized(this) {
                 INSTANCE ?: McpRuntimeManager(context.applicationContext).also { INSTANCE = it }
@@ -349,7 +353,22 @@ class McpRuntimeManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val BUILTIN_SERVER_ID = -1L
+    private val EXA_SERVER_ID = -2L
+    private val EXA_SERVER_NAME = "Exa"
     private lateinit var BUILTIN_SERVER_NAME: String
+
+    private fun exaServer() = McpServer(
+        id = EXA_SERVER_ID,
+        name = EXA_SERVER_NAME,
+        command = EXA_MCP_URL
+    )
+
+    private fun removeExaServer() {
+        unregisterRemoteTools(EXA_SERVER_ID)
+        channels.remove(EXA_SERVER_ID)?.close()
+        pendingRequests.remove(EXA_SERVER_ID)
+        _serverStates.value = _serverStates.value - EXA_SERVER_ID
+    }
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -389,17 +408,24 @@ class McpRuntimeManager private constructor(private val context: Context) {
         autoStartJob = scope.launch {
             try {
                 val db = AppDatabase.getDatabase(context)
+                val allUserServers = db.mcpServerDao().getAllServers()
                 val enabled = db.mcpServerDao().getEnabledServers()
+                val serversToStart = enabled.toMutableList()
+                if (!hasExaUrlConflict(allUserServers)) {
+                    serversToStart += exaServer()
+                } else {
+                    removeExaServer()
+                }
 
-                Log.i(TAG, "[autoStart] 数据库中已启用的 MCP server 数量: ${enabled.size}")
-                if (enabled.isNotEmpty()) {
-                    Log.i(TAG, "[autoStart] 即将启动: ${enabled.joinToString { it.name }}")
-                    startServers(enabled)
+                Log.i(TAG, "[autoStart] 数据库中已启用的 MCP server 数量: ${enabled.size}, Exa 冲突=${hasExaUrlConflict(allUserServers)}")
+                if (serversToStart.isNotEmpty()) {
+                    Log.i(TAG, "[autoStart] 即将启动: ${serversToStart.joinToString { it.name }}")
+                    startServers(serversToStart)
                     autoStartCompleted = true
                     Log.i(TAG, "[autoStart] startServers 调用完成, autoStartCompleted=true")
                 } else {
                     autoStartCompleted = true
-                    Log.i(TAG, "[autoStart] 无已启用的 server, autoStartCompleted=true")
+                    Log.i(TAG, "[autoStart] 无需启动的 server, autoStartCompleted=true")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "[autoStart] 自动启动 MCP server 失败", e)
@@ -426,11 +452,18 @@ class McpRuntimeManager private constructor(private val context: Context) {
             try {
                 Log.i(TAG, "[ensureAutoStarted] 重试自动启动")
                 val db = AppDatabase.getDatabase(context)
+                val allUserServers = db.mcpServerDao().getAllServers()
                 val enabled = db.mcpServerDao().getEnabledServers()
+                val candidates = enabled.toMutableList()
+                if (!hasExaUrlConflict(allUserServers)) {
+                    candidates += exaServer()
+                } else {
+                    removeExaServer()
+                }
 
-                Log.i(TAG, "[ensureAutoStarted] 数据库中已启用的 MCP server 数量: ${enabled.size}")
-                if (enabled.isNotEmpty()) {
-                    val notRunning = enabled.filter { server ->
+                Log.i(TAG, "[ensureAutoStarted] 数据库中已启用的 MCP server 数量: ${enabled.size}, Exa 冲突=${hasExaUrlConflict(allUserServers)}")
+                if (candidates.isNotEmpty()) {
+                    val notRunning = candidates.filter { server ->
                         val state = _serverStates.value[server.id]
                         val needStart = state == null || state.status == McpServerStatus.STOPPED || state.status == McpServerStatus.ERROR
                         Log.d(TAG, "[ensureAutoStarted] server [${server.name}] id=${server.id} state=${state?.status}, needStart=$needStart")
@@ -604,6 +637,14 @@ class McpRuntimeManager private constructor(private val context: Context) {
     fun startServer(server: McpServer) {
         Log.i(TAG, "[startServer] name=${server.name}, id=${server.id}, command=${server.command}")
         scope.launch {
+            val userServers = AppDatabase.getDatabase(context).mcpServerDao().getAllServers()
+            if (server.id == EXA_SERVER_ID && hasExaUrlConflict(userServers)) {
+                removeExaServer()
+                return@launch
+            }
+            if (server.id != EXA_SERVER_ID && server.command.trim() == EXA_MCP_URL) {
+                removeExaServer()
+            }
             updateState(server.id) { McpServerState(server, McpServerStatus.STARTING) }
             try {
                 startRemoteHttpServer(server)

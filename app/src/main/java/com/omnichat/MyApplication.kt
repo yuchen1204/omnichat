@@ -1,6 +1,7 @@
 package com.omnichat
 
 import android.app.Application
+import com.omnichat.data.ProjectFileStore
 import com.omnichat.worker.CloudBackupWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,7 @@ class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        ProjectFileStore.init(this)
         applicationScope.launch {
             CloudBackupWorker.reconcilePeriodicWork(this@MyApplication)
         }

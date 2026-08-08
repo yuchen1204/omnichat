@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.omnichat.data.*
 import com.omnichat.ui.presentation.ChatDisplayState
 import com.omnichat.ui.presentation.buildChatDisplayState
+import com.omnichat.ui.components.parseMessageContent
 import com.omnichat.network.ApiClient
 import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
@@ -46,7 +47,6 @@ import com.omnichat.ui.screens.TaskStatus
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
-import java.io.File
 
 private const val STREAMING_UI_UPDATE_INTERVAL_MS = 50L
 
@@ -233,8 +233,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // Check and Seed Database Safely off the main thread
             seedDatabaseIfNeeded()
 
-            // 默认打开新的会话，不加载历史会话
-            createNewSession(getApplication<Application>().getString(R.string.default_session_title_display))
+            initializeSessionSelection()
 
             // 后台懒加载最近10条历史会话（通过 Room Flow 异步加载，侧边栏自动收到数据）
             // 当用户打开侧边栏时，历史会话已就绪，无需重新加载
@@ -326,6 +325,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Initializes the active session from a persisted Room snapshot.
+     *
+     * A default ordinary session is created only for a completely empty database.
+     * Existing ordinary sessions take precedence; when only project sessions exist,
+     * the first project session is selected without changing its project association.
+     */
+    internal suspend fun initializeSessionSelection() {
+        val existingSessions = repository.allSessions.first()
+        val selectedSession = existingSessions.firstOrNull { it.projectId == null }
+            ?: existingSessions.firstOrNull()
+
+        if (selectedSession != null) {
+            _selectedSessionId.value = selectedSession.id
+        } else {
+            _selectedSessionId.value = repository.insertSession(
+                Session(title = getApplication<Application>().getString(R.string.default_session_title_display))
+            )
+        }
+    }
+
     fun deleteSession(sessionId: Long) {
         viewModelScope.launch {
             repository.deleteSession(sessionId)
@@ -382,18 +402,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val projectId = repository.insertProject(
                 Project(name = name, description = description, createdAt = now, updatedAt = now)
             )
-            // 创建项目 Memory 文件
-            val memoryFile = File(getApplication<Application>().filesDir, "projects/$projectId/project_memory.md")
-            memoryFile.parentFile?.mkdirs()
-            memoryFile.writeText("""# Project: $name
-
-$description
-
-## Project Memory
-
-This file stores persistent project context, guidelines, and notes.
-You can read and modify this file using project_read_memory and project_update_memory tools.
-""")
+            repository.updateProjectMemory(projectId, initialProjectMemory(name, description))
             // 自动切换到项目并创建第一个会话
             selectProject(projectId)
         }
@@ -404,37 +413,14 @@ You can read and modify this file using project_read_memory and project_update_m
         val projectId = repository.insertProject(
             Project(name = name, description = description, createdAt = now, updatedAt = now)
         )
-        val memoryFile = File(getApplication<Application>().filesDir, "projects/$projectId/project_memory.md")
-        memoryFile.parentFile?.mkdirs()
-        memoryFile.writeText("""# Project: $name
-
-$description
-
-## Project Memory
-
-This file stores persistent project context, guidelines, and notes.
-You can read and modify this file using project_read_memory and project_update_memory tools.
-""")
+        repository.updateProjectMemory(projectId, initialProjectMemory(name, description))
         return projectId
     }
 
     fun deleteProject(projectId: Long) {
         viewModelScope.launch {
-            val project = repository.getProjectById(projectId) ?: return@launch
+            if (repository.getProjectById(projectId) == null) return@launch
 
-            // 删除项目会话
-            repository.deleteSessionsByProject(projectId)
-
-            // 删除知识文件记录
-            repository.deleteKnowledgeByProject(projectId)
-
-            // 删除项目文件
-            val projectDir = File(getApplication<Application>().filesDir, "projects/$projectId")
-            if (projectDir.exists()) {
-                projectDir.deleteRecursively()
-            }
-
-            // 删除项目
             repository.deleteProject(projectId)
 
             // 如果当前选中了该项目的会话，切回普通模式
@@ -443,6 +429,16 @@ You can read and modify this file using project_read_memory and project_update_m
             }
         }
     }
+
+    private fun initialProjectMemory(name: String, description: String): String = """# Project: $name
+
+$description
+
+## Project Memory
+
+This file stores persistent project context, guidelines, and notes.
+You can read and modify this file using project_read_memory and project_update_memory tools.
+"""
 
     suspend fun createProjectSession(projectId: Long, title: String): Long {
         val newSessionId = repository.insertSession(
@@ -453,6 +449,20 @@ You can read and modify this file using project_read_memory and project_update_m
     }
 
     suspend fun createProjectSessionAndWait(projectId: Long, title: String): Long = createProjectSession(projectId, title)
+
+    fun deleteProjectSession(projectId: Long, sessionId: Long) {
+        viewModelScope.launch {
+            val session = repository.getSessionById(sessionId)
+            if (session?.projectId != projectId) return@launch
+
+            repository.deleteSession(sessionId)
+            if (_selectedSessionId.value == sessionId) {
+                _selectedSessionId.value = repository.getSessionsByProjectFlow(projectId).first()
+                    .firstOrNull()
+                    ?.id
+            }
+        }
+    }
 
     suspend fun buildPromptForSession(sessionId: Long): String {
         val activeTemplate = repository.getActiveTemplate()
@@ -577,18 +587,18 @@ You can read and modify this file using project_read_memory and project_update_m
      * 取消 streamingJob，保存已累积的部分回复到数据库。
      */
     fun stopStreaming() {
-        val job = streamingJob ?: return
+        val job = streamingJob
         streamingJob = null
 
         // 读取当前已累积的部分回复（在 cancel 生效前读取）
         val partialThinking = currentStreamingThinking
         val partialBody = currentStreamingBody
 
-        job.cancel()
+        job?.cancel()
 
         // 保存部分回复到数据库（如果有内容）
         val sessionId = _selectedSessionId.value
-        if (sessionId != null && (partialBody.isNotBlank() || partialThinking.isNotBlank())) {
+        if (job != null && sessionId != null && (partialBody.isNotBlank() || partialThinking.isNotBlank())) {
             val content = if (partialThinking.isNotBlank()) {
                 "<think>${partialThinking}</think>$partialBody"
             } else {
@@ -616,6 +626,16 @@ You can read and modify this file using project_read_memory and project_update_m
 
         // 停止前台服务
         StreamingForegroundService.complete(getApplication())
+    }
+
+    /**
+     * 终止当前 Agent、Workflow 或普通流式回复，并恢复输入状态。
+     */
+    fun terminateCurrentResponse() {
+        stopStreaming()
+        activeTasks.keys.toList().forEach(::cancelSubAgentTask)
+        activeWorkflows.keys.toList().forEach(::cancelWorkflow)
+        subAgentActive = false
     }
 
     /**
@@ -1118,8 +1138,7 @@ You can read and modify this file using project_read_memory and project_update_m
             val projectName = project?.name ?: "Project #$currentProjectId"
 
             // 读取 Project Memory 文件
-            val memoryFile = java.io.File(getApplication<Application>().filesDir, "projects/$currentProjectId/project_memory.md")
-            val projectMemory = if (memoryFile.exists()) memoryFile.readText() else ""
+            val projectMemory = repository.readProjectMemory(currentProjectId)
 
             // 列出项目知识文件
             val knowledgeFiles = repository.getKnowledgeByProject(currentProjectId)
@@ -1552,29 +1571,10 @@ Output the title now."""
         var errorReceived = false
 
         fun updateStreamingStates(text: String) {
-            val thinkStartTag = "<think>"
-            val thinkEndTag = "</think>"
-            
-            val startIndex = text.indexOf(thinkStartTag, ignoreCase = true)
-            if (startIndex == -1) {
-                currentStreamingThinking = ""
-                currentStreamingBody = text
-                isThinkingFinished = true
-                return
-            }
-            
-            val contentAfterStart = text.substring(startIndex + thinkStartTag.length)
-            val endIndex = contentAfterStart.indexOf(thinkEndTag, ignoreCase = true)
-            
-            if (endIndex != -1) {
-                currentStreamingThinking = contentAfterStart.substring(0, endIndex).trim()
-                currentStreamingBody = contentAfterStart.substring(endIndex + thinkEndTag.length).trim()
-                isThinkingFinished = true
-            } else {
-                currentStreamingThinking = contentAfterStart.trim()
-                currentStreamingBody = ""
-                isThinkingFinished = false
-            }
+            val parsed = parseMessageContent(text)
+            currentStreamingThinking = parsed.thinking.orEmpty()
+            currentStreamingBody = parsed.mainBody
+            isThinkingFinished = parsed.isThinkingFinished
         }
 
         fun publishStreamingStates(force: Boolean = false) {
@@ -1621,6 +1621,8 @@ Output the title now."""
                             
                             val id = item.optString("id")
                             if (id.isNotEmpty() && id != "null") existing.put("id", id)
+                            val type = item.optString("type")
+                            if (type.isNotEmpty() && type != "null") existing.put("type", type)
 
                             // Preserve thought_signature for Gemini thinking models from all potential places.
                             var thoughtSignatureItem = item.optString("thought_signature")
@@ -1706,7 +1708,12 @@ Output the title now."""
         if (finalContent.isNotEmpty() || accumulatedToolCalls.isNotEmpty()) {
             val toolCallsJson = if (accumulatedToolCalls.isNotEmpty()) {
                 val arr = org.json.JSONArray()
-                accumulatedToolCalls.values.forEach { arr.put(it) }
+                accumulatedToolCalls.toSortedMap().values.forEach { toolCall ->
+                    if (toolCall.optString("type").isBlank()) {
+                        toolCall.put("type", "function")
+                    }
+                    arr.put(toolCall)
+                }
                 arr.toString()
             } else null
             
@@ -1743,46 +1750,25 @@ Output the title now."""
                 val argsStr = function.optString("arguments")
                 val callId = toolCall.optString("id")
 
-                val serverId = runtimeManager.findServerIdForTool(name)
-                if (serverId != null) {
-                    try {
-                        val argsJson = org.json.JSONObject(argsStr)
-                        val result = runtimeManager.callTool(serverId, name, argsJson, sessionId)
+                // 所有工具（包括远程 MCP）均通过 ToolExecutor，以统一执行项目作用域检查。
+                try {
+                    val argsJson = org.json.JSONObject(argsStr)
+                    val result = ToolExecutor.execute(
+                        getApplication(), name, argsJson, sessionId, projectScope
+                    )
 
-                        repository.insertMessage(
-                            Message(
-                                sessionId = sessionId,
-                                role = "tool",
-                                content = result?.toString() ?: "No result",
-                                toolCallId = callId
-                            )
+                    repository.insertMessage(
+                        Message(
+                            sessionId = sessionId,
+                            role = "tool",
+                            content = result.toString(),
+                            toolCallId = callId
                         )
-                        hasNewResults = true
-                    } catch (e: Exception) {
-                        repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Error: ${e.message}", toolCallId = callId))
-                        hasNewResults = true
-                    }
-                } else {
-                    // 非 MCP 工具（内置工具，包括项目工具）：通过 ToolExecutor 执行
-                    try {
-                        val argsJson = org.json.JSONObject(argsStr)
-                        val result = ToolExecutor.execute(
-                            getApplication(), name, argsJson, sessionId, projectScope
-                        )
-
-                        repository.insertMessage(
-                            Message(
-                                sessionId = sessionId,
-                                role = "tool",
-                                content = result?.toString() ?: "No result",
-                                toolCallId = callId
-                            )
-                        )
-                        hasNewResults = true
-                    } catch (e: Exception) {
-                        repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Error: ${e.message}", toolCallId = callId))
-                        hasNewResults = true
-                    }
+                    )
+                    hasNewResults = true
+                } catch (e: Exception) {
+                    repository.insertMessage(Message(sessionId = sessionId, role = "tool", content = "Error: ${e.message}", toolCallId = callId))
+                    hasNewResults = true
                 }
             }
 

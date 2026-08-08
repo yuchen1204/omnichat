@@ -68,6 +68,7 @@ import com.omnichat.ui.components.ChunkedStreamingText
 import com.omnichat.ui.components.LatexMarkdownWebView
 import com.omnichat.ui.components.SmartMarkdownText
 import com.omnichat.ui.components.ToolGroupCard
+import com.omnichat.ui.components.parseMessageContent
 import com.omnichat.ui.theme.LocalWindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 
@@ -927,28 +928,36 @@ fun ChatView(viewModel: ChatViewModel) {
                                     .padding(start = 8.dp, end = 10.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AttachmentActions()
-                                Spacer(modifier = Modifier.weight(1f))
                                 if (isStreaming || subAgentActive) {
-                                    FilledTonalIconButton(
-                                        onClick = { viewModel.stopStreaming() },
-                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    FilledTonalButton(
+                                        onClick = { viewModel.terminateCurrentResponse() },
+                                        colors = ButtonDefaults.filledTonalButtonColors(
                                             containerColor = MaterialTheme.colorScheme.error,
                                             contentColor = MaterialTheme.colorScheme.onError
                                         ),
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
                                         modifier = Modifier
-                                            .size(44.dp)
-                                            .testTag("chat_stop_button")
+                                            .height(44.dp)
+                                            .testTag("chat_terminate_button")
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
                                             contentDescription = uiText(
-                                                "chat.stop.contentDescription",
-                                                R.string.chat_stop_contentDescription
+                                                "chat.terminate.contentDescription",
+                                                R.string.chat_terminate
                                             )
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = uiText("chat.terminate", R.string.chat_terminate),
+                                            fontFamily = resolvedFontFamily,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 } else {
+                                    AttachmentActions()
+                                    Spacer(modifier = Modifier.weight(1f))
                                     Button(
                                         onClick = ::sendCurrentMessage,
                                         enabled = canSend,
@@ -979,7 +988,31 @@ fun ChatView(viewModel: ChatViewModel) {
                                     .weight(1f)
                                     .padding(start = 4.dp)
                             )
-                            AttachmentActions()
+                            if (isStreaming || subAgentActive) {
+                                FilledTonalButton(
+                                    onClick = { viewModel.terminateCurrentResponse() },
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    modifier = Modifier
+                                        .height(44.dp)
+                                        .testTag("chat_terminate_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = uiText(
+                                            "chat.terminate.contentDescription",
+                                            R.string.chat_terminate
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(uiText("chat.terminate", R.string.chat_terminate))
+                                }
+                            } else {
+                                AttachmentActions()
+                            }
                             Spacer(modifier = Modifier.width(4.dp))
                         }
                     }
@@ -1136,41 +1169,6 @@ fun EmptyChatGreeting(config: ModelConfig?, memories: List<MemoryItem>) {
                 )
             }
         }
-    }
-}
-
-data class ParsedMessageContent(
-    val thinking: String?, // Null if no thinking tag
-    val mainBody: String,
-    val isThinkingFinished: Boolean
-)
-
-fun parseMessageContent(content: String): ParsedMessageContent {
-    val thinkStartTag = "<think>"
-    val thinkEndTag = "</think>"
-    
-    val startIndex = content.indexOf(thinkStartTag, ignoreCase = true)
-    if (startIndex == -1) {
-        return ParsedMessageContent(thinking = null, mainBody = content, isThinkingFinished = true)
-    }
-    
-    val contentAfterStart = content.substring(startIndex + thinkStartTag.length)
-    val endIndex = contentAfterStart.indexOf(thinkEndTag, ignoreCase = true)
-    
-    return if (endIndex != -1) {
-        val thinkingText = contentAfterStart.substring(0, endIndex).trim()
-        val remainingText = contentAfterStart.substring(endIndex + thinkEndTag.length).trim()
-        ParsedMessageContent(
-            thinking = thinkingText.ifEmpty { null },
-            mainBody = remainingText,
-            isThinkingFinished = true
-        )
-    } else {
-        ParsedMessageContent(
-            thinking = contentAfterStart.trim(),
-            mainBody = "",
-            isThinkingFinished = false
-        )
     }
 }
 

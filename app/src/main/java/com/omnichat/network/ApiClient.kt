@@ -30,6 +30,69 @@ object ApiClient {
 
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
 
+    private fun isGeminiProvider(config: ModelConfig): Boolean {
+        return sequenceOf(config.name, config.endpoint, config.selectedModelId)
+            .map(String::lowercase)
+            .any { it.contains("gemini") || it.contains("generativelanguage.googleapis.com") }
+    }
+
+    /**
+     * Produces tool-call history suitable for the configured OpenAI-compatible provider.
+     * Gemini needs its thought signature replayed; other providers receive only standard
+     * Chat Completions fields so vendor extensions are not sent to OpenAI.
+     */
+    internal fun toolCallsForRequest(serializedToolCalls: String, isGemini: Boolean): JSONArray {
+        val source = JSONArray(serializedToolCalls)
+        val result = JSONArray()
+
+        for (i in 0 until source.length()) {
+            val sourceCall = source.optJSONObject(i) ?: continue
+            if (!isGemini) {
+                val function = sourceCall.optJSONObject("function") ?: continue
+                val name = function.optString("name")
+                if (name.isBlank()) continue
+                result.put(JSONObject().apply {
+                    put("id", sourceCall.optString("id"))
+                    put("type", sourceCall.optString("type").ifBlank { "function" })
+                    put("function", JSONObject().apply {
+                        put("name", name)
+                        put("arguments", function.optString("arguments"))
+                    })
+                })
+                continue
+            }
+
+            val toolCall = JSONObject(sourceCall.toString())
+            if (toolCall.optString("type").isBlank()) {
+                toolCall.put("type", "function")
+            }
+
+            var thoughtSignature = toolCall.optString("thought_signature").takeIf { it.isNotBlank() }
+            if (thoughtSignature == null) {
+                thoughtSignature = toolCall.optJSONObject("function")
+                    ?.optString("thought_signature")
+                    ?.takeIf { it.isNotBlank() }
+            }
+            if (thoughtSignature == null) {
+                thoughtSignature = toolCall.optJSONObject("extra_content")
+                    ?.optJSONObject("google")
+                    ?.optString("thought_signature")
+                    ?.takeIf { it.isNotBlank() }
+            }
+
+            val finalSignature = thoughtSignature ?: "skip_thought_signature_validator"
+            toolCall.put("thought_signature", finalSignature)
+            val extraContent = toolCall.optJSONObject("extra_content")
+                ?: JSONObject().also { toolCall.put("extra_content", it) }
+            val google = extraContent.optJSONObject("google")
+                ?: JSONObject().also { extraContent.put("google", it) }
+            google.put("thought_signature", finalSignature)
+            result.put(toolCall)
+        }
+
+        return result
+    }
+
     /**
      * 将图片转换为 Base64 Data URL。
      * 支持本地 file 路径、file:// URI、content:// URI 和已有的 Data URL。
@@ -607,54 +670,20 @@ object ApiClient {
                         put("tool_call_id", msg.toolCallId)
                     }
                     if (msg.toolCallsJson != null) {
-                        val toolCallsArr = JSONArray(msg.toolCallsJson)
-                        // Gemini thinking models require thought_signature in functionCall parts.
-                        // If missing (e.g. stripped by middleware or not captured from stream),
-                        // inject the bypass value to prevent 400 errors.
-                        for (i in 0 until toolCallsArr.length()) {
-                            val tc = toolCallsArr.optJSONObject(i) ?: continue
-                            
-                            // Find any existing thought_signature
-                            var existingSig: String? = null
-                            if (tc.has("thought_signature")) {
-                                existingSig = tc.optString("thought_signature")
-                            }
-                            if (existingSig.isNullOrBlank()) {
-                                val fn = tc.optJSONObject("function")
-                                if (fn != null && fn.has("thought_signature")) {
-                                    existingSig = fn.optString("thought_signature")
-                                }
-                            }
-                            if (existingSig.isNullOrBlank()) {
-                                val ec = tc.optJSONObject("extra_content")
-                                val g = ec?.optJSONObject("google")
-                                if (g != null && g.has("thought_signature")) {
-                                    existingSig = g.optString("thought_signature")
-                                }
-                            }
-                            
-                            val finalSig = if (existingSig.isNullOrBlank()) {
-                                "skip_thought_signature_validator"
-                            } else {
-                                existingSig
-                            }
-                            
-                            // Always output both formats (flat and nested extra_content) for maximum compatibility with Gemini
-                            tc.put("thought_signature", finalSig)
-                            val extraContent = tc.optJSONObject("extra_content") ?: JSONObject().also { tc.put("extra_content", it) }
-                            val google = extraContent.optJSONObject("google") ?: JSONObject().also { extraContent.put("google", it) }
-                            google.put("thought_signature", finalSig)
-                        }
-                        put("tool_calls", toolCallsArr)
+                        put("tool_calls", toolCallsForRequest(msg.toolCallsJson, isGeminiProvider(config)))
                     }
                 }
 
-                // 处理 multimodal 内容
-                val content = buildMessageContent(context, msg)
-                if (content is JSONArray) {
-                    messageObj.put("content", content)
+                // 工具调用且无文本时，按 Chat Completions 约定回传 null content。
+                if (msg.role == "assistant" && msg.toolCallsJson != null && msg.content.isBlank()) {
+                    messageObj.put("content", JSONObject.NULL)
                 } else {
-                    messageObj.put("content", content as String)
+                    val content = buildMessageContent(context, msg)
+                    if (content is JSONArray) {
+                        messageObj.put("content", content)
+                    } else {
+                        messageObj.put("content", content as String)
+                    }
                 }
 
                 messagesArray.put(messageObj)
@@ -696,11 +725,27 @@ object ApiClient {
                 val reader = BufferedReader(source.inputStream().reader())
 
                 var line: String?
+                val eventDataLines = mutableListOf<String>()
                 success = true // 成功建立连接并获取到流
 
-                while (reader.readLine().also { line = it } != null) {
-                    val currentLine = line?.trim() ?: continue
-                    if (currentLine.isEmpty()) continue
+                var reachedEndOfStream = false
+                while (!reachedEndOfStream) {
+                    line = reader.readLine()
+                    if (line == null) {
+                        reachedEndOfStream = true
+                        if (eventDataLines.isEmpty()) break
+                    }
+                    val rawLine = line ?: ""
+                    val currentLine = if (rawLine.isBlank()) {
+                        if (eventDataLines.isEmpty()) continue
+                        "data:${eventDataLines.joinToString("\n")}".also { eventDataLines.clear() }
+                    } else {
+                        val trimmedLine = rawLine.trim()
+                        if (trimmedLine.startsWith("data:")) {
+                            eventDataLines.add(trimmedLine.substringAfter("data:").trim())
+                        }
+                        continue
+                    }
 
                     if (currentLine.startsWith("data:")) {
                         val dataContent = currentLine.substringAfter("data:").trim()
@@ -812,8 +857,8 @@ object ApiClient {
                                     }
                                 }
                             }
-                        } catch (e: Exception) {
-                            // Handle line fragmentation
+                        } catch (_: Exception) {
+                            // Ignore malformed SSE events; the stream may continue with later events.
                         }
                     }
                 }

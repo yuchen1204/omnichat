@@ -86,6 +86,30 @@ class JsDocumentReader(
         }
     }
 
+    /** Edit a DOCX file and return the rewritten OOXML bytes. */
+    suspend fun edit(file: File, operation: JsDocumentEditOperation, oldText: String? = null, content: String): DocumentEditResult = withContext(ioDispatcher) {
+        val fileName = file.name
+        val mimeType = mimeTypeForExtension(fileName)
+        if (!fileName.lowercase().endsWith(".docx")) throw DocumentParseException(DocumentParseErrorCategory.UnsupportedFormat, "Only DOCX files can be edited")
+        val bytes = readFileBytes(file)
+        val runtime = try {
+            runtimeFactory()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            throw DocumentParseException(
+                DocumentParseErrorCategory.RuntimeUnavailable,
+                "JavaScript document runtime could not be created",
+                error
+            )
+        }
+        try {
+            runtime.editDocument(DOCX_EDITOR_PLUGIN, JsDocumentEditInput(fileName, mimeType, bytes, operation, oldText, content))
+        } finally {
+            try { runtime.close() } catch (_: Throwable) { }
+        }
+    }
+
     /**
      * Read the document at [file] and return its parsed text and warnings.
      *
@@ -358,6 +382,7 @@ class JsDocumentReader(
         private const val PDF_MIME = "application/pdf"
         private const val PDF_PLUGIN = "document_plugins/pdf-reader.js"
         private const val DOCX_PLUGIN = "document_plugins/docx-reader.js"
+        private const val DOCX_EDITOR_PLUGIN = "document_plugins/docx-editor.js"
         private const val DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     }
 }
